@@ -23,5 +23,6 @@ def resolve_dependency(container: Container, appmodule: type[Module]) -> None:
     
     container.check_dependencies()
     container.init_resources()
+    _appmodule.init_modules(unresolved_layers)
     _appmodule.init_bootstrap()
     logger.info("Dependencies resolved and injected")

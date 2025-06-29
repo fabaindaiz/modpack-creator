@@ -1,7 +1,9 @@
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, TypeVar
 from dependency_injector.wiring import Provide
 from src.library.dependency.core.exceptions import DependencyError
 from src.library.dependency.core.declaration.base import ABCComponent, ABCProvider
+
+COMPONENT = TypeVar('COMPONENT', bound='Component')
 
 class Component(ABCComponent):
     """Component Base Class
@@ -24,7 +26,7 @@ class Component(ABCComponent):
     def provide(service: Any = None) -> Any: # TODO: provide signature
         pass
 
-def component(interface: type) -> Callable[[type[Component]], Component]:
+def component(interface: type) -> Callable[[type[COMPONENT]], COMPONENT]:
     """Decorator for Component class
 
     Args:
@@ -36,7 +38,7 @@ def component(interface: type) -> Callable[[type[Component]], Component]:
     Returns:
         Callable[[type[Component]], Component]: Decorator function that wraps the component class.
     """
-    def wrap(cls: type[Component]) -> Component:
+    def wrap(cls: type[COMPONENT]) -> COMPONENT:
         if not issubclass(cls, Component):
             raise TypeError(f"Class {cls} is not a subclass of Component")
 

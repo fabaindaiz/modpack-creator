@@ -1,5 +1,9 @@
 aiohttp
 backoff
 dependency-injector
+fastapi
 pydantic
 pyyaml
+uvicorn
+tinydb
+tinydb-serialization

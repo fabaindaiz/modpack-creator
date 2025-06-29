@@ -1,5 +1,7 @@
-from typing import Callable, Sequence, cast
+from typing import Callable, Sequence, TypeVar, cast
 from src.library.dependency.core.declaration.base import ABCComponent, ABCProvider, ABCDependent
+
+DEPENDENT = TypeVar('DEPENDENT', bound='Dependent')
 
 class Dependent(ABCDependent):
     """Dependent Base Class
@@ -24,7 +26,7 @@ class Dependent(ABCDependent):
 
 def dependent(
         imports: Sequence[type[ABCComponent]] = [],
-    ) -> Callable[[type[Dependent]], type[Dependent]]:
+    ) -> Callable[[type[DEPENDENT]], type[DEPENDENT]]:
     """Decorator for Dependent class
 
     Args:
