@@ -1,7 +1,7 @@
 import backoff
 from src.library.api import HttpAPI, METHOD
 from src.library.api.handler import JsonResponse, StreamResponse
-from src.library.api.session import NoAuthSession, TokenSession
+from src.library.api.session import NoAuthorization, TokenAuthorization
 from src.library.api.exceptions import *
 from src.library.utils import getenv
 
@@ -11,9 +11,9 @@ PTERODACTYL_TOKEN = getenv("PTERODACTYL_TOKEN", fail_on_none=False)
 class PterodactylAPI(HttpAPI):
     def __init__(self) -> None:
         if PTERODACTYL_TOKEN is None:
-            session_auth = NoAuthSession()
+            session_auth = NoAuthorization()
         else:
-            session_auth = TokenSession(
+            session_auth = TokenAuthorization(
                 token=PTERODACTYL_TOKEN)
 
         super().__init__(
@@ -22,10 +22,34 @@ class PterodactylAPI(HttpAPI):
             raise_for_status=True)
     
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def servers_list(self) -> dict:
+    async def permissions(self) -> dict:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
-            path=f'client')
+            path=f'client/permissions')
+        return handler.json().get("attributes", {})
+    
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
+    async def account(self) -> dict:
+        handler: JsonResponse = await self._request(
+            method=METHOD.GET,
+            path=f'client/account')
+        return handler.json().get("attributes", {})
+    
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
+    async def server_list(self) -> dict:
+        handler: JsonResponse = await self._request(
+            method=METHOD.GET,
+            path=f'client',
+            query={
+                "type": "admin-all"
+            })
+        return handler.json().get("data", [])
+    
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
+    async def server_id(self, server_id: str) -> dict:
+        handler: JsonResponse = await self._request(
+            method=METHOD.GET,
+            path=f'client/servers/{server_id}')
         return handler.json()
     
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
@@ -49,7 +73,7 @@ class PterodactylAPI(HttpAPI):
         handler: JsonResponse = await self._request(
             method=METHOD.GET, path=f'client/servers/{server_id}/files/list',
             query={"directory": directory})
-        return handler.json()
+        return handler.json().get("data", [])
     
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
     async def server_files_download(self, server_id: str, filepath: str) -> dict:

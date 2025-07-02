@@ -30,7 +30,7 @@ class RequestHandler(ABC):
         if body:
             kwargs.update({"data": body})
         elif json:
-            kwargs.update({"json": body})
+            kwargs.update({"json": json})
         return kwargs
 
     @abstractmethod

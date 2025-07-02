@@ -23,9 +23,9 @@ os.makedirs(folder, exist_ok=True)
 url: str = response[0]["files"][0]["url"]
 filename = os.path.join(folder, name_from_url(url))
 
-file = asyncio.run(modrinthCDN.download_file(url))
-with open(filename, mode="wb") as f:
-    f.write(file)
+#file = asyncio.run(modrinthCDN.download_file(url))
+#with open(filename, mode="wb") as f:
+#    f.write(file)
 
-# response = asyncio.run(pterodactylAPI.servers_list())
-# pprint(response)
+response = asyncio.run(pterodactylAPI.server_list())
+pprint(response)

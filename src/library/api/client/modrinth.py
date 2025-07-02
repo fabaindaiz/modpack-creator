@@ -1,7 +1,7 @@
 import backoff
 from src.library.api import HttpAPI, METHOD
 from src.library.api.handler import JsonResponse, StreamResponse
-from src.library.api.session import NoAuthSession, TokenSession
+from src.library.api.session import NoAuthorization, TokenAuthorization
 from src.library.api.exceptions import *
 from src.library.utils import getenv, boolToStr
 
@@ -14,9 +14,9 @@ class ModrinthCDN(HttpAPI):
 
     def __init__(self) -> None:
         if MODRINTH_TOKEN is None:
-            session_auth = NoAuthSession()
+            session_auth = NoAuthorization()
         else:
-            session_auth = TokenSession(
+            session_auth = TokenAuthorization(
                 token=MODRINTH_TOKEN,
                 scheme="apiKey ")
 
@@ -43,9 +43,9 @@ class ModrinthCDN(HttpAPI):
 class ModrinthAPI(HttpAPI):
     def __init__(self) -> None:
         if MODRINTH_TOKEN is None:
-            session_auth = NoAuthSession()
+            session_auth = NoAuthorization()
         else:
-            session_auth = TokenSession(
+            session_auth = TokenAuthorization(
                 token=MODRINTH_TOKEN,
                 scheme="apiKey ")
 

@@ -3,7 +3,7 @@ from aiohttp import ClientSession
 from pydantic import SecretStr
 from typing import Optional
 
-class AuthorizedSession(ABC):
+class SessionAuthorization(ABC):
     """Base class for authorized sessions"""
     @abstractmethod
     async def headers(self, session: ClientSession, headers: dict = {}) -> dict:
@@ -18,16 +18,16 @@ class AuthorizedSession(ABC):
         """
         pass
 
-class NoAuthSession(AuthorizedSession):
+class NoAuthorization(SessionAuthorization):
     """Session class for no authorization"""
     async def headers(self, session: ClientSession, headers: dict = {}) -> dict:
         return headers
 
-class TokenSession(AuthorizedSession):
-    """Session class for API key authorization
+class TokenAuthorization(SessionAuthorization):
+    """Session class for token authorization
     
     Args:
-        token (str): API key for authorization.
+        token (str): Token for authorization.
         """
     def __init__(self,
             token: str|SecretStr,
@@ -45,4 +45,19 @@ class TokenSession(AuthorizedSession):
         headers.update({self.__parameter: f"{self.__scheme}{self.__token.get_secret_value()}"})
         return headers
 
-NO_AUTHORIZE = NoAuthSession()
+class APIKeyAuthorization(TokenAuthorization):
+    """Session class for API key authorization
+    
+    Args:
+        api_key (str): API key for authorization.
+        """
+    def __init__(self,
+            api_key: str|SecretStr
+            ) -> None:
+        super().__init__(
+            token=api_key,
+            scheme="",  # No scheme for API key
+            parameter="X-API-Key"  # Standard header for API keys
+        )
+
+NO_AUTHORIZE = NoAuthorization()

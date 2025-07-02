@@ -2,7 +2,7 @@ from enum import Enum
 from typing import Any, Callable, Optional
 from aiohttp import hdrs, ClientSession, ClientTimeout
 from src.library.api.handler import REQUEST, RESPONSE, DEFAULT_REQUEST, DEFAULT_RESPONSE
-from src.library.api.session import AuthorizedSession, NO_AUTHORIZE
+from src.library.api.session import SessionAuthorization, NO_AUTHORIZE
 from src.library.api.utils import FakeResponse, handle_errors, validate_results
 from src.library.utils import getenv
 
@@ -38,7 +38,7 @@ class HttpAPI:
             base_url: Optional[str],
             proxy: Optional[str] = None,
             timeout: Optional[ClientTimeout] = DEFAULT_TIMEOUT,
-            session_auth: AuthorizedSession = NO_AUTHORIZE,
+            session_auth: SessionAuthorization = NO_AUTHORIZE,
             session_kwargs_fun: Callable[[], dict[str, Any]] = KWARGS_DEFAULT,
             raise_for_status: bool = True,
             **kwargs) -> None:
@@ -51,12 +51,12 @@ class HttpAPI:
         self.raise_for_status = raise_for_status
     
     async def _authorization(self,
-            session_auth: Optional[AuthorizedSession] = None
+            session_auth: Optional[SessionAuthorization] = None
             ) -> dict:
         """Test the authorization for the session.
 
         Args:
-            session_auth (Optional[AuthorizedSession], optional): Authorization session for the API. Defaults to None (use default session).
+            session_auth (Optional[SessionAuthorization], optional): Authorization session for the API. Defaults to None (use default session).
 
         Returns:
             dict: Authorization headers for the session.
@@ -76,7 +76,7 @@ class HttpAPI:
             json: dict[str, Any] = {},
             body: Optional[Any] = None,
             headers: dict = {},
-            session_auth: Optional[AuthorizedSession] = None,
+            session_auth: Optional[SessionAuthorization] = None,
             request: REQUEST = DEFAULT_REQUEST, # type: ignore
             response: RESPONSE = DEFAULT_RESPONSE, # type: ignore
             **kwargs) -> RESPONSE:
@@ -87,7 +87,7 @@ class HttpAPI:
             path (str): Path for the request. 
             data (dict, optional): Parameters for the request. Automatically added to the body or query parameters. Defaults to {}.
             headers (dict, optional): Base headers for the request. Defaults to {}.
-            session_auth (Optional[AuthorizedSession], optional): Authorization session for the API. Defaults to None (use default session).
+            session_auth (Optional[SessionAuthorization], optional): Authorization session for the API. Defaults to None (use default session).
             request (REQUEST, optional): Define which type of parameters will be used in the request. Defaults to JsonRequest.
             response (RESPONSE, optional): Define which type of response you expect from the request. Defaults to JsonResponse.
 
