@@ -1,7 +1,7 @@
 from abc import ABC
 from typing import Callable, cast
 from src.library.dependency.core.exceptions import DependencyError
-from src.library.dependency.core.declaration import Component, Provider
+from src.library.dependency.core.declaration import Component, Provider, Dependent
 
 class Module(ABC):
     """Module Base Class
@@ -10,12 +10,14 @@ class Module(ABC):
             module_cls: type,
             imports: list["Module"],
             declaration: list[Component],
-            bootstrap: list[Component]
+            bootstrap: list[Component],
+            dependents: list[type[Dependent]] = []
         ):
         self.module_cls = module_cls
         self.imports = imports
         self.declaration = declaration
         self.bootstrap = bootstrap
+        self.dependents = dependents
     
     def declare_providers(self) -> None:
         pass
@@ -66,6 +68,7 @@ def module(
         imports: list[type[Module]] = [],
         declaration: list[type[Component]] = [],
         bootstrap: list[type[Component]] = [],
+        dependents: list[type[Dependent]] = []
     ) -> Callable[[type[Module]], Module]:
     """Decorator for Module class
 
@@ -95,6 +98,7 @@ def module(
                     declaration=_declaration,
                     imports=_imports,
                     bootstrap=_bootstrap,
+                    dependents=dependents
                 )
         return WrapModule()
     return wrap

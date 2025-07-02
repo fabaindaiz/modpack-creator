@@ -1,28 +1,57 @@
+from datetime import datetime
 from pydantic import BaseModel
-from typing import Optional
+from typing import Literal, Optional
+from src.library.utils.enum import CustomEnum
 
-class Project(BaseModel):
+class ModrinthProjectSide(CustomEnum):
+    required = "required"
+    optional = "optional"
+    unsupported = "unsupported"
+    unknown = "unknown"
+
+class ModrinthProjectType(CustomEnum):
+    mod = "mod"
+    modpack = "modpack"
+    resourcepack = "resourcepack"
+    shader = "shader"
+
+class ModrinthProjectStatus(CustomEnum):
+    approved = "approved"
+    archived = "archived"
+    rejected = "rejected"
+    draft = "draft"
+    unlisted = "unlisted"
+    processing = "processing"
+    withheld = "withheld"
+    scheduled = "scheduled"
+    private = "private"
+    unknown = "unknown"
+
+class ModrinthProject(BaseModel):
+    id: str
+    team: str
+
     slug: str
     title: str
     description: str
-    categories: list[str]
-    display_categories: list[str]
-    client_side: str
-    server_side: str
-    project_type: str
-    downloads: int
-    project_id: str
-    author: str
-    versions: list[str]
-    follows: int
-    date_created: str
-    date_modified: str
-    latest_version: str
-    license: str
+    body: str
 
-    icon_url: Optional[str]
-    color: Optional[str]
-    thread_id: str
-    monetization_status: str
-    gallery: list[str]
-    featured_gallery: str
+    client_side: ModrinthProjectSide
+    server_side: ModrinthProjectSide
+    project_type: ModrinthProjectType
+    status: ModrinthProjectStatus
+    downloads: int
+    followers: int
+
+    categories: list[str]
+    additional_categories: list[str]
+
+    versions: list[str]
+    game_versions: list[str]
+
+    issues_url: Optional[str]
+    source_url: Optional[str]
+    wiki_url: Optional[str]
+
+    published: datetime
+    updated: datetime
