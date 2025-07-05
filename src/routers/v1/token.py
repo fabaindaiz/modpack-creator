@@ -8,6 +8,6 @@ router = APIRouter(
 
 @router.get("/token")
 @inject
-async def server_get(
+async def token(
         ):
     return {}

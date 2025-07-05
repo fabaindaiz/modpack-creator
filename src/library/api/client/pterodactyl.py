@@ -36,7 +36,7 @@ class PterodactylAPI(HttpAPI):
         return handler.json().get("attributes", {})
     
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def server_list(self) -> dict:
+    async def server_list(self) -> list[dict]:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
             path=f'client',
@@ -69,7 +69,7 @@ class PterodactylAPI(HttpAPI):
         return handler.json()
     
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def server_files_list(self, server_id: str, directory: str) -> dict:
+    async def server_files_list(self, server_id: str, directory: str) -> list[dict]:
         handler: JsonResponse = await self._request(
             method=METHOD.GET, path=f'client/servers/{server_id}/files/list',
             query={"directory": directory})

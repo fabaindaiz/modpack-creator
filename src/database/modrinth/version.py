@@ -1,14 +1,10 @@
 from src.model.modrinth.version import ModrinthVersion
-from src.library.dependency.core import Dependent, dependent
 from src.library.tinydb import TinyDBDatabase, where
-from src.library.utils.singleton import singleton
 from src.library.utils import getenv
 
 MODRINTH_VERSION_FILE = getenv("MODRINTH_VERSION_FILE", "modrinth/version.json")
 
-@singleton
-@dependent()
-class ModrinthVersionDatabase(TinyDBDatabase[ModrinthVersion], Dependent):
+class ModrinthVersionDatabase(TinyDBDatabase[ModrinthVersion]):
     def __init__(self):
         super().__init__(model_cls=ModrinthVersion, file=MODRINTH_VERSION_FILE)
 

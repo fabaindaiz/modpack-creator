@@ -1,52 +1,14 @@
 import backoff
-from src.library.dependency.core import Dependent, dependent
 from src.library.api import HttpAPI, METHOD
-from src.library.api.handler import JsonResponse, StreamResponse
+from src.library.api.handler import JsonResponse
 from src.library.api.session import NoAuthorization, TokenAuthorization
-from src.library.api.exceptions import *
-from src.library.utils.singleton import singleton
 from src.library.utils import getenv, boolToStr
 
 MODRINTH_API_URL = getenv("MODRINTH_API_URL", "https://api.modrinth.com/v2/")
 MODRINTH_TOKEN = getenv("MODRINTH_TOKEN", fail_on_none=False)
 MODRINTH_AGENT = getenv("MODRINTH_AGENT", fail_on_none=False)
 
-@singleton
-@dependent()
-class ModrinthCDN(HttpAPI, Dependent):
-    streamResponse = StreamResponse()
-
-    def __init__(self) -> None:
-        if MODRINTH_TOKEN is None:
-            session_auth = NoAuthorization()
-        else:
-            session_auth = TokenAuthorization(
-                token=MODRINTH_TOKEN,
-                scheme="apiKey ")
-
-        super().__init__(
-            base_url=None,
-            session_auth=session_auth,
-            raise_for_status=True)
-    
-    def headers(self) -> dict[str, str]:
-        headers: dict[str, str] = {}
-        if MODRINTH_AGENT:
-            headers["User-Agent"] = MODRINTH_AGENT
-        return headers
-    
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def download_file(self, url: str) -> bytes:
-        handler: StreamResponse = await self._request(
-            method=METHOD.GET,
-            path=url,
-            headers=self.headers(),
-            response=self.streamResponse)
-        return handler.stream()
-
-@singleton
-@dependent()
-class ModrinthAPI(HttpAPI, Dependent):
+class ModrinthAPI(HttpAPI):
     def __init__(self) -> None:
         if MODRINTH_TOKEN is None:
             session_auth = NoAuthorization()
@@ -80,8 +42,7 @@ class ModrinthAPI(HttpAPI, Dependent):
             method=METHOD.GET,
             path='project',
             query={
-                "ids": str(slugs),
-            },
+                "ids": str(slugs)},
             headers=self.headers())
         return handler.json()
     
@@ -93,8 +54,7 @@ class ModrinthAPI(HttpAPI, Dependent):
             query={
                 "loaders": str(loaders),
                 "game_versions": str(game_versions),
-                "featured": boolToStr(featured, int_format=False)
-            },
+                "featured": boolToStr(featured, int_format=False)},
             headers=self.headers())
         return handler.json()
     
@@ -112,8 +72,7 @@ class ModrinthAPI(HttpAPI, Dependent):
             method=METHOD.GET,
             path='version',
             query={
-                "ids": str(ids),
-            },
+                "ids": str(ids)},
             headers=self.headers())
         return handler.json()
 
@@ -123,8 +82,7 @@ class ModrinthAPI(HttpAPI, Dependent):
             method=METHOD.GET,
             path=f'version_file/{hash}',
             query={
-                "algorithm": algorithm,
-            },
+                "algorithm": algorithm},
             headers=self.headers())
         return handler.json()
     
@@ -134,12 +92,10 @@ class ModrinthAPI(HttpAPI, Dependent):
             method=METHOD.POST,
             path=f'version_file/{hash}/update',
             query={
-                "algorithm": algorithm,
-            },
+                "algorithm": algorithm},
             json={
                 "loaders": str(loaders),
-                "game_versions": str(game_versions),
-            },
+                "game_versions": str(game_versions)},
             headers=self.headers())
         return handler.json()
     
@@ -150,8 +106,7 @@ class ModrinthAPI(HttpAPI, Dependent):
             path='version_file',
             json={
                 "hashes": str(hashes),
-                "algorithm": algorithm,
-            },
+                "algorithm": algorithm},
             headers=self.headers())
         return handler.json()
     
@@ -164,7 +119,6 @@ class ModrinthAPI(HttpAPI, Dependent):
                 "hashes": str(hashes),
                 "algorithm": algorithm,
                 "loaders": str(loaders),
-                "game_versions": str(game_versions),
-            },
+                "game_versions": str(game_versions)},
             headers=self.headers())
         return handler.json()

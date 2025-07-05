@@ -1,14 +1,10 @@
 from src.model.modrinth.project import ModrinthProject
-from src.library.dependency.core import Dependent, dependent
 from src.library.tinydb import TinyDBDatabase, where
-from src.library.utils.singleton import singleton
 from src.library.utils import getenv
 
 MODRINTH_PROJECT_FILE = getenv("MODRINTH_PROJECT_FILE", "modrinth/project.json")
 
-@singleton
-@dependent()
-class ModrinthProjectDatabase(TinyDBDatabase[ModrinthProject], Dependent):
+class ModrinthProjectDatabase(TinyDBDatabase[ModrinthProject]):
     def __init__(self):
         super().__init__(model_cls=ModrinthProject, file=MODRINTH_PROJECT_FILE)
 

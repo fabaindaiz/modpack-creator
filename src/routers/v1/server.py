@@ -9,7 +9,7 @@ router = APIRouter(
 @router.get("/server")
 @inject
 async def server_get(
-        serverService: ServerService = Depends(Provide[Dependences.serverService])
+        serverService: PterodactylServerService = Depends(Provide[Dependences.pterodactylServerService])
         ):
     response = await serverService.server_get()
     return response
@@ -18,7 +18,7 @@ async def server_get(
 @inject
 async def server_get(
         id: str,
-        serverService: ServerService = Depends(Provide[Dependences.serverService])
+        serverService: PterodactylServerService = Depends(Provide[Dependences.pterodactylServerService])
         ):
     response = await serverService.server_get_id(id)
     return response
@@ -28,7 +28,7 @@ async def server_get(
 async def server_get(
         id: str,
         directory: str = Query("/"),
-        serverService: ServerService = Depends(Provide[Dependences.serverService])
+        serverService: PterodactylServerService = Depends(Provide[Dependences.pterodactylServerService])
         ):
     response = await serverService.server_files_id(id, directory)
     return response

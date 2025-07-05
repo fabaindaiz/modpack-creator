@@ -12,7 +12,6 @@ from threading import Lock
 from typing import Generic, Optional, TypeVar
 from src.library.utils import getenv
 
-# TINYDB_FOLDER = getenv('TINYDB_FOLDER', '/data/tinydb')
 TINYDB_FOLDER = getenv('TINYDB_FOLDER', 'data/tinydb')
 M = TypeVar("M", bound=BaseModel)
 
