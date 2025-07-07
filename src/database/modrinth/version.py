@@ -2,7 +2,7 @@ from src.model.modrinth.version import ModrinthVersion
 from src.library.tinydb import TinyDBDatabase, where
 from src.library.utils import getenv
 
-MODRINTH_VERSION_FILE = getenv("MODRINTH_VERSION_FILE", "modrinth/version.json")
+MODRINTH_VERSION_FILE = getenv("MODRINTH_VERSION_FILE", "data/modrinth/version.json")
 
 class ModrinthVersionDatabase(TinyDBDatabase[ModrinthVersion]):
     def __init__(self):

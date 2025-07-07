@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from dependency_injector.wiring import Provide, inject
+from src.library.auth import get_current_user
 from src.dependences import *
 
 router = APIRouter(
@@ -9,7 +10,8 @@ router = APIRouter(
 @router.get("/server")
 @inject
 async def server_get(
-        serverService: PterodactylServerService = Depends(Provide[Dependences.pterodactylServerService])
+        serverService: PterodactylServerService = Depends(Provide[Dependences.pterodactylServerService]),
+        current_user = Depends(get_current_user)
         ):
     response = await serverService.server_get()
     return response

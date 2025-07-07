@@ -2,7 +2,7 @@ from src.model.modrinth.project import ModrinthProject
 from src.library.tinydb import TinyDBDatabase, where
 from src.library.utils import getenv
 
-MODRINTH_PROJECT_FILE = getenv("MODRINTH_PROJECT_FILE", "modrinth/project.json")
+MODRINTH_PROJECT_FILE = getenv("MODRINTH_PROJECT_FILE", "data/modrinth/project.json")
 
 class ModrinthProjectDatabase(TinyDBDatabase[ModrinthProject]):
     def __init__(self):
