@@ -1,75 +1,55 @@
 import logging
-from enum import Enum
 from typing import Optional
+from fastapi import HTTPException, status
 
 logger = logging.getLogger("ExceptionsLogger")
-
-class STATUS(Enum):
-    HTTP_200_OK = 200
-    HTTP_400_BAD_REQUEST = 400
-    HTTP_401_UNAUTHORIZED = 401
-    HTTP_403_FORBIDDEN = 403
-    HTTP_404_NOT_FOUND = 404
-    HTTP_405_METHOD_NOT_ALLOWED = 405
-    HTTP_408_REQUEST_TIMEOUT = 408
-    HTTP_500_INTERNAL_SERVER_ERROR = 500
-    HTTP_501_NOT_IMPLEMENTED = 501
-    HTTP_502_BAD_GATEWAY = 502
-    HTTP_503_SERVICE_UNAVAILABLE = 503
-    HTTP_504_GATEWAY_TIMEOUT = 504
-
-class HTTPException(Exception):
-    def __init__(self, status_code: int, detail: Optional[str] = None):
-        self.status_code = status_code
-        self.detail = detail
-        super().__init__(detail)
 
 class HTTP_400_BAD_REQUEST(HTTPException):
     """Used when the user sends a malformed request"""
     def __init__(self, detail: Optional[str] = None):
-        super().__init__(STATUS.HTTP_400_BAD_REQUEST.value, detail)
+        super().__init__(status.HTTP_400_BAD_REQUEST, detail)
     
 class HTTP_401_UNAUTHORIZED(HTTPException):
     """Used when the user is not authenticated"""
     def __init__(self, detail: Optional[str] = None):
-        super().__init__(STATUS.HTTP_401_UNAUTHORIZED.value, detail)
+        super().__init__(status.HTTP_401_UNAUTHORIZED, detail)
     
 class HTTP_403_FORBIDDEN(HTTPException):
     """Used when the user tries to access a resource that he is not allowed to"""
     def __init__(self, detail: Optional[str] = None):
-        super().__init__(STATUS.HTTP_403_FORBIDDEN.value, detail)
+        super().__init__(status.HTTP_403_FORBIDDEN, detail)
     
 class HTTP_404_NOT_FOUND(HTTPException):
     """Used when the requested resource is not found"""
     def __init__(self, detail: Optional[str] = None):
-        super().__init__(STATUS.HTTP_404_NOT_FOUND.value, detail)
+        super().__init__(status.HTTP_404_NOT_FOUND, detail)
 
 class HTTP_405_METHOD_NOT_ALLOWED(HTTPException):
     """Used when the method is not allowed"""
     def __init__(self, detail: Optional[str] = None):
-        super().__init__(STATUS.HTTP_405_METHOD_NOT_ALLOWED.value, detail)
+        super().__init__(status.HTTP_405_METHOD_NOT_ALLOWED, detail)
     
 class HTTP_408_REQUEST_TIMEOUT(HTTPException):
     """Used when the request takes too long to process"""
     def __init__(self, detail: Optional[str] = None):
-        super().__init__(STATUS.HTTP_408_REQUEST_TIMEOUT.value, detail)
+        super().__init__(status.HTTP_408_REQUEST_TIMEOUT, detail)
     
 class HTTP_500_INTERNAL_SERVER_ERROR(HTTPException):
     """Used when an unexpected error occurs"""
     def __init__(self, detail: Optional[str] = None):
-        super().__init__(STATUS.HTTP_500_INTERNAL_SERVER_ERROR.value, detail)
+        super().__init__(status.HTTP_500_INTERNAL_SERVER_ERROR, detail)
 
 class HTTP_501_NOT_IMPLEMENTED(HTTPException):
     """Used when the requested method is not implemented"""
     def __init__(self, detail: Optional[str] = None):
-        super().__init__(STATUS.HTTP_501_NOT_IMPLEMENTED.value, detail)
+        super().__init__(status.HTTP_501_NOT_IMPLEMENTED, detail)
 
 class HTTP_502_BAD_GATEWAY(HTTPException):
     """Used when a request to another api fails"""
     def __init__(self, detail: Optional[str] = None):
-        super().__init__(STATUS.HTTP_502_BAD_GATEWAY.value, detail)
+        super().__init__(status.HTTP_502_BAD_GATEWAY, detail)
 
 class HTTP_504_GATEWAY_TIMEOUT(HTTPException):
     """Used when a request to another api takes too long to process"""
     def __init__(self, detail: Optional[str] = None):
-        super().__init__(STATUS.HTTP_504_GATEWAY_TIMEOUT.value, detail)
+        super().__init__(status.HTTP_504_GATEWAY_TIMEOUT, detail)

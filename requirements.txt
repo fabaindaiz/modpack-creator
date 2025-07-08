@@ -1,10 +1,14 @@
 fastapi
 uvicorn
 aiohttp
+authlib
 backoff
 dependency-injector
 fastapi
+httpx
+itsdangerous
 pydantic
+pyjwt
 pyyaml
 uvicorn
 tinydb

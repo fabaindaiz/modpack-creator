@@ -29,7 +29,7 @@ def handle_errors(func: WRAP) -> WRAP:
         except ConnectionTimeoutError as e:
             raise HTTP_504_GATEWAY_TIMEOUT(f"Request has failed with timeout error: {e}") from e
         except ClientResponseError as e:
-            raise HTTP_500_INTERNAL_SERVER_ERROR(f"Request has failed with status error {e.status}: {e.message}") from e
+            raise HTTPException(status_code=e.status, detail=f"Request has failed with status error {e.status}: {e.message}") from e
         except Exception as e:
             raise HTTP_500_INTERNAL_SERVER_ERROR(f"Request has failed with unhandled: {e}") from e
     return wrapper # type: ignore
