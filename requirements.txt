@@ -3,6 +3,7 @@ uvicorn
 aiohttp
 authlib
 backoff
+beanie
 dependency-injector
 fastapi
 httpx
@@ -10,6 +11,3 @@ itsdangerous
 pydantic
 pyjwt
 pyyaml
-uvicorn
-tinydb
-tinydb-serialization

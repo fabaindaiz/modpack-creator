@@ -5,11 +5,14 @@ from fastapi import HTTPException, Request, status, Depends
 from src.library.api.client.download import Downloader
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.api.client.pterodactyl import PterodactylAPI
+from src.database.userdata.users import UsersDatabase
+from src.services.userdata.users import UsersService
 from src.database.modrinth.project import ModrinthProjectDatabase
 from src.database.modrinth.version import ModrinthVersionDatabase
 from src.database.pterodactyl.server import PterodactylServerDatabase
 from src.services.modrinth.project import ModrinthProjectService
 from src.services.pterodactyl.server import PterodactylServerService
+from src.model.userdata.users import UsersInternal
 from src.library.utils import getenv
 
 class Dependences(containers.DeclarativeContainer):
@@ -19,23 +22,15 @@ class Dependences(containers.DeclarativeContainer):
     modrinthAPI = providers.Singleton(ModrinthAPI)
     pterodactylAPI = providers.Singleton(PterodactylAPI)
 
+    usersDatabase = providers.Singleton(UsersDatabase)
+    usersService = providers.Singleton(UsersService, usersDatabase)
+
     modrinthProjectDatabase = providers.Singleton(ModrinthProjectDatabase)
     modrinthVersionDatabase = providers.Singleton(ModrinthVersionDatabase)
     pterodactylServerDatabase = providers.Singleton(PterodactylServerDatabase)
 
     modrinthProjectService = providers.Singleton(ModrinthProjectService, modrinthAPI, modrinthProjectDatabase)
     pterodactylServerService = providers.Singleton(PterodactylServerService, pterodactylAPI)
-
-from fastapi.security.oauth2 import OAuth2AuthorizationCodeBearer
-oauth2_scheme = OAuth2AuthorizationCodeBearer(
-    authorizationUrl="https://login.fadiaz.cl/application/o/authorize/",
-    tokenUrl="https://login.fadiaz.cl/application/o/token/",
-    scopes={
-        "openid": "OpenID Connect scope",
-        "email": "Email scope",
-        "profile": "Profile scope"
-    }
-)
 
 @inject
 def configure_oauth2(
@@ -53,11 +48,11 @@ def configure_oauth2(
 
 async def get_current_user(
         request: Request,
-        ) -> dict:
+        ) -> UsersInternal:
     session = request.session
     if not session:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
         )
-    return session["user"]
+    return UsersInternal(**session["user"])

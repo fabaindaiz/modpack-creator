@@ -1,4 +1,5 @@
 import os
+import random
 import yaml
 import logging
 import urllib.parse
@@ -6,6 +7,7 @@ from datetime import datetime, timezone
 from pprint import pformat
 from typing import Any, Callable, Optional, TypeVar
 
+AUTO_ID_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 WRAP = TypeVar("WRAP", bound=Callable[..., Any])
 logger = logging.getLogger("EnvLogger")
 
@@ -63,6 +65,10 @@ def strToBool(string: str) -> bool:
         bool: The boolean representation of the string.
     """
     return string.lower() in ('true', '1', 't')
+
+def auto_id() -> str:
+    """Generates a unique ID based on the current timestamp."""
+    return "".join(random.choice(AUTO_ID_CHARS) for _ in range(20))
 
 def now() -> float:
     return datetime.now(tz=timezone.utc).timestamp()

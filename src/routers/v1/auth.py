@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request, Query
 from fastapi.responses import RedirectResponse
 from dependency_injector.wiring import Provide, inject
 from typing import Optional
+from src.model.userdata.users import UsersProviderAuthentik
 from src.dependences import *
 
 router = APIRouter(
@@ -23,18 +24,21 @@ async def login(
 async def login_callback(
         request: Request,
         redirect: str = Query("/", description="Redirect URL after login", regex=r"^/[a-zA-Z0-9/_\-\?\=\&]*$"),
-        authlib_oauth: OAuth = Depends(Provide[Dependences.authlib_oauth])
+        authlib_oauth: OAuth = Depends(Provide[Dependences.authlib_oauth]),
+        users_service: UsersService = Depends(Provide[Dependences.usersService])
     ):
     try:
         token = await authlib_oauth.oauth2.authorize_access_token(request)
     except OAuthError as error:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=error,
+            detail=error.description,
         )
     user = token.get('userinfo')
     if user:
-        request.session['user'] = dict(user)
+        user_provider = UsersProviderAuthentik(**user)
+        database_user = await users_service.users_provider_validate(user_provider)
+        request.session['user'] = database_user.model_dump()
     return RedirectResponse(url=redirect)
 
 @router.get('/logout')

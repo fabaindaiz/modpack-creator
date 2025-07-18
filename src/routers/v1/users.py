@@ -6,7 +6,9 @@ router = APIRouter(
 )
 
 @router.get('/users/me')
+@inject
 async def users_me(
-        current_user: str = Depends(get_current_user)
+        users_service: UsersService = Depends(Provide[Dependences.usersService]),
+        current_user: UsersInternal = Depends(get_current_user)
         ):
-    return current_user
+    return await users_service.users_get_id(current_user.id)
