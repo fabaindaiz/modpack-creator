@@ -1,3 +1,4 @@
+from urllib import response
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Query
 from src.dependences import *
@@ -12,7 +13,8 @@ async def server_get(
         pterodactylApi: PterodactylAPI = Depends(Provide[Dependences.pterodactylAPI]),
         current_user = Depends(get_current_user)
         ):
-    return await pterodactylApi.server_list()
+    response = await pterodactylApi.server_get_many()
+    return response
 
 @router.get("/server/{id}")
 @inject
@@ -21,7 +23,8 @@ async def server_get_id(
         pterodactylAPI: PterodactylAPI = Depends(Provide[Dependences.pterodactylAPI]),
         current_user = Depends(get_current_user)
         ):
-    return await pterodactylAPI.server_id(id)
+    response = await pterodactylAPI.server_get_one(id)
+    return response
 
 @router.get("/server/{id}/files")
 @inject
@@ -31,4 +34,5 @@ async def server_files_get_id(
         pterodactylAPI: PterodactylAPI = Depends(Provide[Dependences.pterodactylAPI]),
         current_user = Depends(get_current_user)
         ):
-    return await pterodactylAPI.server_files_list(id, directory)
+    response = await pterodactylAPI.server_files(id, directory)
+    return response

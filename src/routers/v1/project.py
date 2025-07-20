@@ -10,10 +10,10 @@ router = APIRouter(
 @inject
 async def project_get_one(
         slug: str,
-        projectService: ModrinthProjectService = Depends(Provide[Dependences.modrinthProjectService]),
+        modrinthAPI: ModrinthAPI = Depends(Provide[Dependences.modrinthAPI]),
         current_user = Depends(get_current_user)
         ):
-    response = await projectService.project_get_one(slug)
+    response = await modrinthAPI.project_get_one(slug)
     return response
 
 @router.post("/project/modrinth/{slug}")

@@ -40,14 +40,14 @@ class PterodactylAPI(HttpAPI):
         return (PterodactylPermission(**item) for item in handler.json.get("attributes", {}).get("permissions", []))
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def server_id(self, server_id: str) -> PterodactylServer:
+    async def server_get_one(self, server_id: str) -> PterodactylServer:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
             path=f'client/servers/{server_id}')
         return PterodactylServer(**handler.json)
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def server_list(self) -> Generator[PterodactylServer, None, None]:
+    async def server_get_many(self) -> Generator[PterodactylServer, None, None]:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
             path=f'client',
@@ -57,7 +57,7 @@ class PterodactylAPI(HttpAPI):
         return (PterodactylServer(**item) for item in handler.json.get("data", []))
     
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def server_files_list(self, server_id: str, directory: str) -> Generator[PterodactylFile, None, None]:
+    async def server_files(self, server_id: str, directory: str) -> Generator[PterodactylFile, None, None]:
         handler: JsonResponse = await self._request(
             method=METHOD.GET, path=f'client/servers/{server_id}/files/list',
             query={"directory": directory})

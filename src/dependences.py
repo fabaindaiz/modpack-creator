@@ -4,6 +4,7 @@ from dependency_injector import containers, providers
 from dependency_injector.wiring import Provide, inject
 from fastapi import HTTPException, Request, status, Depends
 from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import AsyncMongoClient
 from src.library.api.client.download import Downloader
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.api.client.pterodactyl import PterodactylAPI
@@ -35,16 +36,6 @@ from src.model import (
 )
 
 @inject
-async def configure_beanie() -> None:
-    client: AsyncIOMotorClient = AsyncIOMotorClient(host=MONGODB_URI)
-    await init_beanie(database=client.local, document_models=[LocalProject])
-    await init_beanie(database=client.modrinth, document_models=[ModrinthProject])
-    await init_beanie(database=client.modrinth, document_models=[ModrinthVersion])
-    await init_beanie(database=client.pterodactyl, document_models=[PterodactylInstance])
-    await init_beanie(database=client.pterodactyl, document_models=[PterodactylServer])
-    await init_beanie(database=client.users, document_models=[UsersInternal])
-
-@inject
 def configure_oauth2(
         authlib_oauth: OAuth = Depends(Provide[Dependences.authlib_oauth])
         ) -> None:
@@ -53,10 +44,17 @@ def configure_oauth2(
         client_id=getenv("OIDC_CLIENT_ID"),
         client_secret=getenv("OIDC_CLIENT_SECRET"),
         server_metadata_url=getenv("OIDC_METADATA_URL"),
-        client_kwargs={
-            'scope': 'openid email profile'
-        },
+        client_kwargs={'scope': 'openid email profile'},
     )
+
+async def configure_beanie() -> None:
+    client: AsyncIOMotorClient = AsyncIOMotorClient(host=MONGODB_URI)
+    await init_beanie(database=client.local, document_models=[LocalProject])
+    await init_beanie(database=client.modrinth, document_models=[ModrinthProject])
+    await init_beanie(database=client.modrinth, document_models=[ModrinthVersion])
+    await init_beanie(database=client.pterodactyl, document_models=[PterodactylInstance])
+    await init_beanie(database=client.pterodactyl, document_models=[PterodactylServer])
+    await init_beanie(database=client.users, document_models=[UsersInternal])
 
 async def get_current_user(
         request: Request,
@@ -67,4 +65,4 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
         )
-    return UsersInternal(**session["user"])
+    return UsersInternal.model_validate_json(session.get('user', {}))

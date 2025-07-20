@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Request, Query
 from fastapi.responses import RedirectResponse
 from dependency_injector.wiring import Provide, inject
-from typing import Optional
 from src.model.userdata.users import UsersProviderAuthentik
 from src.dependences import *
 
@@ -38,7 +37,7 @@ async def login_callback(
     if user:
         user_provider = UsersProviderAuthentik(**user)
         database_user = await users_service.users_provider_validate(user_provider)
-        request.session['user'] = database_user.model_dump()
+        request.session['user'] = database_user.model_dump_json()
     return RedirectResponse(url=redirect)
 
 @router.get('/logout')

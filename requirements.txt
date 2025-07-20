@@ -10,4 +10,5 @@ httpx
 itsdangerous
 pydantic
 pyjwt
+pymongo
 pyyaml
