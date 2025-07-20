@@ -32,7 +32,7 @@ def getenv(name: str, default: Optional[str] = None, fail_on_none: bool = True) 
         raise Exception(f"Environment variable {name} not found.")
     return var # type: ignore
 
-def load_yaml(path: str) -> dict[str, Any]:
+def load_yaml(path: str) -> Any:
     """Loads a yaml file.
     Args:
         path_file (str): The file path.
@@ -65,10 +65,6 @@ def strToBool(string: str) -> bool:
         bool: The boolean representation of the string.
     """
     return string.lower() in ('true', '1', 't')
-
-def auto_id() -> str:
-    """Generates a unique ID based on the current timestamp."""
-    return "".join(random.choice(AUTO_ID_CHARS) for _ in range(20))
 
 def now() -> float:
     return datetime.now(tz=timezone.utc).timestamp()

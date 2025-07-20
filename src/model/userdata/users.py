@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
+from beanie import Document, Indexed
 from pydantic import BaseModel, Field
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Optional
 from src.library.utils.enum import CustomEnum
 
 class UsersProviderList(CustomEnum):
@@ -42,9 +43,11 @@ type UsersProvider = Annotated[
     Field(discriminator="type")
 ]
 
-class UsersInternal(BaseModel):
-    id: str = ""
+class UsersInternal(Document):
     email: str
     name: str
 
     provider: UsersProvider
+
+    class Settings:
+        collection = "internal"

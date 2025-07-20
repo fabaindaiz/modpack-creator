@@ -1,6 +1,20 @@
+from beanie import Document, Indexed
 from datetime import datetime
 from pydantic import BaseModel, Field
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
+from src.library.utils.enum import CustomEnum
+
+class PterodactylPermission(BaseModel):
+    description: str
+    keys: dict[str, str]
+
+class PterodactylAccount(BaseModel):
+    admin: bool
+    email: str
+    username: str
+    first_name: str
+    last_name: str
+    language: str
 
 class PterodactylFile(BaseModel):
     name: str
@@ -14,7 +28,7 @@ class PterodactylFile(BaseModel):
     created_at: datetime
     modified_at: datetime
 
-class PterodactylServer(BaseModel):
+class PterodactylServer(Document):
     identifier: str
     internal_id: int
     uuid: str
@@ -27,3 +41,6 @@ class PterodactylServer(BaseModel):
     is_suspended: bool
     is_installing: bool
     is_transferring: bool
+
+    class Settings:
+        collection = "pterodactyl_server"

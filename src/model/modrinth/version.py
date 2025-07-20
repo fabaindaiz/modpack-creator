@@ -1,6 +1,7 @@
+from beanie import Document, Indexed
 from datetime import datetime
 from pydantic import BaseModel, Field
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 from src.library.utils.enum import CustomEnum
 
 class ModrinthVersionType(CustomEnum):
@@ -39,8 +40,7 @@ class ModrinthVersionFile(BaseModel):
     primary: bool
     size: int
 
-class ModrinthVersion(BaseModel):
-    id: str
+class ModrinthVersion(Document):
     project_id: str
     author_id: str
 
@@ -57,3 +57,6 @@ class ModrinthVersion(BaseModel):
     date_published: datetime
     dependencies: list[ModrinthVersionDependency]
     files: list[ModrinthVersionFile]
+
+    class Settings:
+        collection = "version"

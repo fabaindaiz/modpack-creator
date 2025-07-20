@@ -1,5 +1,7 @@
+from beanie import Document, Indexed
+from datetime import datetime
 from pydantic import BaseModel, Field
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Optional
 from src.library.utils.enum import CustomEnum
 
 class ProjectSourceList(CustomEnum):
@@ -22,6 +24,8 @@ type ProjectSource = Annotated[
     Field(discriminator="source", default=ProjectSourceUnknown())
 ]
 
-class LocalProject(BaseModel):
-    id: str = ""
+class LocalProject(Document):
     source: ProjectSource
+
+    class Settings:
+        collection = "project"

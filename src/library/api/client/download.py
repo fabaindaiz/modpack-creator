@@ -18,4 +18,4 @@ class Downloader(HttpAPI):
             method=METHOD.GET,
             path=url,
             response=self.streamResponse)
-        return handler.stream()
+        return handler.stream

@@ -1,7 +1,9 @@
 import backoff
+from typing import Generator
 from src.library.api import HttpAPI, METHOD
 from src.library.api.handler import JsonResponse
 from src.library.api.session import NoAuthorization, TokenAuthorization
+from src.model.modrinth import ModrinthProject, ModrinthVersion
 from src.library.utils import getenv, boolToStr
 
 MODRINTH_API_URL = getenv("MODRINTH_API_URL", "https://api.modrinth.com/v2/")
@@ -29,89 +31,88 @@ class ModrinthAPI(HttpAPI):
         return headers
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def project_get_one(self, slug: str) -> dict:
+    async def project_get_one(self, slug: str) -> ModrinthProject:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
             path=f'project/{slug}',
             headers=self.headers())
-        return handler.json()
-    
+        return ModrinthProject(**handler.json)
+
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def project_get_many(self, slugs: list[str]) -> dict:
+    async def project_get_many(self, slugs: list[str]) -> Generator[ModrinthProject, None, None]:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
             path='project',
-            query={
-                "ids": str(slugs)},
+            query={"ids": str(slugs)},
             headers=self.headers())
-        return handler.json()
-    
+        return (ModrinthProject(**item) for item in handler.json)
+
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def project_versions(self, slug: str, loaders: list[str] = [], game_versions: list[str] = [], featured: bool = True) -> dict:
+    async def project_versions(self, slug: str, loaders: list[str] = [], game_versions: list[str] = [], featured: bool = True) -> Generator[ModrinthVersion, None, None]:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
             path=f'project/{slug}/version',
             query={
                 "loaders": str(loaders),
                 "game_versions": str(game_versions),
-                "featured": boolToStr(featured, int_format=False)},
+                "featured": boolToStr(featured, int_format=False)
+            },
             headers=self.headers())
-        return handler.json()
+        return (ModrinthVersion(**item) for item in handler.json)
     
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def version_get_one(self, id: str) -> dict:
+    async def version_get_one(self, id: str) -> ModrinthVersion:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
             path=f'version/{id}',
             headers=self.headers())
-        return handler.json()
+        return ModrinthVersion(**handler.json)
     
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def version_get_many(self, ids: list[str]) -> dict:
+    async def version_get_many(self, ids: list[str]) -> Generator[ModrinthVersion, None, None]:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
             path='version',
-            query={
-                "ids": str(ids)},
+            query={"ids": str(ids)},
             headers=self.headers())
-        return handler.json()
+        return (ModrinthVersion(**item) for item in handler.json)
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def files_hash_get_one(self, hash: str, algorithm: str = "sha512") -> dict:
+    async def files_hash_get_one(self, hash: str, algorithm: str = "sha512") -> ModrinthVersion:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
             path=f'version_file/{hash}',
-            query={
-                "algorithm": algorithm},
+            query={"algorithm": algorithm},
             headers=self.headers())
-        return handler.json()
-    
+        return ModrinthVersion(**handler.json)
+
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def files_update_hash_post_one(self, hash: str, algorithm: str = "sha512", loaders: list[str] = [], game_versions: list[str] = []) -> dict:
+    async def files_update_hash_post_one(self, hash: str, algorithm: str = "sha512", loaders: list[str] = [], game_versions: list[str] = []) -> ModrinthVersion:
         handler: JsonResponse = await self._request(
             method=METHOD.POST,
             path=f'version_file/{hash}/update',
-            query={
-                "algorithm": algorithm},
+            query={"algorithm": algorithm},
             json={
                 "loaders": str(loaders),
-                "game_versions": str(game_versions)},
+                "game_versions": str(game_versions)
+            },
             headers=self.headers())
-        return handler.json()
-    
+        return ModrinthVersion(**handler.json)
+
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def files_hash_post_many(self, hashes: list[str], algorithm: str = "sha512") -> dict:
+    async def files_hash_post_many(self, hashes: list[str], algorithm: str = "sha512") -> Generator[ModrinthVersion, None, None]:
         handler: JsonResponse = await self._request(
             method=METHOD.POST,
             path='version_file',
             json={
                 "hashes": str(hashes),
-                "algorithm": algorithm},
+                "algorithm": algorithm
+            },
             headers=self.headers())
-        return handler.json()
-    
+        return (ModrinthVersion(**item) for item in handler.json)
+
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def files_update_hash_post_many(self, hashes: list[str], algorithm: str = "sha512", loaders: list[str] = [], game_versions: list[str] = []) -> dict:
+    async def files_update_hash_post_many(self, hashes: list[str], algorithm: str = "sha512", loaders: list[str] = [], game_versions: list[str] = []) -> ModrinthVersion:
         handler: JsonResponse = await self._request(
             method=METHOD.POST,
             path='version_file/update',
@@ -119,6 +120,7 @@ class ModrinthAPI(HttpAPI):
                 "hashes": str(hashes),
                 "algorithm": algorithm,
                 "loaders": str(loaders),
-                "game_versions": str(game_versions)},
+                "game_versions": str(game_versions)
+            },
             headers=self.headers())
-        return handler.json()
+        return ModrinthVersion(**handler.json)

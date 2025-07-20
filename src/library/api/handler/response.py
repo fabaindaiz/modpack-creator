@@ -50,10 +50,10 @@ class JsonResponse(ResponseHandler):
     FAKE_RESPONSE: Any = {"successful": True, "message": "Fake Response", "data": {}}
 
     def __init__(self) -> None:
-        self._json: Optional[dict] = None
+        self._json: Optional[Any] = None
 
     async def set_response(self, response: Any) -> None:
-        self._json = dict(response)
+        self._json = response
 
     async def handle(self, response: ClientResponse) -> None:
         self._json = await response.json()
@@ -63,7 +63,19 @@ class JsonResponse(ResponseHandler):
         headers.update({"Accept": "application/json"})
         return headers
     
-    def json(self) -> dict:
+    @property
+    def status(self) -> int:
+        """Return the HTTP status code of the response.
+
+        Returns:
+            int: HTTP status code of the response.
+        """
+        if self._response is None:
+            raise ValueError("Response has not been set.")
+        return self._response.status
+    
+    @property
+    def json(self) -> Any:
         """Return the JSON data from the response body.
 
         Returns:
@@ -97,6 +109,18 @@ class StreamResponse(ResponseHandler):
         headers.update({"Accept": self._format.value})
         return headers
     
+    @property
+    def status(self) -> int:
+        """Return the HTTP status code of the response.
+
+        Returns:
+            int: HTTP status code of the response.
+        """
+        if self._response is None:
+            raise ValueError("Response has not been set.")
+        return self._response.status
+    
+    @property
     def stream(self) -> bytes:
         """Return the stream data from the response body.
 

@@ -1,36 +1,48 @@
 from authlib.integrations.starlette_client import OAuth, OAuthError
+from beanie import init_beanie
 from dependency_injector import containers, providers
 from dependency_injector.wiring import Provide, inject
 from fastapi import HTTPException, Request, status, Depends
+from motor.motor_asyncio import AsyncIOMotorClient
 from src.library.api.client.download import Downloader
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.api.client.pterodactyl import PterodactylAPI
-from src.database.userdata.users import UsersDatabase
-from src.services.userdata.users import UsersService
-from src.database.modrinth.project import ModrinthProjectDatabase
-from src.database.modrinth.version import ModrinthVersionDatabase
-from src.database.pterodactyl.server import PterodactylServerDatabase
 from src.services.modrinth.project import ModrinthProjectService
 from src.services.pterodactyl.server import PterodactylServerService
+from src.services.userdata.users import UsersService
 from src.model.userdata.users import UsersInternal
 from src.library.utils import getenv
 
-class Dependences(containers.DeclarativeContainer):
-    authlib_oauth = providers.Singleton(OAuth)
+MONGODB_URI = getenv("MONGODB_URI")
 
+class Dependences(containers.DeclarativeContainer):
+    authlib_oauth: providers.Singleton[OAuth] = providers.Singleton(OAuth)
     downloader = providers.Singleton(Downloader)
     modrinthAPI = providers.Singleton(ModrinthAPI)
     pterodactylAPI = providers.Singleton(PterodactylAPI)
 
-    usersDatabase = providers.Singleton(UsersDatabase)
-    usersService = providers.Singleton(UsersService, usersDatabase)
-
-    modrinthProjectDatabase = providers.Singleton(ModrinthProjectDatabase)
-    modrinthVersionDatabase = providers.Singleton(ModrinthVersionDatabase)
-    pterodactylServerDatabase = providers.Singleton(PterodactylServerDatabase)
-
-    modrinthProjectService = providers.Singleton(ModrinthProjectService, modrinthAPI, modrinthProjectDatabase)
+    usersService = providers.Singleton(UsersService)
+    modrinthProjectService = providers.Singleton(ModrinthProjectService, modrinthAPI)
     pterodactylServerService = providers.Singleton(PterodactylServerService, pterodactylAPI)
+
+from src.model import (
+    LocalProject,
+    ModrinthProject,
+    ModrinthVersion,
+    PterodactylInstance,
+    PterodactylServer,
+    UsersInternal,
+)
+
+@inject
+async def configure_beanie() -> None:
+    client: AsyncIOMotorClient = AsyncIOMotorClient(host=MONGODB_URI)
+    await init_beanie(database=client.local, document_models=[LocalProject])
+    await init_beanie(database=client.modrinth, document_models=[ModrinthProject])
+    await init_beanie(database=client.modrinth, document_models=[ModrinthVersion])
+    await init_beanie(database=client.pterodactyl, document_models=[PterodactylInstance])
+    await init_beanie(database=client.pterodactyl, document_models=[PterodactylServer])
+    await init_beanie(database=client.users, document_models=[UsersInternal])
 
 @inject
 def configure_oauth2(

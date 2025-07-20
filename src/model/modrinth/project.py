@@ -1,6 +1,7 @@
+from beanie import Document, Indexed
 from datetime import datetime
 from pydantic import BaseModel, Field
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional
 from src.library.utils.enum import CustomEnum
 
 class ModrinthProjectSide(CustomEnum):
@@ -27,8 +28,7 @@ class ModrinthProjectStatus(CustomEnum):
     private = "private"
     unknown = "unknown"
 
-class ModrinthProject(BaseModel):
-    id: str
+class ModrinthProject(Document):
     team: str
 
     slug: str
@@ -55,3 +55,6 @@ class ModrinthProject(BaseModel):
 
     published: datetime
     updated: datetime
+
+    class Settings:
+        collection = "project"
