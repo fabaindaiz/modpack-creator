@@ -1,6 +1,6 @@
 services:
   api:
-    container_name: modpack-creator-api
+    container_name: modpack-api
     image: modpack-creator-api:latest
     restart: "always"
     ports:
@@ -11,24 +11,26 @@ services:
       - mongodb
 
   mongodb:
-    container_name: modpack-creator-mongodb
+    container_name: modpack-mongodb
     image: mongo:latest
     restart: "always"
     ports:
       - "27017:27017"
     environment:
-      MONGO_INITDB_ROOT_USERNAME: "modpack-creator"
+      MONGO_INITDB_ROOT_USERNAME: "mongoadmin"
       MONGO_INITDB_ROOT_PASSWORD: "${MONGODB_PASSWORD}"
     #volumes:
     #  - "./data:/var/lib/mongodb/data"
-  
-  mongo-express:
-    container_name: modpack-creator-mongo-express
+
+  mongoweb:
+    container_name: modpack-mongoweb
     image: mongo-express:latest
     restart: always
     ports:
       - "8081:8081"
     environment:
-      ME_CONFIG_MONGODB_URL: "mongodb://modpack-creator:${MONGODB_PASSWORD}@mongodb:27017/"
+      ME_CONFIG_BASICAUTH_USERNAME: "mongoweb"
+      ME_CONFIG_BASICAUTH_PASSWORD: "${MONGOWEB_PASSWORD}"
+      ME_CONFIG_MONGODB_URL: "mongodb://mongoadmin:${MONGODB_PASSWORD}@mongodb:27017/"
     depends_on:
       - mongodb

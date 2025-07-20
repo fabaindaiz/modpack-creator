@@ -2,29 +2,25 @@ import backoff
 from typing import Generator
 from src.library.api import HttpAPI, METHOD
 from src.library.api.handler import JsonResponse, StreamResponse
-from src.library.api.session import NoAuthorization, TokenAuthorization
+from src.library.api.session import TokenAuthorization
 from src.model.pterodactyl import PterodactylAccount, PterodactylPermission, PterodactylFile, PterodactylServer
+from src.library.utils import getenv, getenv_opt
 from src.library.api.exceptions import *
-from src.library.utils import getenv
 
 PTERODACTYL_API_URL = getenv("PTERODACTYL_API_URL")
-PTERODACTYL_TOKEN = getenv("PTERODACTYL_TOKEN", fail_on_none=False)
+PTERODACTYL_TOKEN = getenv_opt("PTERODACTYL_TOKEN")
 
 class PterodactylAPI(HttpAPI):
     streamResponse = StreamResponse()
 
     def __init__(self) -> None:
-        if PTERODACTYL_TOKEN is None:
-            session_auth = NoAuthorization()
-        else:
-            session_auth = TokenAuthorization(
+        super().__init__(
+            base_url=PTERODACTYL_API_URL)
+
+        if PTERODACTYL_TOKEN:
+            self.session_auth = TokenAuthorization(
                 token=PTERODACTYL_TOKEN)
 
-        super().__init__(
-            base_url=PTERODACTYL_API_URL,
-            session_auth=session_auth,
-            raise_for_status=True)
-    
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
     async def account(self) -> PterodactylAccount:
         handler: JsonResponse = await self._request(

@@ -14,4 +14,4 @@ class ModrinthProjectService():
         :param project: The project data to add.
         """
         project = await self.modrinthAPI.project_get_one(slug)
-        return await ModrinthProject.insert(project)
+        return await ModrinthProject.create(project)

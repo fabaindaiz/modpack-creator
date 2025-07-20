@@ -1,4 +1,4 @@
-from src.library.utils import load_env, getenv
+from src.library.utils import load_env, getenv, getenv_opt
 load_env(".env.yaml")
 
 from src.routers.v1 import MODULES_V1, include_routers_v1, tags_metadata
@@ -10,33 +10,33 @@ container.wire(
         dependences
     ])
 
-import os
-from fastapi import FastAPI
 from contextlib import asynccontextmanager
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
+import src.model as model
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    dependences.configure_oauth2()
+    await model.configure_beanie()
+    include_routers_v1(app)
+    yield
+
 app = FastAPI(title="Modpack Creator API",
-              version=os.getenv("VERSION", "1.0.0"),
-              docs_url=os.getenv("DOCS_PATH", "/docs"),
-              redoc_url=os.getenv("REDOCS_PATH"),
-              openapi_tags=tags_metadata)
+              version=getenv("VERSION", "1.0.0"),
+              docs_url=getenv("DOCS_PATH", "/docs"),
+              redoc_url=getenv_opt("REDOCS_PATH"),
+              openapi_tags=tags_metadata,
+              lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-)
+    allow_credentials=True)
+
 app.add_middleware(
     SessionMiddleware,
-    secret_key=getenv("SESSION_SECRET"),
-)
-
-@app.on_event("startup")
-async def startup_event():
-    dependences.configure_oauth2()
-    await dependences.configure_beanie()
-
-include_routers_v1(app)
+    secret_key=getenv("SESSION_SECRET"))

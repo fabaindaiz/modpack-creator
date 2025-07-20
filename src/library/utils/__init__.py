@@ -1,5 +1,4 @@
 import os
-import random
 import yaml
 import logging
 import urllib.parse
@@ -7,7 +6,6 @@ from datetime import datetime, timezone
 from pprint import pformat
 from typing import Any, Callable, Optional, TypeVar
 
-AUTO_ID_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 WRAP = TypeVar("WRAP", bound=Callable[..., Any])
 logger = logging.getLogger("EnvLogger")
 
@@ -25,12 +23,31 @@ def load_env(path: str = ".env", verbose: bool = False):
             continue
         os.environ[key] = value
 
-# Used to get environment variables with default values
-def getenv(name: str, default: Optional[str] = None, fail_on_none: bool = True) -> str:
+def getenv(name: str, default: Optional[str] = None) -> str:
+    """Get an environment variable with a default value.
+    Args:
+        name (str): The name of the environment variable.
+        default (Optional[str]): The default value if the variable is not set.
+    Returns:
+        str: The value of the environment variable.
+    Raises:
+        Exception: If the environment variable is not found and no default is provided.
+    """
     var = os.getenv(name, default)
-    if fail_on_none and var is None:
+    if var is None:
         raise Exception(f"Environment variable {name} not found.")
-    return var # type: ignore
+    return var
+
+def getenv_opt(name: str, default: Optional[str] = None) -> Optional[str]:
+    """Get an environment variable with an optional default value.
+    Args:
+        name (str): The name of the environment variable.
+        default (Optional[str]): The default value if the variable is not set.
+    Returns:
+        Optional[str]: The value of the environment variable or the default value.
+    """
+    var = os.getenv(name, default)
+    return var
 
 def load_yaml(path: str) -> Any:
     """Loads a yaml file.
@@ -40,7 +57,7 @@ def load_yaml(path: str) -> Any:
         dict: The file data.
     """
     with open(path) as file:
-        return yaml.load(file, Loader=yaml.FullLoader)
+        return yaml.load(file, Loader=yaml.FullLoader) # type: ignore
 
 def boolToStr(value: bool, int_format: bool = True) -> str:
     """Converts a boolean to a string. The boolean is considered True if it is True, 1 or '1'.
@@ -66,9 +83,6 @@ def strToBool(string: str) -> bool:
     """
     return string.lower() in ('true', '1', 't')
 
-def now() -> float:
-    return datetime.now(tz=timezone.utc).timestamp()
-
 def name_from_url(url: str) -> str:
     """
     Extract the name from a URL.
@@ -83,3 +97,6 @@ def name_from_url(url: str) -> str:
     if len(url_split) < 1:
         raise ValueError("Cannot extract name from URL")
     return urllib.parse.unquote(url.split("/")[-1])
+
+def now() -> float:
+    return datetime.now(tz=timezone.utc).timestamp()

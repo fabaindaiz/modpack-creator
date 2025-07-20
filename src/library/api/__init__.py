@@ -39,6 +39,7 @@ class HttpAPI:
             proxy: Optional[str] = None,
             timeout: Optional[ClientTimeout] = DEFAULT_TIMEOUT,
             session_auth: SessionAuthorization = NO_AUTHORIZE,
+            session_headers: dict[str, str] = {},
             session_kwargs_fun: Callable[[], dict[str, Any]] = KWARGS_DEFAULT,
             raise_for_status: bool = True,
             **kwargs) -> None:
@@ -46,6 +47,7 @@ class HttpAPI:
         self.proxy = proxy
         self.timeout = timeout
         self.session_auth = session_auth
+        self.session_headers = session_headers
         self.session_kwargs = kwargs
         self.session_kwargs_fun = session_kwargs_fun
         self.raise_for_status = raise_for_status
@@ -101,6 +103,7 @@ class HttpAPI:
                 session_auth = session_auth or self.session_auth
                 request.set_use_body(method in POST_METHOD)
 
+                headers.update(self.session_headers)
                 headers = await request.headers(headers)
                 headers = await response.headers(headers)
                 headers = await session_auth.headers(session, headers)

@@ -21,7 +21,7 @@ def handle_auth(func: WRAP) -> WRAP:
 def handle_errors(func: WRAP) -> WRAP:
     @wraps(func)
     @backoff.on_exception(backoff.expo, ClientConnectionError, max_time=15)
-    async def wrapper(*args, **kwargs): # type: ignore
+    async def wrapper(*args, **kwargs):
         try:
             return await func(*args, **kwargs)
         except ServerConnectionError as e:
