@@ -1,16 +1,29 @@
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from dependency_injector import containers, providers
 from dependency_injector.wiring import Provide, inject
-from fastapi import HTTPException, Request, status, Depends
-from src.library.api.client.download import Downloader
-from src.library.api.client.modrinth import ModrinthAPI
-from src.library.api.client.pterodactyl import PterodactylAPI
-from src.services.modpack.bundle import ModpackBundleService
-from src.services.modrinth.project import ModrinthProjectService
-from src.services.pterodactyl.server import PterodactylServerService
-from src.services.userdata.users import UsersService
-from src.model.userdata.users import UsersInternal
+from fastapi import HTTPException, Request, Depends
+from src.library.api.client import (
+    Downloader,
+    ModrinthAPI,
+    PterodactylAPI,
+)
+from src.database import (
+    UsersDatabase,
+    ModpackDatabase,
+    ModrinthDatabase,
+    PterodactylDatabase,
+)
+from src.services import (
+    UsersService,
+    ModpackService,
+    ModrinthService,
+    PterodactylService,
+)
+from src.model.users import (
+    UsersInternal
+)
 from src.library.utils import getenv
+from src.exceptions import *
 
 class Dependences(containers.DeclarativeContainer):
     authlib_oauth: providers.Singleton[OAuth] = providers.Singleton(OAuth)
@@ -18,10 +31,15 @@ class Dependences(containers.DeclarativeContainer):
     modrinthAPI = providers.Singleton(ModrinthAPI)
     pterodactylAPI = providers.Singleton(PterodactylAPI)
 
-    usersService = providers.Singleton(UsersService)
-    modpackBundleService = providers.Singleton(ModpackBundleService)
-    modrinthProjectService = providers.Singleton(ModrinthProjectService, modrinthAPI)
-    pterodactylServerService = providers.Singleton(PterodactylServerService, pterodactylAPI)
+    usersDatabase = providers.Singleton(UsersDatabase)
+    modpackDatabase = providers.Singleton(ModpackDatabase)
+    modrinthDatabase = providers.Singleton(ModrinthDatabase)
+    pterodactylDatabase = providers.Singleton(PterodactylDatabase)
+
+    usersService = providers.Singleton(UsersService, usersDatabase)
+    modrinthService = providers.Singleton(ModrinthService, modrinthAPI, modpackDatabase)
+    pterodactylService = providers.Singleton(PterodactylService, pterodactylAPI, pterodactylDatabase)
+    modpackService = providers.Singleton(ModpackService, modpackDatabase, modrinthDatabase)
 
 @inject
 def configure_oauth2(
@@ -35,13 +53,12 @@ def configure_oauth2(
         client_kwargs={'scope': 'openid email profile'},
     ) # type: ignore
 
+@inject
 async def get_current_user(
         request: Request,
+        users: UsersService = Depends(Provide[Dependences.usersService])
         ) -> UsersInternal:
     session = request.session
     if not session:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-        )
+        raise HTTP_401_UNAUTHORIZED("Not authenticated")
     return UsersInternal.model_validate_json(session.get('user', {}))

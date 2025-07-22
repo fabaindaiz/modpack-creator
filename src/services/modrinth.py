@@ -1,54 +1,27 @@
-from beanie.operators import In
-from beanie.odm.documents import FindMany
-from typing import AsyncGenerator, Iterable, Optional
-from src.model.modrinth import ModrinthProject, ModrinthVersion
-from src.model.utils import MinecraftLoaders
+import asyncio
+from typing import Iterable, Optional
 from src.library.api.client.modrinth import ModrinthAPI
+from src.database.modrinth import ModrinthDatabase
+from src.model.modrinth import ModrinthProject, ModrinthVersion
 from src.exceptions import *
 
-class ModrinthProjectService():
+class ModrinthService():
     def __init__(self,
             modrinthAPI: ModrinthAPI,
+            modrinthDB: ModrinthDatabase,
             ) -> None:
         self.modrinthAPI = modrinthAPI
+        self.modrinthDB = modrinthDB
     
-    async def project_get_one(self, id: str) -> ModrinthProject:
-        """
-        Get a single project by its ID.
-        
-        :param id: The ID of the project to retrieve.
-        :return: The ModrinthProject object.
-        """
-        document = await ModrinthProject.get(id)
-        if not document:
-            raise HTTP_404_NOT_FOUND(f"Project with ID '{id}' not found.")
-        return document
-
-    def project_get_many(self,
-            game_version: Optional[str] = None,
-            loader: Optional[MinecraftLoaders] = None
-            ) -> FindMany[ModrinthProject]:
-        """
-        Get all modrinth projects.
-        
-        :return: An iterable of ModrinthProject objects.
-        """
-        query = ModrinthProject.find()
-        if game_version:
-            query = query.find(In(ModrinthProject.game_versions, [game_version]))
-        if loader:
-            query = query.find(In(ModrinthProject.loaders, [loader]))
-        return query
-    
-    async def project_create_one(self, slug: str) -> ModrinthProject:
+    async def project_create(self, slug: str) -> ModrinthProject:
         """
         Add a project to the database.
         
         :param slug: The slug of the project to add.
         :return: The created ModrinthProject object.
         """
-        project = await self.modrinthAPI.project_get_one(slug)
-        return await ModrinthProject.create(project)
+        project = await self.modrinthAPI.project_get(slug)
+        return await self.modrinthDB.project_insert(project)
     
     async def project_create_many(self, slugs: list[str]) -> Iterable[ModrinthProject]:
         """
@@ -57,35 +30,33 @@ class ModrinthProjectService():
         :param slugs: The list of project slugs to add.
         """
         projects = await self.modrinthAPI.project_get_many(slugs)
-        await ModrinthProject.insert_many(projects)
-        return projects
+        return await self.modrinthDB.project_insert_many(projects)
     
-    async def project_update_one(self, id: str) -> ModrinthProject:
+    async def project_update(self, project_id: str) -> ModrinthProject:
         """
         Update a project in the database.
         
         :param slug: The slug of the project to update.
         :return: The updated ModrinthProject object.
         """
-        document = await self.project_get_one(id)
-        project = await self.modrinthAPI.project_get_one(document.slug)
-        project.id = document.id
-        await project.save()
-        return project
+        document = await self.modrinthDB.project_get(project_id)
+        project = await self.modrinthAPI.project_get(document.slug)
+        return await self.modrinthDB.project_save(document, project.id)
 
-    async def project_update_many(self, ids: list[str]) -> Iterable[ModrinthProject]:
+    async def project_update_many(self, project_ids: list[str]) -> list[ModrinthProject]:
         """
         Update multiple projects in the database.
         
         :param slugs: The list of project slugs to update.
         """
-        documents = await ModrinthProject.find_many(In(ModrinthProject.id, ids)).to_list()
-        projects = await self.modrinthAPI.project_get_many([doc.slug for doc in documents])
-        for document, project in zip(documents, projects):
-            project.id = document.id
-            await project.save()
-        return projects
-    
+        documents = await self.modrinthDB.project_find(project_ids=project_ids).to_list()
+        projects = await self.modrinthAPI.project_get_many(slugs=[doc.slug for doc in documents])
+        return await asyncio.gather(*[
+            self.modrinthDB.project_save(document, project.id)
+            for document, project in zip(documents, projects)
+            if document.slug == project.slug
+        ])
+
     async def project_dependencies(self, slug: str) -> Iterable[ModrinthProject]:
         """
         Get all dependencies for a project.

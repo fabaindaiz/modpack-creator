@@ -2,14 +2,14 @@ from fastapi import FastAPI
 import src.routers.v1.auth as auth
 import src.routers.v1.modpack as modpack
 import src.routers.v1.modrinth as modrinth
-import src.routers.v1.server as server
+import src.routers.v1.pterodactyl as pterodactyl
 import src.routers.v1.users as users
 
 MODULES_V1 = [
     auth,
     modpack,
     modrinth,
-    server,
+    pterodactyl,
     users,
 ]
 
@@ -18,7 +18,7 @@ def include_routers_v1(app: FastAPI) -> None:
     app.include_router(auth.router, prefix=ROUTE_PREFIX, include_in_schema=False)
     app.include_router(modpack.router, prefix=ROUTE_PREFIX)
     app.include_router(modrinth.router, prefix=ROUTE_PREFIX)
-    app.include_router(server.router, prefix=ROUTE_PREFIX)
+    app.include_router(pterodactyl.router, prefix=ROUTE_PREFIX)
     app.include_router(users.router, prefix=ROUTE_PREFIX)
 
 tags_metadata = [
@@ -31,8 +31,8 @@ tags_metadata = [
         "description": "Modrinth endpoints. Query data and manage Modrinth projects and versions.",
     },
     {
-        "name": "server",
-        "description": "Server endpoints. Query data and manage servers.",
+        "name": "pterodactyl",
+        "description": "Pterodactyl endpoints. Query data and manage Pterodactyl servers.",
     },
     {
         "name": "users",

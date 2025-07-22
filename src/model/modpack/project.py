@@ -26,12 +26,22 @@ type ProjectSource = Annotated[
     Field(discriminator="source", default=ProjectSourceUnknown())
 ]
 
+class ModpackProjectPatch(BaseModel):
+    pass
+
 class ModpackProject(Document):
-    bundle_id: Annotated[str, Indexed()]
+    modpack: Link["ModpackBundle"]
     source: ProjectSource
 
     class Settings:
         collection = "project"
+
+
+class ModpackBundlePatch(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    version: Optional[str] = None
+    loader: Optional[MinecraftLoaders] = None
 
 class ModpackBundle(Document):
     name: str

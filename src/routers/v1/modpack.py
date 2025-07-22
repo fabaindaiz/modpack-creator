@@ -1,6 +1,6 @@
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Query
-from src.model.modpack import ModpackBundle, ModpackProject
+from src.model.modpack import ModpackBundle, ModpackBundlePatch
 from src.dependences import *
 
 router = APIRouter(
@@ -9,59 +9,75 @@ router = APIRouter(
 
 @router.get("/modpack")
 @inject
-async def modpack_get_all(
-        modpackBundleService: ModpackBundleService = Depends(Provide[Dependences.modpackBundleService]),
+async def bundle_find(
+        modpackDB: ModpackDatabase = Depends(Provide[Dependences.modpackDatabase]),
         current_user = Depends(get_current_user)
         ):
-    response = await modpackBundleService.bundle_get_all()
+    response = await modpackDB.bundle_find(
+    ).to_list()
     return response
 
 @router.post("/modpack")
 @inject
-async def modpack_create_one(
+async def bundle_create(
         bundle: ModpackBundle,
-        modpackBundleService: ModpackBundleService = Depends(Provide[Dependences.modpackBundleService]),
+        modpackDB: ModpackDatabase = Depends(Provide[Dependences.modpackDatabase]),
         current_user = Depends(get_current_user)
         ):
-    response = await modpackBundleService.bundle_create_one(bundle)
+    response = await modpackDB.bundle_insert(bundle=bundle)
     return response
 
 @router.get("/modpack/{id}")
 @inject
-async def modpack_get_one(
+async def bundle_get(
         id: str,
-        modpackBundleService: ModpackBundleService = Depends(Provide[Dependences.modpackBundleService]),
+        modpackDB: ModpackDatabase = Depends(Provide[Dependences.modpackDatabase]),
         current_user = Depends(get_current_user)
         ):
-    response = await modpackBundleService.bundle_get_one(id)
+    response = await modpackDB.bundle_get(bundle_id=id)
     return response
 
-@router.get("/modpack/projects")
+@router.patch("/modpack/{id}")
 @inject
-async def modpack_get_all_projects(
-        modpackBundleService: ModpackBundleService = Depends(Provide[Dependences.modpackBundleService]),
-        current_user = Depends(get_current_user)
-        ):
-    response = await modpackBundleService.project_get_all()
-    return response
-
-@router.get("/modpack/{id}/projects")
-@inject
-async def modpack_get_projects(
+async def bundle_update(
         id: str,
-        modpackBundleService: ModpackBundleService = Depends(Provide[Dependences.modpackBundleService]),
+        bundle: ModpackBundlePatch,
+        modpackDB: ModpackDatabase = Depends(Provide[Dependences.modpackDatabase]),
         current_user = Depends(get_current_user)
         ):
-    response = await modpackBundleService.project_get_all(id)
+    response = await modpackDB.bundle_update(bundle_id=id, patch=bundle)
     return response
 
-@router.post("/modpack/{id}/projects/modrinth")
+@router.get("/modpack/{id}/project")
+@inject
+async def project_get(
+        id: str,
+        modpackDB: ModpackDatabase = Depends(Provide[Dependences.modpackDatabase]),
+        current_user = Depends(get_current_user)
+        ):
+    response = await modpackDB.project_find(
+        bundle_id=id
+    ).to_list()
+    return response
+
+@router.delete("/modpack/{id}/project")
+@inject
+async def modpack_delete_project(
+    id: str,
+    project_id: str = Query(..., description="The ID of the project to delete"),
+    modpackDB: ModpackDatabase = Depends(Provide[Dependences.modpackDatabase]),
+    current_user = Depends(get_current_user)
+):
+    response = await modpackDB.project_delete(project_id=project_id, bundle_id=id)
+    return response
+
+@router.post("/modpack/{id}/modrinth")
 @inject
 async def modpack_add_modrinth_project(
         id: str,
-        project_id: str = Query(..., description="Modrinth project ID to add"),
-        modpackBundleService: ModpackBundleService = Depends(Provide[Dependences.modpackBundleService]),
+        project_ids: list[str],
+        modpack: ModpackService = Depends(Provide[Dependences.modpackService]),
         current_user = Depends(get_current_user)
         ):
-    response = await modpackBundleService.project_modrinth_add_one(id, project_id)
+    response = await modpack.project_modrinth_create_many(bundle_id=id, project_ids=project_ids)
     return response

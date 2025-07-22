@@ -1,4 +1,5 @@
 import backoff
+import json
 from typing import Generator
 from src.library.api import HttpAPI, METHOD
 from src.library.api.handler import JsonResponse
@@ -24,7 +25,7 @@ class ModrinthAPI(HttpAPI):
                 "User-Agent": MODRINTH_AGENT}
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def project_get_one(self, slug: str) -> ModrinthProject:
+    async def project_get(self, slug: str) -> ModrinthProject:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
             path=f'project/{slug}')
@@ -34,8 +35,8 @@ class ModrinthAPI(HttpAPI):
     async def project_get_many(self, slugs: list[str]) -> Generator[ModrinthProject, None, None]:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
-            path='project',
-            query={"ids": str(slugs)})
+            path='projects',
+            query={"ids": json.dumps(slugs)})
         return (ModrinthProject.parse(**item) for item in handler.json)
     
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
@@ -53,14 +54,14 @@ class ModrinthAPI(HttpAPI):
             method=METHOD.GET,
             path=f'project/{slug}/version',
             query={
-                "loaders": str(loaders),
-                "game_versions": str(game_versions),
+                "loaders": json.dumps(loaders),
+                "game_versions": json.dumps(game_versions),
                 "featured": boolToStr(featured, int_format=False)
             })
         return (ModrinthVersion.parse(**item) for item in handler.json)
     
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def version_get_one(self, id: str) -> ModrinthVersion:
+    async def version_get(self, id: str) -> ModrinthVersion:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
             path=f'version/{id}')
@@ -70,12 +71,12 @@ class ModrinthAPI(HttpAPI):
     async def version_get_many(self, ids: list[str]) -> Generator[ModrinthVersion, None, None]:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
-            path='version',
-            query={"ids": str(ids)})
+            path='versions',
+            query={"ids": json.dumps(ids)})
         return (ModrinthVersion.parse(**item) for item in handler.json)
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def files_hash_get_one(self, hash: str, algorithm: str = "sha512") -> ModrinthVersion:
+    async def files_hash_get(self, hash: str, algorithm: str = "sha512") -> ModrinthVersion:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
             path=f'version_file/{hash}',
@@ -94,14 +95,14 @@ class ModrinthAPI(HttpAPI):
         return (ModrinthVersion.parse(**item) for item in handler.json)
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def files_update_hash_post_one(self, hash: str, algorithm: str = "sha512", loaders: list[str] = [], game_versions: list[str] = []) -> ModrinthVersion:
+    async def files_update_hash_post(self, hash: str, algorithm: str = "sha512", loaders: list[str] = [], game_versions: list[str] = []) -> ModrinthVersion:
         handler: JsonResponse = await self._request(
             method=METHOD.POST,
             path=f'version_file/{hash}/update',
             query={"algorithm": algorithm},
             json={
-                "loaders": str(loaders),
-                "game_versions": str(game_versions)
+                "loaders": json.dumps(loaders),
+                "game_versions": json.dumps(game_versions)
             })
         return ModrinthVersion.parse(**handler.json)
 
@@ -111,9 +112,9 @@ class ModrinthAPI(HttpAPI):
             method=METHOD.POST,
             path='version_file/update',
             json={
-                "hashes": str(hashes),
+                "hashes": json.dumps(hashes),
                 "algorithm": algorithm,
-                "loaders": str(loaders),
-                "game_versions": str(game_versions)
+                "loaders": json.dumps(loaders),
+                "game_versions": json.dumps(game_versions)
             })
         return ModrinthVersion.parse(**handler.json)

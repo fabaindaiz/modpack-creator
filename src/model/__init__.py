@@ -3,7 +3,7 @@ from pymongo import AsyncMongoClient
 from src.model.modpack import ModpackBundle, ModpackProject
 from src.model.modrinth import ModrinthProject, ModrinthVersion
 from src.model.pterodactyl import PterodactylInstance, PterodactylServer
-from src.model.userdata.users import UsersInternal
+from src.model.users import UsersInternal
 from src.library.utils import getenv
 
 MONGODB_URI = getenv("MONGODB_URI")

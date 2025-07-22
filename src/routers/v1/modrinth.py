@@ -14,13 +14,13 @@ router = APIRouter(
     response_model=list[ModrinthProject],
 )
 @inject
-async def project_get_many(
+async def project_find(
         game_version: Optional[str] = Query(None, description="Filter by game versions"),
         loader: Optional[MinecraftLoaders] = Query(None, description="Filter by loaders"),
-        projectService: ModrinthProjectService = Depends(Provide[Dependences.modrinthProjectService]),
+        modrinthDB: ModrinthDatabase = Depends(Provide[Dependences.modrinthDatabase]),
         current_user = Depends(get_current_user)
         ):
-    return await projectService.project_get_many(
+    return await modrinthDB.project_find(
         game_version=game_version,
         loader=loader
     ).to_list()
@@ -32,23 +32,23 @@ async def project_get_many(
 @inject
 async def project_create_many(
         slugs: list[str],
-        projectService: ModrinthProjectService = Depends(Provide[Dependences.modrinthProjectService]),
+        modrinth: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         current_user = Depends(get_current_user)
         ):
-    response = await projectService.project_create_many(slugs)
+    response = await modrinth.project_create_many(slugs=slugs)
     return response
 
-@router.post(
-    path="/modrinth/project/update",
+@router.patch(
+    path="/modrinth/project",
     response_model=list[ModrinthProject],
 )
 @inject
 async def project_update_many(
         ids: list[str],
-        projectService: ModrinthProjectService = Depends(Provide[Dependences.modrinthProjectService]),
+        modrinth: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         current_user = Depends(get_current_user)
         ):
-    response = await projectService.project_update_many(ids)
+    response = await modrinth.project_update_many(project_ids=ids)
     return response
 
 @router.get(
@@ -56,10 +56,10 @@ async def project_update_many(
     response_model=ModrinthProject,
 )
 @inject
-async def project_get_one(
+async def project_get(
         id: str,
-        ModrinthProjectService: ModrinthProjectService = Depends(Provide[Dependences.modrinthProjectService]),
+        modrinthDB: ModrinthDatabase = Depends(Provide[Dependences.modrinthDatabase]),
         current_user = Depends(get_current_user)
         ):
-    response = await ModrinthProjectService.project_get_one(id)
+    response = await modrinthDB.project_get(project_id=id)
     return response
