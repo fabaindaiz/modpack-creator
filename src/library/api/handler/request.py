@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Any, Optional, Union, TypeVar
-from src.library.api.exceptions import HTTP_400_BAD_REQUEST
+from src.exceptions import HTTP_400_BAD_REQUEST
 
 REQUEST = TypeVar('REQUEST', bound="RequestHandler")
 

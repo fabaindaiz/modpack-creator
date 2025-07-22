@@ -5,7 +5,7 @@ from src.library.api.handler import JsonResponse, StreamResponse
 from src.library.api.session import TokenAuthorization
 from src.model.pterodactyl import PterodactylAccount, PterodactylPermission, PterodactylFile, PterodactylServer
 from src.library.utils import getenv, getenv_opt
-from src.library.api.exceptions import *
+from src.exceptions import *
 
 PTERODACTYL_API_URL = getenv("PTERODACTYL_API_URL")
 PTERODACTYL_TOKEN = getenv_opt("PTERODACTYL_TOKEN")

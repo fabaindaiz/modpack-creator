@@ -1,8 +1,7 @@
 from beanie import Document, Indexed
 from datetime import datetime
-from pydantic import BaseModel, Field
-from typing import Annotated, Literal, Optional
-from src.library.datatypes import CustomEnum
+from pydantic import BaseModel
+from typing import Annotated, Optional
 
 class PterodactylPermission(BaseModel):
     description: str

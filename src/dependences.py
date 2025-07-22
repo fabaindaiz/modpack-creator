@@ -5,6 +5,7 @@ from fastapi import HTTPException, Request, status, Depends
 from src.library.api.client.download import Downloader
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.api.client.pterodactyl import PterodactylAPI
+from src.services.modpack.bundle import ModpackBundleService
 from src.services.modrinth.project import ModrinthProjectService
 from src.services.pterodactyl.server import PterodactylServerService
 from src.services.userdata.users import UsersService
@@ -18,6 +19,7 @@ class Dependences(containers.DeclarativeContainer):
     pterodactylAPI = providers.Singleton(PterodactylAPI)
 
     usersService = providers.Singleton(UsersService)
+    modpackBundleService = providers.Singleton(ModpackBundleService)
     modrinthProjectService = providers.Singleton(ModrinthProjectService, modrinthAPI)
     pterodactylServerService = providers.Singleton(PterodactylServerService, pterodactylAPI)
 

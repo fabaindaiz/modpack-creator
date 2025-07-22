@@ -51,3 +51,4 @@ class UsersInternal(Document):
 
     class Settings:
         collection = "internal"
+        use_cache = True

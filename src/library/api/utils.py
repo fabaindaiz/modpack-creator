@@ -2,8 +2,8 @@ import asyncio
 import backoff
 from functools import wraps
 from aiohttp import ClientResponse, ConnectionTimeoutError, ClientResponseError, ClientConnectionError, ServerConnectionError
-from src.library.api.exceptions import *
 from src.library.utils import WRAP
+from src.exceptions import *
 
 class FakeResponse(Exception): ...
 

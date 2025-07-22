@@ -1,7 +1,8 @@
 from beanie import Document, Indexed
 from datetime import datetime
-from pydantic import BaseModel, Field
-from typing import Annotated, Literal, Optional
+from pydantic import BaseModel
+from typing import Annotated, Optional
+from src.model.utils import MinecraftLoaders
 from src.library.datatypes import CustomEnum
 
 class ModrinthVersionType(CustomEnum):
@@ -41,7 +42,8 @@ class ModrinthVersionFile(BaseModel):
     size: int
 
 class ModrinthVersion(Document):
-    project_id: str
+    version_id: Annotated[str, Indexed(unique=True)]
+    project_id: Annotated[str, Indexed(unique=True)]
     author_id: str
 
     name: str
@@ -50,8 +52,8 @@ class ModrinthVersion(Document):
     status: ModrinthVersionStatus
     downloads: int
 
-    loaders: list[str]
-    game_versions: list[str]
+    game_versions: Annotated[list[str], Indexed()]
+    loaders: Annotated[list[MinecraftLoaders], Indexed()]
     featured: bool
 
     date_published: datetime
@@ -60,3 +62,14 @@ class ModrinthVersion(Document):
 
     class Settings:
         collection = "version"
+        indexes = [
+            "files.hashes.sha512"
+        ]
+
+    @staticmethod
+    def parse(**kwargs) -> "ModrinthVersion":
+        """
+        Parse a dictionary into a ModrinthVersion instance.
+        """
+        kwargs["version_id"] = kwargs.pop("id")
+        return ModrinthVersion(**kwargs)

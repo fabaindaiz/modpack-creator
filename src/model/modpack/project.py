@@ -1,19 +1,21 @@
-from beanie import Document, Indexed
-from datetime import datetime
+from abc import ABC, abstractmethod
+from beanie import Document, Link, Indexed
 from pydantic import BaseModel, Field
 from typing import Annotated, Literal, Optional
+from src.model.modrinth import ModrinthProject
+from src.model.utils import MinecraftLoaders
 from src.library.datatypes import CustomEnum
 
 class ProjectSourceList(CustomEnum):
     MODRINTH = "modrinth"
     UNKNOWN = "unknown"
 
-class ProjectSourceBase(BaseModel):
+class ProjectSourceBase(ABC, BaseModel):
     pass
 
 class ProjectSourceModrinth(ProjectSourceBase):
     source: Literal[ProjectSourceList.MODRINTH] = ProjectSourceList.MODRINTH
-    project_id: str
+    project: Link[ModrinthProject]
 
 class ProjectSourceUnknown(ProjectSourceBase):
     source: Literal[ProjectSourceList.UNKNOWN] = ProjectSourceList.UNKNOWN
@@ -24,8 +26,18 @@ type ProjectSource = Annotated[
     Field(discriminator="source", default=ProjectSourceUnknown())
 ]
 
-class LocalProject(Document):
+class ModpackProject(Document):
+    bundle_id: Annotated[str, Indexed()]
     source: ProjectSource
 
     class Settings:
         collection = "project"
+
+class ModpackBundle(Document):
+    name: str
+    description: str
+    version: str
+    loader: MinecraftLoaders
+
+    class Settings:
+        collection = "bundle"

@@ -1,7 +1,7 @@
 from beanie import Document, Indexed
 from datetime import datetime
-from pydantic import BaseModel, Field
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Optional
+from src.model.utils import MinecraftLoaders
 from src.library.datatypes import CustomEnum
 
 class ModrinthProjectSide(CustomEnum):
@@ -29,9 +29,9 @@ class ModrinthProjectStatus(CustomEnum):
     unknown = "unknown"
 
 class ModrinthProject(Document):
+    project_id: Annotated[str, Indexed(unique=True)]
+    slug: Annotated[str, Indexed(unique=True)]
     team: str
-
-    slug: str
     title: str
     description: str
     body: str
@@ -47,7 +47,8 @@ class ModrinthProject(Document):
     additional_categories: list[str]
 
     versions: list[str]
-    game_versions: list[str]
+    game_versions: Annotated[list[str], Indexed()]
+    loaders: Annotated[list[MinecraftLoaders], Indexed()]
 
     issues_url: Optional[str]
     source_url: Optional[str]
@@ -58,3 +59,11 @@ class ModrinthProject(Document):
 
     class Settings:
         collection = "project"
+    
+    @staticmethod
+    def parse(**kwargs) -> "ModrinthProject":
+        """
+        Parse a dictionary into a ModrinthProject instance.
+        """
+        kwargs["project_id"] = kwargs.pop("id")
+        return ModrinthProject(**kwargs)
