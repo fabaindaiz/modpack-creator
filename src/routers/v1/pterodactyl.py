@@ -74,3 +74,30 @@ async def server_files_get_id(
         ):
     response = await pterodactylService.server_files(id, directory)
     return response
+
+@router.get("/version")
+@inject
+async def version_find(
+        server_id: str,
+        pterodactylDB: PterodactylDatabase = Depends(Provide[Dependences.pterodactylDatabase]),
+        current_user = Depends(get_current_user)
+        ):
+    """
+    Get all Pterodactyl versions.
+    """
+    return await pterodactylDB.version_find(
+        server_id=server_id
+    ).to_list()
+
+@router.get("/version/{id}")
+@inject
+async def version_get(
+        id: str,
+        pterodactylDB: PterodactylDatabase = Depends(Provide[Dependences.pterodactylDatabase]),
+        current_user = Depends(get_current_user)
+        ):
+    """
+    Get a single Pterodactyl version by its ID.
+    """
+    response = await pterodactylDB.version_get(id)
+    return response

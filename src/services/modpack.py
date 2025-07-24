@@ -22,10 +22,7 @@ class ModpackService():
             project=ModpackProject(
                 modpack=bundle, # type: ignore
                 source=ProjectSourceModrinth(
-                    project=modrinth # type: ignore
-                )
-            )
-        )
+                    project=modrinth))) # type: ignore
     
     async def project_modrinth_create_many(self, bundle_id: str, project_ids: list[str]) -> Iterable[ModpackProject]:
         modrinths = await self.modrinthDB.project_find(project_ids=project_ids).to_list()
@@ -35,8 +32,5 @@ class ModpackService():
                 project=ModpackProject(
                     modpack=bundle, # type: ignore
                     source=ProjectSourceModrinth(
-                        project=modrinth # type: ignore
-                    )
-                )
-            ) for modrinth in modrinths
-        ])
+                        project=modrinth))) # type: ignore
+                for modrinth in modrinths])

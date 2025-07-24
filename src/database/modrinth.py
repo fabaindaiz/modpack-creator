@@ -109,7 +109,7 @@ class ModrinthDatabase():
         :param versions: The list of ModrinthVersion objects to add.
         """
         result = await ModrinthVersion.insert_many(versions)
-        return await self.version_find().to_list()
+        return await self.version_find(version_ids=result.inserted_ids).to_list()
 
     async def version_save(self, version: ModrinthVersion, version_id: Optional[PydanticObjectId] = None) -> ModrinthVersion:
         """

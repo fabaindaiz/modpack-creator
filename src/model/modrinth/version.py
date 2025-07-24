@@ -2,7 +2,7 @@ from beanie import Document, Indexed
 from datetime import datetime
 from pydantic import BaseModel
 from typing import Annotated, Optional
-from src.model.utils import MinecraftLoaders
+from src.model.utils import FileHash, MinecraftLoaders
 from src.library.datatypes import CustomEnum
 
 class ModrinthVersionType(CustomEnum):
@@ -18,9 +18,6 @@ class ModrinthVersionStatus(CustomEnum):
     scheduled = "scheduled"
     unknown = "unknown"
 
-class ModrinthHashes(BaseModel):
-    sha512: str
-    sha1: str
 
 class ModrinthDependencyType(CustomEnum):
     required = "required"
@@ -35,7 +32,7 @@ class ModrinthVersionDependency(BaseModel):
     dependency_type: ModrinthDependencyType
 
 class ModrinthVersionFile(BaseModel):
-    hashes: ModrinthHashes
+    hashes: FileHash
     url: str
     filename: str 
     primary: bool

@@ -42,4 +42,4 @@ class PterodactylServer(Document):
     is_transferring: bool
 
     class Settings:
-        collection = "pterodactyl_server"
+        collection = "server"

@@ -1,6 +1,6 @@
 from beanie import PydanticObjectId
 from beanie.operators import In
-from beanie.odm.documents import FindMany
+from beanie.odm.documents import FindMany, DeleteResult
 from typing import Iterable, Optional
 from src.model.modpack import (
     ModpackBundle,
@@ -80,7 +80,7 @@ class ModpackDatabase():
         return bundle
 
     def project_find(self,
-            ids: Optional[list[str]] = None,
+            project_ids: Optional[list[str]] = None,
             bundle_id: Optional[str] = None,
             ) -> FindMany[ModpackProject]:
         """
@@ -90,9 +90,8 @@ class ModpackDatabase():
         :return: An iterable of ModpackProject objects.
         """
         query = ModpackProject.find(fetch_links=True)
-        if ids:
-            object_ids = [PydanticObjectId(id) for id in ids]
-            query = query.find(In(ModpackProject.id, object_ids))
+        if project_ids:
+            query = query.find(In(ModpackProject.id, (PydanticObjectId(id) for id in project_ids)))
         if bundle_id:
             query = query.find(ModpackProject.modpack.id == PydanticObjectId(bundle_id)) # type: ignore
         return query
@@ -104,19 +103,10 @@ class ModpackDatabase():
         :param project_id: The ID of the project to retrieve.
         :return: The ModpackProject object.
         """
-        document = await ModpackProject.get(project_id)
+        document = await ModpackProject.get(project_id, fetch_links=True)
         if not document:
             raise ValueError(f"Project with id '{project_id}' not found.")
         return document
-    
-    async def project_insert(self, project: ModpackProject) -> ModpackProject:
-        """
-        Add a single project to the database.
-        
-        :param project: The ModpackProject object to add.
-        :return: The created ModpackProject object.
-        """
-        return await ModpackProject.create(project)
     
     async def project_update(self, project_id: str, patch: ModpackProjectPatch) -> ModpackProject:
         """
@@ -129,7 +119,7 @@ class ModpackDatabase():
         document = await self.project_get(project_id)
         return await document.set(patch.model_dump(exclude_unset=True))
     
-    async def project_delete(self, project_id: str, bundle_id: Optional[str] = None) -> None:
+    async def project_delete(self, project_id: str, bundle_id: Optional[str] = None) -> bool:
         """
         Delete a project from the database.
 
@@ -137,10 +127,13 @@ class ModpackDatabase():
         :return: None
         """
         document = await self.project_get(project_id)
-        if bundle_id and document.modpack.id != PydanticObjectId(bundle_id):
+        if bundle_id and document.modpack.id != PydanticObjectId(bundle_id): # type: ignore
             raise HTTP_404_NOT_FOUND(f"Project with ID '{project_id}' not found")
-        await document.delete()
-    
+        result: Optional[DeleteResult] = await ModpackProject.delete(document)
+        if not result:
+            raise HTTP_404_NOT_FOUND(f"Project with ID '{project_id}' not found")
+        return result.deleted_count > 0
+
     async def project_insert(self, project: ModpackProject) -> ModpackProject:
         """
         Add a single project to the database.
@@ -158,7 +151,7 @@ class ModpackDatabase():
         :return: An iterable of created ModpackProject objects.
         """
         result = await ModpackProject.insert_many(projects)
-        return await self.project_find(ids=result.inserted_ids).to_list()
+        return await self.project_find(project_ids=result.inserted_ids).to_list()
     
     async def project_save(self, project: ModpackProject, project_id: Optional[PydanticObjectId] = None) -> ModpackProject:
         """

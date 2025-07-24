@@ -43,7 +43,7 @@ class ModrinthService():
         project = await self.modrinthAPI.project_get(document.slug)
         return await self.modrinthDB.project_save(document, project.id)
 
-    async def project_update_many(self, project_ids: list[str]) -> list[ModrinthProject]:
+    async def project_update_many(self, project_ids: list[str]) -> Iterable[ModrinthProject]:
         """
         Update multiple projects in the database.
         
