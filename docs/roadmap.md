@@ -8,20 +8,19 @@ este archivo en el mismo cambio que lo termina. Los ids se acuñan con
 
 ## Dónde estamos
 
-- 2026-10-01: el repositorio adoptó el método. Hay un gate en CI (`hatch run gate`) y la app vuelve
-  a importar en Python 3.12.
-- El último trabajo de producto fue `wip pterodactyl version` (2025-07-24): registrar qué archivos
-  tiene un servidor y en qué versión. Quedó a medias: `version_create` existe, `version_update` lanza
-  `NotImplementedError`, y no hay forma de saber qué mod es cada jar porque **Pterodactyl no da
-  hashes** (i-7985ee-43df2f).
-- Antes de seguir con eso, lo más barato y urgente es que la imagen arranque (i-7985ee-a77cdc) y que
-  los updates escriban (i-7985ee-055362).
-- 2026-10-01: S1 hecha y en `main`. S2 y S3 hechas en la rama `fase-0`, con CI; **para desplegarlas,
-  seguir `docs/runbooks/migrar-mongo-a-volumen.md`** (respaldo antes: el volumen nuevo arranca
-  vacío). Lo siguiente es S4 (MongoDB real en CI).
-- 2026-10-01: después de una investigación de plataformas similares y de las APIs, el orden
-  recomendado está en [`plan.md`](plan.md), en cinco fases. La **fase 0** (seguridad y arranque)
-  va primero. Lo más urgente: hoy recrear el contenedor de Mongo borra la base (i-7985ee-e21d5d).
+Al cierre del 2026-10-01 (detalle en `.claude/logs/agent-changelog.md`, s-7985ee-0cc0fa):
+
+- **En `main`:** el método adoptado, el gate en CI, los arreglos de arranque y la fuga de cabeceras,
+  la investigación y el plan, y S1 (dependencias fijas, i-7985ee-bb2fde).
+- **En la rama `fase-0`, con CI en verde, sin desplegar:**
+  - S2: volumen de Mongo con nombre e imagen que arranca (i-7985ee-e21d5d, i-7985ee-a77cdc);
+  - S3: login con autorización (i-7985ee-c64e06).
+- **Lo que bloquea:** desplegar `fase-0` siguiendo `docs/runbooks/migrar-mongo-a-volumen.md` y recién
+  después fusionarla en `main`. `scripts/update.sh` hace `git pull` y desplegaría un volumen de Mongo
+  vacío.
+- **Lo siguiente:** S4, MongoDB real en CI (i-7985ee-ade111), según `plan-de-trabajo.md` §3.
+- **El trabajo de producto pendiente:** `wip pterodactyl version` (i-7985ee-4364a3), que depende de
+  cómo identificar mods sin hashes del panel (i-7985ee-43df2f). `plan.md` lo pone en la fase 2.
 
 ## Modpacks y versiones
 

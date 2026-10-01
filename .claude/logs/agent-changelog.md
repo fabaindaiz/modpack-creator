@@ -5,6 +5,81 @@ introducción. Los commits de este repositorio fueron `wip` sin cuerpo: el *por 
 no quedaba en ninguna parte, y una sesión no ve lo que otra aprendió. La referencia del formato
 está al final del archivo, para que nada entre este párrafo y la primera entrada capture texto.
 
+## 2026-10-01 · s-7985ee-0cc0fa — Cierre de la sesión del 2026-10-01: hallazgos, aprendizajes y pendientes
+
+Resumen de toda la jornada, de la adopción del método a S3. El detalle de cada parte está en las
+entradas de abajo y en los documentos que se citan; aquí solo lo que hace falta para retomar.
+
+**Qué quedó hecho.**
+- **Método adoptado:** bundle 0.0.25, carrier `r-7985ee`, `AGENTS.md` con invariantes, gate
+  `hatch run gate` en CI.
+- **Arreglos con test:**
+  - el arranque en 3.12;
+  - el cableado de `ModrinthService`;
+  - la fuga del token de Pterodactyl por un dict compartido.
+- **Investigación:** cuatro informes (`docs/research/`), el plan (`docs/plan.md`) y el plan de trabajo
+  (`docs/plan-de-trabajo.md`).
+- **S1 en `main`:** dependencias fijas.
+- **S2 y S3 en la rama `fase-0`, con CI en verde:**
+  - volumen de Mongo con nombre;
+  - imagen que arranca;
+  - login con autorización por grupo e identidad `iss` + `sub`.
+
+**Hallazgos** (el estado del proyecto que alguien que llega necesita saber):
+- **El despliegue anterior nunca pudo arrancar la API en Docker**: la imagen no copiaba `main.py` ni
+  recibía `.env.yaml`. ASUNCIÓN: la API corría fuera de Docker.
+- **Los datos de Mongo vivían en un volumen anónimo.** Cada `stop.sh` los dejaba huérfanos.
+- **Cualquier cuenta del IdP podía operar los servidores** (cerrado en S3, falta desplegar).
+- **Pterodactyl no da hashes y no los va a dar** (pterodactyl/panel#4894). Identificar mods exige
+  leer los bytes o que la app sea quien instala (i-7985ee-43df2f).
+- **Modrinth y Minecraft cambiaron:**
+  - Minecraft numera por año (`26.x`);
+  - `client_side`/`server_side` están deprecados por `environment`;
+  - `/project/{id}/dependencies` no sirve para resolver (i-7985ee-f4ba63).
+- **Nadie hace lo que este proyecto se propone.** El análogo es Technic Solder, sin dependencias
+  (`docs/research/2026-10-plataformas-similares.md`).
+
+**Aprendizajes** (lo que cambió cómo se trabaja aquí):
+- **Investigar en la fuente primaria antes de tocar algo importante paga**: la regla de login que
+  exigía `email_verified` habría dejado afuera a todos, porque authentik lo manda en `false` por
+  defecto desde 2025.10. Se detectó leyendo la documentación de authentik antes de desplegar.
+- **Un chequeo en verde puede estar ciego:** `bundle.py ids` pasaba sin ver la mitad de las
+  definiciones, por una diferencia entre la plantilla del método y la herramienta. Comparar lo que
+  un chequeo examinó con lo que existe.
+- **Probar en otra versión esconde errores:** el `NameError` de arranque solo aparece en 3.12, no en
+  3.14.
+- **CI solo en `main` deja sin chequear el trabajo en ramas**, y aquí no hay `gh` para abrir PRs. Por
+  eso CI corre ahora en cada push.
+
+**Pendientes, en orden** (el detalle en `docs/roadmap.md` por id):
+1. **Desplegar `fase-0` siguiendo `docs/runbooks/migrar-mongo-a-volumen.md`** (respaldo, versión,
+   restaurar), y después fusionar `fase-0` en `main`. **No fusionar antes:** `scripts/update.sh` hace
+   `git pull` y desplegaría el volumen nuevo, vacío. Es lo único que bloquea.
+2. Del dueño:
+   - crear el grupo en authentik;
+   - las variables nuevas en `.env.yaml` (`OIDC_ALLOWED_GROUPS` es obligatoria);
+   - contestar la decisión 3 (¿hay datos en producción?);
+   - **revocar la clave de Pterodactyl** si la API corrió alguna vez sin `MODRINTH_TOKEN` (fuga
+     corregida en `81a7779`).
+3. Las sesiones siguientes de la fase 0, en orden (`docs/plan-de-trabajo.md` §3):
+   - S4: MongoDB real en CI; también cubre `user_from_provider`, hoy sin test;
+   - S5: los updates escriben y caben muchas versiones;
+   - S6: contratos y reintentos;
+   - S7: usuario de servicio y `/health`.
+4. Sueltos:
+   - `httpx` en `requirements.txt` sin uso (i-7985ee-bb2fde);
+   - las 14 inyecciones en la baseline de capas (i-7985ee-2bbbfd);
+   - los 6 avisos de reintentos (i-7985ee-05c4a0).
+5. Propuestas al bundle esperando al home: 5 de la primera jornada y las de este cierre.
+
+**No verificado.**
+- El runbook no se ejecutó.
+- El login real contra authentik no se probó.
+- MongoDB real, Modrinth y Pterodactyl no se tocaron.
+
+**Medido.** `main` (S1) y `fase-0` (S2 y S3) en verde en CI. `fase-0` corrió los jobs `gate` y `image`,
+con 21 tests.
+
 ## 2026-10-01 · s-7985ee-0a09db — S2 y S3: los datos de Mongo en un volumen con nombre, la imagen que arranca y el login con autorización
 
 **Qué.** En la rama `fase-0`:
@@ -48,8 +123,9 @@ está al final del archivo, para que nada entre este párrafo y la primera entra
 - Un healthcheck de la API espera `/health` (S7).
 
 **No verificado.**
-- La imagen, el compose y su rechazo sin `MONGO_VERSION` no se probaron aquí (no hay Docker): los
-  prueba el job `image` de CI en la rama.
+- La imagen, el compose y su rechazo sin `MONGO_VERSION` no se probaron en esta máquina (no hay
+  Docker). Los probó el job `image` de CI en la rama: todos los pasos en verde
+  ([run 36886674154](https://github.com/fabaindaiz/modpack-creator/actions/runs/36886674154)).
 - El runbook no se ejecutó.
 - El login real contra authentik no se probó.
 
