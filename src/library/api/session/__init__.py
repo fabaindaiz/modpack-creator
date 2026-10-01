@@ -6,7 +6,7 @@ from typing import Optional
 class SessionAuthorization(ABC):
     """Base class for authorized sessions"""
     @abstractmethod
-    async def headers(self, session: ClientSession, headers: dict = {}) -> dict:
+    async def headers(self, session: ClientSession, headers: Optional[dict] = None) -> dict:
         """Update the headers for the request with the authorization data.
 
         Args:
@@ -20,8 +20,8 @@ class SessionAuthorization(ABC):
 
 class NoAuthorization(SessionAuthorization):
     """Session class for no authorization"""
-    async def headers(self, session: ClientSession, headers: dict = {}) -> dict:
-        return headers
+    async def headers(self, session: ClientSession, headers: Optional[dict] = None) -> dict:
+        return dict(headers or {})
 
 class TokenAuthorization(SessionAuthorization):
     """Session class for token authorization
@@ -41,9 +41,8 @@ class TokenAuthorization(SessionAuthorization):
         self.__parameter: str = parameter
         super().__init__()
     
-    async def headers(self, session: ClientSession, headers: dict = {}) -> dict:
-        headers.update({self.__parameter: f"{self.__scheme}{self.__token.get_secret_value()}"})
-        return headers
+    async def headers(self, session: ClientSession, headers: Optional[dict] = None) -> dict:
+        return {**(headers or {}), self.__parameter: f"{self.__scheme}{self.__token.get_secret_value()}"}
 
 class APIKeyAuthorization(TokenAuthorization):
     """Session class for API key authorization

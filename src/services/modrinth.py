@@ -1,5 +1,5 @@
 import asyncio
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Sequence
 from src.library.api.client.modrinth import ModrinthAPI
 from src.database.modrinth import ModrinthDatabase
 from src.model.modrinth import ModrinthProject, ModrinthVersion
@@ -70,7 +70,7 @@ class ModrinthService():
             await ModrinthVersion.find_one({"id": version.id}).upsert(on_insert=version)
         return projects
     
-    async def project_version_update_filter(self, slug: str, loaders: list[str] = [], game_versions: list[str] = [], featured: bool = True) -> Iterable[ModrinthVersion]:
+    async def project_version_update_filter(self, slug: str, loaders: Sequence[str] = (), game_versions: Sequence[str] = (), featured: bool = True) -> Iterable[ModrinthVersion]:
         """
         Get all versions for a project.
         """

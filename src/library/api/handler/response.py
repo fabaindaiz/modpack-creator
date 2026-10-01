@@ -31,7 +31,7 @@ class ResponseHandler(ABC):
         pass
 
     @abstractmethod
-    async def headers(self, headers: dict = {}) -> dict:
+    async def headers(self, headers: Optional[dict] = None) -> dict:
         """Update the headers for the request with accept.
 
         Args:
@@ -59,9 +59,8 @@ class JsonResponse(ResponseHandler):
         self._json = await response.json()
         self._response = response
 
-    async def headers(self, headers: dict = {}) -> dict:
-        headers.update({"Accept": "application/json"})
-        return headers
+    async def headers(self, headers: Optional[dict] = None) -> dict:
+        return {**(headers or {}), "Accept": "application/json"}
     
     @property
     def status(self) -> int:
@@ -105,9 +104,8 @@ class StreamResponse(ResponseHandler):
         self._stream = await response.read()
         self._response = response
 
-    async def headers(self, headers: dict = {}) -> dict:
-        headers.update({"Accept": self._format.value})
-        return headers
+    async def headers(self, headers: Optional[dict] = None) -> dict:
+        return {**(headers or {}), "Accept": self._format.value}
     
     @property
     def status(self) -> int:

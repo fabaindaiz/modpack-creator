@@ -1,6 +1,6 @@
 import asyncio
 from typing import Iterable
-from src.model.pterodactyl.server import PterodactylFile, PterodactylServer
+from src.model.pterodactyl import PterodactylFile, PterodactylServer, PterodactylVersion
 from src.library.api.client.pterodactyl import PterodactylAPI
 from src.database.pterodactyl import PterodactylDatabase
 
@@ -61,4 +61,4 @@ class PterodactylService():
                 for file in files])
     
     async def version_update(self, version_id: str) -> PterodactylVersion:
-        pass
+        raise NotImplementedError

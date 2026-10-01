@@ -80,7 +80,7 @@ class PterodactylDatabase():
         if version_ids:
             query = query.find(In(PterodactylVersion.id, (PydanticObjectId(id) for id in version_ids)))
         if server_id:
-            query = query.find(PterodactylVersion.server.id == PydanticObjectId(server_id))
+            query = query.find(PterodactylVersion.server.id == PydanticObjectId(server_id)) # type: ignore
         return query
     
     async def version_get(self, version_id: str) -> PterodactylVersion:

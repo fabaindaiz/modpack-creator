@@ -39,7 +39,7 @@ class HttpAPI:
             proxy: Optional[str] = None,
             timeout: Optional[ClientTimeout] = DEFAULT_TIMEOUT,
             session_auth: SessionAuthorization = NO_AUTHORIZE,
-            session_headers: dict[str, str] = {},
+            session_headers: Optional[dict[str, str]] = None,
             session_kwargs_fun: Callable[[], dict[str, Any]] = KWARGS_DEFAULT,
             raise_for_status: bool = True,
             **kwargs) -> None:
@@ -47,7 +47,7 @@ class HttpAPI:
         self.proxy = proxy
         self.timeout = timeout
         self.session_auth = session_auth
-        self.session_headers = session_headers
+        self.session_headers = dict(session_headers or {})
         self.session_kwargs = kwargs
         self.session_kwargs_fun = session_kwargs_fun
         self.raise_for_status = raise_for_status
@@ -74,10 +74,10 @@ class HttpAPI:
     async def _request(self,
             method: METHOD,
             path: str,
-            query: dict[str, Any] = {},
-            json: dict[str, Any] = {},
+            query: Optional[dict[str, Any]] = None,
+            json: Optional[dict[str, Any]] = None,
             body: Optional[Any] = None,
-            headers: dict = {},
+            headers: Optional[dict] = None,
             session_auth: Optional[SessionAuthorization] = None,
             request: REQUEST = DEFAULT_REQUEST, # type: ignore
             response: RESPONSE = DEFAULT_RESPONSE, # type: ignore
@@ -103,11 +103,11 @@ class HttpAPI:
                 session_auth = session_auth or self.session_auth
                 request.set_use_body(method in POST_METHOD)
 
-                headers.update(self.session_headers)
+                headers = {**(headers or {}), **self.session_headers}
                 headers = await request.headers(headers)
                 headers = await response.headers(headers)
                 headers = await session_auth.headers(session, headers)
-                kwargs = await request.kwargs(query, json, body, kwargs)
+                kwargs = await request.kwargs(query or {}, json or {}, body, kwargs)
                 
                 async with session.request(method.value, path, headers=headers, **kwargs) as results:
                     await response.handle(results)

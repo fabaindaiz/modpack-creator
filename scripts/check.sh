@@ -1,12 +1,6 @@
 #!/bin/bash
-# Gate: verifica la copia de .agents/ (checksums, enlaces, privacidad, carrier.toml).
+# El gate local: lo mismo que corre CI (.github/workflows/check.yml, d-7985ee-fd2a8d).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-PY=""
-for c in python3.14 python3.13 python3.12 python3.11 /opt/homebrew/bin/python3.14 python3; do
-  if command -v "$c" >/dev/null && "$c" -c 'import sys; sys.exit(sys.version_info < (3, 11))' 2>/dev/null; then
-    PY="$c"; break
-  fi
-done
-[ -n "$PY" ] || { echo "check.sh: se necesita Python 3.11+" >&2; exit 1; }
-"$PY" .agents/tools/bundle.py verify
+command -v hatch >/dev/null || { echo "check.sh: falta hatch (https://hatch.pypa.io)" >&2; exit 1; }
+exec hatch run gate

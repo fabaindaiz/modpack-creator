@@ -9,6 +9,7 @@ class PterodactylModpack(Document):
     timestamp: datetime
 
 class PterodactylVersion(Document):
+    server: Link[PterodactylServer]
     file: PterodactylFile
 
     hashes: Optional[FileHash] = None

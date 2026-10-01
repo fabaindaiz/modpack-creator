@@ -34,7 +34,7 @@ class RequestHandler(ABC):
         return kwargs
 
     @abstractmethod
-    async def headers(self, headers: dict = {}) -> dict:
+    async def headers(self, headers: Optional[dict] = None) -> dict:
         """Update the headers for the request with content type.
 
         Args:
@@ -52,9 +52,8 @@ class JsonRequest(RequestHandler):
             raise HTTP_400_BAD_REQUEST("body is not allowed in this requests")
         return await super().kwargs(query, json, body, kwargs)
 
-    async def headers(self, headers: dict = {}) -> dict:
-        headers.update({"Content-Type": "application/json"} if self.use_body else {})
-        return headers
+    async def headers(self, headers: Optional[dict] = None) -> dict:
+        return {**(headers or {}), **({"Content-Type": "application/json"} if self.use_body else {})}
 
 class MultiPartRequest(RequestHandler):
     """Send MultiPart data in the request body"""
@@ -63,6 +62,5 @@ class MultiPartRequest(RequestHandler):
             raise HTTP_400_BAD_REQUEST("MultiPartRequest requires a method that uses a body")
         return await super().kwargs(query, json, body, kwargs)
 
-    async def headers(self, headers: dict = {}) -> dict:
-        headers.update({"Content-Type": "multipart/form-data"})
-        return headers
+    async def headers(self, headers: Optional[dict] = None) -> dict:
+        return {**(headers or {}), "Content-Type": "multipart/form-data"}

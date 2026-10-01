@@ -1,0 +1,47 @@
+[build-system]
+# hatch-requirements-txt lee las dependencias de requirements.txt, que es lo que instala
+# docker/Dockerfile: una sola lista para la imagen y para el entorno de desarrollo.
+requires = ["hatchling==1.32.4", "hatch-requirements-txt==0.4.1"]
+build-backend = "hatchling.build"
+
+[project]
+name = "modpack-creator"
+version = "0.0.0"
+description = "API para crear y gestionar modpacks de Minecraft"
+readme = "README.md"
+# `type X = ...` (PEP 695) en src/model/: el código no importa antes de 3.12.
+requires-python = ">=3.12"
+dynamic = ["dependencies"]
+
+[tool.hatch.metadata.hooks.requirements_txt]
+files = ["requirements.txt"]
+
+# Los imports son `src.*`, así que el paquete que se instala es `src`.
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+# El entorno del gate. Python 3.12 es el de docker/Dockerfile y .mypy.ini; scripts/audit.py
+# comprueba que los tres digan lo mismo.
+[tool.hatch.envs.default]
+installer = "uv"
+python = "3.12"
+dependencies = [
+  "mypy==2.3.1",
+  "pytest==9.1.1",
+]
+
+[tool.hatch.envs.default.scripts]
+bundle = [
+  "python .agents/tools/bundle.py verify",
+  "python .agents/tools/bundle.py ids docs/decisions.md docs/roadmap.md .claude/logs/agent-changelog.md",
+]
+audit = "python scripts/audit.py"
+typecheck = "mypy main.py src tests scripts"
+tests = "pytest {args}"
+# El gate: lo que corre CI (.github/workflows/check.yml) y scripts/check.sh. Nada aquí
+# escribe en el árbol ni sale a la red.
+gate = ["bundle", "audit", "typecheck", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

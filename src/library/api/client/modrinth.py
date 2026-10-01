@@ -1,6 +1,6 @@
 import backoff
 import json
-from typing import Generator
+from typing import Generator, Sequence
 from src.library.api import HttpAPI, METHOD
 from src.library.api.handler import JsonResponse
 from src.library.api.session import TokenAuthorization
@@ -49,7 +49,7 @@ class ModrinthAPI(HttpAPI):
         return projects, versions
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def project_versions(self, slug: str, loaders: list[str] = [], game_versions: list[str] = [], featured: bool = True) -> Generator[ModrinthVersion, None, None]:
+    async def project_versions(self, slug: str, loaders: Sequence[str] = (), game_versions: Sequence[str] = (), featured: bool = True) -> Generator[ModrinthVersion, None, None]:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
             path=f'project/{slug}/version',
@@ -95,7 +95,7 @@ class ModrinthAPI(HttpAPI):
         return (ModrinthVersion.parse(**item) for item in handler.json)
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def files_update_hash_post(self, hash: str, algorithm: str = "sha512", loaders: list[str] = [], game_versions: list[str] = []) -> ModrinthVersion:
+    async def files_update_hash_post(self, hash: str, algorithm: str = "sha512", loaders: Sequence[str] = (), game_versions: Sequence[str] = ()) -> ModrinthVersion:
         handler: JsonResponse = await self._request(
             method=METHOD.POST,
             path=f'version_file/{hash}/update',
@@ -107,7 +107,7 @@ class ModrinthAPI(HttpAPI):
         return ModrinthVersion.parse(**handler.json)
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def files_update_hash_post_many(self, hashes: list[str], algorithm: str = "sha512", loaders: list[str] = [], game_versions: list[str] = []) -> ModrinthVersion:
+    async def files_update_hash_post_many(self, hashes: list[str], algorithm: str = "sha512", loaders: Sequence[str] = (), game_versions: Sequence[str] = ()) -> ModrinthVersion:
         handler: JsonResponse = await self._request(
             method=METHOD.POST,
             path='version_file/update',

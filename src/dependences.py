@@ -37,7 +37,7 @@ class Dependences(containers.DeclarativeContainer):
     pterodactylDatabase = providers.Singleton(PterodactylDatabase)
 
     usersService = providers.Singleton(UsersService, usersDatabase)
-    modrinthService = providers.Singleton(ModrinthService, modrinthAPI, modpackDatabase)
+    modrinthService = providers.Singleton(ModrinthService, modrinthAPI, modrinthDatabase)
     pterodactylService = providers.Singleton(PterodactylService, pterodactylAPI, pterodactylDatabase)
     modpackService = providers.Singleton(ModpackService, modpackDatabase, modrinthDatabase)
 

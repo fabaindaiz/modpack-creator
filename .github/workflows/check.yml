@@ -1,0 +1,21 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gate:
+    # El gate de este repositorio (d-7985ee-fd2a8d): bundle, audit, mypy y tests, en Python 3.12,
+    # la versión de la imagen (d-7985ee-7bc399). Nada aquí toca MongoDB, Modrinth ni Pterodactyl.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Hatch
+        run: pipx install hatch==1.18.1
+      - name: Gate
+        run: hatch run gate
