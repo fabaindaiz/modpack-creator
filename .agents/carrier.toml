@@ -1,0 +1,9 @@
+# This repository's own fields. Carrier-owned: never listed in SHA256SUMS, never written by a release.
+carrier = "r-7985ee"
+adopted = "2026-10-01"
+upstream = "r-5ed7e8"
+adapted = [
+  "bundle.py runs under /opt/homebrew/bin/python3.14 through scripts/check.sh, because the machine's default python3 is 3.9 and cannot import tomllib",
+  "AGENTS.md is the canonical root file and CLAUDE.md only imports it, so every assistant reads one source",
+]
+declined = []
