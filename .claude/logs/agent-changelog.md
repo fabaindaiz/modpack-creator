@@ -5,6 +5,27 @@ introducción. Los commits de este repositorio fueron `wip` sin cuerpo: el *por 
 no quedaba en ninguna parte, y una sesión no ve lo que otra aprendió. La referencia del formato
 está al final del archivo, para que nada entre este párrafo y la primera entrada capture texto.
 
+## 2026-10-01 · s-7985ee-704f46 — fase-0 fusionada en main: el próximo update exige el runbook de MongoDB
+
+**Qué.**
+- `fase-0` (S2, S3 y el cierre) fusionada en `main` por fast-forward, por pedido explícito del dueño.
+  El cierre anterior (s-7985ee-0cc0fa) recomendaba esperar al runbook; el dueño eligió fusionar
+  ahora.
+- `README.md` y el roadmap ahora avisan que el próximo `./scripts/update.sh` en el servidor exige
+  seguir antes `docs/runbooks/migrar-mongo-a-volumen.md`.
+
+**Áreas.** `README.md`, `docs/roadmap.md`, este registro.
+
+**Por qué.** El dueño pidió cerrar la sesión de código con todos los cambios en `main`.
+
+**Arquitectura.** ✅ Cumple: solo documentos; el código es el de `6be8379`, ya verificado por CI.
+
+**Qué quedó sin hacer.** Lo mismo que s-7985ee-0cc0fa, salvo la fusión. **El riesgo cambió de lugar:**
+ya no lo frena la rama, lo frena seguir el runbook antes del próximo update. La rama `fase-0` sigue
+en el remoto; se puede borrar.
+
+**Medido.** CI en `main` después de la fusión: ver el push de este commit.
+
 ## 2026-10-01 · s-7985ee-0cc0fa — Cierre de la sesión del 2026-10-01: hallazgos, aprendizajes y pendientes
 
 Resumen de toda la jornada, de la adopción del método a S3. El detalle de cada parte está en las

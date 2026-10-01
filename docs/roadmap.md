@@ -12,12 +12,14 @@ Al cierre del 2026-10-01 (detalle en `.claude/logs/agent-changelog.md`, s-7985ee
 
 - **En `main`:** el método adoptado, el gate en CI, los arreglos de arranque y la fuga de cabeceras,
   la investigación y el plan, y S1 (dependencias fijas, i-7985ee-bb2fde).
-- **En la rama `fase-0`, con CI en verde, sin desplegar:**
+- **También en `main` desde el 2026-10-01 (fusionada por pedido del dueño), con CI en verde, sin
+  desplegar:**
   - S2: volumen de Mongo con nombre e imagen que arranca (i-7985ee-e21d5d, i-7985ee-a77cdc);
   - S3: login con autorización (i-7985ee-c64e06).
-- **Lo que bloquea:** desplegar `fase-0` siguiendo `docs/runbooks/migrar-mongo-a-volumen.md` y recién
-  después fusionarla en `main`. `scripts/update.sh` hace `git pull` y desplegaría un volumen de Mongo
-  vacío.
+- **Lo que bloquea: el próximo `./scripts/update.sh` en el servidor exige seguir antes
+  `docs/runbooks/migrar-mongo-a-volumen.md`** (respaldo, `docker/.env` con `MONGO_VERSION`,
+  `OIDC_ALLOWED_GROUPS` en `.env.yaml`, y restaurar). Sin eso, el volumen nuevo arranca vacío y
+  la API no arranca sin `OIDC_ALLOWED_GROUPS`.
 - **Lo siguiente:** S4, MongoDB real en CI (i-7985ee-ade111), según `plan-de-trabajo.md` §3.
 - **El trabajo de producto pendiente:** `wip pterodactyl version` (i-7985ee-4364a3), que depende de
   cómo identificar mods sin hashes del panel (i-7985ee-43df2f). `plan.md` lo pone en la fase 2.
@@ -234,7 +236,7 @@ nuevo cada vez. Es S1 de `plan-de-trabajo.md`.
   deprecada en favor de `httpx2`; `httpx` está en `requirements.txt` y el código no lo importa:
   revisar si sobra.
 
-### Los datos de MongoDB sobreviven y sus puertos no se publican — A medias (2026-10-01): hecha en la rama `fase-0`, falta desplegar · i-7985ee-e21d5d
+### Los datos de MongoDB sobreviven y sus puertos no se publican — A medias (2026-10-01): en `main`, falta desplegar · i-7985ee-e21d5d
 - **En qué quedó:** volúmenes con nombre `mongodb-data` y `mongodb-config`; `mongo:${MONGO_VERSION:?}` sin
   default; 27017 y 8081 atados a `127.0.0.1`; healthcheck con `mongosh` y `service_healthy`. El
   despliegue sigue `docs/runbooks/migrar-mongo-a-volumen.md` (respaldo, versión, restaurar).
@@ -252,7 +254,7 @@ Una clave `ptlc_` de un usuario **no admin**, subusuario de cada servidor con lo
 `services: mongo` con versión fija en `check.yml` y una base descartable por sesión. mongomock-motor
 no sirve con el cliente async de PyMongo que usa Beanie 2 (`research/2026-10-arquitectura.md` §2).
 
-### La imagen Docker arranca: copia main.py y recibe su configuración — A medias (2026-10-01): hecha en la rama `fase-0`, falta desplegar · i-7985ee-a77cdc
+### La imagen Docker arranca: copia main.py y recibe su configuración — A medias (2026-10-01): en `main`, falta desplegar · i-7985ee-a77cdc
 - **En qué quedó:** el Dockerfile copia `main.py` y `src/`; `.env.yaml` se monta de solo lectura
   (d-7985ee-358aa6); `run.sh` falla si falta. El job `image` de CI construye la imagen, importa
   `main` dentro y valida el compose (también que rechace un `MONGO_VERSION` vacío).
@@ -262,7 +264,7 @@ un `env_file`.
 - **Qué decidir primero:** ¿la configuración llega montando `.env.yaml` o con `env_file`?
 - **Chequeo:** construir la imagen en CI e importar `main` dentro de ella.
 
-### Quién puede iniciar sesión — A medias (2026-10-01): hecha en la rama `fase-0`, falta desplegar · i-7985ee-c64e06
+### Quién puede iniciar sesión — A medias (2026-10-01): en `main`, falta desplegar · i-7985ee-c64e06
 - **En qué quedó:** `authorize` (grupo de `OIDC_ALLOWED_GROUPS`, o email verificado de
   `OIDC_ALLOWED_EMAILS`; d-7985ee-8befe2); identidad `iss` + `sub` con migración en el primer
   login (d-7985ee-361ed0); sesión `https_only` y 12 h; CORS solo con orígenes nombrados; una sesión
