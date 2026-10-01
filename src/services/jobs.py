@@ -3,9 +3,11 @@ import logging
 import os
 import socket
 from datetime import datetime, timedelta, timezone
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any, Awaitable, Callable, Optional, Protocol, runtime_checkable
 from uuid import uuid4
 from src.database.jobs import JobDatabase
+from src.database.pterodactyl import PterodactylDatabase
+from src.exceptions import HTTP_409_CONFLICT
 from src.model.jobs import Job
 from src.services.pterodactyl import PterodactylService
 
@@ -15,6 +17,16 @@ logger = logging.getLogger("modpack.jobs")
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+def _aware(value: datetime) -> datetime:
+    """MongoDB gives datetimes back without a zone; they are UTC."""
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+class RetryLater(Exception):
+    """A handler asks for its job to be retried after `wait` (a 429's Retry-After, say)."""
+    def __init__(self, wait: timedelta, message: str) -> None:
+        super().__init__(message)
+        self.wait = wait
 
 class LeaseLost(Exception):
     """The job was claimed by another worker: this one must stop without writing."""
@@ -69,6 +81,12 @@ class JobWorker:
             await self.jobs.finish(job.id, self.owner, self.clock(), error=None)
         except LeaseLost:
             logger.warning("lease lost", extra={"job_id": str(job.id), "kind": job.kind})
+        except RetryLater as later:
+            if job.attempts >= job.max_attempts:
+                await self.jobs.finish(job.id, self.owner, self.clock(), error=str(later))
+            else:
+                await self.jobs.release(job.id, self.owner, error=str(later), now=self.clock(),
+                                        attempts=job.attempts, wait=later.wait)
         except Exception as error:
             message = f"{type(error).__name__}: {error}"
             logger.exception("job failed", extra={"job_id": str(job.id), "kind": job.kind, "attempt": job.attempts})
@@ -99,6 +117,13 @@ class JobWorker:
             except asyncio.TimeoutError:
                 pass
 
+@runtime_checkable
+class NotificationSink(Protocol):
+    """What JobService needs from the notifier (src/services/notify.py), which itself builds on
+    this module: a protocol, not an import, keeps the two from importing each other."""
+    async def notify(self, text: str) -> None: ...
+    def handlers(self) -> dict[str, Handler]: ...
+
 class JobService():
     """Queues jobs and holds the handlers the worker runs. Today only reads: scanning a server.
     Every job about a server uses the key server:{id}, so a scan and a future update of the same
@@ -106,9 +131,13 @@ class JobService():
     def __init__(self,
             jobDB: JobDatabase,
             pterodactylService: PterodactylService,
+            pterodactylDB: PterodactylDatabase,
+            notifier: Optional[NotificationSink] = None,
             ) -> None:
         self.jobDB = jobDB
         self.pterodactylService = pterodactylService
+        self.pterodactylDB = pterodactylDB
+        self.notifier = notifier
 
     async def enqueue_scan(self, server_id: str, full: bool = False) -> Job:
         """Queue a scan of a server; 409 if the server already has an active job."""
@@ -118,11 +147,67 @@ class JobService():
     async def get(self, job_id: str) -> Job:
         return await self.jobDB.get(job_id)
 
+    async def schedule_scans(self, now: datetime, every: timedelta, full_every: timedelta) -> list[Job]:
+        """
+        Queue a scan of every server whose last scan is older than `every`, full if its last full
+        scan is older than `full_every`: restoring a backup keeps old modification times, which
+        the cache cannot see (derived-copy-goes-stale-silently). A server with an active job is
+        skipped; the per-server index keeps several schedulers from queuing it twice.
+
+        :return: The jobs queued.
+        """
+        queued = []
+        for server in await self.pterodactylDB.server_find().to_list():
+            server_id = str(server.id)
+            scans = await self.pterodactylDB.scan_find(server_id)
+            if scans and _aware(scans[0].scanned_at) > now - every:
+                continue
+            last_full = next((s for s in scans if s.full), None)
+            full = last_full is None or _aware(last_full.scanned_at) <= now - full_every
+            try:
+                queued.append(await self.enqueue_scan(server_id, full=full))
+            except HTTP_409_CONFLICT:
+                continue
+        return queued
+
+    async def run_scheduler(self, stop: asyncio.Event, every: timedelta, full_every: timedelta,
+                            check: float = 300.0) -> None:
+        """Call schedule_scans every `check` seconds until `stop` is set."""
+        while not stop.is_set():
+            try:
+                await self.schedule_scans(utcnow(), every, full_every)
+            except Exception:
+                logger.exception("scheduler error")
+            try:
+                await asyncio.wait_for(stop.wait(), check)
+            except asyncio.TimeoutError:
+                pass
+
     def handlers(self) -> dict[str, Handler]:
-        return {"server_scan": self._server_scan}
+        handlers: dict[str, Handler] = {"server_scan": self._server_scan}
+        if self.notifier is not None:
+            handlers.update(self.notifier.handlers())
+        return handlers
 
     async def _server_scan(self, job: Job, context: JobContext) -> None:
+        server_id = job.payload["server_id"]
+
         async def scan() -> dict[str, Any]:
-            result = await self.pterodactylService.scan(job.payload["server_id"], full=bool(job.payload.get("full")))
+            result = await self.pterodactylService.scan(server_id, full=bool(job.payload.get("full")))
             return {"scan_id": str(result.id), "files": len(result.files)}
         await context.step("scan", scan)
+
+        async def drift() -> dict[str, Any]:
+            """Announce a change in how the server compares with its build: drifting, a new
+            difference, or back in sync. The same state is not announced twice."""
+            message = await self.pterodactylService.drift(server_id)
+            if message is None:
+                return {"notified": False}
+            previous = await self.pterodactylDB.scan_previous_drift(server_id)
+            await self.pterodactylDB.scan_set_drift(server_id, message)
+            # A first scan that matches is not news; anything else that changed is.
+            announce = message != previous and not (previous is None and message.startswith("✅"))
+            if announce and self.notifier is not None:
+                await self.notifier.notify(message)
+            return {"notified": announce}
+        await context.step("drift", drift)

@@ -76,9 +76,10 @@ class JobDatabase():
         return await self._owned(job_id, owner, {"$set": {
             "status": "failed" if error else "done", "active": False, "finished_at": now, "error": error}})
 
-    async def release(self, job_id: Any, owner: str, error: str, now: datetime, attempts: int) -> bool:
-        """Back to the queue for another attempt, after a wait that doubles each time, keeping
-        its checkpoint and key."""
-        wait = min(RETRY_BASE * 2 ** max(attempts - 1, 0), RETRY_MAX)
+    async def release(self, job_id: Any, owner: str, error: str, now: datetime, attempts: int,
+                      wait: Optional[timedelta] = None) -> bool:
+        """Back to the queue for another attempt, keeping its checkpoint and key: after `wait` if
+        given, else after a wait that doubles each time."""
+        wait = wait if wait is not None else min(RETRY_BASE * 2 ** max(attempts - 1, 0), RETRY_MAX)
         return await self._owned(job_id, owner, {"$set": {
             "status": "queued", "owner": None, "lease_until": None, "error": error, "available_at": now + wait}})

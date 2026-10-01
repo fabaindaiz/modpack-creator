@@ -198,6 +198,9 @@ class FakeScans:
         self.scanned.append((server_id, full))
         return type("Scan", (), {"id": "scan-1", "files": [1, 2, 3]})()
 
+    async def drift(self, server_id: str) -> None:
+        return None
+
 
 def test_a_scan_job_runs_the_scan_and_is_exclusive_per_server(mongo: MongoRunner) -> None:
     from typing import cast
@@ -206,7 +209,7 @@ def test_a_scan_job_runs_the_scan_and_is_exclusive_per_server(mongo: MongoRunner
 
     async def scenario() -> tuple[str, dict[str, Any], list[tuple[str, bool]], int]:
         scans = FakeScans()
-        service = JobService(jobDB=JobDatabase(), pterodactylService=cast(Any, scans))
+        service = JobService(jobDB=JobDatabase(), pterodactylService=cast(Any, scans), pterodactylDB=cast(Any, None))
         job = await service.enqueue_scan("abc", full=True)
         with pytest.raises(HTTPException) as refused:
             await service.enqueue_scan("abc")
@@ -214,7 +217,8 @@ def test_a_scan_job_runs_the_scan_and_is_exclusive_per_server(mongo: MongoRunner
         stored = await service.get(str(job.id))
         return stored.status, stored.checkpoint, scans.scanned, refused.value.status_code
 
-    assert mongo(scenario) == ("done", {"scan": {"scan_id": "scan-1", "files": 3}}, [("abc", True)], 409)
+    assert mongo(scenario) == ("done", {"scan": {"scan_id": "scan-1", "files": 3}, "drift": {"notified": False}},
+                               [("abc", True)], 409)
 
 
 def test_a_failed_attempt_waits_before_the_next_one(mongo: MongoRunner) -> None:
@@ -235,3 +239,38 @@ def test_a_failed_attempt_waits_before_the_next_one(mongo: MongoRunner) -> None:
         return too_soon, later, stored.attempts
 
     assert mongo(scenario) == (False, True, 2)
+
+
+# El programador de escaneos.
+
+
+def test_the_scheduler_queues_what_is_due_and_a_full_scan_when_the_last_one_is_old(mongo: MongoRunner) -> None:
+    from typing import cast
+
+    from src.database.pterodactyl import PterodactylDatabase
+    from src.model.pterodactyl import PterodactylServer, ServerScan
+    from src.services.jobs import JobService
+
+    def server(name: str) -> PterodactylServer:
+        return PterodactylServer(identifier=name, internal_id=1, uuid=name, name=name, node="n", description="",
+                                 status=None, is_suspended=False, is_installing=False, is_transferring=False)
+
+    async def scenario() -> tuple[dict[str, bool], list[Job]]:
+        db = PterodactylDatabase()
+        never = await db.server_insert(server("never"))
+        fresh = await db.server_insert(server("fresh"))
+        stale_full = await db.server_insert(server("stale"))
+        await db.scan_insert(ServerScan(server_id=fresh.id, directory="/mods", scanned_at=T0 - timedelta(hours=1), full=True, files=[]))  # type: ignore[arg-type]
+        await db.scan_insert(ServerScan(server_id=stale_full.id, directory="/mods", scanned_at=T0 - timedelta(days=8), full=True, files=[]))  # type: ignore[arg-type]
+        await db.scan_insert(ServerScan(server_id=stale_full.id, directory="/mods", scanned_at=T0 - timedelta(hours=7), full=False, files=[]))  # type: ignore[arg-type]
+        service = JobService(jobDB=JobDatabase(), pterodactylService=cast(Any, None), pterodactylDB=db)
+        first = await service.schedule_scans(T0, every=timedelta(hours=6), full_every=timedelta(days=7))
+        again = await service.schedule_scans(T0, every=timedelta(hours=6), full_every=timedelta(days=7))
+        names = {str(never.id): "never", str(stale_full.id): "stale"}
+        return {names[j.payload["server_id"]]: j.payload["full"] for j in first}, again
+
+    queued, again = mongo(scenario)
+    # "fresh" se escaneó hace una hora: no toca. "stale" toca, y completo: el último completo
+    # tiene 8 días (una restauración conserva fechas viejas; la caché no lo vería).
+    assert queued == {"never": True, "stale": True}
+    assert again == []

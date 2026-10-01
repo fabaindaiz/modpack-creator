@@ -23,6 +23,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 import src.model as model
 import asyncio
+from datetime import timedelta
 from src.services.jobs import JobWorker
 
 @asynccontextmanager
@@ -37,10 +38,18 @@ async def lifespan(app: FastAPI):
     if getenv("JOBS_WORKER", "on").strip().lower() != "off":
         worker = asyncio.create_task(
             JobWorker(container.jobDatabase(), container.jobService().handlers()).run_forever(stop))
+    # Periodic scans, only if SCAN_EVERY_HOURS is set; a full one every SCAN_FULL_EVERY_DAYS.
+    scheduler = None
+    scan_every = getenv_opt("SCAN_EVERY_HOURS")
+    if scan_every:
+        scheduler = asyncio.create_task(container.jobService().run_scheduler(
+            stop, every=timedelta(hours=float(scan_every)),
+            full_every=timedelta(days=float(getenv("SCAN_FULL_EVERY_DAYS", "7")))))
     yield
     stop.set()
-    if worker is not None:
-        await worker
+    for task in (worker, scheduler):
+        if task is not None:
+            await task
     await dependences.close_clients(container)
 
 app = FastAPI(title="Modpack Creator API",

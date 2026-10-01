@@ -228,3 +228,21 @@ def test_a_build_without_a_loader_version_does_not_export(mongo: MongoRunner) ->
         return build.loader_version, refused.value.status_code
 
     assert mongo(scenario) == (None, 409)
+
+
+def test_a_new_build_is_announced(mongo: MongoRunner) -> None:
+    from tests.test_notify import Recorder
+
+    async def scenario() -> list[str]:
+        recorder = Recorder()
+        service = ModpackService(modpackDB=ModpackDatabase(), modrinthDB=ModrinthDatabase(),
+                                 modrinthAPI=cast(Any, RecordedModrinthAPI()), loaderAPI=cast(Any, FakeLoaders()),
+                                 notifier=cast(Any, recorder))
+        bundle = await service.bundle_create(ModpackBundle(name="Survival pack", description="", version="26.3",
+                                                           loader=MinecraftLoaders.fabric))
+        await service.project_add(str(bundle.id), ["iris"], ProjectOrigin.pack)
+        await service.build_create(str(bundle.id))
+        return recorder.sent
+
+    [message] = mongo(scenario)
+    assert "Survival pack" in message and "build 1" in message

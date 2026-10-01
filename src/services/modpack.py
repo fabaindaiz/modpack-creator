@@ -5,6 +5,7 @@ from src.database import ModpackDatabase, ModrinthDatabase
 from src.library.api.client.loaders import LoaderMetaAPI
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.mrpack import mrpack_index, write_mrpack
+from src.services.jobs import NotificationSink
 from src.library.resolution import Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, resolve
 from src.model.modpack import ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject, ModrinthVersion
@@ -23,11 +24,13 @@ class ModpackService():
             modrinthDB: ModrinthDatabase,
             modrinthAPI: ModrinthAPI,
             loaderAPI: LoaderMetaAPI,
+            notifier: Optional[NotificationSink] = None,
             ) -> None:
         self.modpackDB = modpackDB
         self.modrinthDB = modrinthDB
         self.modrinthAPI = modrinthAPI
         self.loaderAPI = loaderAPI
+        self.notifier = notifier
 
     async def bundle_find(self) -> list[ModpackBundle]:
         return await self.modpackDB.bundle_find().to_list()
@@ -173,6 +176,8 @@ class ModpackService():
             bundle_id=bundle.id, number=number, created_at=datetime.now(timezone.utc),  # type: ignore[arg-type]
             loader_version=loader_version, request=request, lock=lock))
         await self.modpackDB.bundle_latest_build(bundle_id, number)
+        if self.notifier is not None:
+            await self.notifier.notify(f"📦 {bundle.name}: build {number} creado, {len(lock.entries)} archivos.")
         return build
 
     async def build_find(self, bundle_id: str) -> list[ModpackBuild]:

@@ -16,6 +16,7 @@ from src.database import (
     ModrinthDatabase,
     PterodactylDatabase,
 )
+from src.services.notify import Notifier
 from src.services import (
     HealthService,
     JobService,
@@ -39,6 +40,7 @@ class Dependences(containers.DeclarativeContainer):
 
     healthDatabase = providers.Singleton(HealthDatabase)
     jobDatabase = providers.Singleton(JobDatabase)
+    notifier = providers.Singleton(Notifier, jobDatabase)
     usersDatabase = providers.Singleton(UsersDatabase)
     modpackDatabase = providers.Singleton(ModpackDatabase)
     modrinthDatabase = providers.Singleton(ModrinthDatabase)
@@ -48,13 +50,14 @@ class Dependences(containers.DeclarativeContainer):
     usersService = providers.Singleton(UsersService, usersDatabase)
     modrinthService = providers.Singleton(ModrinthService, modrinthAPI, modrinthDatabase)
     pterodactylService = providers.Singleton(PterodactylService, pterodactylAPI, pterodactylDatabase, modrinthAPI, modrinthDatabase, modpackDatabase)
-    modpackService = providers.Singleton(ModpackService, modpackDatabase, modrinthDatabase, modrinthAPI, loaderAPI)
-    jobService = providers.Singleton(JobService, jobDatabase, pterodactylService)
+    modpackService = providers.Singleton(ModpackService, modpackDatabase, modrinthDatabase, modrinthAPI, loaderAPI, notifier)
+    jobService = providers.Singleton(JobService, jobDatabase, pterodactylService, pterodactylDatabase, notifier)
 
 async def close_clients(container: Dependences) -> None:
     """Close the HTTP session each client keeps (i-7985ee-57034c); the lifespan calls it on shutdown."""
     for client in (container.downloader(), container.modrinthAPI(), container.pterodactylAPI(), container.loaderAPI()):
         await client.close()
+    await container.notifier().close()
 
 @inject
 def configure_oauth2(
