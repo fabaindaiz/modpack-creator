@@ -19,4 +19,5 @@ WORKDIR /app
 COPY main.py .
 COPY src ./src
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# --no-access-log: RequestIdMiddleware writes one JSON line per request, with its id.
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]
