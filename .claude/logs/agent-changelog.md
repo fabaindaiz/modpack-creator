@@ -5,6 +5,57 @@ introducción. Los commits de este repositorio fueron `wip` sin cuerpo: el *por 
 no quedaba en ninguna parte, y una sesión no ve lo que otra aprendió. La referencia del formato
 está al final del archivo, para que nada entre este párrafo y la primera entrada capture texto.
 
+## 2026-10-01 · s-7985ee-7c3cda — Investigación de plataformas similares y plan en fases
+
+**Qué.**
+- Cuatro informes en `docs/research/`:
+  - 23 plataformas y herramientas similares comparadas;
+  - resolución de dependencias, metadatos de loaders y formatos de exportación;
+  - operar servidores de Pterodactyl con backup y rollback;
+  - arquitectura (trabajos durables, tests con Mongo, autorización, avisos, UI, observabilidad).
+- `docs/plan.md`: la posición del proyecto ("un Solder con dependencias"), el modelo objetivo
+  (pack → reglas → build inmutable → despliegue ← manifiesto observado) y cinco fases.
+- 14 ítems nuevos en `docs/roadmap.md`.
+- Los informes enlazados desde `docs/references.md` y el mapa de `AGENTS.md`.
+- Antes, en esta misma fecha: la investigación de hashes en Pterodactyl (i-7985ee-43df2f).
+
+**Áreas.** `docs/plan.md`, `docs/research/`, `docs/roadmap.md`, `docs/references.md`, `AGENTS.md`.
+
+**Por qué.** El dueño pidió una investigación detallada de plataformas similares y de cómo seguir el
+proyecto, con planes, ideas e informes, y cerrar la sesión.
+
+**Arquitectura.** ✅ Cumple: solo documentos; ningún cambio de código.
+
+**Qué salió mal en el camino.**
+- Un informe se escribió con un id de roadmap inventado como marcador. Se reemplazó por los ids
+  acuñados antes de enlazarlo.
+- `bundle.py ids` pasaba con 0 errores pero reconocía 21 de 42 definiciones: el formato de
+  encabezado del roadmap (id antes del `·`, como dice la plantilla del método) no es el que lee la
+  herramienta. Al mover los ids después del `·`, el chequeo marcó 5 definiciones dobles en la tabla
+  de costos; esa tabla ahora cita los ids en la segunda columna. Queda en `adapted`.
+
+**Qué quedó sin hacer.**
+- Ninguna fase del plan empezó.
+- Hallazgos nuevos que el código actual no cumple:
+  - el volumen de Mongo está comentado en `docker/docker-compose.yaml`, así que recrear el
+    contenedor borra la base (i-7985ee-e21d5d);
+  - `ModrinthProject` exige `client_side`/`server_side`, que están deprecados;
+  - Minecraft numera por año (`26.x`);
+  - `ModrinthService.project_dependencies` usa un endpoint que mezcla todas las versiones
+    (i-7985ee-f4ba63).
+
+**No verificado.**
+- Las páginas de add-ons de BuiltByBit (403), Shockbyte y Apex.
+- El significado de `embedded` en las dependencias de Modrinth (la spec no lo define).
+- Que un egg pueda correr packwiz antes de Java.
+- El límite por webhook de Discord.
+- Todo está marcado así en cada informe.
+
+**Medido.** Llamadas reales a las APIs públicas, citadas en los informes:
+- `/tag/game_version` tiene 917 entradas; la última release es `26.3`;
+- `POST /version_files/update` resolvió una versión vieja a la más nueva compatible;
+- Quilt meta devolvió 307 loaders sin filtrar por versión.
+
 ## 2026-10-01 · s-7985ee-134d63 — Bootstrap del método: gate en CI con hatch, audit, tests de arranque y la fuga de cabeceras corregida
 
 **Qué.**

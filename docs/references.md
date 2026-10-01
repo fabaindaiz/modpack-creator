@@ -109,6 +109,17 @@ bien escrita. Todas se leyeron en la fuente primaria el 2026-10-01.
 - **[CurseForge — fingerprints](https://docs.curseforge.com/rest-api/)** — `POST /v1/fingerprints`
   usa murmur2 y exige una API key aprobada. Solo importa si aparecen mods que no están en Modrinth.
 
+## Investigaciones completas
+
+Las fuentes de estos informes no se repiten aquí: cada uno cita las suyas y dice qué cambió.
+
+| Informe | Qué cambió |
+|---|---|
+| [`research/2026-10-plataformas-similares.md`](research/2026-10-plataformas-similares.md) | el modelo objetivo de `plan.md` (builds inmutables, manifiesto por servidor, contenido del admin aparte); i-7985ee-098611, i-7985ee-5c7506, i-7985ee-063a3a |
+| [`research/2026-10-resolucion-y-formatos.md`](research/2026-10-resolucion-y-formatos.md) | versiones por año, `environment`, `/project/{id}/dependencies` inservible para resolver; i-7985ee-f4ba63, i-7985ee-7f735a |
+| [`research/2026-10-operacion-pterodactyl.md`](research/2026-10-operacion-pterodactyl.md) | el procedimiento de actualización y el usuario de servicio; i-7985ee-495708, i-7985ee-63226e |
+| [`research/2026-10-arquitectura.md`](research/2026-10-arquitectura.md) | trabajos en Mongo sin Redis, tests con Mongo real, el volumen de Mongo; i-7985ee-0ec295, i-7985ee-ade111, i-7985ee-e21d5d |
+
 ## Qué leer primero
 
 | Si vas a tocar… | Lee | Y cuidado con |
@@ -117,3 +128,6 @@ bien escrita. Todas se leyeron en la fuente primaria el 2026-10-01.
 | `src/library/api/client/pterodactyl.py` | las rutas del Client API | métodos y cuerpos JSON; las acciones sobre el servidor no se reintentan (d-7985ee-05d032) |
 | `main.py` (middlewares) | Starlette CORS y sessions | `same_site` de la sesión (d-7985ee-4e4aee) |
 | `src/model/*` | Beanie, índices | un índice único cambia lo que la base acepta |
+| la resolución de dependencias o `game_versions` | `research/2026-10-resolucion-y-formatos.md` | versiones por año (`26.x`); no usar `/project/{id}/dependencies` |
+| cualquier acción sobre un servidor (energía, archivos, backups) | `research/2026-10-operacion-pterodactyl.md` | un 204 no prueba nada; `restore` trunca sin parar |
+| trabajos en segundo plano, tests con Mongo, login | `research/2026-10-arquitectura.md` | Beanie 2 no usa Motor: mongomock-motor no sirve |

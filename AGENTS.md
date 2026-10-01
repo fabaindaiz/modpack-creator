@@ -109,7 +109,9 @@ qué no se pudo verificar.
 | Dónde | Qué responde |
 |---|---|
 | `docs/decisions.md` | qué está decidido y qué lo hace cumplir |
+| `docs/plan.md` | la visión, el modelo objetivo y el orden en fases |
 | `docs/roadmap.md` | qué está en curso, qué sigue y dónde choca |
+| `docs/research/` | las investigaciones completas: plataformas similares, resolución, Pterodactyl, arquitectura |
 | `docs/references.md` | qué dicen las especificaciones externas, y qué cambió aquí por eso |
 | `docs/requirements.md` | requisitos funcionales |
 | `scripts/audit.py` | las reglas estructurales, ejecutables |
