@@ -39,10 +39,13 @@ def test_di_wiring_matches_constructor_types() -> None:
         init = getattr(cls, "__init__")
         hints = typing.get_type_hints(init)
         params = [p for p in inspect.signature(init).parameters.values() if p.name != "self"]
-        assert len(params) == len(provider.args), f"{name}: {len(provider.args)} args for {len(params)} parameters"
+        required = [p for p in params if p.default is inspect.Parameter.empty]
+        # Every required parameter is injected; an optional one may be left to its default.
+        assert len(required) <= len(provider.args) <= len(params), (
+            f"{name}: {len(provider.args)} args for {len(required)} required of {len(params)} parameters")
         for param, arg in zip(params, provider.args):
             injected = arg.provides
-            expected = hints[param.name]
+            expected = typing.get_args(hints[param.name])[0] if typing.get_origin(hints[param.name]) in (typing.Union, __import__("types").UnionType) else hints[param.name]
             assert issubclass(injected, expected), (
                 f"{name}: {param.name} expects {expected.__name__}, gets {injected.__name__}")
             checked += 1
@@ -63,3 +66,18 @@ def test_shutdown_closes_the_session_of_every_http_client() -> None:
         return [client._session is None for client in clients]
 
     assert asyncio.run(scenario()) == [True, True, True]
+
+
+def test_the_oidc_client_uses_httpx2_not_the_deprecated_httpx_fallback() -> None:
+    """Authlib 1.8 deprecó su integración con httpx en favor de httpx2, y cae a httpx solo si
+    httpx2 no está (authlib/integrations/httpx_client/_compat.py)."""
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-W", "error::DeprecationWarning", "-c",
+         "import authlib.integrations.starlette_client, authlib.integrations.httpx_client._compat as c; "
+         "print(c.httpx2.__name__)"],
+        capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr[-500:]
+    assert result.stdout.strip() == "httpx2"
