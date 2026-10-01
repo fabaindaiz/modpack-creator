@@ -1,19 +1,26 @@
+import asyncio
 from beanie import PydanticObjectId
 from beanie.operators import In
+from beanie.odm.queries.find import FindOne
+from beanie import Document
 from beanie.odm.documents import FindMany
 from typing import Iterable, Optional
 from src.model.modrinth import (
     ModrinthProject,
     ModrinthVersion,
 )
-from src.model.utils import MinecraftLoaders
 from src.exceptions import *
 
 class ModrinthDatabase():
+    @staticmethod
+    async def _upsert[D: Document](query: FindOne[D], document: D) -> None:
+        """Insert the document, or set every field of the one the query finds to its values."""
+        await query.upsert({"$set": document.model_dump(exclude={"id", "revision_id"})}, on_insert=document)
+
     def project_find(self,
             project_ids: Optional[list[str]] = None,
             game_version: Optional[str] = None,
-            loader: Optional[MinecraftLoaders] = None
+            loader: Optional[str] = None
             ) -> FindMany[ModrinthProject]:
         """
         Get all modrinth projects.
@@ -47,15 +54,21 @@ class ModrinthDatabase():
         """
         return await ModrinthProject.create(project)
 
-    async def project_insert_many(self, projects: Iterable[ModrinthProject]) -> Iterable[ModrinthProject]:
+    async def project_upsert_many(self, projects: Iterable[ModrinthProject]) -> list[ModrinthProject]:
         """
-        Add multiple projects to the database.
-        
-        :param projects: The list of ModrinthProject objects to add.
+        Store each project as Modrinth returned it: insert it, or refresh the one with its project_id.
+
+        One write per project, so a project already stored neither stops nor loses the others
+        (an ordered insert_many aborts at the first duplicate key).
+
+        :param projects: The ModrinthProject objects to store.
+        :return: The stored ModrinthProject objects.
         """
-        result = await ModrinthProject.insert_many(projects)
-        return await self.project_find(project_ids=result.inserted_ids).to_list()
-    
+        # One write per key: two concurrent upserts of one key race on the unique index.
+        projects = list({p.project_id: p for p in projects}.values())
+        await asyncio.gather(*[self._upsert(ModrinthProject.find_one(ModrinthProject.project_id == project.project_id), project) for project in projects])
+        return await ModrinthProject.find(In(ModrinthProject.project_id, [p.project_id for p in projects])).to_list()
+
     async def project_save(self, project: ModrinthProject, project_id: Optional[PydanticObjectId] = None) -> ModrinthProject:
         """
         Add a project to the database.
@@ -102,14 +115,16 @@ class ModrinthDatabase():
         """
         return await ModrinthVersion.create(version)
     
-    async def version_insert_many(self, versions: Iterable[ModrinthVersion]) -> Iterable[ModrinthVersion]:
+    async def version_upsert_many(self, versions: Iterable[ModrinthVersion]) -> list[ModrinthVersion]:
         """
-        Add multiple versions to the database.
-        
-        :param versions: The list of ModrinthVersion objects to add.
+        Store each version as Modrinth returned it: insert it, or refresh the one with its version_id.
+
+        :param versions: The ModrinthVersion objects to store.
+        :return: The stored ModrinthVersion objects.
         """
-        result = await ModrinthVersion.insert_many(versions)
-        return await self.version_find(version_ids=result.inserted_ids).to_list()
+        versions = list({v.version_id: v for v in versions}.values())
+        await asyncio.gather(*[self._upsert(ModrinthVersion.find_one(ModrinthVersion.version_id == version.version_id), version) for version in versions])
+        return await ModrinthVersion.find(In(ModrinthVersion.version_id, [v.version_id for v in versions])).to_list()
 
     async def version_save(self, version: ModrinthVersion, version_id: Optional[PydanticObjectId] = None) -> ModrinthVersion:
         """

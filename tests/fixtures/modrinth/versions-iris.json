@@ -1,0 +1,134 @@
+[
+ {
+  "author_id": "DzLrfrbK",
+  "changelog": "Fixes a lot of 26.3 bugs",
+  "changelog_url": null,
+  "date_published": "2026-09-30T02:57:43.801379Z",
+  "dependencies": [
+   {
+    "dependency_type": "required",
+    "file_name": null,
+    "project_id": "AANobbMI",
+    "version_id": "bAZQdGpg"
+   }
+  ],
+  "downloads": 116657,
+  "environment": "client_only",
+  "featured": false,
+  "files": [
+   {
+    "file_type": null,
+    "filename": "iris-fabric-1.11.7+mc26.3.jar",
+    "hashes": {
+     "sha1": "fa03640ba1e4ef2f7ae3619c6373a06e46d0ba2c",
+     "sha512": "d8d3312f77fc52a48e4a6cd836fda33669bdebcb4de0b8c0d30adc808b287330a533e0baef355cc1ce6336a26851d9775369a802a4666b7b7a6266af20088f42"
+    },
+    "id": "qytberMI",
+    "primary": true,
+    "size": 2850938,
+    "url": "https://cdn.modrinth.com/data/YL57xq9U/versions/vTN4NRGW/iris-fabric-1.11.7%2Bmc26.3.jar"
+   }
+  ],
+  "game_versions": [
+   "26.3"
+  ],
+  "id": "vTN4NRGW",
+  "loaders": [
+   "fabric"
+  ],
+  "name": "Iris 1.11.7 for Fabric 26.3",
+  "project_id": "YL57xq9U",
+  "requested_status": null,
+  "status": "listed",
+  "version_number": "1.11.7+26.3-fabric",
+  "version_type": "release"
+ },
+ {
+  "author_id": "DzLrfrbK",
+  "changelog": "Fixes support for latest Sodium",
+  "changelog_url": null,
+  "date_published": "2026-09-29T16:31:20.123897Z",
+  "dependencies": [
+   {
+    "dependency_type": "required",
+    "file_name": null,
+    "project_id": "AANobbMI",
+    "version_id": "rkdTcxoT"
+   }
+  ],
+  "downloads": 55088,
+  "environment": "client_only",
+  "featured": false,
+  "files": [
+   {
+    "file_type": null,
+    "filename": "iris-fabric-1.10.8+mc1.21.11.jar",
+    "hashes": {
+     "sha1": "acfbe6d065b6c35d85c14da04d35e073363f3acf",
+     "sha512": "f0cad4b6af593b6fc25738c4ef5a2b346125f9693d25a0d486858e54798d2ea87b24d1497e1bb4391729d7d9e490f42771f7fb468d4e1420e372d8643f9e2055"
+    },
+    "id": "YYDuIEH3",
+    "primary": true,
+    "size": 2807718,
+    "url": "https://cdn.modrinth.com/data/YL57xq9U/versions/ka9PDlsN/iris-fabric-1.10.8%2Bmc1.21.11.jar"
+   }
+  ],
+  "game_versions": [
+   "1.21.11"
+  ],
+  "id": "ka9PDlsN",
+  "loaders": [
+   "fabric"
+  ],
+  "name": "Iris 1.10.8 for Fabric 1.21.11",
+  "project_id": "YL57xq9U",
+  "requested_status": null,
+  "status": "listed",
+  "version_number": "1.10.8+1.21.11-fabric",
+  "version_type": "release"
+ },
+ {
+  "author_id": "DzLrfrbK",
+  "changelog": "Fixes a bug stopping macOS from loading.",
+  "changelog_url": null,
+  "date_published": "2026-09-15T18:18:28.462406Z",
+  "dependencies": [
+   {
+    "dependency_type": "required",
+    "file_name": null,
+    "project_id": "AANobbMI",
+    "version_id": "bAZQdGpg"
+   }
+  ],
+  "downloads": 1280399,
+  "environment": "client_only",
+  "featured": false,
+  "files": [
+   {
+    "file_type": null,
+    "filename": "iris-fabric-1.11.6+mc26.3.jar",
+    "hashes": {
+     "sha1": "63493cf8c58754bf6b9db297b895aeb17393e4df",
+     "sha512": "cd0fdc5a275a851b3d72e3e699c957671f293f5c87951736ad83adcdabaa58f533e9791110a227c7817b312269c32c063121b183a39d8c11a22e55d2c76cdb25"
+    },
+    "id": "euHUhyQW",
+    "primary": true,
+    "size": 2849091,
+    "url": "https://cdn.modrinth.com/data/YL57xq9U/versions/bAdKrpw8/iris-fabric-1.11.6%2Bmc26.3.jar"
+   }
+  ],
+  "game_versions": [
+   "26.3"
+  ],
+  "id": "bAdKrpw8",
+  "loaders": [
+   "fabric"
+  ],
+  "name": "Iris 1.11.6 for Fabric 26.3",
+  "project_id": "YL57xq9U",
+  "requested_status": null,
+  "status": "listed",
+  "version_number": "1.11.6+26.3-fabric",
+  "version_type": "release"
+ }
+]

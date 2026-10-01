@@ -1,0 +1,76 @@
+[
+ {
+  "author_id": "TEZXhE2U",
+  "changelog": "Sodium 0.9.3-alpha.1 fixes graphical glitches on Intel iGPUs, fluid culling for unusual blocks, and adds the macOS fullscreen menu visibility option.\n\n- Fix graphical glitches on some Intel iGPUs\n- Show macOS fullscreen menu visibility option on the Video Settings screen\n- Fix Fluid Culling For Non-Full Blocks With Unusual Shapes ([#3916](https://github.com/CaffeineMC/sodium/pull/3916))",
+  "changelog_url": null,
+  "date_published": "2026-09-20T21:27:07.494280Z",
+  "dependencies": [],
+  "downloads": 394501,
+  "environment": "client_only",
+  "featured": false,
+  "files": [
+   {
+    "file_type": null,
+    "filename": "sodium-fabric-0.9.3-alpha.1+mc26.3.jar",
+    "hashes": {
+     "sha1": "5d88caf6f3e182cd39d0fb0d2e7200c5e613f287",
+     "sha512": "8aa044fea0185855e2ca0971b4e3b3bc1ee4c616e3a7d6ca4d4b979fbb99340678c0bf6acd16be04095bc885b75b4caf95401486e91b65239385e98fab6d3542"
+    },
+    "id": "s1o3kvDe",
+    "primary": true,
+    "size": 1911459,
+    "url": "https://cdn.modrinth.com/data/AANobbMI/versions/v4PSXean/sodium-fabric-0.9.3-alpha.1%2Bmc26.3.jar"
+   }
+  ],
+  "game_versions": [
+   "26.3"
+  ],
+  "id": "v4PSXean",
+  "loaders": [
+   "fabric"
+  ],
+  "name": "Sodium 0.9.3-alpha.1 for Fabric 26.3",
+  "project_id": "AANobbMI",
+  "requested_status": null,
+  "status": "listed",
+  "version_number": "mc26.3-0.9.3-alpha.1-fabric",
+  "version_type": "alpha"
+ },
+ {
+  "author_id": "TEZXhE2U",
+  "changelog": "Sodium 0.8.15-beta.1 adds optimized pitcher plant models, and fixes two bugs.\n\n- Optimize pitcher plant models ([#3881](https://github.com/CaffeineMC/sodium/pull/3881))\n- Correctly handle vertexIndex state when discarding invalid translucent quads\n- Fix Fluid Culling For Non-Full Blocks With Unusual Shapes ([#3916](https://github.com/CaffeineMC/sodium/pull/3916))",
+  "changelog_url": null,
+  "date_published": "2026-09-20T21:25:58.390320Z",
+  "dependencies": [],
+  "downloads": 236777,
+  "environment": "client_only",
+  "featured": false,
+  "files": [
+   {
+    "file_type": null,
+    "filename": "sodium-fabric-0.8.15-beta.1+mc1.21.11.jar",
+    "hashes": {
+     "sha1": "5469cef6f5dddd72a1216d9a15393c90d8eb5f33",
+     "sha512": "9d4270f5cff0a128bcadbf74f272c2de53fbe30389f307273bbcbaafdc30618ab30eea5f51b8bb7f95c0a17066c3f14c9323a7082cc809afd14994c7767534fa"
+    },
+    "id": "LuTpGchA",
+    "primary": true,
+    "size": 1914874,
+    "url": "https://cdn.modrinth.com/data/AANobbMI/versions/RB7CDjTS/sodium-fabric-0.8.15-beta.1%2Bmc1.21.11.jar"
+   }
+  ],
+  "game_versions": [
+   "1.21.11"
+  ],
+  "id": "RB7CDjTS",
+  "loaders": [
+   "fabric"
+  ],
+  "name": "Sodium 0.8.15-beta.1 for Fabric 1.21.11",
+  "project_id": "AANobbMI",
+  "requested_status": null,
+  "status": "listed",
+  "version_number": "mc1.21.11-0.8.15-beta.1-fabric",
+  "version_type": "beta"
+ }
+]

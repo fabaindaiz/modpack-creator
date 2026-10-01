@@ -2,7 +2,8 @@ from beanie import Document, Indexed
 from datetime import datetime
 from pydantic import BaseModel
 from typing import Annotated, Optional
-from src.model.utils import FileHash, MinecraftLoaders
+from src.model.modrinth.project import ModrinthEnvironment
+from src.model.utils import FileHash
 from src.library.datatypes import CustomEnum
 
 class ModrinthVersionType(CustomEnum):
@@ -40,7 +41,7 @@ class ModrinthVersionFile(BaseModel):
 
 class ModrinthVersion(Document):
     version_id: Annotated[str, Indexed(unique=True)]
-    project_id: Annotated[str, Indexed(unique=True)]
+    project_id: Annotated[str, Indexed()]
     author_id: str
 
     name: str
@@ -50,7 +51,9 @@ class ModrinthVersion(Document):
     downloads: int
 
     game_versions: Annotated[list[str], Indexed()]
-    loaders: Annotated[list[MinecraftLoaders], Indexed()]
+    loaders: Annotated[list[str], Indexed()]
+    # Missing on documents stored before Modrinth had it.
+    environment: Optional[ModrinthEnvironment] = None
     featured: bool
 
     date_published: datetime

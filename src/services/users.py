@@ -16,6 +16,9 @@ class UsersService():
             usersDB: UsersDatabase) -> None:
         self.usersDB = usersDB
 
+    async def user_get(self, user_id: str) -> UsersInternal:
+        return await self.usersDB.user_get(user_id)
+
     async def login(self, claims: Mapping[str, Any]) -> UsersInternal:
         """
         Authorize the claims of a verified ID token and return the matching user.

@@ -1,13 +1,26 @@
 from beanie import Document, Indexed
 from datetime import datetime
+from pydantic import Field
 from typing import Annotated, Optional
-from src.model.utils import MinecraftLoaders
 from src.library.datatypes import CustomEnum
 
 class ModrinthProjectSide(CustomEnum):
     required = "required"
     optional = "optional"
     unsupported = "unsupported"
+    unknown = "unknown"
+
+class ModrinthEnvironment(CustomEnum):
+    """Where a project or version runs (Modrinth openapi.yaml v2.7.0, EnvironmentEnum)."""
+    client_and_server = "client_and_server"
+    client_only = "client_only"
+    client_only_server_optional = "client_only_server_optional"
+    singleplayer_only = "singleplayer_only"
+    server_only = "server_only"
+    server_only_client_optional = "server_only_client_optional"
+    dedicated_server_only = "dedicated_server_only"
+    client_or_server = "client_or_server"
+    client_or_server_prefers_both = "client_or_server_prefers_both"
     unknown = "unknown"
 
 class ModrinthProjectType(CustomEnum):
@@ -36,8 +49,11 @@ class ModrinthProject(Document):
     description: str
     body: str
 
-    client_side: ModrinthProjectSide
-    server_side: ModrinthProjectSide
+    # environment replaces the deprecated sides (i-7985ee-f4ba63). Both are optional: documents
+    # stored before environment lack it, and Modrinth may drop the sides.
+    environment: list[ModrinthEnvironment] = Field(default_factory=list)
+    client_side: Optional[ModrinthProjectSide] = None
+    server_side: Optional[ModrinthProjectSide] = None
     project_type: ModrinthProjectType
     status: ModrinthProjectStatus
     downloads: int
@@ -48,7 +64,8 @@ class ModrinthProject(Document):
 
     versions: list[str]
     game_versions: Annotated[list[str], Indexed()]
-    loaders: Annotated[list[MinecraftLoaders], Indexed()]
+    # Modrinth's loaders are an open set: a shader has iris and optifine, a datapack datapack.
+    loaders: Annotated[list[str], Indexed()]
 
     issues_url: Optional[str]
     source_url: Optional[str]
