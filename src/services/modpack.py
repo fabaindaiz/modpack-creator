@@ -1,7 +1,10 @@
+import re
 from datetime import datetime, timezone
 from typing import Optional
 from src.database import ModpackDatabase, ModrinthDatabase
+from src.library.api.client.loaders import LoaderMetaAPI
 from src.library.api.client.modrinth import ModrinthAPI
+from src.library.mrpack import mrpack_index, write_mrpack
 from src.library.resolution import Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, resolve
 from src.model.modpack import ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject, ModrinthVersion
@@ -19,10 +22,12 @@ class ModpackService():
             modpackDB: ModpackDatabase,
             modrinthDB: ModrinthDatabase,
             modrinthAPI: ModrinthAPI,
+            loaderAPI: LoaderMetaAPI,
             ) -> None:
         self.modpackDB = modpackDB
         self.modrinthDB = modrinthDB
         self.modrinthAPI = modrinthAPI
+        self.loaderAPI = loaderAPI
 
     async def bundle_find(self) -> list[ModpackBundle]:
         return await self.modpackDB.bundle_find().to_list()
@@ -160,11 +165,13 @@ class ModpackService():
             if not lock.complete:
                 reasons.append("la resolución no terminó")
             raise HTTP_409_CONFLICT("No se puede congelar este lock: " + "; ".join(reasons))
+        loader_version = bundle.loader_version or await self.loaderAPI.loader_version(
+            str(bundle.loader.value), bundle.version)
         builds = await self.modpackDB.build_find(bundle_id)
         number = (builds[0].number if builds else 0) + 1
         build = await self.modpackDB.build_insert(ModpackBuild(
             bundle_id=bundle.id, number=number, created_at=datetime.now(timezone.utc),  # type: ignore[arg-type]
-            request=request, lock=lock))
+            loader_version=loader_version, request=request, lock=lock))
         await self.modpackDB.bundle_latest_build(bundle_id, number)
         return build
 
@@ -173,6 +180,29 @@ class ModpackService():
 
     async def build_get(self, bundle_id: str, number: int) -> ModpackBuild:
         return await self.modpackDB.build_get(bundle_id, number)
+
+    async def build_mrpack(self, bundle_id: str, number: int) -> tuple[str, bytes]:
+        """
+        A build as a .mrpack for players (i-7985ee-7352b3): the same files the server gets, by
+        their Modrinth URL, validated against the format before it is returned.
+
+        :return: A file name and the archive. 409 if the build has no loader version, or if the
+            index would break the format.
+        """
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        build = await self.modpackDB.build_get(bundle_id, number)
+        if build.loader_version is None:
+            raise HTTP_409_CONFLICT(f"Build {number} has no {build.request.target.loader} version: set the "
+                                    "bundle's loader_version and create a new build")
+        index = mrpack_index(name=bundle.name, version_id=str(number), summary=bundle.description,
+                             game_version=build.request.target.game_version, loader=build.request.target.loader,
+                             loader_version=build.loader_version, entries=build.lock.entries)
+        try:
+            data = write_mrpack(index)
+        except ValueError as error:
+            raise HTTP_409_CONFLICT(f"Build {number} does not make a valid .mrpack: {error}") from error
+        safe = re.sub(r"[^A-Za-z0-9._-]+", "-", bundle.name).strip("-") or "modpack"
+        return f"{safe}-{number}.mrpack", data
 
     async def build_recommend(self, bundle_id: str, number: int) -> ModpackBundle:
         """Point recommended at an existing build; going back is pointing at an older one."""

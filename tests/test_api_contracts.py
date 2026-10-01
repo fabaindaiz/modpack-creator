@@ -159,6 +159,28 @@ def test_game_versions_are_read_from_the_tag_in_the_order_modrinth_gives() -> No
     assert [t.version for t in result] == ["26.3", "1.21.11"]
 
 
+# Metas de los loaders (investigación §2): rutas y forma de respuesta vistas en vivo el 2026-10-01.
+
+
+def test_fabric_and_quilt_loader_versions_come_from_their_meta() -> None:
+    from src.library.api.client.loaders import LoaderMetaAPI
+
+    async def call(base: str) -> tuple[str | None, str | None, str | None]:
+        api = LoaderMetaAPI(fabric_url=base + "fabric/", quilt_url=base + "quilt/")
+        return (await api.loader_version("fabric", "26.3"), await api.loader_version("quilt", "26.3"),
+                await api.loader_version("neoforge", "26.3"))
+
+    result, seen = run({
+        ("GET", "/fabric/v2/versions/loader/26.3"): json_reply([{"loader": {"version": "0.19.6", "stable": False}},
+                                                              {"loader": {"version": "0.19.5", "stable": True}}]),
+        ("GET", "/quilt/v3/versions/loader/26.3"): json_reply([{"loader": {"version": "0.20.0-beta.9"}},
+                                                             {"loader": {"version": "0.24.0"}}]),
+    }, call)
+    assert result == ("0.19.5", "0.24.0", None)
+    assert [(s.method, s.path) for s in seen] == [("GET", "/fabric/v2/versions/loader/26.3"),
+                                                  ("GET", "/quilt/v3/versions/loader/26.3")]
+
+
 # Pterodactyl
 
 

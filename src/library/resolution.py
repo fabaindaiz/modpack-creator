@@ -23,6 +23,9 @@ LOADER_ACCEPTS = {"quilt": {"quilt", "fabric"}}
 TYPE_LOADERS = {"shader": {"iris", "optifine", "canvas", "vanilla"}, "resourcepack": {"minecraft"},
                 "datapack": {"datapack"}}
 SUPPORTED_TYPES = {"mod", *TYPE_LOADERS}
+# A shader loader that is a mod on Modrinth: a shader for it is useless in a pack without it, so
+# resolution suggests it. OptiFine is not on Modrinth.
+SHADER_LOADER_MODS = {"iris": "YL57xq9U"}
 # On the server: shaders and resource packs never, datapacks always, mods by their environment.
 TYPE_SERVER = {"shader": "exclude", "resourcepack": "exclude", "datapack": "include"}
 
@@ -179,6 +182,9 @@ class LockEntry(BaseModel):
     project_id: str
     # "pack" or "admin" for what was asked for; None for what came in as a dependency.
     origin: Optional[str] = None
+    # mod, shader, resourcepack or datapack: where the file goes in an instance. Builds frozen
+    # before this field read as mods, which they all were.
+    project_type: str = "mod"
     version_id: str
     version_number: str
     file: Optional[CandidateFile]
@@ -415,10 +421,16 @@ class _Run:
                 server = "include" if decisions[project_id] else "exclude"
             entries.append(LockEntry(
                 project_id=project_id, origin=self.request.origins.get(project_id) if project_id in self.request.projects else None,
-                version_id=chosen.candidate.version_id,
+                version_id=chosen.candidate.version_id, project_type=self.catalog.types.get(project_id, "mod"),
                 version_number=chosen.candidate.version_number, file=chosen.candidate.file,
                 environment=chosen.candidate.environment, server=server, reason=chosen.reason,
                 requested_by=chosen.requested_by))
+        for project_id, chosen in self.chosen.items():
+            if self.catalog.types.get(project_id) != "shader":
+                continue
+            loaders = [l for l in chosen.candidate.loaders if l in SHADER_LOADER_MODS]
+            if loaders and not any(SHADER_LOADER_MODS[l] in self.chosen for l in loaders):
+                self.suggested.setdefault(SHADER_LOADER_MODS[loaders[0]], []).append(project_id)
         suggestions = [Suggestion(project_id=p, requested_by=r) for p, r in self.suggested.items()
                        if p not in self.chosen]
         return Lock(entries=entries, problems=self.problems, suggestions=suggestions,

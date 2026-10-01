@@ -24,6 +24,7 @@ from src.services.modpack import ModpackService
 from src.services.pterodactyl import PterodactylService
 from tests._modrinth import RecordedModrinthAPI, load
 from tests.conftest import MongoRunner
+from tests.test_builds import FakeLoaders
 
 pytestmark = pytest.mark.network
 
@@ -155,7 +156,8 @@ def test_the_latest_scan_is_kept(mongo: MongoRunner) -> None:
 
 async def build_with_fabric_api(modrinth: HashModrinthAPI) -> tuple[str, str]:
     """Un bundle con Fabric API (va en el servidor) y su build 1, recomendado."""
-    service = ModpackService(modpackDB=ModpackDatabase(), modrinthDB=ModrinthDatabase(), modrinthAPI=cast(Any, modrinth))
+    service = ModpackService(modpackDB=ModpackDatabase(), modrinthDB=ModrinthDatabase(), modrinthAPI=cast(Any, modrinth),
+                             loaderAPI=cast(Any, FakeLoaders()))
     bundle = await service.bundle_create(ModpackBundle(name="pack", description="", version="26.3",
                                                        loader=MinecraftLoaders.fabric))
     await service.project_add(str(bundle.id), ["fabric-api"], ProjectOrigin.pack)
@@ -204,7 +206,7 @@ def test_comparing_needs_a_scan_and_a_build(mongo: MongoRunner) -> None:
         modrinth = HashModrinthAPI({})
         service, server_id = await setup(FakePanel(), modrinth)
         bundle = await ModpackService(modpackDB=ModpackDatabase(), modrinthDB=ModrinthDatabase(),
-                                      modrinthAPI=cast(Any, modrinth)).bundle_create(
+                                      modrinthAPI=cast(Any, modrinth), loaderAPI=cast(Any, FakeLoaders())).bundle_create(
             ModpackBundle(name="empty", description="", version="26.3", loader=MinecraftLoaders.fabric))
         codes = []
         for call in (lambda: service.compare(server_id, str(bundle.id)), lambda: service.scan_latest(server_id)):

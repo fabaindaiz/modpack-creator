@@ -7,6 +7,9 @@
 Contra MongoDB real y respuestas grabadas de Modrinth.
 """
 import asyncio
+import io
+import json
+import zipfile
 from typing import Any, cast
 
 import pytest
@@ -14,7 +17,8 @@ from fastapi import HTTPException
 
 from src.database.modpack import ModpackDatabase
 from src.database.modrinth import ModrinthDatabase
-from src.model.modpack import ModpackBundle, ProjectOrigin
+from src.library.mrpack import validate_index
+from src.model.modpack import ModpackBundle, ModpackBundlePatch, ProjectOrigin
 from src.model.utils import MinecraftLoaders
 from src.services.modpack import ModpackService
 from tests._modrinth import FABRIC_API, IRIS, SODIUM, RecordedModrinthAPI
@@ -23,9 +27,20 @@ from tests.conftest import MongoRunner
 pytestmark = pytest.mark.network
 
 
+class FakeLoaders:
+    """La versión estable de cada loader que tiene meta; ninguna para los demás."""
+
+    def __init__(self) -> None:
+        self.asked: list[tuple[str, str]] = []
+
+    async def loader_version(self, loader: str, game_version: str) -> str | None:
+        self.asked.append((loader, game_version))
+        return {"fabric": "0.19.5", "quilt": "0.24.0"}.get(loader)
+
+
 async def empty_bundle(**fields: Any) -> tuple[ModpackService, str]:
     service = ModpackService(modpackDB=ModpackDatabase(), modrinthDB=ModrinthDatabase(),
-                             modrinthAPI=cast(Any, RecordedModrinthAPI()))
+                             modrinthAPI=cast(Any, RecordedModrinthAPI()), loaderAPI=cast(Any, FakeLoaders()))
     created = await service.bundle_create(ModpackBundle(
         name="pack", description="", version="26.3", loader=MinecraftLoaders.fabric, **fields))
     return service, str(created.id)
@@ -167,3 +182,49 @@ def test_two_builds_created_at_once_get_different_numbers(mongo: MongoRunner) ->
     numbers = mongo(scenario)
     # Uno puede perder la carrera y pedir reintentar (409), pero nunca dos con el mismo número.
     assert len(numbers) == len(set(numbers)) and numbers[0] == 1
+
+
+# Exportar (i-7985ee-7352b3).
+
+
+def test_a_build_freezes_the_loader_version(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[str | None, str | None]:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack)
+        first = await service.build_create(bundle_id)
+        await service.bundle_update(bundle_id, ModpackBundlePatch(loader_version="0.18.0"))
+        pinned = await service.build_create(bundle_id)
+        return first.loader_version, pinned.loader_version
+
+    assert mongo(scenario) == ("0.19.5", "0.18.0")
+
+
+def test_a_build_exports_as_a_valid_mrpack(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[str, dict[str, Any]]:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["iris", "fabric-api"], ProjectOrigin.pack)
+        await service.build_create(bundle_id)
+        filename, data = await service.build_mrpack(bundle_id, 1)
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            return filename, json.loads(archive.read("modrinth.index.json"))
+
+    filename, index = mongo(scenario)
+    assert filename == "pack-1.mrpack"
+    assert validate_index(index) == []
+    assert index["dependencies"] == {"minecraft": "26.3", "fabric-loader": "0.19.5"}
+    assert sorted(f["path"].split("/")[0] for f in index["files"]) == ["mods", "mods", "mods"]
+    sides = {f["path"].split("/")[1].split("-")[0]: f["env"] for f in index["files"]}
+    assert sides["iris"] == {"client": "required", "server": "unsupported"}
+    assert all(d.startswith("https://cdn.modrinth.com/") for f in index["files"] for d in f["downloads"])
+
+
+def test_a_build_without_a_loader_version_does_not_export(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[str | None, int]:
+        service, bundle_id = await empty_bundle()
+        await service.bundle_update(bundle_id, ModpackBundlePatch(loader=MinecraftLoaders.neoforge))
+        build = await service.build_create(bundle_id)
+        with pytest.raises(HTTPException) as refused:
+            await service.build_mrpack(bundle_id, build.number)
+        return build.loader_version, refused.value.status_code
+
+    assert mongo(scenario) == (None, 409)

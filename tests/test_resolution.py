@@ -282,3 +282,24 @@ def test_a_project_whose_type_is_unknown_is_asked_for() -> None:
 def test_a_type_resolution_does_not_support_is_a_problem() -> None:
     lock = resolve(request("pack"), Catalog.of([cand("pack", "p", loader="mrpack")], types={"pack": "modpack"}))
     assert [(p.kind, p.project_id) for p in lock.problems] == [("unresolvable", "pack")]
+
+
+def test_a_shader_without_iris_in_the_pack_suggests_iris() -> None:
+    shader = [c for c in recorded() if c.project_id == SHADER]
+    alone = resolve(request(SHADER), Catalog.of(shader, types={SHADER: "shader"}))
+    assert [(s.project_id, s.requested_by) for s in alone.suggestions] == [(IRIS, [SHADER])]
+    assert not alone.problems
+
+
+def test_a_shader_with_iris_in_the_pack_suggests_nothing() -> None:
+    versions = [c for c in recorded() if c.project_id in (SHADER, IRIS, SODIUM)]
+    lock = resolve(request(SHADER, IRIS, target=Target(game_version="26.3", loader="fabric",
+                                                       channels=frozenset({"release", "beta", "alpha"}))),
+                   Catalog.of(versions, types={SHADER: "shader", IRIS: "mod", SODIUM: "mod"}))
+    assert lock.suggestions == [] and not lock.problems
+
+
+def test_each_lock_entry_keeps_its_project_type() -> None:
+    versions = [cand("rp", "rp", loader="minecraft"), cand("a", "a")]
+    lock = resolve(request("rp", "a"), Catalog.of(versions, types={"rp": "resourcepack", "a": "mod"}))
+    assert {e.project_id: e.project_type for e in lock.entries} == {"rp": "resourcepack", "a": "mod"}

@@ -26,6 +26,7 @@ class ModpackBundleCreate(BaseModel):
     description: str
     version: str
     loader: MinecraftLoaders
+    loader_version: Optional[str] = None
     channels: list[str] = ["release"]
     pins: dict[str, str] = {}
     replacements: dict[str, Optional[str]] = {}
@@ -36,6 +37,7 @@ class ModpackBundlePatch(BaseModel):
     description: Optional[str] = None
     version: Optional[str] = None
     loader: Optional[MinecraftLoaders] = None
+    loader_version: Optional[str] = None
     channels: Optional[list[str]] = None
     pins: Optional[dict[str, str]] = None
     replacements: Optional[dict[str, Optional[str]]] = None
@@ -48,6 +50,9 @@ class ModpackBundle(Document):
     # The game version.
     version: str
     loader: MinecraftLoaders
+    # The loader version, fixed by the admin. If unset, a build takes the stable one from the
+    # loader's meta (Fabric, Quilt); NeoForge and Forge have none, so they need it set to export.
+    loader_version: Optional[str] = None
 
     # Changed only through ModpackService, with atomic updates: concurrent additions all stay.
     projects: list[PackProject] = Field(default_factory=list)
@@ -68,15 +73,14 @@ class ModpackBundle(Document):
     latest_build: Optional[int] = None
     recommended_build: Optional[int] = None
 
-    class Settings:
-        collection = "bundle"
-
 class ModpackBuild(Document):
     """A resolved bundle, frozen (i-7985ee-098611): numbered per bundle and never edited, so a
     deploy can always say exactly what it installs, and go back to it."""
     bundle_id: PydanticObjectId
     number: int
     created_at: datetime
+    # The loader version frozen with the build; None if there was none to take (i-7985ee-7352b3).
+    loader_version: Optional[str] = None
     request: ResolveRequest
     lock: Lock
 

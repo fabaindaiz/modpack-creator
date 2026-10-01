@@ -1,6 +1,7 @@
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Query
 from typing import Optional
+from fastapi import Response
 from src.library.resolution import Lock
 from src.model.modpack import ModpackBuild, ModpackBundle, ModpackBundleCreate, ModpackBundlePatch, ModpackReplacement, PackProject, ProjectOrigin
 from src.dependences import *
@@ -119,6 +120,19 @@ async def build_get(
         current_user = Depends(get_current_user)
         ):
     return await modpack.build_get(bundle_id=id, number=number)
+
+@router.get("/modpack/{id}/build/{number}/mrpack")
+@inject
+async def build_mrpack(
+        id: str,
+        number: int,
+        modpack: ModpackService = Depends(Provide[Dependences.modpackService]),
+        current_user = Depends(get_current_user)
+        ):
+    """The build as a .mrpack for players: the same files the server gets, by Modrinth URL."""
+    filename, data = await modpack.build_mrpack(bundle_id=id, number=number)
+    return Response(content=data, media_type="application/x-modrinth-modpack+zip",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 @router.put("/modpack/{id}/recommended/{number}", response_model=ModpackBundle)
 @inject
