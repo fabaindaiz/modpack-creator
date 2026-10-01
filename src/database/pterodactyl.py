@@ -1,10 +1,10 @@
-from beanie import PydanticObjectId
+from beanie import PydanticObjectId, SortDirection
 from beanie.operators import In
 from beanie.odm.documents import FindMany
 from typing import Iterable, Optional
 from src.model.pterodactyl import (
     PterodactylServer,
-    PterodactylVersion,
+    ServerScan,
 )
 from src.exceptions import *
 
@@ -29,9 +29,11 @@ class PterodactylDatabase():
         :param id: The ID of the server to retrieve.
         :return: The PterodactylServer object.
         """
+        if not PydanticObjectId.is_valid(server_id):
+            raise HTTP_404_NOT_FOUND(f"Server '{server_id}' not found")
         document = await PterodactylServer.get(server_id)
         if not document:
-            raise ValueError(f"Server with id '{server_id}' not found.")
+            raise HTTP_404_NOT_FOUND(f"Server '{server_id}' not found")
         return document
     
     async def server_insert(self, server: PterodactylServer) -> PterodactylServer:
@@ -65,62 +67,24 @@ class PterodactylDatabase():
         await server.save()
         return server
     
-    def version_find(self,
-            version_ids: Optional[list[str]] = None,
-            server_id: Optional[str] = None,
-            ) -> FindMany[PterodactylVersion]:
-        """
-        Get all Pterodactyl versions.
-        
-        :param version_ids: Optional list of version IDs to filter by.
-        :param server_id: Optional server ID to filter versions by.
-        :return: An iterable of PterodactylVersion objects.
-        """
-        query = PterodactylVersion.find()
-        if version_ids:
-            query = query.find(In(PterodactylVersion.id, (PydanticObjectId(id) for id in version_ids)))
-        if server_id:
-            query = query.find(PterodactylVersion.server.id == PydanticObjectId(server_id)) # type: ignore
-        return query
-    
-    async def version_get(self, version_id: str) -> PterodactylVersion:
-        """
-        Get a single Pterodactyl version by its ID.
-        
-        :param id: The ID of the version to retrieve.
-        :return: The PterodactylVersion object.
-        """
-        document = await PterodactylVersion.get(version_id)
-        if not document:
-            raise HTTP_404_NOT_FOUND(f"Version with ID '{version_id}' not found.")
-        return document
-    
-    async def version_insert(self, version: PterodactylVersion) -> PterodactylVersion:
-        """
-        Add a single Pterodactyl version to the database.
-        
-        :param version: The PterodactylVersion object to add.
-        :return: The created PterodactylVersion object.
-        """
-        return await PterodactylVersion.create(version)
-    
-    async def version_insert_many(self, versions: Iterable[PterodactylVersion]) -> Iterable[PterodactylVersion]:
-        """
-        Add multiple Pterodactyl versions to the database.
-        
-        :param versions: The list of PterodactylVersion objects to add.
-        """
-        result = await PterodactylVersion.insert_many(versions)
-        return await self.version_find(version_ids=result.inserted_ids).to_list()
+    async def scan_insert(self, scan: ServerScan) -> ServerScan:
+        return await ServerScan.insert(scan)
 
-    async def version_save(self, version: PterodactylVersion, version_id: Optional[PydanticObjectId] = None) -> PterodactylVersion:
-        """
-        Add a version to the database.
-        
-        :param version: The PterodactylVersion object to add.
-        :return: The created PterodactylVersion object.
-        """
-        if version_id:
-            version.id = PydanticObjectId(version_id)
-        await version.save()
-        return version
+    async def scan_find(self, server_id: str, directory: Optional[str] = None) -> list[ServerScan]:
+        """A server's scans, newest first."""
+        query = ServerScan.find(ServerScan.server_id == self._server_oid(server_id))
+        if directory is not None:
+            query = query.find(ServerScan.directory == directory)
+        return await query.sort(("scanned_at", SortDirection.DESCENDING)).to_list()
+
+    async def scan_latest(self, server_id: str, directory: str) -> Optional[ServerScan]:
+        scans = await ServerScan.find(ServerScan.server_id == self._server_oid(server_id),
+                                      ServerScan.directory == directory) \
+            .sort(("scanned_at", SortDirection.DESCENDING)).limit(1).to_list()
+        return scans[0] if scans else None
+
+    @staticmethod
+    def _server_oid(server_id: str) -> PydanticObjectId:
+        if not PydanticObjectId.is_valid(server_id):
+            raise HTTP_404_NOT_FOUND(f"Server '{server_id}' not found")
+        return PydanticObjectId(server_id)

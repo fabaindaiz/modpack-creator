@@ -1,11 +1,13 @@
 from src.library.utils import load_env, getenv, getenv_opt, strToBool
 load_env(".env.yaml")
 
+import src.routers.health as health
 from src.routers.v1 import MODULES_V1, include_routers_v1, tags_metadata
 import src.dependences as dependences
 container = dependences.Dependences()
 container.wire(
     modules=[
+        health,
         *MODULES_V1,
         dependences
     ])
@@ -22,6 +24,7 @@ async def lifespan(app: FastAPI):
     await model.configure_beanie()
     include_routers_v1(app)
     yield
+    await dependences.close_clients(container)
 
 app = FastAPI(title="Modpack Creator API",
               version=getenv("VERSION", "1.0.0"),
@@ -29,6 +32,8 @@ app = FastAPI(title="Modpack Creator API",
               redoc_url=getenv_opt("REDOCS_PATH"),
               openapi_tags=tags_metadata,
               lifespan=lifespan)
+# Mounted at import: it needs nothing the lifespan sets up, and has no session (i-7985ee-90f944).
+app.include_router(health.router)
 
 # CORS only for origins named explicitly: with credentials, a wildcard makes Starlette echo any
 # Origin back (d-7985ee-4e4aee). Without CORS_ALLOW_ORIGINS there is no cross-origin access.

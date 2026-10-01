@@ -1,16 +1,46 @@
 import asyncio
-from typing import Iterable
-from src.model.pterodactyl import PterodactylFile, PterodactylServer, PterodactylVersion
+import hashlib
+from datetime import datetime, timezone
+from typing import Optional
+from src.database import ModpackDatabase, ModrinthDatabase, PterodactylDatabase
+from src.library.api.client.modrinth import ModrinthAPI
 from src.library.api.client.pterodactyl import PterodactylAPI
-from src.database.pterodactyl import PterodactylDatabase
+from src.library.scan import Comparison, ListedFile, ScanFile, compare, plan_scan
+from src.model.modrinth import ModrinthVersion
+from src.model.pterodactyl import PterodactylFile, PterodactylServer, ServerScan
+from src.exceptions import *
+
+# A jar from a server is untrusted: it is hashed, never loaded, and not downloaded past this
+# size (untrusted-package-is-parsed-never-loaded). The largest common mods are a few tens of MiB.
+SCAN_MAX_BYTES = 128 * 1024 * 1024
+# Downloads at once. The Client API allows 256 requests a minute, and each jar takes two (the
+# signed URL and the download): a large first scan is paced by this and by the panel.
+SCAN_CONCURRENCY = 4
+SCAN_DIRECTORY = "/mods"
 
 class PterodactylService():
     def __init__(self,
             pterodactylAPI: PterodactylAPI,
             PterodactylDB: PterodactylDatabase,
+            modrinthAPI: ModrinthAPI,
+            modrinthDB: ModrinthDatabase,
+            modpackDB: ModpackDatabase,
             ) -> None:
         self.pterodactylAPI = pterodactylAPI
         self.pterodactylDB = PterodactylDB
+        self.modrinthAPI = modrinthAPI
+        self.modrinthDB = modrinthDB
+        self.modpackDB = modpackDB
+
+    async def server_external(self) -> list[PterodactylServer]:
+        """Every server the panel key can see, straight from the panel."""
+        return list(await self.pterodactylAPI.server_get_many())
+
+    async def server_find(self) -> list[PterodactylServer]:
+        return await self.pterodactylDB.server_find().to_list()
+
+    async def server_get(self, server_id: str) -> PterodactylServer:
+        return await self.pterodactylDB.server_get(server_id)
 
     async def server_create(self, uuid: str) -> PterodactylServer:
         """
@@ -31,9 +61,9 @@ class PterodactylService():
         """
         document = await self.pterodactylDB.server_get(server_id)
         server = await self.pterodactylAPI.server_get(document.uuid)
-        return await self.pterodactylDB.server_save(document, server.id)
+        return await self.pterodactylDB.server_save(server, document.id)
     
-    async def server_files(self, server_id: str, directory: str) -> Iterable[PterodactylFile]:
+    async def server_files(self, server_id: str, directory: str) -> list[PterodactylFile]:
         """
         Get the files of a Pterodactyl server.
         
@@ -41,24 +71,86 @@ class PterodactylService():
         :return: A list of PterodactylFile objects.
         """
         server = await self.pterodactylDB.server_get(server_id)
-        return await self.pterodactylAPI.server_files(server.identifier, directory)
-    
-    async def version_create(self, server_id: str, directory: str) -> PterodactylServer:
+        return list(await self.pterodactylAPI.server_files(server.identifier, directory))
+
+    # What a server has (i-7985ee-43df2f, option 1). Only reads: listing and downloading.
+
+    async def scan(self, server_id: str, directory: str = SCAN_DIRECTORY, full: bool = False) -> ServerScan:
         """
-        Create a new version for a Pterodactyl server.
-        
-        :param server_id: The ID of the server to create a version for.
-        :param version: The version to create.
-        :return: The updated PterodactylServer object.
+        Scan a directory of a server: which jars it has, and which Modrinth version each one is.
+
+        Lists the directory; downloads and hashes only the jars whose path, size or modification
+        time changed since the last scan, or all of them if `full`; identifies them by sha1
+        against Modrinth. Writes nothing to the server.
+
+        :return: The stored scan.
         """
         server = await self.pterodactylDB.server_get(server_id)
-        files = await self.pterodactylAPI.server_files(server.identifier, directory)
-        return await asyncio.gather(*[
-            self.pterodactylDB.version_insert(
-                version=PterodactylVersion(
-                    server=server, # type: ignore
-                    file=file))
-                for file in files])
-    
-    async def version_update(self, version_id: str) -> PterodactylVersion:
-        raise NotImplementedError
+        listing = [ListedFile(path=f"{directory.rstrip('/')}/{f.name}", size=f.size, modified_at=f.modified_at)
+                   for f in await self.pterodactylAPI.server_files(server.identifier, directory)
+                   if f.is_file and not f.is_symlink and f.name.endswith(".jar")]
+        previous = await self.pterodactylDB.scan_latest(server_id, directory)
+        kept, to_hash, too_large = plan_scan(listing, previous.files if previous else [], full, SCAN_MAX_BYTES)
+        hashed = await self._hash(server.identifier, to_hash)
+        # Modrinth may know today a jar it did not know before: unknown ones are asked about again.
+        known = [f for f in kept if f.status == "identified"]
+        identified = await self._identify([*hashed, *(f for f in kept if f.status == "unknown")])
+        files = sorted([*known, *identified, *too_large], key=lambda f: f.path)
+        return await self.pterodactylDB.scan_insert(ServerScan(
+            server_id=server.id, directory=directory, scanned_at=datetime.now(timezone.utc),  # type: ignore[arg-type]
+            full=full, files=files))
+
+    async def _hash(self, identifier: str, files: list[ListedFile]) -> list[ScanFile]:
+        """Download each file and hash its bytes. The bytes are hashed, never opened or loaded."""
+        limit = asyncio.Semaphore(SCAN_CONCURRENCY)
+
+        async def one(file: ListedFile) -> ScanFile:
+            async with limit:
+                data = await self.pterodactylAPI.server_files_download(identifier, file.path)
+            if len(data) > SCAN_MAX_BYTES:
+                return ScanFile(**file.model_dump(), status="too_large")
+            return ScanFile(**file.model_dump(), status="unknown",
+                            sha1=hashlib.sha1(data).hexdigest(), sha512=hashlib.sha512(data).hexdigest())
+
+        return list(await asyncio.gather(*[one(f) for f in files]))
+
+    async def _identify(self, files: list[ScanFile]) -> list[ScanFile]:
+        """Ask Modrinth which version each sha1 belongs to, and store those versions in the catalog.
+        A version counts only if one of its files has exactly that sha1."""
+        hashes = sorted({f.sha1 for f in files if f.sha1})
+        found: dict[str, ModrinthVersion] = await self.modrinthAPI.files_hash_post_many(hashes, "sha1") if hashes else {}
+        result = []
+        for file in files:
+            version = found.get(file.sha1 or "")
+            if version and any(f.hashes.sha1 == file.sha1 for f in version.files):
+                file = file.model_copy(update={"status": "identified", "project_id": version.project_id,
+                                               "version_id": version.version_id})
+            result.append(file)
+        if found:
+            await self.modrinthDB.version_upsert_many(found.values())
+        return result
+
+    async def scan_latest(self, server_id: str, directory: str = SCAN_DIRECTORY) -> ServerScan:
+        scan = await self.pterodactylDB.scan_latest(server_id, directory)
+        if scan is None:
+            raise HTTP_404_NOT_FOUND(f"Server '{server_id}' has no scan of {directory}")
+        return scan
+
+    async def scan_find(self, server_id: str) -> list[ServerScan]:
+        return await self.pterodactylDB.scan_find(server_id)
+
+    async def compare(self, server_id: str, bundle_id: str, build: Optional[int] = None,
+                      directory: str = SCAN_DIRECTORY) -> Comparison:
+        """
+        Compare a server's latest scan with a build of a bundle (i-7985ee-4364a3): what matches,
+        what has another version, what is missing, extra or unknown.
+
+        :param build: The build number; by default the recommended one, else the latest.
+        """
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        number = build if build is not None else (bundle.recommended_build or bundle.latest_build)
+        if number is None:
+            raise HTTP_409_CONFLICT(f"Bundle '{bundle_id}' has no build to compare with")
+        frozen = await self.modpackDB.build_get(bundle_id, number)
+        scan = await self.scan_latest(server_id, directory)
+        return compare(scan.files, frozen.lock.entries)

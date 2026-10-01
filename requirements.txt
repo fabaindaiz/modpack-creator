@@ -5,7 +5,7 @@ authlib==1.8.0
 backoff==2.2.1
 beanie==2.2.0
 dependency-injector==4.49.1
-httpx==0.28.1
+httpx==0.28.1  # authlib.integrations.starlette_client lo importa sin declararlo
 itsdangerous==2.2.0
 pydantic==2.13.5
 pyjwt==2.15.1

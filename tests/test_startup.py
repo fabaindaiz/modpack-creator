@@ -47,3 +47,19 @@ def test_di_wiring_matches_constructor_types() -> None:
                 f"{name}: {param.name} expects {expected.__name__}, gets {injected.__name__}")
             checked += 1
     assert checked > 0
+
+
+def test_shutdown_closes_the_session_of_every_http_client() -> None:
+    import asyncio
+
+    import main
+    from src.dependences import close_clients
+
+    async def scenario() -> list[bool]:
+        clients = [main.container.downloader(), main.container.modrinthAPI(), main.container.pterodactylAPI()]
+        for client in clients:
+            client._client_session()
+        await close_clients(main.container)
+        return [client._session is None for client in clients]
+
+    assert asyncio.run(scenario()) == [True, True, True]

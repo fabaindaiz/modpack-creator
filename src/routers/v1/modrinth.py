@@ -17,13 +17,10 @@ router = APIRouter(
 async def project_find(
         game_version: Optional[str] = Query(None, description="Filter by game versions"),
         loader: Optional[MinecraftLoaders] = Query(None, description="Filter by loaders"),
-        modrinthDB: ModrinthDatabase = Depends(Provide[Dependences.modrinthDatabase]),
+        modrinth: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         current_user = Depends(get_current_user)
         ):
-    return await modrinthDB.project_find(
-        game_version=game_version,
-        loader=loader
-    ).to_list()
+    return await modrinth.project_find(game_version=game_version, loader=loader)
 
 @router.post(
     path="/modrinth/project",
@@ -58,8 +55,8 @@ async def project_update_many(
 @inject
 async def project_get(
         id: str,
-        modrinthDB: ModrinthDatabase = Depends(Provide[Dependences.modrinthDatabase]),
+        modrinth: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         current_user = Depends(get_current_user)
         ):
-    response = await modrinthDB.project_get(project_id=id)
+    response = await modrinth.project_get(project_id=id)
     return response

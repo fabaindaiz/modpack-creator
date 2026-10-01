@@ -8,12 +8,14 @@ from src.library.api.client import (
     PterodactylAPI,
 )
 from src.database import (
+    HealthDatabase,
     UsersDatabase,
     ModpackDatabase,
     ModrinthDatabase,
     PterodactylDatabase,
 )
 from src.services import (
+    HealthService,
     UsersService,
     ModpackService,
     ModrinthService,
@@ -31,15 +33,22 @@ class Dependences(containers.DeclarativeContainer):
     modrinthAPI = providers.Singleton(ModrinthAPI)
     pterodactylAPI = providers.Singleton(PterodactylAPI)
 
+    healthDatabase = providers.Singleton(HealthDatabase)
     usersDatabase = providers.Singleton(UsersDatabase)
     modpackDatabase = providers.Singleton(ModpackDatabase)
     modrinthDatabase = providers.Singleton(ModrinthDatabase)
     pterodactylDatabase = providers.Singleton(PterodactylDatabase)
 
+    healthService = providers.Singleton(HealthService, healthDatabase)
     usersService = providers.Singleton(UsersService, usersDatabase)
     modrinthService = providers.Singleton(ModrinthService, modrinthAPI, modrinthDatabase)
-    pterodactylService = providers.Singleton(PterodactylService, pterodactylAPI, pterodactylDatabase)
-    modpackService = providers.Singleton(ModpackService, modpackDatabase, modrinthDatabase)
+    pterodactylService = providers.Singleton(PterodactylService, pterodactylAPI, pterodactylDatabase, modrinthAPI, modrinthDatabase, modpackDatabase)
+    modpackService = providers.Singleton(ModpackService, modpackDatabase, modrinthDatabase, modrinthAPI)
+
+async def close_clients(container: Dependences) -> None:
+    """Close the HTTP session each client keeps (i-7985ee-57034c); the lifespan calls it on shutdown."""
+    for client in (container.downloader(), container.modrinthAPI(), container.pterodactylAPI()):
+        await client.close()
 
 @inject
 def configure_oauth2(

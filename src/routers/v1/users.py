@@ -8,8 +8,8 @@ router = APIRouter(
 @router.get('/users/me')
 @inject
 async def users_me(
-        usersDB: UsersDatabase = Depends(Provide[Dependences.usersDatabase]),
+        users: UsersService = Depends(Provide[Dependences.usersService]),
         current_user: UsersInternal = Depends(get_current_user)
         ):
-    response = await usersDB.user_get(str(current_user.id))
+    response = await users.user_get(str(current_user.id))
     return response

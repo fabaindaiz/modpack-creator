@@ -26,6 +26,14 @@ services:
         read_only: true
         bind:
           create_host_path: false
+    # /health/ready answers 503 while MongoDB does not answer a ping (i-7985ee-90f944). The image
+    # has no curl: Python's urllib raises on a non-2xx answer, and the check fails.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     depends_on:
       mongodb:
         condition: service_healthy
