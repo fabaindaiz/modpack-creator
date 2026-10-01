@@ -45,3 +45,6 @@ gate = ["bundle", "audit", "typecheck", "tests"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+# tests/conftest.py rechaza toda conexión salvo en los tests con este marcador.
+markers = ["network: usa a propósito un servidor en localhost (MongoDB, un servidor aiohttp)"]
+strict_markers = true

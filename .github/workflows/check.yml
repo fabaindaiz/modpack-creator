@@ -8,8 +8,22 @@ on:
 jobs:
   gate:
     # El gate de este repositorio (d-7985ee-fd2a8d): bundle, audit, mypy y tests, en Python 3.12,
-    # la versión de la imagen (d-7985ee-7bc399). Nada aquí toca MongoDB, Modrinth ni Pterodactyl.
+    # la versión de la imagen (d-7985ee-7bc399). Los tests de base corren contra un MongoDB real
+    # (i-7985ee-ade111); nada aquí toca Modrinth ni Pterodactyl.
     runs-on: ubuntu-latest
+    services:
+      mongo:
+        # Fija, como MONGO_VERSION en docker/.env. La de producción no se conoce todavía
+        # (docs/runbooks/migrar-mongo-a-volumen.md); al conocerla, igualar esta.
+        image: mongo:8.0
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\")'"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      # Con CI definido, el fixture `mongo` falla en vez de saltarse si esto falta (tests/conftest.py).
+      TEST_MONGODB_URI: mongodb://127.0.0.1:27017
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
