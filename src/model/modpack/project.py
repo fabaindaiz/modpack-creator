@@ -1,53 +1,91 @@
-from abc import ABC, abstractmethod
-from beanie import Document, Link, Indexed
+from beanie import Document, Indexed, PydanticObjectId
+from datetime import datetime
 from pydantic import BaseModel, Field
-from typing import Annotated, Literal, Optional
-from src.model.modrinth import ModrinthProject
-from src.model.utils import MinecraftLoaders
+from pymongo import ASCENDING, IndexModel
+from typing import Annotated, Optional
 from src.library.datatypes import CustomEnum
+from src.library.resolution import Lock, ResolveRequest
+from src.model.utils import MinecraftLoaders
 
-class ProjectSourceList(CustomEnum):
-    MODRINTH = "modrinth"
-    UNKNOWN = "unknown"
+class ProjectOrigin(CustomEnum):
+    """Where a project of the pack came from (i-7985ee-063a3a, d-7985ee-b15dd4). Both resolve the
+    same way; replacing the pack's content keeps what the admin added."""
+    pack = "pack"
+    admin = "admin"
 
-class ProjectSourceBase(ABC, BaseModel):
-    pass
+class PackProject(BaseModel):
+    """A Modrinth project in a bundle, by its Modrinth id: a reference, not a copy of the project
+    that would go stale as the catalog refreshes (i-7985ee-a17c2c)."""
+    project_id: str
+    origin: ProjectOrigin
 
-class ProjectSourceModrinth(ProjectSourceBase):
-    source: Literal[ProjectSourceList.MODRINTH] = ProjectSourceList.MODRINTH
-    project: Link[ModrinthProject]
-
-class ProjectSourceUnknown(ProjectSourceBase):
-    source: Literal[ProjectSourceList.UNKNOWN] = ProjectSourceList.UNKNOWN
-
-type ProjectSource = Annotated[
-    ProjectSourceModrinth |
-    ProjectSourceUnknown,
-    Field(discriminator="source", default=ProjectSourceUnknown())
-]
-
-class ModpackProjectPatch(BaseModel):
-    pass
-
-class ModpackProject(Document):
-    modpack: Link["ModpackBundle"]
-    source: ProjectSource
-
-    class Settings:
-        collection = "project"
-
+class ModpackBundleCreate(BaseModel):
+    """What a client may set when creating a bundle: never its content or build pointers, which
+    only ModpackService changes."""
+    name: str
+    description: str
+    version: str
+    loader: MinecraftLoaders
+    channels: list[str] = ["release"]
+    pins: dict[str, str] = {}
+    replacements: dict[str, Optional[str]] = {}
+    server_decisions: dict[str, bool] = {}
 
 class ModpackBundlePatch(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     version: Optional[str] = None
     loader: Optional[MinecraftLoaders] = None
+    channels: Optional[list[str]] = None
+    pins: Optional[dict[str, str]] = None
+    replacements: Optional[dict[str, Optional[str]]] = None
+    server_decisions: Optional[dict[str, bool]] = None
 
 class ModpackBundle(Document):
+    """A modpack definition: what to resolve. What gets deployed is a build of it."""
     name: str
     description: str
+    # The game version.
     version: str
     loader: MinecraftLoaders
 
+    # Changed only through ModpackService, with atomic updates: concurrent additions all stay.
+    projects: list[PackProject] = Field(default_factory=list)
+
+    # What resolution reads (i-7985ee-7f735a). Defaults, so bundles stored before load as before.
+    # Version channels allowed, most stable first.
+    channels: list[str] = Field(default_factory=lambda: ["release"])
+    # Modrinth project id → version id the admin fixed.
+    pins: dict[str, str] = Field(default_factory=dict)
+    # Modrinth project id → substitute project id, or None to drop it. Added to the global
+    # rules, and wins over them for the same project (d-7985ee-86fffa).
+    replacements: dict[str, Optional[str]] = Field(default_factory=dict)
+    # Modrinth project id → whether an ambiguous mod goes on the server (d-7985ee-f0c7a6).
+    server_decisions: dict[str, bool] = Field(default_factory=dict)
+
+    # Build pointers (i-7985ee-098611): latest follows the newest build; recommended moves only
+    # when the admin moves it, and going back is moving it to an older build.
+    latest_build: Optional[int] = None
+    recommended_build: Optional[int] = None
+
     class Settings:
         collection = "bundle"
+
+class ModpackBuild(Document):
+    """A resolved bundle, frozen (i-7985ee-098611): numbered per bundle and never edited, so a
+    deploy can always say exactly what it installs, and go back to it."""
+    bundle_id: PydanticObjectId
+    number: int
+    created_at: datetime
+    request: ResolveRequest
+    lock: Lock
+
+    class Settings:
+        # Two builds created at once cannot share a number: the second insert fails.
+        indexes = [IndexModel([("bundle_id", ASCENDING), ("number", ASCENDING)], unique=True)]
+
+class ModpackReplacement(Document):
+    """A global replacement rule (d-7985ee-86fffa): wherever a dependency asks for project_id,
+    use `replacement` instead, or nothing if it is None."""
+    project_id: Annotated[str, Indexed(unique=True)]
+    replacement: Optional[str]

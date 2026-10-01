@@ -1,0 +1,169 @@
+"""El contenido de un modpack y sus builds (i-7985ee-063a3a, i-7985ee-098611).
+
+- Contenido: cada proyecto lleva su origen. Lo que agrega el admin pasa por la resolución igual
+  que el pack (d-7985ee-b15dd4) y sobrevive a reemplazar el contenido del pack.
+- Builds: cada uno congela un lock con su número; nunca se edita. `latest` sigue al último,
+  `recommended` se mueve a mano, y volver atrás es moverlo.
+Contra MongoDB real y respuestas grabadas de Modrinth.
+"""
+import asyncio
+from typing import Any, cast
+
+import pytest
+from fastapi import HTTPException
+
+from src.database.modpack import ModpackDatabase
+from src.database.modrinth import ModrinthDatabase
+from src.model.modpack import ModpackBundle, ProjectOrigin
+from src.model.utils import MinecraftLoaders
+from src.services.modpack import ModpackService
+from tests._modrinth import FABRIC_API, IRIS, SODIUM, RecordedModrinthAPI
+from tests.conftest import MongoRunner
+
+pytestmark = pytest.mark.network
+
+
+async def empty_bundle(**fields: Any) -> tuple[ModpackService, str]:
+    service = ModpackService(modpackDB=ModpackDatabase(), modrinthDB=ModrinthDatabase(),
+                             modrinthAPI=cast(Any, RecordedModrinthAPI()))
+    created = await service.bundle_create(ModpackBundle(
+        name="pack", description="", version="26.3", loader=MinecraftLoaders.fabric, **fields))
+    return service, str(created.id)
+
+
+def content(projects: list[Any]) -> dict[str, str]:
+    return {p.project_id: p.origin.value for p in projects}
+
+
+# Contenido.
+
+
+def test_projects_are_added_by_slug_and_kept_by_modrinth_id(mongo: MongoRunner) -> None:
+    async def scenario() -> dict[str, str]:
+        service, bundle_id = await empty_bundle()
+        return content(await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack))
+
+    assert mongo(scenario) == {IRIS: "pack"}
+
+
+def test_a_project_modrinth_does_not_know_is_refused(mongo: MongoRunner) -> None:
+    async def scenario() -> int:
+        service, bundle_id = await empty_bundle()
+        with pytest.raises(HTTPException) as refused:
+            await service.project_add(bundle_id, ["iris", "no-such-mod"], ProjectOrigin.pack)
+        assert "no-such-mod" in str(refused.value.detail)
+        return len(await service.project_find(bundle_id))
+
+    assert mongo(scenario) == 0
+
+
+def test_what_the_admin_added_survives_replacing_the_pack(mongo: MongoRunner) -> None:
+    async def scenario() -> dict[str, str]:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack)
+        await service.project_add(bundle_id, ["fabric-api"], ProjectOrigin.admin)
+        # El pack nuevo trae Sodium y también Fabric API, que el admin ya tenía: sigue siendo suyo.
+        return content(await service.pack_replace(bundle_id, ["sodium", "fabric-api"]))
+
+    assert mongo(scenario) == {FABRIC_API: "admin", SODIUM: "pack"}
+
+
+def test_concurrent_additions_are_all_kept(mongo: MongoRunner) -> None:
+    async def scenario() -> dict[str, str]:
+        service, bundle_id = await empty_bundle()
+        await asyncio.gather(service.project_add(bundle_id, ["iris"], ProjectOrigin.pack),
+                             service.project_add(bundle_id, ["fabric-api"], ProjectOrigin.admin))
+        return content(await service.project_find(bundle_id))
+
+    assert mongo(scenario) == {IRIS: "pack", FABRIC_API: "admin"}
+
+
+def test_removing_a_project(mongo: MongoRunner) -> None:
+    async def scenario() -> dict[str, str]:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["iris", "fabric-api"], ProjectOrigin.pack)
+        return content(await service.project_remove(bundle_id, IRIS))
+
+    assert mongo(scenario) == {FABRIC_API: "pack"}
+
+
+def test_the_lock_says_where_each_project_came_from(mongo: MongoRunner) -> None:
+    async def scenario() -> dict[str, tuple[str | None, str]]:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack)
+        await service.project_add(bundle_id, ["fabric-api"], ProjectOrigin.admin)
+        lock = await service.resolve(bundle_id)
+        return {e.project_id: (e.origin, e.reason) for e in lock.entries}
+
+    entries = mongo(scenario)
+    assert entries[IRIS] == ("pack", "en el pack")
+    assert entries[FABRIC_API] == ("admin", "agregado por el admin")
+    assert entries[SODIUM][0] is None and "requerida" in entries[SODIUM][1]
+
+
+# Builds.
+
+
+def test_builds_are_numbered_and_latest_follows_the_newest(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[list[int], int | None, int | None]:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack)
+        first = await service.build_create(bundle_id)
+        second = await service.build_create(bundle_id)
+        stored = await service.bundle_get(bundle_id)
+        return [first.number, second.number], stored.latest_build, stored.recommended_build
+
+    assert mongo(scenario) == ([1, 2], 2, None)
+
+
+def test_a_build_does_not_change_when_the_bundle_does(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[set[str], set[str]]:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack)
+        await service.build_create(bundle_id)
+        await service.project_add(bundle_id, ["fabric-api"], ProjectOrigin.admin)
+        await service.build_create(bundle_id)
+        first, second = await service.build_get(bundle_id, 1), await service.build_get(bundle_id, 2)
+        return {e.project_id for e in first.lock.entries}, {e.project_id for e in second.lock.entries}
+
+    assert mongo(scenario) == ({IRIS, SODIUM}, {IRIS, SODIUM, FABRIC_API})
+
+
+def test_recommending_a_build_moves_the_pointer_and_going_back_is_moving_it_again(mongo: MongoRunner) -> None:
+    async def scenario() -> list[int | None]:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack)
+        await service.build_create(bundle_id)
+        await service.build_create(bundle_id)
+        pointers = [(await service.build_recommend(bundle_id, 2)).recommended_build]
+        pointers.append((await service.build_recommend(bundle_id, 1)).recommended_build)
+        with pytest.raises(HTTPException) as missing:
+            await service.build_recommend(bundle_id, 7)
+        assert missing.value.status_code == 404
+        return pointers
+
+    assert mongo(scenario) == [2, 1]
+
+
+def test_a_lock_with_problems_is_not_built(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[int, list[Any]]:
+        service, bundle_id = await empty_bundle(pins={IRIS: "no-such-version"})
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack)
+        with pytest.raises(HTTPException) as refused:
+            await service.build_create(bundle_id)
+        return refused.value.status_code, await service.build_find(bundle_id)
+
+    assert mongo(scenario) == (409, [])
+
+
+def test_two_builds_created_at_once_get_different_numbers(mongo: MongoRunner) -> None:
+    async def scenario() -> list[int]:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack)
+        results = await asyncio.gather(service.build_create(bundle_id), service.build_create(bundle_id),
+                                       return_exceptions=True)
+        return sorted(r.number for r in results if not isinstance(r, BaseException))
+
+    numbers = mongo(scenario)
+    # Uno puede perder la carrera y pedir reintentar (409), pero nunca dos con el mismo número.
+    assert len(numbers) == len(set(numbers)) and numbers[0] == 1

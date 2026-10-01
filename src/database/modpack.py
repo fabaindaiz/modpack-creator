@@ -1,12 +1,15 @@
-from beanie import PydanticObjectId
+from beanie import PydanticObjectId, SortDirection
 from beanie.operators import In
 from beanie.odm.documents import FindMany, DeleteResult
 from typing import Iterable, Optional
+from pymongo.errors import DuplicateKeyError
 from src.model.modpack import (
+    ModpackBuild,
     ModpackBundle,
     ModpackBundlePatch,
-    ModpackProject,
-    ModpackProjectPatch,
+    ModpackReplacement,
+    PackProject,
+    ProjectOrigin,
 )
 from src.exceptions import *
 
@@ -31,9 +34,9 @@ class ModpackDatabase():
         :param id: The ID of the bundle to retrieve.
         :return: The ModpackBundle object.
         """
-        document = await ModpackBundle.get(bundle_id)
+        document = await ModpackBundle.get(self._bundle_oid(bundle_id))
         if not document:
-            raise ValueError(f"Bundle with id '{bundle_id}' not found.")
+            raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' not found")
         return document
     
     async def bundle_update(self, bundle_id: str, patch: ModpackBundlePatch) -> ModpackBundle:
@@ -56,112 +59,103 @@ class ModpackDatabase():
         """
         return await ModpackBundle.create(bundle)
     
-    async def bundle_insert_many(self, bundles: Iterable[ModpackBundle]) -> Iterable[ModpackBundle]:
+    async def bundle_projects_add(self, bundle_id: str, projects: list[PackProject]) -> list[PackProject]:
         """
-        Add multiple modpack bundles to the database.
-        
-        :param bundles: The list of ModpackBundle objects to add.
-        :return: An iterable of created ModpackBundle objects.
-        """
-        result = await ModpackBundle.insert_many(bundles)
-        return await self.bundle_find().to_list()
-    
-    async def bundle_save(self, bundle: ModpackBundle, bundle_id: Optional[PydanticObjectId] = None) -> ModpackBundle:
-        """
-        Save a modpack bundle to the database.
-        
-        :param bundle: The ModpackBundle object to save.
-        :param bundle_id: Optional ID of the bundle to update.
-        :return: The saved ModpackBundle object.
-        """
-        if bundle_id:
-            bundle.id = PydanticObjectId(bundle_id)
-        await bundle.save()
-        return bundle
+        Add projects to a bundle, each only if the bundle does not have it yet.
 
-    def project_find(self,
-            project_ids: Optional[list[str]] = None,
-            bundle_id: Optional[str] = None,
-            ) -> FindMany[ModpackProject]:
-        """
-        Get all projects in a bundle.
-        
-        :param bundle_id: The id of the bundle to retrieve projects from.
-        :return: An iterable of ModpackProject objects.
-        """
-        query = ModpackProject.find(fetch_links=True)
-        if project_ids:
-            query = query.find(In(ModpackProject.id, (PydanticObjectId(id) for id in project_ids)))
-        if bundle_id:
-            query = query.find(ModpackProject.modpack.id == PydanticObjectId(bundle_id)) # type: ignore
-        return query
-    
-    async def project_get(self, project_id: str) -> ModpackProject:
-        """
-        Get a single project by its ID.
-        
-        :param project_id: The ID of the project to retrieve.
-        :return: The ModpackProject object.
-        """
-        document = await ModpackProject.get(project_id, fetch_links=True)
-        if not document:
-            raise ValueError(f"Project with id '{project_id}' not found.")
-        return document
-    
-    async def project_update(self, project_id: str, patch: ModpackProjectPatch) -> ModpackProject:
-        """
-        Update an existing project.
-        
-        :param project_id: The ID of the project to update.
-        :param patch: The patch containing the updated fields.
-        :return: The updated ModpackProject object.
-        """
-        document = await self.project_get(project_id)
-        return await document.set(patch.model_dump(exclude_unset=True))
-    
-    async def project_delete(self, project_id: str, bundle_id: Optional[str] = None) -> bool:
-        """
-        Delete a project from the database.
+        One atomic update per project: two concurrent additions both stay (a read-modify-write
+        of the list would keep only one).
 
-        :param project_id: The ID of the project to delete.
-        :return: None
+        :return: The bundle's projects afterwards.
         """
-        document = await self.project_get(project_id)
-        if bundle_id and document.modpack.id != PydanticObjectId(bundle_id): # type: ignore
-            raise HTTP_404_NOT_FOUND(f"Project with ID '{project_id}' not found")
-        result: Optional[DeleteResult] = await ModpackProject.delete(document)
-        if not result:
-            raise HTTP_404_NOT_FOUND(f"Project with ID '{project_id}' not found")
-        return result.deleted_count > 0
+        oid = self._bundle_oid(bundle_id)
+        collection = ModpackBundle.get_pymongo_collection()
+        for project in projects:
+            await collection.update_one(
+                {"_id": oid, "projects.project_id": {"$ne": project.project_id}},
+                {"$push": {"projects": project.model_dump(mode="json")}})
+        return (await self.bundle_get(bundle_id)).projects
 
-    async def project_insert(self, project: ModpackProject) -> ModpackProject:
+    async def bundle_project_remove(self, bundle_id: str, project_id: str) -> list[PackProject]:
+        """Remove a project from a bundle; 404 if the bundle does not have it."""
+        oid = self._bundle_oid(bundle_id)
+        result = await ModpackBundle.get_pymongo_collection().update_one(
+            {"_id": oid, "projects.project_id": project_id},
+            {"$pull": {"projects": {"project_id": project_id}}})
+        if not result.modified_count:
+            raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' has no project '{project_id}'")
+        return (await self.bundle_get(bundle_id)).projects
+
+    async def bundle_pack_replace(self, bundle_id: str, projects: list[PackProject]) -> list[PackProject]:
         """
-        Add a single project to the database.
-        
-        :param project: The ModpackProject object to add.
-        :return: The created ModpackProject object.
+        Replace what the pack brings, keeping what the admin added (d-7985ee-b15dd4).
+
+        A pipeline update, computed by MongoDB on the stored list in one step: the admin's
+        projects stay, and a new pack project the admin already has stays the admin's.
         """
-        return await ModpackProject.create(project)
-    
-    async def project_insert_many(self, projects: Iterable[ModpackProject]) -> Iterable[ModpackProject]:
-        """
-        Add multiple projects to the database.
-        
-        :param projects: The list of ModpackProject objects to add.
-        :return: An iterable of created ModpackProject objects.
-        """
-        result = await ModpackProject.insert_many(projects)
-        return await self.project_find(project_ids=result.inserted_ids).to_list()
-    
-    async def project_save(self, project: ModpackProject, project_id: Optional[PydanticObjectId] = None) -> ModpackProject:
-        """
-        Add a project to the database.
-        
-        :param project: The ModpackProject object to add.
-        :param project_id: Optional ID of the project to update.
-        :return: The created ModpackProject object.
-        """
-        if project_id:
-            project.id = PydanticObjectId(project_id)
-        await project.save()
-        return project
+        oid = self._bundle_oid(bundle_id)
+        admin = {"$filter": {"input": {"$ifNull": ["$projects", []]},
+                             "cond": {"$eq": ["$$this.origin", ProjectOrigin.admin.value]}}}
+        new = [p.model_dump(mode="json") for p in projects]
+        result = await ModpackBundle.get_pymongo_collection().update_one({"_id": oid}, [
+            {"$set": {"projects": {"$concatArrays": [admin, {"$filter": {
+                "input": {"$literal": new},
+                "cond": {"$not": [{"$in": ["$$this.project_id", {"$map": {"input": admin, "in": "$$this.project_id"}}]}]},
+            }}]}}}])
+        if not result.matched_count:
+            raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' not found")
+        return (await self.bundle_get(bundle_id)).projects
+
+    async def bundle_latest_build(self, bundle_id: str, number: int) -> None:
+        """Move the latest pointer forward to `number`; never back ($max)."""
+        await ModpackBundle.get_pymongo_collection().update_one(
+            {"_id": self._bundle_oid(bundle_id)}, {"$max": {"latest_build": number}})
+
+    async def bundle_recommend_build(self, bundle_id: str, number: int) -> ModpackBundle:
+        """Point recommended at build `number`, older or newer."""
+        await ModpackBundle.get_pymongo_collection().update_one(
+            {"_id": self._bundle_oid(bundle_id)}, {"$set": {"recommended_build": number}})
+        return await self.bundle_get(bundle_id)
+
+    async def build_find(self, bundle_id: str) -> list[ModpackBuild]:
+        """A bundle's builds, newest first."""
+        return await ModpackBuild.find(ModpackBuild.bundle_id == self._bundle_oid(bundle_id)) \
+            .sort(("number", SortDirection.DESCENDING)).to_list()
+
+    async def build_get(self, bundle_id: str, number: int) -> ModpackBuild:
+        build = await ModpackBuild.find_one(ModpackBuild.bundle_id == self._bundle_oid(bundle_id),
+                                            ModpackBuild.number == number)
+        if not build:
+            raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' has no build {number}")
+        return build
+
+    async def build_insert(self, build: ModpackBuild) -> ModpackBuild:
+        """Store a build. Its number is unique per bundle: a build created at the same time with the
+        same number is refused with 409, never stored twice."""
+        try:
+            return await ModpackBuild.insert(build)
+        except DuplicateKeyError as error:
+            raise HTTP_409_CONFLICT(f"Build {build.number} was just created by another request; try again") from error
+
+    @staticmethod
+    def _bundle_oid(bundle_id: str) -> PydanticObjectId:
+        if not PydanticObjectId.is_valid(bundle_id):
+            raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' not found")
+        return PydanticObjectId(bundle_id)
+
+    async def replacement_find(self) -> list[ModpackReplacement]:
+        """The global replacement rules."""
+        return await ModpackReplacement.find().to_list()
+
+    async def replacement_set(self, rule: ModpackReplacement) -> ModpackReplacement:
+        """Create the global rule for its project, or replace the one it has."""
+        await ModpackReplacement.find_one(ModpackReplacement.project_id == rule.project_id).upsert(
+            {"$set": {"replacement": rule.replacement}}, on_insert=rule)
+        stored = await ModpackReplacement.find_one(ModpackReplacement.project_id == rule.project_id)
+        assert stored is not None
+        return stored
+
+    async def replacement_delete(self, project_id: str) -> bool:
+        """Delete the global rule for a project; whether there was one."""
+        result = await ModpackReplacement.find_one(ModpackReplacement.project_id == project_id).delete()
+        return bool(result and result.deleted_count)

@@ -1,36 +1,193 @@
-import asyncio
-from beanie import PydanticObjectId
-from beanie.operators import In
-from beanie.odm.documents import FindMany
-from typing import Iterable, Optional
+from datetime import datetime, timezone
+from typing import Optional
 from src.database import ModpackDatabase, ModrinthDatabase
-from src.model.modpack import ModpackBundle, ModpackProject, ProjectSourceModrinth
+from src.library.api.client.modrinth import ModrinthAPI
+from src.library.resolution import Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, resolve
+from src.model.modpack import ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, PackProject, ProjectOrigin
+from src.model.modrinth import ModrinthProject, ModrinthVersion
 from src.exceptions import *
+
+# Each round fetches what the lock needs; a dependency chain deeper than this is reported as an
+# incomplete lock instead of fetching forever.
+RESOLVE_ROUNDS = 32
+
+def candidate(version: ModrinthVersion) -> Candidate:
+    return Candidate.from_modrinth({**version.model_dump(mode="json"), "id": version.version_id})
 
 class ModpackService():
     def __init__(self,
             modpackDB: ModpackDatabase,
             modrinthDB: ModrinthDatabase,
+            modrinthAPI: ModrinthAPI,
             ) -> None:
         self.modpackDB = modpackDB
         self.modrinthDB = modrinthDB
+        self.modrinthAPI = modrinthAPI
 
-    async def project_modrinth_create(self, bundle_id: str, project_id: str) -> ModpackProject:
-        modrinth = await self.modrinthDB.project_get(project_id)
+    async def bundle_find(self) -> list[ModpackBundle]:
+        return await self.modpackDB.bundle_find().to_list()
+
+    async def bundle_create(self, bundle: ModpackBundle) -> ModpackBundle:
+        return await self.modpackDB.bundle_insert(bundle=bundle)
+
+    async def bundle_get(self, bundle_id: str) -> ModpackBundle:
+        return await self.modpackDB.bundle_get(bundle_id=bundle_id)
+
+    async def bundle_update(self, bundle_id: str, patch: ModpackBundlePatch) -> ModpackBundle:
+        return await self.modpackDB.bundle_update(bundle_id=bundle_id, patch=patch)
+
+    # Content (i-7985ee-063a3a).
+
+    async def project_find(self, bundle_id: str) -> list[PackProject]:
+        return (await self.modpackDB.bundle_get(bundle_id)).projects
+
+    async def project_add(self, bundle_id: str, refs: list[str], origin: ProjectOrigin) -> list[PackProject]:
+        """
+        Add Modrinth projects to a bundle, by slug or id, marked with their origin.
+
+        All or nothing: a reference Modrinth does not know refuses the whole request.
+
+        :param refs: Modrinth slugs or project ids.
+        :param origin: Whether the pack brings them or the admin adds them.
+        :return: The bundle's projects afterwards.
+        """
+        await self.modpackDB.bundle_get(bundle_id)
+        projects = await self._modrinth_projects(refs)
+        return await self.modpackDB.bundle_projects_add(
+            bundle_id, [PackProject(project_id=p.project_id, origin=origin) for p in projects])
+
+    async def pack_replace(self, bundle_id: str, refs: list[str]) -> list[PackProject]:
+        """
+        Replace what the pack brings with `refs`; what the admin added stays (d-7985ee-b15dd4).
+
+        :return: The bundle's projects afterwards.
+        """
+        await self.modpackDB.bundle_get(bundle_id)
+        projects = await self._modrinth_projects(refs)
+        return await self.modpackDB.bundle_pack_replace(
+            bundle_id, [PackProject(project_id=p.project_id, origin=ProjectOrigin.pack) for p in projects])
+
+    async def project_remove(self, bundle_id: str, project_id: str) -> list[PackProject]:
+        return await self.modpackDB.bundle_project_remove(bundle_id, project_id)
+
+    async def _modrinth_projects(self, refs: list[str]) -> list[ModrinthProject]:
+        """The Modrinth projects these slugs or ids name, stored in the catalog; 404 naming any
+        that Modrinth does not know."""
+        found = list(await self.modrinthAPI.project_get_many(list(refs))) if refs else []
+        known = {key for p in found for key in (p.project_id, p.slug)}
+        missing = [ref for ref in refs if ref not in known]
+        if missing:
+            raise HTTP_404_NOT_FOUND(f"Modrinth has no project {', '.join(missing)}")
+        return await self.modrinthDB.project_upsert_many(found)
+
+    # Resolution (i-7985ee-7f735a).
+
+    async def resolve(self, bundle_id: str) -> Lock:
+        """
+        Resolve a bundle into a lock, fetching from Modrinth what it needs.
+
+        The lock is computed, not stored: build_create freezes it. Every project and version
+        fetched is stored in the catalog.
+
+        :param bundle_id: The ID of the bundle.
+        :return: The lock; `complete` is False only if the dependency chain ran past RESOLVE_ROUNDS.
+        """
+        return await self._resolve(await self._request(await self.modpackDB.bundle_get(bundle_id)))
+
+    async def _request(self, bundle: ModpackBundle) -> ResolveRequest:
+        global_rules = {r.project_id: r.replacement for r in await self.modpackDB.replacement_find()}
+        return ResolveRequest(
+            target=Target(game_version=bundle.version, loader=str(bundle.loader.value),
+                          channels=frozenset(bundle.channels)),
+            projects=[p.project_id for p in bundle.projects],
+            origins={p.project_id: p.origin.value for p in bundle.projects},
+            pins=bundle.pins, server_decisions=bundle.server_decisions,
+            replacements=merge_replacements(global_rules, bundle.replacements))
+
+    async def _resolve(self, request: ResolveRequest) -> Lock:
+        catalog = Catalog()
+        for _ in range(RESOLVE_ROUNDS):
+            lock = resolve(request, catalog)
+            if lock.complete:
+                return lock
+            fetched: list[ModrinthVersion] = []
+            await self._fetch_types(catalog, sorted(lock.needs_projects | lock.needs_types))
+            for project_id in sorted(lock.needs_projects):
+                loaders = sorted(request.target.loaders(catalog.types.get(project_id, "mod")))
+                fetched += await self.modrinthAPI.project_versions(project_id, loaders, [request.target.game_version])
+                catalog.by_project.setdefault(project_id, [])
+            if lock.needs_versions:
+                asked = sorted(lock.needs_versions)
+                versions = list(await self.modrinthAPI.version_get_many(asked))
+                catalog.gone |= set(asked) - {v.version_id for v in versions}
+                fetched += versions
+            for version in fetched:
+                catalog.add(candidate(version))
+            if fetched:
+                await self.modrinthDB.version_upsert_many(fetched)
+        return lock
+
+    async def _fetch_types(self, catalog: Catalog, project_ids: list[str]) -> None:
+        """Fetch the projects whose type resolution needs, and store them in the catalog. One
+        Modrinth does not return is typed unknown, which resolution reports."""
+        if not project_ids:
+            return
+        projects = list(await self.modrinthAPI.project_get_many(project_ids))
+        for project in projects:
+            catalog.types[project.project_id] = project.project_type.value
+        for project_id in set(project_ids) - {p.project_id for p in projects}:
+            catalog.types[project_id] = "unknown"
+        if projects:
+            await self.modrinthDB.project_upsert_many(projects)
+
+    # Builds (i-7985ee-098611).
+
+    async def build_create(self, bundle_id: str) -> ModpackBuild:
+        """
+        Resolve the bundle and freeze the lock as its next build; latest moves to it.
+
+        Refused with 409 when the lock is not complete, has problems, or has mods whose place on
+        the server waits for the admin: a build is something that can be deployed as it is.
+
+        :return: The new build.
+        """
         bundle = await self.modpackDB.bundle_get(bundle_id)
-        return await self.modpackDB.project_insert(
-            project=ModpackProject(
-                modpack=bundle, # type: ignore
-                source=ProjectSourceModrinth(
-                    project=modrinth))) # type: ignore
-    
-    async def project_modrinth_create_many(self, bundle_id: str, project_ids: list[str]) -> Iterable[ModpackProject]:
-        modrinths = await self.modrinthDB.project_find(project_ids=project_ids).to_list()
-        bundle = await self.modpackDB.bundle_get(bundle_id)
-        return await asyncio.gather(*[
-            self.modpackDB.project_insert(
-                project=ModpackProject(
-                    modpack=bundle, # type: ignore
-                    source=ProjectSourceModrinth(
-                        project=modrinth))) # type: ignore
-                for modrinth in modrinths])
+        request = await self._request(bundle)
+        lock = await self._resolve(request)
+        if not lock.complete or lock.problems or lock.undecided:
+            reasons = [p.detail for p in lock.problems]
+            reasons += [f"{e.project_id}: falta decidir si va en el servidor" for e in lock.undecided]
+            if not lock.complete:
+                reasons.append("la resolución no terminó")
+            raise HTTP_409_CONFLICT("No se puede congelar este lock: " + "; ".join(reasons))
+        builds = await self.modpackDB.build_find(bundle_id)
+        number = (builds[0].number if builds else 0) + 1
+        build = await self.modpackDB.build_insert(ModpackBuild(
+            bundle_id=bundle.id, number=number, created_at=datetime.now(timezone.utc),  # type: ignore[arg-type]
+            request=request, lock=lock))
+        await self.modpackDB.bundle_latest_build(bundle_id, number)
+        return build
+
+    async def build_find(self, bundle_id: str) -> list[ModpackBuild]:
+        return await self.modpackDB.build_find(bundle_id)
+
+    async def build_get(self, bundle_id: str, number: int) -> ModpackBuild:
+        return await self.modpackDB.build_get(bundle_id, number)
+
+    async def build_recommend(self, bundle_id: str, number: int) -> ModpackBundle:
+        """Point recommended at an existing build; going back is pointing at an older one."""
+        await self.modpackDB.build_get(bundle_id, number)
+        return await self.modpackDB.bundle_recommend_build(bundle_id, number)
+
+    # Global replacement rules (d-7985ee-86fffa).
+
+    async def replacement_find(self) -> list[ModpackReplacement]:
+        return await self.modpackDB.replacement_find()
+
+    async def replacement_set(self, project_id: str, replacement: Optional[str]) -> ModpackReplacement:
+        return await self.modpackDB.replacement_set(ModpackReplacement(project_id=project_id, replacement=replacement))
+
+    async def replacement_delete(self, project_id: str) -> bool:
+        if not await self.modpackDB.replacement_delete(project_id):
+            raise HTTP_404_NOT_FOUND(f"No replacement rule for project '{project_id}'")
+        return True
