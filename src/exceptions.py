@@ -39,6 +39,12 @@ class HTTP_409_CONFLICT(HTTPException):
     def __init__(self, detail: Optional[str] = None):
         super().__init__(status.HTTP_409_CONFLICT, detail)
 
+class HTTP_429_TOO_MANY_REQUESTS(HTTPException):
+    """Used when an upstream API rate-limits us; carries how long it asked to wait, if it did"""
+    def __init__(self, detail: Optional[str] = None, retry_after: Optional[float] = None):
+        super().__init__(status.HTTP_429_TOO_MANY_REQUESTS, detail)
+        self.retry_after = retry_after
+
 class HTTP_500_INTERNAL_SERVER_ERROR(HTTPException):
     """Used when an unexpected error occurs"""
     def __init__(self, detail: Optional[str] = None):

@@ -4,6 +4,7 @@ from typing import Any, Generator, Optional
 from src.library.api import HttpAPI, METHOD
 from src.library.api.handler import JsonRequest, JsonResponse, MultiPartRequest, RequestHandler, StreamResponse
 from src.library.api.session import NO_AUTHORIZE, SessionAuthorization, TokenAuthorization
+from src.library.api.utils import backoff_on_rate_limit, not_rate_limited
 from src.model.pterodactyl import PterodactylAccount, PterodactylPermission, PterodactylFile, PterodactylServer
 from src.library.utils import getenv, getenv_opt
 from src.exceptions import *
@@ -28,28 +29,32 @@ class PterodactylAPI(HttpAPI):
             self.session_auth = TokenAuthorization(
                 token=PTERODACTYL_TOKEN)
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
+    @backoff_on_rate_limit
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_rate_limited)
     async def account(self) -> PterodactylAccount:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
             path=f'client/account')
         return PterodactylAccount(**handler.json.get("attributes", {}))
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
+    @backoff_on_rate_limit
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_rate_limited)
     async def permissions(self) -> Generator[PterodactylPermission, None, None]:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
             path=f'client/permissions')
         return (PterodactylPermission(**item) for item in handler.json.get("attributes", {}).get("permissions", []))
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
+    @backoff_on_rate_limit
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_rate_limited)
     async def server_get(self, server_id: str) -> PterodactylServer:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
             path=f'client/servers/{server_id}')
         return PterodactylServer(**handler.json.get("attributes", {}))
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
+    @backoff_on_rate_limit
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_rate_limited)
     async def server_get_many(self) -> Generator[PterodactylServer, None, None]:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
@@ -59,14 +64,16 @@ class PterodactylAPI(HttpAPI):
             })
         return (PterodactylServer(**item.get("attributes", {})) for item in handler.json.get("data", []))
     
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
+    @backoff_on_rate_limit
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_rate_limited)
     async def server_files(self, server_id: str, directory: str) -> Generator[PterodactylFile, None, None]:
         handler: JsonResponse = await self._request(
             method=METHOD.GET, path=f'client/servers/{server_id}/files/list',
             query={"directory": directory})
         return (PterodactylFile(**item.get("attributes", {})) for item in handler.json.get("data", []))
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
+    @backoff_on_rate_limit
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_rate_limited)
     async def server_files_signed_url(self, server_id: str, action: str, query: Optional[dict[str, str]] = None) -> str:
         """A one-use URL on the node (Wings), valid 15 minutes. Asking for one changes nothing."""
         handler: JsonResponse = await self._request(
@@ -76,6 +83,7 @@ class PterodactylAPI(HttpAPI):
         url: str = handler.json["attributes"]["url"]
         return url
 
+    @backoff_on_rate_limit
     async def server_files_download(self, server_id: str, filepath: str) -> bytes:
         url = await self.server_files_signed_url(server_id, "download", {"file": filepath})
         # The signed URL carries its own token and points at another host: never send the key.
