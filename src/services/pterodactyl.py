@@ -5,7 +5,7 @@ from typing import Optional
 from src.database import ModpackDatabase, ModrinthDatabase, PterodactylDatabase
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.api.client.pterodactyl import PterodactylAPI
-from src.library.scan import Comparison, ListedFile, ScanFile, compare, plan_scan
+from src.library.scan import Comparison, ListedFile, ScanFile, compare, drift_message, plan_scan
 from src.model.modrinth import ModrinthVersion
 from src.model.pterodactyl import PterodactylFile, PterodactylServer, ServerScan
 from src.exceptions import *
@@ -61,7 +61,15 @@ class PterodactylService():
         """
         document = await self.pterodactylDB.server_get(server_id)
         server = await self.pterodactylAPI.server_get(document.uuid)
+        # The panel does not know our fields: keep them.
+        server.bundle_id = document.bundle_id
         return await self.pterodactylDB.server_save(server, document.id)
+
+    async def server_link_bundle(self, server_id: str, bundle_id: Optional[str]) -> PterodactylServer:
+        """Link a server to the bundle it runs (404 if the bundle does not exist), or unlink it."""
+        if bundle_id is not None:
+            await self.modpackDB.bundle_get(bundle_id)
+        return await self.pterodactylDB.server_set_bundle(server_id, bundle_id)
     
     async def server_files(self, server_id: str, directory: str) -> list[PterodactylFile]:
         """
@@ -139,14 +147,32 @@ class PterodactylService():
     async def scan_find(self, server_id: str) -> list[ServerScan]:
         return await self.pterodactylDB.scan_find(server_id)
 
-    async def compare(self, server_id: str, bundle_id: str, build: Optional[int] = None,
+    async def drift(self, server_id: str) -> Optional[str]:
+        """How the latest scan compares with the server's build, as a message; None if the server
+        is not linked to a bundle with a build."""
+        server = await self.pterodactylDB.server_get(server_id)
+        if server.bundle_id is None:
+            return None
+        bundle = await self.modpackDB.bundle_get(server.bundle_id)
+        number = bundle.recommended_build or bundle.latest_build
+        if number is None:
+            return None
+        comparison = await self.compare(server_id, server.bundle_id, number)
+        return drift_message(server.name, bundle.name, number, comparison)
+
+    async def compare(self, server_id: str, bundle_id: Optional[str] = None, build: Optional[int] = None,
                       directory: str = SCAN_DIRECTORY) -> Comparison:
         """
         Compare a server's latest scan with a build of a bundle (i-7985ee-4364a3): what matches,
         what has another version, what is missing, extra or unknown.
 
+        :param bundle_id: By default, the bundle the server is linked to; 409 if it has none.
         :param build: The build number; by default the recommended one, else the latest.
         """
+        if bundle_id is None:
+            bundle_id = (await self.pterodactylDB.server_get(server_id)).bundle_id
+            if bundle_id is None:
+                raise HTTP_409_CONFLICT(f"Server '{server_id}' is not linked to a bundle: name one, or link it")
         bundle = await self.modpackDB.bundle_get(bundle_id)
         number = build if build is not None else (bundle.recommended_build or bundle.latest_build)
         if number is None:

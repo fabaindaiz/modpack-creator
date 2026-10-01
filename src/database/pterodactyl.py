@@ -67,6 +67,14 @@ class PterodactylDatabase():
         await server.save()
         return server
     
+    async def server_set_bundle(self, server_id: str, bundle_id: Optional[str]) -> PterodactylServer:
+        """Link a server to a bundle, or unlink it with None, in one atomic update."""
+        result = await PterodactylServer.get_pymongo_collection().update_one(
+            {"_id": self._server_oid(server_id)}, {"$set": {"bundle_id": bundle_id}})
+        if not result.matched_count:
+            raise HTTP_404_NOT_FOUND(f"Server '{server_id}' not found")
+        return await self.server_get(server_id)
+
     async def scan_insert(self, scan: ServerScan) -> ServerScan:
         return await ServerScan.insert(scan)
 
@@ -82,6 +90,17 @@ class PterodactylDatabase():
                                       ServerScan.directory == directory) \
             .sort(("scanned_at", SortDirection.DESCENDING)).limit(1).to_list()
         return scans[0] if scans else None
+
+    async def scan_set_drift(self, server_id: str, drift: Optional[str]) -> None:
+        """Record on the latest scan how it compared with the server's build."""
+        latest = await self.scan_find(server_id)
+        if latest:
+            await ServerScan.get_pymongo_collection().update_one({"_id": latest[0].id}, {"$set": {"drift": drift}})
+
+    async def scan_previous_drift(self, server_id: str) -> Optional[str]:
+        """The comparison recorded on the scan before the latest one."""
+        scans = await self.scan_find(server_id)
+        return scans[1].drift if len(scans) > 1 else None
 
     @staticmethod
     def _server_oid(server_id: str) -> PydanticObjectId:

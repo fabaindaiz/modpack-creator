@@ -40,3 +40,7 @@ class PterodactylServer(Document):
     is_suspended: bool
     is_installing: bool
     is_transferring: bool
+
+    # The bundle this server runs: what a scan is compared with by default. Ours, not the
+    # panel's, so refreshing the server from the panel keeps it.
+    bundle_id: Optional[str] = None

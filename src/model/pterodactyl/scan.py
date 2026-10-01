@@ -1,6 +1,6 @@
 from beanie import Document, Indexed, PydanticObjectId
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Optional
 from src.library.scan import ScanFile
 
 class ServerScan(Document):
@@ -12,3 +12,5 @@ class ServerScan(Document):
     scanned_at: datetime
     full: bool
     files: list[ScanFile]
+    # How the scan compared with the server's build, as announced; None if it was not linked.
+    drift: Optional[str] = None

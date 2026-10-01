@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Query
 from typing import Optional
 from src.library.scan import Comparison
 from src.model.jobs import Job
-from src.model.pterodactyl import ServerScan
+from src.model.pterodactyl import PterodactylServer, ServerScan
 from src.dependences import *
 
 router = APIRouter(
@@ -77,6 +77,17 @@ async def server_files_get_id(
     response = await pterodactylService.server_files(id, directory)
     return response
 
+@router.put("/server/{id}/bundle", response_model=PterodactylServer)
+@inject
+async def server_link_bundle(
+        id: str,
+        bundle_id: Optional[str] = Query(None, description="The bundle this server runs; empty unlinks it"),
+        pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
+        current_user = Depends(get_current_user)
+        ):
+    """Link the server to the bundle it runs: scans are compared with it by default."""
+    return await pterodactylService.server_link_bundle(id, bundle_id)
+
 @router.post("/server/{id}/scan", response_model=ServerScan)
 @inject
 async def server_scan(
@@ -118,7 +129,7 @@ async def server_scan_latest(
 @inject
 async def server_compare(
         id: str,
-        bundle_id: str,
+        bundle_id: Optional[str] = Query(None, description="By default, the bundle the server is linked to"),
         build: Optional[int] = Query(None, description="Build number; by default the recommended, else the latest"),
         directory: str = Query("/mods"),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),

@@ -249,3 +249,55 @@ def test_an_unknown_jar_modrinth_learns_later_is_identified_without_downloading_
         return first, second, [c for c in panel.calls if c.startswith("download")]
 
     assert mongo(scenario) == (["unknown"], ["identified"], [])
+
+
+# El bundle de un servidor.
+
+
+def test_a_server_linked_to_a_bundle_compares_against_it_without_naming_it(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[str | None, bool]:
+        modrinth = HashModrinthAPI({})
+        bundle_id, version_id = await build_with_fabric_api(modrinth)
+        modrinth.known[sha1(b"fabric api")] = version_id
+        panel = FakePanel()
+        panel.files = {"fabric-api.jar": (b"fabric api", T0)}
+        service, server_id = await setup(panel, modrinth)
+        linked = await service.server_link_bundle(server_id, bundle_id)
+        await service.scan(server_id)
+        return linked.bundle_id, (await service.compare(server_id)).in_sync
+
+    bundle_id, in_sync = mongo(scenario)
+    assert bundle_id is not None and in_sync
+
+
+def test_linking_needs_an_existing_bundle_and_comparing_needs_a_link(mongo: MongoRunner) -> None:
+    async def scenario() -> list[int]:
+        service, server_id = await setup(FakePanel(), HashModrinthAPI({}))
+        codes = []
+        for call in (lambda: service.server_link_bundle(server_id, "000000000000000000000000"),
+                     lambda: service.compare(server_id)):
+            with pytest.raises(HTTPException) as refused:
+                await call()
+            codes.append(refused.value.status_code)
+        return codes
+
+    assert mongo(scenario) == [404, 409]
+
+
+def test_refreshing_a_server_from_the_panel_keeps_its_bundle(mongo: MongoRunner) -> None:
+    class Panel(FakePanel):
+        async def server_get(self, uuid: str) -> PterodactylServer:
+            return PterodactylServer(identifier="1a2b3c4d", internal_id=1, uuid=uuid, name="Renamed", node="n1",
+                                     description="", status=None, is_suspended=False, is_installing=False,
+                                     is_transferring=False)
+
+    async def scenario() -> tuple[str, str | None]:
+        modrinth = HashModrinthAPI({})
+        bundle_id, _ = await build_with_fabric_api(modrinth)
+        service, server_id = await setup(Panel(), modrinth)
+        await service.server_link_bundle(server_id, bundle_id)
+        refreshed = await service.server_update(server_id)
+        return refreshed.name, refreshed.bundle_id
+
+    name, bundle_id = mongo(scenario)
+    assert name == "Renamed" and bundle_id is not None

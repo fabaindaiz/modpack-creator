@@ -118,3 +118,15 @@ def compare(files: Iterable[ScanFile], lock_entries: Iterable[Any]) -> Compariso
                 result.different_version.append((file, entry))
     result.missing = [e for p, e in by_project.items() if p not in seen]
     return result
+
+
+def drift_message(server: str, bundle: str, build: int, comparison: Comparison) -> str:
+    """What a server differs in from its build, for a person to read."""
+    if comparison.in_sync:
+        return f"✅ {server} coincide con {bundle}, build {build}."
+    lines = [f"⚠️ {server} no coincide con {bundle}, build {build}:"]
+    lines += [f"- {f.path}: otra versión ({f.version_id}; el build pide {e.version_id})" for f, e in comparison.different_version]
+    lines += [f"- falta {e.project_id} ({e.version_id})" for e in comparison.missing]
+    lines += [f"- sobra {f.path}" for f in comparison.extra]
+    lines += [f"- desconocido {f.path}" for f in comparison.unknown]
+    return "\n".join(lines)
