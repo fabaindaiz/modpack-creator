@@ -45,7 +45,12 @@ Decididas, no preferencias. `docs/decisions.md` indexa cada una con lo que la ha
   `.env.default`. *Audit* `env_template` (d-7985ee-2e4d10).
 - **No reintentes escrituras externas.** Un POST/PATCH/PUT/DELETE a Pterodactyl o Modrinth no
   lleva `backoff` sobre `Exception`: una respuesta perdida no dice si el servidor ya se apagó o el
-  archivo ya se borró. *Audit*, solo aviso por ahora (d-7985ee-05d032).
+  archivo ya se borró. Los POST de Modrinth que solo leen están en `IDEMPOTENT_POSTS`. *Audit*
+  `retried_writes` (d-7985ee-05d032).
+- **Pterodactyl es de solo lectura salvo que se habilite.** Toda escritura del cliente de
+  Pterodactyl pasa por `PterodactylAPI._write`, y sin `PTERODACTYL_WRITES: "enabled"` se rechaza
+  antes de enviar nada. Leer y escanear servidores nunca lo necesita. *Audit* `ungated_writes`,
+  `tests/test_write_gate.py` (d-7985ee-5739fc).
 - **Contrasta cada llamada externa con su especificación** antes de escribirla: rutas, métodos y
   forma del cuerpo están en `docs/references.md`. El gate no habla con las APIs reales.
 - **Autenticarse no es estar autorizado.** Solo entra quien está en un grupo de
@@ -67,6 +72,7 @@ Decididas, no preferencias. `docs/decisions.md` indexa cada una con lo que la ha
 
 ```bash
 ./scripts/check.sh     # el gate = hatch run gate: bundle, audit, typecheck, tests (lo mismo que CI)
+./scripts/test-mongo.sh # el gate con un MongoDB descartable: sin él, los tests de base se saltan
 hatch run tests -k x   # un test
 ./scripts/build.sh     # docker build de la imagen
 ./scripts/run.sh       # docker compose up -d
@@ -81,8 +87,11 @@ El entorno es hatch con Python 3.12 (`pyproject.toml`); las dependencias salen d
 
 **El gate es CI** (`.github/workflows/check.yml`, d-7985ee-fd2a8d): un cambio no está listo si
 `./scripts/check.sh` no pasa. Los tests se escriben antes que el código que describen, y se ven
-fallar. Lo que el gate **no** cubre, y hay que decirlo en el reporte: la imagen Docker, MongoDB
-real, el login OIDC y cualquier llamada real a Modrinth o Pterodactyl. Skill `verify`.
+fallar. Los tests de base corren contra un MongoDB real: en CI siempre, en local solo con
+`./scripts/test-mongo.sh` (d-7985ee-1a2f53). Ningún test abre una conexión sin
+`@pytest.mark.network`, y ninguno resuelve un nombre fuera de localhost (d-7985ee-1a20c1). Lo que el gate **no** cubre, y hay que decirlo en el
+reporte: la imagen Docker, los datos de producción, el login OIDC y cualquier llamada real a
+Modrinth o Pterodactyl. Skill `verify`.
 
 ## Commits
 

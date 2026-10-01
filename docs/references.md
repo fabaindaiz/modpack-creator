@@ -15,16 +15,30 @@ bien escrita. Todas se leyeron en la fuente primaria el 2026-10-01.
 
   **Lo que confirma:** `project_versions` en `src/library/api/client/modrinth.py`.
 
-  **No aplicado aún:** `files_hash_post_many` y `files_update_hash_post_many` usan la ruta singular
-  y mandan strings; `files_update_hash_post` manda strings donde van arrays (roadmap).
+  **Lo que confirma:** los tres POST por hash de `src/library/api/client/modrinth.py`, con
+  `tests/test_api_contracts.py` (S6). Las respuestas de los lotes son un mapa hash → versión
+  (`HashVersionMap`), no una lista.
+
+- **Modrinth en vivo, grabado el 2026-10-01** (`tests/fixtures/modrinth/`). `environment` es una
+  lista en el proyecto (`["client_only"]`) y un string en la versión. En el proyecto, la spec
+  marca `client_side`/`server_side` como deprecados pero todavía obligatorios. Un shader trae
+  `environment: []` y loaders `iris`/`optifine`. `/tag/game_version` lista de la más nueva a la
+  más vieja: `26.4-snapshot-2`, …, `26.3`, `1.21.11`.
+
+  **Lo que confirma:** `src/model/modrinth/` y `newest_first`, con `tests/test_modrinth_catalog.py`.
 
 - **[Pterodactyl panel — rutas del Client API](https://github.com/pterodactyl/panel/blob/develop/routes/api-client.php)**
   y sus requests (`SendCommandRequest`, `DeleteFileRequest`) — enviar un comando es
   `POST /api/client/servers/{server}/command` con `{"command": "..."}`; borrar archivos es
   `POST .../files/delete` con cuerpo JSON `{"root": ..., "files": [...]}` y responde 204.
 
-  **No aplicado aún:** `server_command` usa GET con query y `server_files_delete` manda query
-  (roadmap).
+  Subir y bajar son dos pasos (`FileUploadController`, `FileController::download`): un GET al panel
+  devuelve `{"object": "signed_url", "attributes": {"url": ...}}`, una URL de Wings con un JWT que
+  vence en 15 minutos. Wings recibe la subida como multipart, campo `files`, con `directory` en la
+  query (`router_server_files.go`).
+
+  **Lo que confirma:** `src/library/api/client/pterodactyl.py`, con `tests/test_api_contracts.py`
+  (S6). La clave del panel nunca va a la URL de Wings.
 
 ## Python y el framework
 
@@ -42,19 +56,20 @@ bien escrita. Todas se leyeron en la fuente primaria el 2026-10-01.
   **Lo que confirma:** la configuración de `main.py` es segura solo mientras la cookie sea `lax`.
   Produjo: d-7985ee-4e4aee.
 
-  **No aplicado aún:** una lista explícita de orígenes en vez de `*`, cuando exista un frontend.
+  **Aplicado en S3:** sin CORS salvo los orígenes de `CORS_ALLOW_ORIGINS`.
 
 - **[aiohttp — client quickstart](https://github.com/aio-libs/aiohttp/blob/master/docs/client_quickstart.rst)** —
   "Don't create a session per request… making a session for every request is a **very bad** idea."
 
-  **Lo que hacemos distinto, a propósito:** `HttpAPI._request` abre una `ClientSession` por
-  request. No se cambió en el bootstrap; queda como deuda en el roadmap.
+  **Lo que confirma:** desde i-7985ee-57034c, `HttpAPI` tiene una sesión por cliente, que el
+  lifespan cierra (`tests/test_http_client.py`).
 
 - **[Beanie — índices](https://github.com/BeanieODM/beanie/blob/main/docs/tutorial/indexes.md)** —
   `Indexed(unique=True)` crea un índice único sobre ese campo al correr `init_beanie`.
 
-  **No aplicado aún:** `ModrinthVersion.project_id` tiene `unique=True`, así que solo cabe una
-  versión por proyecto (roadmap).
+  Beanie no borra ni cambia un índice existente: con el mismo nombre y otras opciones,
+  `init_beanie` falla con `OperationFailure` (medido en S5, `mongo:8.0`). Por eso
+  `drop_unique_index` borra el `unique` viejo de `ModrinthVersion.project_id` al arrancar.
 
 ## Seguimiento de versiones de mods (i-7985ee-43df2f)
 

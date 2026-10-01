@@ -107,7 +107,9 @@ El orden importa: cada sesión deja el gate verde y prepara la siguiente.
   - `project_update(_many)` y `server_update` guardan el dato nuevo;
   - sin `unique` en `ModrinthVersion.project_id`;
   - los `find_one({"id": …})` pasan a `version_id`.
-- **Test primero:** el de S4, más una inserción de dos versiones del mismo proyecto.
+- **Test primero:** el de S4, más una inserción de dos versiones del mismo proyecto, más un
+  `insert_many` con un duplicado en el medio (ver i-7985ee-be55dd: hoy pierde las filas que
+  siguen).
 - **Hecho cuando:** los dos tests pasan.
 - **Cuidado:** Beanie no borra el índice único ya creado en producción. El borrado es un paso
   manual, documentado en el changelog y hecho con respaldo.
@@ -118,7 +120,10 @@ El orden importa: cada sesión deja el gate verde y prepara la siguiente.
     `files/delete` por POST con cuerpo JSON);
   - sin `backoff` sobre `Exception` en las escrituras.
 - **Test primero:** un test por llamada contra un servidor aiohttp local que valida método, ruta y
-  cuerpo según `docs/references.md`.
+  cuerpo según `docs/references.md`. Si además se escribe un doble de Modrinth o Pterodactyl
+  para los servicios, los mismos casos corren contra el doble y contra respuestas reales
+  grabadas: un contrato que ambos pasan, no un doble que acepta más que la API (tarjeta
+  `test-double-fidelity`).
 - **Hecho cuando:** `retried_writes` pasa de AVISO a FALLO en `scripts/audit.py` y el audit sigue
   en 0 fallos.
 
@@ -163,7 +168,7 @@ decisión, sin tocar ningún servidor.
 | Cuando `agents-knowledge` publique una release | `.agents/method/prompt-update.md` antes del siguiente trabajo grande |
 | Una vez al mes, o ante un aviso de seguridad | subir dependencias de a una, cada una en su commit con CI (posible desde S1) |
 | Antes de cualquier cambio en producción | respaldo de Mongo; backup del servidor en Pterodactyl |
-| Cuando cambie una API externa | actualizar `docs/references.md` y el informe en `docs/research/`; re-grabar los fixtures |
+| Cuando cambie una API externa | actualizar `docs/references.md` y el informe en `docs/research/`; re-grabar los fixtures (`python scripts/record_modrinth_fixtures.py`) |
 
 ## 6. Riesgos
 

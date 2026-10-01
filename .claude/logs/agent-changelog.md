@@ -5,6 +5,458 @@ introducción. Los commits de este repositorio fueron `wip` sin cuerpo: el *por 
 no quedaba en ninguna parte, y una sesión no ve lo que otra aprendió. La referencia del formato
 está al final del archivo, para que nada entre este párrafo y la primera entrada capture texto.
 
+## 2026-10-01 · s-7985ee-9b0d95 — Cierre de la sesión de desarrollo del 2026-10-01: fases 0 a 2 en código
+
+Resumen de la jornada, de S4 a la fase 2. El detalle de cada parte está en las entradas de abajo;
+aquí, lo que hace falta para retomar.
+
+**Qué quedó hecho** (en `main`, sin desplegar):
+- **Fase 0, código:**
+  - S4: tests contra MongoDB real en CI y bloqueo de red;
+  - S5: los updates escriben y caben muchas versiones por proyecto;
+  - la caché de usuarios;
+  - S6: contratos y escrituras sin reintentos;
+  - S7: `/health`;
+  - deuda: capas en 0 y una `ClientSession` por cliente.
+- **Fase 1:**
+  - el modelo nuevo de Modrinth;
+  - la resolución pura con su servicio;
+  - el contenido con origen;
+  - los builds inmutables con punteros.
+- **Fase 2, en solo lectura:**
+  - la puerta de escritura a Pterodactyl;
+  - el escaneo por hash;
+  - la comparación con un build.
+- 133 tests contra Mongo real; el audit con 0 fallos, 0 avisos y las baselines vacías.
+
+**Decisiones del dueño en la jornada:**
+- d-7985ee-86fffa: reemplazos globales con reglas por pack;
+- d-7985ee-20b06b: los conflictos se reportan, sin backtracking;
+- d-7985ee-f0c7a6: en el servidor, lo ambiguo lo decide el admin;
+- d-7985ee-30fe05: los bundles viejos no se migran;
+- d-7985ee-b15dd4: lo del admin pasa por la resolución;
+- d-7985ee-9170b8: shaders y resourcepacks solo en el cliente.
+
+Además, no desplegar y seguir con el desarrollo. Las decisiones técnicas tomadas aquí son
+d-7985ee-1a2f53, d-7985ee-1a20c1, d-7985ee-5739fc y d-7985ee-0277b6.
+
+**Hallazgos** (defectos que ya existían, todos corregidos con test):
+- **Usuarios:** la migración de usuarios de S3 daba 500 a todo usuario guardado antes.
+- **Pterodactyl:** `power`, `command` y `delete` fallaban en cada 204 real y, con `backoff`,
+  repetían la acción. `upload` y `download` no seguían el flujo de URL firmada de Wings.
+- **Modrinth:**
+  - los lotes por hash usaban rutas y cuerpos equivocados;
+  - `project_versions` mandaba siempre `featured`, así que nunca traía todas las versiones;
+  - con el enum de loaders, ningún shader, resourcepack ni datapack entraba al catálogo;
+  - `project_version_update_*` y `project_dependencies` no habían funcionado nunca.
+- **Datos:**
+  - los updates guardaban el documento viejo;
+  - el índice `unique` en `ModrinthVersion.project_id` impedía guardar más de una versión por
+    proyecto, y quitarlo sin migrar habría impedido arrancar;
+  - `GET /modpack/{id}/project` devolvía siempre `[]`;
+  - un proyecto de modpack guardaba una copia y no una referencia;
+  - `Settings.collection` no es de Beanie 2 (queda planeado, i-7985ee-c1de10);
+  - MongoDB devuelve las fechas sin zona y en milisegundos.
+- **Cliente HTTP:** los handlers compartidos mezclaban respuestas concurrentes.
+- **API:** los ids inexistentes o inválidos daban 500.
+
+**Aprendizajes** (tres, como propuestas al bundle: p-881066296a, p-9e406b711e, p-12c61d894f):
+- Una clave de caché con fecha no coincide después de pasar por la base: hay que normalizar en el
+  modelo y probar contra la base real.
+- Un `xfail` estricto sin `raises` cuenta cualquier error como el esperado.
+- Leer JSON de un 204 y reintentar repite una escritura.
+- Además, los tests de este repositorio fallaron casi siempre al importar. Para verlos fallar por
+  su razón se plantó un error en cada arreglo importante: es la única forma de saber que muerden.
+
+**Pendientes, en orden** (detalle en `docs/roadmap.md`, §Dónde estamos):
+1. Del dueño:
+   - desplegar con el runbook de Mongo;
+   - S7 operación (usuario de servicio y revocar la clave vieja);
+   - un login real fuera del grupo;
+   - los puntos de control de las fases 1 y 2 en solo lectura;
+   - decidir packwiz, y después la fase 3.
+2. Código sin decisiones:
+   - el primer escaneo por `files/compress` y la pausa ante un 429;
+   - el chequeo de Iris u OptiFine para shaders;
+   - logs JSON;
+   - `Settings.collection`;
+   - `httpx2`;
+   - igualar la versión de Mongo de CI con la de producción.
+3. El hito de la fase 0 (`state-review` y harvest) se cierra cuando el dueño despliegue.
+
+**No verificado.**
+- Pterodactyl y Wings reales.
+- El login OIDC real: las pruebas de humo firmaron una cookie de sesión con un secreto de prueba.
+- Los datos de producción.
+
+**Medido.**
+- Gate con Mongo: 133 pasan. Sin Mongo: 87 pasan y 46 se saltan.
+- Contra Modrinth real: una resolución de 6 proyectos y la identificación por hash de 3 jars
+  reales.
+- Pruebas de humo de la imagen con podman: salud, todo el flujo de bundle a build por HTTP, el
+  índice viejo migrado al arrancar y los índices nuevos creados.
+
+## 2026-10-01 · s-7985ee-6d9eea — Fase 2: solo lectura de verdad, escaneo por hash y comparación con un build
+
+**Qué.**
+- **La puerta de escritura (d-7985ee-5739fc).** Toda escritura a Pterodactyl pasa por `_write`,
+  y `PTERODACTYL_WRITES` (apagado por defecto, en `.env.default`) la rechaza con 403 antes de
+  enviar. El audit `ungated_writes` falla con una escritura fuera de la puerta.
+- **Escaneo (i-7985ee-43df2f, opción 1).**
+  - `src/library/scan.py`, puro: el plan de escaneo con caché por ruta, tamaño y fecha, y la
+    comparación.
+  - `PterodactylService.scan`: lista, baja solo lo que cambió, hashea sin cargar y con límite, e
+    identifica por sha1. Guarda un `ServerScan`.
+- **Comparación (i-7985ee-4364a3):** `GET /v1/server/{id}/compare`.
+  `PterodactylVersion`/`PterodactylModpack` se reemplazaron sin migrar (d-7985ee-0277b6).
+
+**Por qué.** Era la fase 2. Se invirtió el orden del plan: el manifiesto en el servidor
+(i-7985ee-5c7506) es una escritura, y el punto de control de la fase es en solo lectura.
+
+**Qué salió mal en el camino.**
+- El segundo escaneo bajaba todo: MongoDB devuelve las fechas sin zona y en milisegundos. Lo
+  encontró el test del servicio contra Mongo real; un doble en memoria no lo habría visto. Se
+  normaliza en el modelo, con su test puro.
+- Con jars reales se vio que un desconocido se volvía a bajar en cada escaneo. Ahora conserva su
+  hash y solo se vuelve a preguntar.
+
+**Arquitectura.** ✅ Cumple: router → servicio → base y cliente, y las funciones de escaneo son
+puras.
+
+**Qué quedó sin hacer.**
+- Escribir el manifiesto en el servidor (fase 3, con la puerta abierta).
+- El primer escaneo por `files/compress` y la pausa ante un 429.
+- **El panel real:** no se puede probar desde aquí.
+
+**No verificado.** Pterodactyl y Wings reales: el listado, las URLs firmadas y los límites de
+tasa siguen la especificación y los contratos, pero no se ejecutaron contra un panel.
+
+**Medido.**
+- Gate con Mongo: 133 pasan, audit 0 fallos.
+- La puerta se vio fallar con una escritura plantada. La comprobación de sha1 se vio fallar
+  quitándola.
+- **Con Modrinth real:** tres jars reales del CDN se identificaron con su versión exacta; uno
+  hecho a mano quedó como desconocido.
+
+## 2026-10-01 · s-7985ee-1ed73f — Fase 1: tipos de proyecto, contenido con origen y builds inmutables
+
+**Qué.**
+- El dueño decidió tres cosas:
+  - no migrar bundles viejos (d-7985ee-30fe05);
+  - lo del admin pasa por la resolución (d-7985ee-b15dd4);
+  - shaders y resourcepacks solo en el cliente, datapacks también en el servidor
+    (d-7985ee-9170b8).
+- **Tipos (i-7985ee-60822c).** Loaders por tipo en `Target`, lado servidor por tipo y
+  `needs_types`, para no traer todas las versiones de un proyecto cuando solo falta su tipo.
+- **Contenido (i-7985ee-063a3a, i-7985ee-a17c2c).**
+  - `ModpackBundle.projects` (`project_id` y origen), con actualizaciones atómicas;
+  - `pack_replace` conserva lo del admin con un update de pipeline;
+  - `ModpackProject` y sus `Link` desaparecieron.
+- **Builds (i-7985ee-098611).** `ModpackBuild` inmutable, número único por bundle, `latest` con
+  `$max` y `recommended` a mano. 409 si el lock no se puede congelar.
+- 404 en vez de 500 para bundles y servidores inexistentes o con id inválido.
+  `ModpackBundleCreate` para no fijar punteros ni contenido al crear.
+- El script de fixtures graba también el shader y Fabric API para 26.3: sin filtro, Fabric API
+  solo traía snapshots.
+
+**Por qué.** Los ítems restantes de la fase 1, con las decisiones del dueño.
+
+**Qué salió mal en el camino.**
+- Los tests nuevos fallaron al importar, y otra vez se plantaron errores para verlos fallar por
+  su razón: la carrera al agregar y el reemplazo que pierde lo del admin.
+- mypy no aceptó `-ModpackBuild.number` como orden; se usa `SortDirection`.
+
+**Arquitectura.** ✅ Cumple. El modelo importa `Lock` y `ResolveRequest` de
+`src/library/resolution.py`, que es puro.
+
+**Qué quedó sin hacer.**
+- No se comprueba que el pack tenga Iris u OptiFine para un shader.
+- Exportar un build (`.mrpack` o packwiz) es de la fase 2 (opción 2 de i-7985ee-43df2f).
+- El punto de control de la fase 1 es del dueño.
+
+**No verificado.** Datos de producción; el login OIDC (la prueba de humo firmó una cookie de
+sesión con un secreto de prueba).
+
+**Medido.**
+- Gate con Mongo: 105 pasan.
+- Humo HTTP sobre la imagen, contra Modrinth real: todo el flujo de bundle → build → recomendar,
+  con sus 404 y 409, sin errores en los logs.
+
+## 2026-10-01 · s-7985ee-f4f2fb — 7f735a: la resolución de un modpack, pura, con el servicio y contra Modrinth real
+
+**Qué.**
+- El dueño decidió tres cosas (d-7985ee-86fffa, d-7985ee-20b06b, d-7985ee-f0c7a6):
+  - reemplazos globales con reglas por pack;
+  - reportar conflictos, sin backtracking;
+  - en el servidor, los mods ambiguos los decide el admin.
+- `src/library/resolution.py`, una función pura con el algoritmo de la investigación §5:
+  - canales, pins, exactas y libres, reemplazos;
+  - opcionales sugeridas, embebidas, incompatibles;
+  - versiones que Modrinth ya no tiene;
+  - Quilt acepta versiones de Fabric;
+  - lado servidor.
+- `ModpackService.resolve` trae de Modrinth lo que el lock pide, ronda por ronda, y lo guarda en
+  el catálogo. `POST /v1/modpack/{id}/resolve` y las reglas globales en `/v1/replacement`
+  (`ModpackReplacement`, registrado en `init_beanie`).
+
+**Por qué.** Era el siguiente ítem de la fase 1 y el dueño tomó sus decisiones.
+
+**Qué salió mal en el camino.**
+- El primer test del servicio dio un lock vacío. El filtro por `isinstance` descartaba en
+  silencio los proyectos, y detrás había dos defectos que ya existían:
+  - `project_find(bundle_id)` nunca encontraba nada (`modpack.$id` después del `$lookup`);
+  - `ModpackProject` guarda una copia del proyecto, no una referencia (i-7985ee-a17c2c).
+
+  Ahora un proyecto ilegible es un problema en el lock, no una omisión.
+- Un test de reemplazos habría pasado aunque la regla global ganara. Se reforzó exigiendo que no
+  haya problemas.
+
+**Hallazgos.**
+- `project_versions` siempre mandaba `featured`, que filtra a solo destacadas o solo no
+  destacadas. Leído en la spec antes de usarlo para resolver.
+- Contra Modrinth real, el shader del pack sale `unresolvable` (i-7985ee-60822c).
+
+**Arquitectura.** ✅ Cumple: la resolución no hace I/O; el servicio trae y guarda.
+
+**Qué quedó sin hacer.**
+- El lock no se guarda (i-7985ee-098611).
+- Shaders (i-7985ee-60822c).
+- El backtracking queda descartado por decisión.
+
+**Medido.**
+- Gate con Mongo: 88 pasan. Los tests de resolución se vieron fallar al importar, y además con
+  dos errores plantados (4 fallos).
+- **Contra Modrinth real**, Mongo descartable: 6 proyectos para 26.3 con fabric dieron 8 entradas
+  y 1 problema (el shader). Iris → la Sodium `bAZQdGpg` exacta; Mod Menu → Fabric API.
+
+## 2026-10-01 · s-7985ee-3ca4fe — Capas en cero, una ClientSession por cliente, y httpx explicado
+
+**Qué.**
+- **Capas (i-7985ee-2bbbfd).** Las 14 inyecciones de base o cliente en routers pasaron a
+  métodos de servicio. `LAYERING_BASELINE` queda vacía. Antes se escribió
+  `tests/test_routes_auth.py`: toda ruta de `/v1` sin sesión da 401.
+- **Sesión HTTP (i-7985ee-57034c).** Una `ClientSession` por cliente, creada en el primer
+  request y recreada si cambia el event loop. `close()`, y el lifespan cierra los tres clientes.
+- **`httpx`.** No sobra: el cliente OIDC de Authlib para Starlette lo importa sin declararlo.
+  Queda dicho en `requirements.txt`.
+
+**Por qué.** Deuda de la fase 0 que no necesitaba decisiones del dueño, mientras la fase 1
+espera las suyas.
+
+**Qué salió mal en el camino.**
+- El test de rutas no encontró ninguna al principio: en FastAPI 0.142 los routers incluidos
+  son perezosos, como ya anotaba `test_startup`. Se enumeran con `openapi()`.
+- Al desindentar el bloque de `_request` se usó un `if True:` provisional, que se quitó.
+
+**Arquitectura.** ✅ Cumple, y la baseline de capas llegó a 0.
+
+**Medido.** Gate con Mongo: 61 pasan. El test de rutas se vio fallar abriendo `/server/external`:
+dio 500, porque el bloqueo de red cortó la llamada al panel. El de la sesión se vio fallar
+forzando una sesión por request: el servidor vio tres conexiones.
+
+## 2026-10-01 · s-7985ee-3dba25 — f4ba63: el catálogo sigue el modelo nuevo de Modrinth, con respuestas reales grabadas
+
+**Qué.**
+- **Respuestas reales grabadas.** `scripts/record_modrinth_fixtures.py` graba respuestas de
+  Modrinth en `tests/fixtures/modrinth/`, más las versiones exactas que piden las grabadas:
+  - cinco proyectos: cliente, ambos lados, servidor, uno con dependencias y un shader;
+  - versiones de tres proyectos;
+  - los primeros 200 tags de versión de juego.
+- **Modelo:** `environment` (lista en el proyecto, valor en la versión) y los lados deprecados
+  opcionales. Los loaders son `list[str]`, y `CustomEnum` lee como `unknown` un valor nuevo.
+- **Versiones de juego:** `newest_first` y `ModrinthAPI.game_versions()`.
+- **Dependencias por versión:** `version_dependencies` reemplaza a `project_dependencies` y a
+  `/project/{id}/dependencies`.
+
+**Por qué.** Es el primer ítem de la fase 1 y no necesitaba decisiones del dueño.
+
+**Qué salió mal en el camino.**
+- El primer grabado no traía la versión de Sodium que fija Iris, así que el script ahora graba
+  también las dependencias.
+- Los tests fallaron todos juntos al importar. Para verlos fallar por su razón, se quitó cada
+  arreglo por separado: el `unknown` y los loaders abiertos.
+
+**Hallazgo.** Con el enum de loaders, el catálogo no podía guardar ningún shader, resourcepack
+ni datapack: el parseo fallaba.
+
+**Arquitectura.** ✅ Cumple.
+
+**Qué quedó sin hacer.** Qué `environment` va en un pack de servidor; es de i-7985ee-7f735a.
+
+**No verificado.** Las respuestas son del 2026-10-01; Modrinth puede cambiar.
+
+**Medido.** Gate con Mongo: 58 pasan.
+
+## 2026-10-01 · s-7985ee-5853ff — S7 (código): health live y ready, y el healthcheck de la API
+
+**Qué.** `/health/live` y `/health/ready` sin sesión (i-7985ee-90f944). El router pasa por
+`HealthService` y este por `HealthDatabase.ping`, con 2 s de límite. El router se monta al
+importar, no en el lifespan. El compose tiene un healthcheck de la API con `urllib`.
+
+**Por qué.** Era la parte de código de S7. La parte de operación (usuario de servicio, clave
+nueva, revocar la vieja) es del dueño, en el panel.
+
+**Qué salió mal en el camino.** Un comentario decía que montarlo al importar servía si el arranque
+era lento. Es falso: uvicorn no atiende requests hasta que termina el lifespan. Se corrigió.
+
+**Arquitectura.** ✅ Cumple: router → servicio → base, y `test_di_wiring_matches_constructor_types`
+cubre el proveedor nuevo.
+
+**Qué quedó sin hacer.** Los logs JSON y el latido del worker. S7 de operación.
+
+**Medido.** Gate con Mongo: 48 pasan. **Humo con podman sobre la imagen construida, con un Mongo:**
+- `live` y `ready` dan 200, y `ready` da 503 con Mongo detenido;
+- el comando del healthcheck sigue al estado real, y `/v1/users/me` sin sesión da 401;
+- con el índice `unique` viejo en `ModrinthVersion.project_id`, la API arranca y lo reemplaza por
+  uno no `unique`.
+
+## 2026-10-01 · s-7985ee-639167 — S6: los clientes siguen el contrato y las escrituras no se reintentan
+
+**Qué.**
+- **Contratos (i-7985ee-fb00ca).** Se contrastaron con fuentes primarias: el `openapi.yaml` v2.7.0
+  de Modrinth, leído con un parser y no resumido; `routes/api-client.php`, `FileController` y
+  `FileUploadController` del panel; y el handler de subida de Wings. Nueve tests en
+  `tests/test_api_contracts.py`, contra un servidor local que contesta 405 a toda ruta que la
+  especificación no define.
+  - Modrinth: los lotes por hash en plural, con arrays, leen un mapa hash → versión.
+  - Pterodactyl: `command` y `files/delete` por POST con JSON. `upload` y `download` en dos pasos,
+    con URL firmada de Wings, y sin la clave del panel en esa URL.
+- **Un 204 ya no es un error:** `JsonResponse` no decodifica un cuerpo vacío.
+- **Reintentos (i-7985ee-05c4a0).** Sin `backoff` en las escrituras de Pterodactyl.
+  `retried_writes` es FALLO, con `IDEMPOTENT_POSTS` para los tres POST de Modrinth que solo leen.
+  Una entrada vieja falla. Se borró el `backoff` muerto de `handle_errors`.
+- **Handlers por request (i-7985ee-236b45).** `_request` copia los handlers que recibe.
+  `MultiPartRequest` deja que aiohttp escriba el `Content-Type` con el boundary.
+
+**Por qué.** Era S6. **El hallazgo grave:** `power`, `command` y `delete` fallaban en cada éxito
+real, porque intentaban leer JSON de un 204. Y con `backoff` **repetían la acción**: un `restart`
+real se habría mandado dos veces y reportado como error. Ningún endpoint los llamaba todavía.
+
+**Qué salió mal en el camino.**
+- El resumen automático de la especificación de Modrinth decía que el GET por hash devuelve un
+  mapa. Leído el YAML con un parser, devuelve una sola versión. Se usó el YAML.
+- Un `ModrinthVersion` es un `Document` y no se puede construir sin `init_beanie`, que exige un
+  servidor. Por eso los contratos de Modrinth corren dentro del fixture `mongo`.
+
+**Arquitectura.** ✅ Cumple.
+
+**Qué quedó sin hacer.** `ClientSession` por request (i-7985ee-57034c).
+
+**No verificado.** Las APIs reales de Modrinth y Pterodactyl; los contratos son contra la
+especificación.
+
+**Medido.** Gate con Mongo: 44 pasan, audit 0 fallos y 0 avisos (antes, 6 avisos). Los nueve
+contratos se vieron fallar antes. La regla se vio fallar plantando un `backoff` en `server_power`.
+
+## 2026-10-01 · s-7985ee-92a5f4 — S5: los updates escriben, muchas versiones por proyecto y lotes que no pierden filas
+
+**Qué.**
+- **Updates (i-7985ee-055362).** `project_update` y `server_update` guardan lo que devuelve la
+  API (los argumentos de `*_save` iban al revés). `project_update_many` empareja por
+  `project_id`, no por el orden en que contesta Modrinth.
+- **Versiones (i-7985ee-be55dd).** `ModrinthVersion.project_id` deja de ser `unique`, y
+  `drop_unique_index` borra el índice viejo al arrancar. Los lotes de Modrinth pasan a
+  `project_upsert_many` y `version_upsert_many`: un upsert por clave natural, deduplicado.
+- **Caché (i-7985ee-c7b593).** `UsersInternal` sin `use_cache`.
+
+**Por qué.** Era S5. Más los dos puntos traídos del otro repositorio.
+
+**Qué salió mal en el camino.** Hallazgos, no tropiezos:
+- `project_version_update_*` y `project_dependencies` lanzaban `TypeError` siempre (`upsert` sin
+  actualización): no funcionaron nunca.
+- `Settings.collection` no es de Beanie 2: las colecciones se llaman como la clase
+  (i-7985ee-c1de10, planeado, sin tocar para no dejar huérfanos los datos).
+- Medido: quitar el `unique` sin migrar habría impedido arrancar la API en producción
+  (`OperationFailure`). Se descartó `allow_index_dropping`, que borra cualquier índice ajeno.
+
+**Arquitectura.** ✅ Cumple.
+
+**Qué quedó sin hacer.** i-7985ee-c1de10. Los `insert_many` de modpack y Pterodactyl siguen
+ordenados, pero sin índices `unique` no pierden filas.
+
+**No verificado.** Datos reales de producción.
+
+**Medido.** Siete tests nuevos contra Mongo, todos vistos fallar antes. Gate: 34 pasan.
+
+## 2026-10-01 · s-7985ee-f6eda9 — Lo que se trae de otro repositorio sobre MongoDB: bloqueo de red, insert_many, caché y contrato
+
+**Qué.** El dueño pidió revisar cómo maneja MongoDB otro repositorio suyo, priorizando la
+literatura. Se tomó lo útil:
+- **Bloqueo de red en los tests (d-7985ee-1a20c1).** El fixture automático `no_network` rechaza
+  `connect` salvo en tests con `@pytest.mark.network`, y `getaddrinfo` fuera de localhost siempre.
+  `strict_markers` está activo y el fixture `mongo` exige el marcador. Están marcados
+  `tests/test_database.py` y `tests/test_http_client.py`.
+- **El fixture `mongo` dice por qué** reinicia Beanie en cada test (la caché es por clase y la
+  clave no incluye la base; lo confirma `beanie/odm/utils/init.py`) y por qué no usa
+  `skip_indexes`. El otro repositorio sí lo usa, y deja sus índices sin probar.
+- **En el roadmap:**
+  - `insert_many` con `ordered=True` pierde filas ante un duplicado (en i-7985ee-be55dd y S5);
+  - `use_cache` en `UsersInternal`, i-7985ee-c7b593, ítem nuevo;
+  - el contrato doble-contra-real para S6.
+
+**Áreas.** `tests/conftest.py`, `tests/test_no_network.py`, `pyproject.toml`, dos marcadores,
+documentos.
+
+**Por qué.** Hoy un test podía resolver y conectarse a `api.modrinth.com` sin que nada lo notara.
+Los tres tests de `tests/test_no_network.py` lo mostraron fallando antes del fixture.
+
+**Qué salió mal en el camino.** Nada que cambiara el plan. El repositorio no estaba donde se
+buscó primero, y el dueño dio la ruta.
+
+**Arquitectura.** ✅ Cumple.
+
+**Qué quedó sin hacer.**
+- Lo del otro repositorio que no aplica aquí: su CI nunca corre los tests contra Mongo, y su
+  producción es FerretDB. Se le dijo al dueño, pero no se escribió allí.
+- El arreglo de `insert_many` y el de `use_cache` quedan planeados, no hechos.
+
+**No verificado.** Lo mismo que s-7985ee-8315e1. CI en el remoto: falta el push.
+
+**Medido.** `./scripts/test-mongo.sh`: 27 pasan, 1 `xfail`. Sin el marcador, el test de aiohttp
+falla con el `RuntimeError` del bloqueo y los de base fallan en el fixture.
+
+## 2026-10-01 · s-7985ee-8315e1 — S4: MongoDB real en CI, y la migración de usuarios antiguos que reventaba
+
+**Qué.**
+- i-7985ee-ade111: servicio `mongo:8.0` en el job `gate`, y el fixture `mongo` en
+  `tests/conftest.py`. El fixture usa bases con prefijo propio por test y las borra al terminar.
+  Sin `TEST_MONGODB_URI`, se salta en local y falla en CI. `init_databases(client, prefix)` sale
+  de `configure_beanie`, que se comporta igual que antes. En local, `scripts/test-mongo.sh`.
+- `tests/test_database.py`:
+  - tres tests de `user_from_provider`: identidad nueva, `iss` + `sub` y no el email, y la
+    migración de un usuario anterior a S3;
+  - el bug de i-7985ee-055362 reproducido, en `xfail(strict=True, raises=AssertionError)` hasta S5.
+- **Bug corregido (S3, sin desplegar):** la migración de usuarios antiguos nunca funcionó. Su
+  `provider` no tiene `sub`, el `find_one` de Beanie lo validaba contra el modelo nuevo y lanzaba
+  `ValidationError`. Resultado: un 500 en el login de todo usuario guardado antes de S3. Ahora se
+  busca y se migra en crudo, con un `find_one_and_update` atómico.
+- d-7985ee-1a2f53; roadmap, `AGENTS.md` (comandos y verificación) y d-7985ee-361ed0 al día.
+
+**Áreas.** `src/database/users.py`, `src/model/__init__.py`, `tests/`, `.github/workflows/check.yml`,
+`scripts/test-mongo.sh`, documentos.
+
+**Por qué.** Era S4 de `plan-de-trabajo.md` §3. El primer test contra la base real encontró el bug
+de S3, que los diez tests de `tests/test_auth.py` no veían porque no tocan Mongo.
+
+**Qué salió mal en el camino.** El `xfail` estricto, sin `raises`, se tragó un `ImportError` y
+lo contó como el bug esperado. Ahora exige `AssertionError`.
+
+**Arquitectura.** ✅ Cumple. El acceso crudo a la colección queda dentro de `src/database/`.
+
+**Qué quedó sin hacer.**
+- Desconocida la versión de Mongo de producción; CI usa 8.0. Igualarla al conocerla.
+- S5 sigue: quitar el `xfail` al arreglar los updates.
+- `UsersInternal` tiene `use_cache = True`; no se miró si el caché de Beanie puede devolver un
+  usuario viejo después de la migración.
+
+**No verificado.** Datos reales de producción, en particular que los usuarios antiguos tengan
+exactamente la forma del test (`provider` sin `sub`, sacada del modelo anterior a S3). CI en el
+remoto: falta el push.
+
+**Medido.** `./scripts/test-mongo.sh` en local (podman, `mongo:8.0`): 24 pasan, 1 `xfail`.
+El test de migración se vio fallar antes del arreglo, y los tests de base, saltarse sin la URI y
+fallar con `CI` definido.
+
 ## 2026-10-01 · s-7985ee-704f46 — fase-0 fusionada en main: el próximo update exige el runbook de MongoDB
 
 **Qué.**
