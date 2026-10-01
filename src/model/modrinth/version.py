@@ -61,7 +61,6 @@ class ModrinthVersion(Document):
     files: list[ModrinthVersionFile]
 
     class Settings:
-        collection = "version"
         indexes = [
             "files.hashes.sha512"
         ]

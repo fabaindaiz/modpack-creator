@@ -74,9 +74,6 @@ class ModrinthProject(Document):
     published: datetime
     updated: datetime
 
-    class Settings:
-        collection = "project"
-    
     @staticmethod
     def parse(**kwargs) -> "ModrinthProject":
         """

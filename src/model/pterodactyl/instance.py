@@ -8,6 +8,3 @@ class PterodactylInstance(Document):
     name: str
     api_url: str
     token: str
-
-    class Settings:
-        collection = "instance"

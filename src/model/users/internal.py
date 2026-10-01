@@ -53,4 +53,4 @@ class UsersInternal(Document):
     # Sin use_cache (i-7985ee-c7b593): la caché de Beanie no se invalida al escribir, así que un
     # cambio en el usuario tardaría hasta 10 minutos en valer, y distinto en cada worker.
     class Settings:
-        collection = "internal"
+        use_cache = False

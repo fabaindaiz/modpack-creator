@@ -226,3 +226,20 @@ def test_a_user_read_after_a_change_is_the_changed_user(mongo: MongoRunner) -> N
         return (await users.user_get(str(user.id))).name
 
     assert mongo(scenario) == "After"
+
+
+def test_every_collection_is_named_after_its_class(mongo: MongoRunner) -> None:
+    """Las colecciones de producción se llaman como la clase (i-7985ee-c1de10): Beanie 2 ignora
+    `Settings.collection`. Un `name` nuevo en un modelo dejaría sus datos huérfanos sin migrar."""
+    from beanie import Document
+    from src.model.modpack import ModpackBuild, ModpackBundle, ModpackReplacement
+    from src.model.pterodactyl import PterodactylInstance, ServerScan
+
+    async def scenario() -> dict[str, str]:
+        models: list[type[Document]] = [ModpackBundle, ModpackBuild, ModpackReplacement, ModrinthProject,
+                                        ModrinthVersion, PterodactylInstance, PterodactylServer, ServerScan,
+                                        UsersInternal]
+        return {m.__name__: m.get_collection_name() for m in models}
+
+    names = mongo(scenario)
+    assert names == {name: name for name in names}

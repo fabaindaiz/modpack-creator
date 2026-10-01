@@ -40,6 +40,3 @@ class PterodactylServer(Document):
     is_suspended: bool
     is_installing: bool
     is_transferring: bool
-
-    class Settings:
-        collection = "server"
