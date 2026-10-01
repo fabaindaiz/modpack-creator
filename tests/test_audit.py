@@ -64,4 +64,13 @@ def test_retried_writes() -> None:
               "async def power(self):\n    await self._request(method=METHOD.POST, path='p')\n"
               "@backoff.on_exception(backoff.expo, Exception, max_tries=2)\n"
               "async def read(self):\n    await self._request(method=METHOD.GET, path='p')\n")
-    assert [w.split()[1] for w in audit.retried_writes(client, "c.py")] == ["power:"]
+    assert [w.split()[1] for w in audit.retried_writes(client, "c.py", set())] == ["power:"]
+    # Un POST que solo lee se declara, y entonces se puede reintentar.
+    assert not audit.retried_writes(client, "c.py", {("c.py", "power")})
+
+
+def test_an_idempotent_post_that_no_longer_retries_leaves_the_list() -> None:
+    client = "async def power(self):\n    await self._request(method=METHOD.POST, path='p')\n"
+    assert audit.stale_idempotent_posts({("c.py", "power"), ("c.py", "gone")}, {"c.py": client}) == [
+        "c.py gone: ya no reintenta un POST; sácalo de IDEMPOTENT_POSTS en scripts/audit.py",
+        "c.py power: ya no reintenta un POST; sácalo de IDEMPOTENT_POSTS en scripts/audit.py"]

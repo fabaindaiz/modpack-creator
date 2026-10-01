@@ -20,27 +20,20 @@ ROOT = Path(__file__).resolve().parent.parent
 # Routers que hoy inyectan una base de datos o un cliente en vez de un servicio. La lista solo
 # se achica: una violación nueva falla, y una entrada que ya no viola también falla, para que
 # el arreglo la saque de aquí en el mismo cambio (docs/roadmap.md, capas).
-LAYERING_BASELINE = {
-    ("src/routers/v1/modpack.py", "bundle_find", "modpackDatabase"),
-    ("src/routers/v1/modpack.py", "bundle_create", "modpackDatabase"),
-    ("src/routers/v1/modpack.py", "bundle_get", "modpackDatabase"),
-    ("src/routers/v1/modpack.py", "bundle_update", "modpackDatabase"),
-    ("src/routers/v1/modpack.py", "project_get", "modpackDatabase"),
-    ("src/routers/v1/modpack.py", "modpack_delete_project", "modpackDatabase"),
-    ("src/routers/v1/modrinth.py", "project_find", "modrinthDatabase"),
-    ("src/routers/v1/modrinth.py", "project_get", "modrinthDatabase"),
-    ("src/routers/v1/pterodactyl.py", "server_external", "pterodactylAPI"),
-    ("src/routers/v1/pterodactyl.py", "server_find", "pterodactylDatabase"),
-    ("src/routers/v1/pterodactyl.py", "server_get_id", "pterodactylDatabase"),
-    ("src/routers/v1/pterodactyl.py", "version_find", "pterodactylDatabase"),
-    ("src/routers/v1/pterodactyl.py", "version_get", "pterodactylDatabase"),
-    ("src/routers/v1/users.py", "users_me", "usersDatabase"),
+LAYERING_BASELINE: set[tuple[str, str, str]] = set()
+# POSTs que solo leen: Modrinth los define como consultas por hash (openapi.yaml v2.7.0), así
+# que reintentarlos no repite ningún efecto. Cualquier otro POST/PATCH/PUT/DELETE con backoff
+# falla (d-7985ee-05d032). Una entrada que ya no reintenta también falla.
+IDEMPOTENT_POSTS = {
+    ("src/library/api/client/modrinth.py", "files_hash_post_many"),
+    ("src/library/api/client/modrinth.py", "files_update_hash_post"),
+    ("src/library/api/client/modrinth.py", "files_update_hash_post_many"),
 }
 # Lo que un router puede inyectar además de un servicio: el cliente OAuth del login.
 ROUTER_ALLOWED_PROVIDERS = {"authlib_oauth"}
 
 # Documents que existen sin registrarse en init_beanie. Solo se achica.
-UNREGISTERED_BASELINE = {"PterodactylModpack"}
+UNREGISTERED_BASELINE: set[str] = set()
 
 MUTABLE_DEFAULT = (ast.Dict, ast.List, ast.Set, ast.DictComp, ast.ListComp, ast.SetComp)
 NON_IDEMPOTENT = {"POST", "PATCH", "PUT", "DELETE"}
@@ -159,8 +152,7 @@ def pinned_requirements(text: str) -> list[str]:
     return problems
 
 
-def retried_writes(source: str, name: str) -> list[str]:
-    """AVISO (d-7985ee-05d032): un reintento sobre un POST/PATCH/PUT/DELETE puede repetir un efecto en el servidor."""
+def _retried_writes(source: str) -> list[tuple[int, str, set[str]]]:
     found = []
     for node in ast.walk(ast.parse(source)):
         if not isinstance(node, ast.AsyncFunctionDef):
@@ -168,7 +160,32 @@ def retried_writes(source: str, name: str) -> list[str]:
         retries = any("backoff" in ast.unparse(d) for d in node.decorator_list)
         methods = {m.group(1) for m in re.finditer(r"METHOD\.([A-Z]+)", ast.unparse(node))}
         if retries and methods & NON_IDEMPOTENT:
-            found.append(f"{name}:{node.lineno} {node.name}: reintenta un {'/'.join(sorted(methods))}")
+            found.append((node.lineno, node.name, methods))
+    return found
+
+
+def retried_writes(source: str, name: str, idempotent: set[tuple[str, str]]) -> list[str]:
+    """Un reintento sobre un POST/PATCH/PUT/DELETE puede repetir un efecto en el servidor (d-7985ee-05d032)."""
+    return [f"{name}:{line} {function}: reintenta un {'/'.join(sorted(methods))}"
+            for line, function, methods in _retried_writes(source) if (name, function) not in idempotent]
+
+
+def stale_idempotent_posts(idempotent: set[tuple[str, str]], sources: dict[str, str]) -> list[str]:
+    """Una entrada de IDEMPOTENT_POSTS que ya no reintenta sale de la lista en el mismo cambio."""
+    live = {(name, function) for name, text in sources.items() for _, function, _ in _retried_writes(text)}
+    return [f"{name} {function}: ya no reintenta un POST; sácalo de IDEMPOTENT_POSTS en scripts/audit.py"
+            for name, function in sorted(idempotent - live)]
+
+
+def ungated_writes(source: str, name: str) -> list[str]:
+    """Toda escritura a Pterodactyl pasa por `_write`, donde el interruptor de solo lectura la
+    detiene (tarjeta one-write-gate-makes-read-only-real)."""
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.AsyncFunctionDef) and node.name != "_write":
+            methods = {m.group(1) for m in re.finditer(r"METHOD\.([A-Z]+)", ast.unparse(node))}
+            if methods & NON_IDEMPOTENT:
+                found.append(f"{name}:{node.lineno} {node.name}: escribe en Pterodactyl sin pasar por _write")
     return found
 
 
@@ -191,7 +208,12 @@ def main() -> int:
     failures += python_versions((ROOT / "docker/Dockerfile").read_text(), (ROOT / ".mypy.ini").read_text(),
                                 (ROOT / "pyproject.toml").read_text())
     failures += pinned_requirements((ROOT / "requirements.txt").read_text())
-    advisories = [w for n, t in sources.items() if n.startswith("src/library/api/client/") for w in retried_writes(t, n)]
+    clients = {n: t for n, t in sources.items() if n.startswith("src/library/api/client/")}
+    for name, text in clients.items():
+        failures += retried_writes(text, name, IDEMPOTENT_POSTS)
+    failures += stale_idempotent_posts(IDEMPOTENT_POSTS, clients)
+    failures += ungated_writes(sources["src/library/api/client/pterodactyl.py"], "src/library/api/client/pterodactyl.py")
+    advisories: list[str] = []
 
     for line in advisories:
         print(f"AVISO {line}")

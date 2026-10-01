@@ -1,3 +1,5 @@
+import asyncio
+import copy
 from enum import Enum
 from typing import Any, Callable, Optional
 from aiohttp import hdrs, ClientSession, ClientTimeout
@@ -51,6 +53,31 @@ class HttpAPI:
         self.session_kwargs = kwargs
         self.session_kwargs_fun = session_kwargs_fun
         self.raise_for_status = raise_for_status
+        self._session: Optional[ClientSession] = None
+        self._session_loop: Optional[asyncio.AbstractEventLoop] = None
+
+    def _client_session(self) -> ClientSession:
+        """The client's one ClientSession, created on first use (i-7985ee-57034c).
+
+        aiohttp: "making a session for every request is a very bad idea"; one per client keeps
+        its connections alive. A session belongs to the event loop that made it, so a client used
+        from another loop gets a new one. base_url and the session options are read once, here.
+        """
+        loop = asyncio.get_running_loop()
+        if self._session is None or self._session.closed or self._session_loop is not loop:
+            session_kwargs: dict = self.session_kwargs_fun()
+            session_kwargs.update(self.session_kwargs)
+            self._session = ClientSession(self.base_url, proxy=self.proxy, timeout=self.timeout,
+                                          raise_for_status=self.raise_for_status, **session_kwargs)
+            self._session_loop = loop
+        return self._session
+
+    async def close(self) -> None:
+        """Close the client's session; the next request opens a new one. Called by the lifespan."""
+        if self._session is not None and self._session_loop is asyncio.get_running_loop():
+            await self._session.close()
+        self._session = None
+        self._session_loop = None
     
     async def _authorization(self,
             session_auth: Optional[SessionAuthorization] = None
@@ -95,25 +122,29 @@ class HttpAPI:
 
         Returns:
             RESPONSE: Response handler for the request. Same type as the response parameter.
-        """
-        session_kwargs: dict = self.session_kwargs_fun()
-        session_kwargs.update(self.session_kwargs)
-        async with ClientSession(self.base_url, proxy=self.proxy, timeout=self.timeout, raise_for_status=self.raise_for_status, **session_kwargs) as session:
-            try:
-                session_auth = session_auth or self.session_auth
-                request.set_use_body(method in POST_METHOD)
 
-                headers = {**(headers or {}), **self.session_headers}
-                headers = await request.headers(headers)
-                headers = await response.headers(headers)
-                headers = await session_auth.headers(session, headers)
-                kwargs = await request.kwargs(query or {}, json or {}, body, kwargs)
-                
-                async with session.request(method.value, path, headers=headers, **kwargs) as results:
-                    await response.handle(results)
-                    await validate_results(results)
-                    return response
+        The request and response handlers passed in are prototypes: each call works on its own
+        copy, because a handler keeps the body of its response and concurrent requests on one
+        client would otherwise read each other's (i-7985ee-236b45).
+        """
+        request = copy.copy(request)
+        response = copy.copy(response)
+        session = self._client_session()
+        try:
+            session_auth = session_auth or self.session_auth
+            request.set_use_body(method in POST_METHOD)
+
+            headers = {**(headers or {}), **self.session_headers}
+            headers = await request.headers(headers)
+            headers = await response.headers(headers)
+            headers = await session_auth.headers(session, headers)
+            kwargs = await request.kwargs(query or {}, json or {}, body, kwargs)
             
-            except FakeResponse:
-                await response.set_response(response.FAKE_RESPONSE)
+            async with session.request(method.value, path, headers=headers, **kwargs) as results:
+                await response.handle(results)
+                await validate_results(results)
                 return response
+        
+        except FakeResponse:
+            await response.set_response(response.FAKE_RESPONSE)
+            return response

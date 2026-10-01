@@ -63,4 +63,6 @@ class MultiPartRequest(RequestHandler):
         return await super().kwargs(query, json, body, kwargs)
 
     async def headers(self, headers: Optional[dict] = None) -> dict:
-        return {**(headers or {}), "Content-Type": "multipart/form-data"}
+        # No Content-Type here: aiohttp writes it from the FormData, with the boundary the
+        # server needs to split the parts. A bare "multipart/form-data" has none.
+        return dict(headers or {})

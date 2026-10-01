@@ -34,6 +34,11 @@ class HTTP_408_REQUEST_TIMEOUT(HTTPException):
     def __init__(self, detail: Optional[str] = None):
         super().__init__(status.HTTP_408_REQUEST_TIMEOUT, detail)
     
+class HTTP_409_CONFLICT(HTTPException):
+    """Used when the request conflicts with the current state of the resource"""
+    def __init__(self, detail: Optional[str] = None):
+        super().__init__(status.HTTP_409_CONFLICT, detail)
+
 class HTTP_500_INTERNAL_SERVER_ERROR(HTTPException):
     """Used when an unexpected error occurs"""
     def __init__(self, detail: Optional[str] = None):

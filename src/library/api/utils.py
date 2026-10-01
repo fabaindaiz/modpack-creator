@@ -1,7 +1,7 @@
 import asyncio
 import backoff
 from functools import wraps
-from aiohttp import ClientResponse, ConnectionTimeoutError, ClientResponseError, ClientConnectionError, ServerConnectionError
+from aiohttp import ClientResponse, ConnectionTimeoutError, ClientResponseError, ServerConnectionError
 from src.library.utils import WRAP
 from src.exceptions import *
 
@@ -19,8 +19,9 @@ def handle_auth(func: WRAP) -> WRAP:
     return wrapper # type: ignore
 
 def handle_errors(func: WRAP) -> WRAP:
+    # No retry here: _request also sends writes, and a write is never retried (d-7985ee-05d032).
+    # A read that wants retries declares backoff on its client method.
     @wraps(func)
-    @backoff.on_exception(backoff.expo, ClientConnectionError, max_time=15)
     async def wrapper(*args, **kwargs):
         try:
             return await func(*args, **kwargs)

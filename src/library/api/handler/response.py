@@ -56,7 +56,9 @@ class JsonResponse(ResponseHandler):
         self._json = response
 
     async def handle(self, response: ClientResponse) -> None:
-        self._json = await response.json()
+        # A 204, or any empty body, has no JSON to decode: the caller reads `status`.
+        body = await response.read()
+        self._json = await response.json() if body.strip() else None
         self._response = response
 
     async def headers(self, headers: Optional[dict] = None) -> dict:

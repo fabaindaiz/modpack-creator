@@ -1,10 +1,10 @@
 import backoff
 import json
-from typing import Generator, Sequence
+from typing import Generator, Optional, Sequence
 from src.library.api import HttpAPI, METHOD
 from src.library.api.handler import JsonResponse
 from src.library.api.session import TokenAuthorization
-from src.model.modrinth import ModrinthProject, ModrinthVersion
+from src.model.modrinth import ModrinthGameVersion, ModrinthProject, ModrinthVersion
 from src.library.utils import getenv, getenv_opt, boolToStr
 
 MODRINTH_API_URL = getenv("MODRINTH_API_URL", "https://api.modrinth.com/v2/")
@@ -40,24 +40,28 @@ class ModrinthAPI(HttpAPI):
         return (ModrinthProject.parse(**item) for item in handler.json)
     
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def project_dependencies(self, slug: str) -> tuple[Generator[ModrinthProject, None, None], Generator[ModrinthVersion, None, None]]:
+    async def game_versions(self) -> list[ModrinthGameVersion]:
+        """Every game version Modrinth knows, newest first: the order to compare them by."""
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
-            path=f'project/{slug}/dependencies')
-        projects = (ModrinthProject.parse(**item) for item in handler.json.get("projects", []))
-        versions = (ModrinthVersion.parse(**item) for item in handler.json.get("versions", []))
-        return projects, versions
+            path='tag/game_version')
+        return [ModrinthGameVersion(**item) for item in handler.json]
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def project_versions(self, slug: str, loaders: Sequence[str] = (), game_versions: Sequence[str] = (), featured: bool = True) -> Generator[ModrinthVersion, None, None]:
+    async def project_versions(self, slug: str, loaders: Sequence[str] = (), game_versions: Sequence[str] = (), featured: Optional[bool] = None) -> Generator[ModrinthVersion, None, None]:
+        # `featured` filters to featured-only or non-featured-only: omitted, every version comes.
+        # The spec recommends include_changelog=false unless the changelog is used.
+        query = {
+            "loaders": json.dumps(list(loaders)),
+            "game_versions": json.dumps(list(game_versions)),
+            "include_changelog": "false",
+        }
+        if featured is not None:
+            query["featured"] = boolToStr(featured, int_format=False)
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
             path=f'project/{slug}/version',
-            query={
-                "loaders": json.dumps(loaders),
-                "game_versions": json.dumps(game_versions),
-                "featured": boolToStr(featured, int_format=False)
-            })
+            query=query)
         return (ModrinthVersion.parse(**item) for item in handler.json)
     
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
@@ -83,16 +87,18 @@ class ModrinthAPI(HttpAPI):
             query={"algorithm": algorithm})
         return ModrinthVersion.parse(**handler.json)
 
+    # The three POSTs below are lookups: Modrinth only reads, so retrying them is safe
+    # (IDEMPOTENT_POSTS in scripts/audit.py). Bodies and answers per openapi.yaml v2.7.0.
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def files_hash_post_many(self, hashes: list[str], algorithm: str = "sha512") -> Generator[ModrinthVersion, None, None]:
+    async def files_hash_post_many(self, hashes: list[str], algorithm: str = "sha512") -> dict[str, ModrinthVersion]:
         handler: JsonResponse = await self._request(
             method=METHOD.POST,
-            path='version_file',
+            path='version_files',
             json={
-                "hashes": str(hashes),
+                "hashes": hashes,
                 "algorithm": algorithm
             })
-        return (ModrinthVersion.parse(**item) for item in handler.json)
+        return {hash: ModrinthVersion.parse(**item) for hash, item in handler.json.items()}
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
     async def files_update_hash_post(self, hash: str, algorithm: str = "sha512", loaders: Sequence[str] = (), game_versions: Sequence[str] = ()) -> ModrinthVersion:
@@ -101,20 +107,20 @@ class ModrinthAPI(HttpAPI):
             path=f'version_file/{hash}/update',
             query={"algorithm": algorithm},
             json={
-                "loaders": json.dumps(loaders),
-                "game_versions": json.dumps(game_versions)
+                "loaders": list(loaders),
+                "game_versions": list(game_versions)
             })
         return ModrinthVersion.parse(**handler.json)
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def files_update_hash_post_many(self, hashes: list[str], algorithm: str = "sha512", loaders: Sequence[str] = (), game_versions: Sequence[str] = ()) -> ModrinthVersion:
+    async def files_update_hash_post_many(self, hashes: list[str], algorithm: str = "sha512", loaders: Sequence[str] = (), game_versions: Sequence[str] = ()) -> dict[str, ModrinthVersion]:
         handler: JsonResponse = await self._request(
             method=METHOD.POST,
-            path='version_file/update',
+            path='version_files/update',
             json={
-                "hashes": json.dumps(hashes),
+                "hashes": hashes,
                 "algorithm": algorithm,
-                "loaders": json.dumps(loaders),
-                "game_versions": json.dumps(game_versions)
+                "loaders": list(loaders),
+                "game_versions": list(game_versions)
             })
-        return ModrinthVersion.parse(**handler.json)
+        return {hash: ModrinthVersion.parse(**item) for hash, item in handler.json.items()}
