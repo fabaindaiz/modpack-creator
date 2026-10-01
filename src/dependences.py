@@ -4,11 +4,13 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import HTTPException, Request, Depends
 from src.library.api.client import (
     Downloader,
+    LoaderMetaAPI,
     ModrinthAPI,
     PterodactylAPI,
 )
 from src.database import (
     HealthDatabase,
+    JobDatabase,
     UsersDatabase,
     ModpackDatabase,
     ModrinthDatabase,
@@ -16,6 +18,7 @@ from src.database import (
 )
 from src.services import (
     HealthService,
+    JobService,
     UsersService,
     ModpackService,
     ModrinthService,
@@ -32,8 +35,10 @@ class Dependences(containers.DeclarativeContainer):
     downloader = providers.Singleton(Downloader)
     modrinthAPI = providers.Singleton(ModrinthAPI)
     pterodactylAPI = providers.Singleton(PterodactylAPI)
+    loaderAPI = providers.Singleton(LoaderMetaAPI)
 
     healthDatabase = providers.Singleton(HealthDatabase)
+    jobDatabase = providers.Singleton(JobDatabase)
     usersDatabase = providers.Singleton(UsersDatabase)
     modpackDatabase = providers.Singleton(ModpackDatabase)
     modrinthDatabase = providers.Singleton(ModrinthDatabase)
@@ -43,11 +48,12 @@ class Dependences(containers.DeclarativeContainer):
     usersService = providers.Singleton(UsersService, usersDatabase)
     modrinthService = providers.Singleton(ModrinthService, modrinthAPI, modrinthDatabase)
     pterodactylService = providers.Singleton(PterodactylService, pterodactylAPI, pterodactylDatabase, modrinthAPI, modrinthDatabase, modpackDatabase)
-    modpackService = providers.Singleton(ModpackService, modpackDatabase, modrinthDatabase, modrinthAPI)
+    modpackService = providers.Singleton(ModpackService, modpackDatabase, modrinthDatabase, modrinthAPI, loaderAPI)
+    jobService = providers.Singleton(JobService, jobDatabase, pterodactylService)
 
 async def close_clients(container: Dependences) -> None:
     """Close the HTTP session each client keeps (i-7985ee-57034c); the lifespan calls it on shutdown."""
-    for client in (container.downloader(), container.modrinthAPI(), container.pterodactylAPI()):
+    for client in (container.downloader(), container.modrinthAPI(), container.pterodactylAPI(), container.loaderAPI()):
         await client.close()
 
 @inject

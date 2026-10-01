@@ -2,6 +2,7 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Query
 from typing import Optional
 from src.library.scan import Comparison
+from src.model.jobs import Job
 from src.model.pterodactyl import ServerScan
 from src.dependences import *
 
@@ -89,6 +90,19 @@ async def server_scan(
     Scan a server: which jars it has and which Modrinth version each is. Only reads the server.
     """
     return await pterodactylService.scan(id, directory=directory, full=full)
+
+@router.post("/server/{id}/scan/job", response_model=Job, status_code=202)
+@inject
+async def server_scan_job(
+        id: str,
+        full: bool = Query(False, description="Hash every jar again, trusting no cached hash"),
+        jobs: JobService = Depends(Provide[Dependences.jobService]),
+        current_user = Depends(get_current_user)
+        ):
+    """
+    Queue a scan of the server, run by the job worker. 409 if the server already has an active job.
+    """
+    return await jobs.enqueue_scan(id, full=full)
 
 @router.get("/server/{id}/scan", response_model=ServerScan)
 @inject

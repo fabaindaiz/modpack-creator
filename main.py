@@ -1,6 +1,10 @@
 from src.library.utils import load_env, getenv, getenv_opt, strToBool
 load_env(".env.yaml")
 
+# JSON logs with the request id (i-7985ee-90f944), before anything logs.
+from src.library.logging import RequestIdMiddleware, configure_logging
+configure_logging(getenv("LOG_LEVEL", "INFO"))
+
 import src.routers.health as health
 from src.routers.v1 import MODULES_V1, include_routers_v1, tags_metadata
 import src.dependences as dependences
@@ -18,12 +22,25 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 import src.model as model
+import asyncio
+from src.services.jobs import JobWorker
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     dependences.configure_oauth2()
     await model.configure_beanie()
     include_routers_v1(app)
+    # The job worker (i-7985ee-0ec295), unless JOBS_WORKER is "off". Several processes may run
+    # one each: claims are atomic and leases expire.
+    stop = asyncio.Event()
+    worker = None
+    if getenv("JOBS_WORKER", "on").strip().lower() != "off":
+        worker = asyncio.create_task(
+            JobWorker(container.jobDatabase(), container.jobService().handlers()).run_forever(stop))
     yield
+    stop.set()
+    if worker is not None:
+        await worker
     await dependences.close_clients(container)
 
 app = FastAPI(title="Modpack Creator API",
@@ -55,3 +72,6 @@ app.add_middleware(
     https_only=strToBool(getenv("SESSION_HTTPS_ONLY", "true")),
     max_age=int(getenv("SESSION_MAX_AGE", "43200")),
     same_site="lax")
+
+# Added last, so it runs first: every request, including the session's 401s, gets an id and a line.
+app.add_middleware(RequestIdMiddleware)
