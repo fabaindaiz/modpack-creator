@@ -11,7 +11,7 @@ fuentes primarias:
 | [`research/2026-10-operacion-pterodactyl.md`](research/2026-10-operacion-pterodactyl.md) | cómo actualizar un servidor con backup y rollback usando solo la Client API |
 | [`research/2026-10-arquitectura.md`](research/2026-10-arquitectura.md) | trabajos durables, tests, autorización, avisos, UI y observabilidad |
 
-Este documento es la visión y el orden. El detalle de cada paso, con lo que choca y lo que hay que
+El cómo, sesión por sesión, está en [`plan-de-trabajo.md`](plan-de-trabajo.md). Este documento es la visión y el orden. El detalle de cada paso, con lo que choca y lo que hay que
 decidir, está en [`roadmap.md`](roadmap.md) por su id. **Nada de esto es un compromiso**: es el
 orden que se recomienda hoy, y lo que se aprenda en cada fase puede cambiarlo.
 
@@ -73,6 +73,7 @@ login abierto.
 
 | Orden | Ítem | Por qué ahora |
 |---|---|---|
+| 0 | i-7985ee-bb2fde · fijar las versiones de las dependencias | hoy CI y la imagen instalan lo más nuevo cada vez |
 | 1 | i-7985ee-e21d5d · los datos de MongoDB sobreviven y sus puertos no se publican | hoy recrear el contenedor **borra la base** y Mongo queda expuesto al host |
 | 2 | i-7985ee-a77cdc · la imagen arranca | hoy no copia `main.py` ni recibe configuración |
 | 3 | i-7985ee-c64e06 · quién puede iniciar sesión | cualquier cuenta del IdP opera los servidores |

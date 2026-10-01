@@ -110,6 +110,7 @@ qué no se pudo verificar.
 |---|---|
 | `docs/decisions.md` | qué está decidido y qué lo hace cumplir |
 | `docs/plan.md` | la visión, el modelo objetivo y el orden en fases |
+| `docs/plan-de-trabajo.md` | cómo seguir: decisiones previas, la rutina de cada sesión, la fase 0 en sesiones |
 | `docs/roadmap.md` | qué está en curso, qué sigue y dónde choca |
 | `docs/research/` | las investigaciones completas: plataformas similares, resolución, Pterodactyl, arquitectura |
 | `docs/references.md` | qué dicen las especificaciones externas, y qué cambió aquí por eso |
