@@ -40,6 +40,15 @@ bien escrita. Todas se leyeron en la fuente primaria el 2026-10-01.
   `server_only_client_optional` cae en un `case` vacío y queda sin lado, aparentemente un
   descuido; aquí cada valor tiene su mapeo (d-7985ee-53a818).
 
+- **[Discord — Execute Webhook](https://docs.discord.com/developers/resources/webhook)**,
+  **[rate limits](https://docs.discord.com/developers/topics/rate-limits)** y
+  **[allowed mentions](https://docs.discord.com/developers/resources/message)**: POST a la URL del
+  webhook, que responde 204 sin `wait`; `content` de hasta 2000 caracteres; un 429 trae
+  `Retry-After` en segundos (y `retry_after` en el cuerpo); `allowed_mentions: {"parse": []}` evita
+  toda mención, incluido `@everyone`.
+
+  **Lo que confirma:** `src/library/api/client/discord.py` y `src/services/notify.py`.
+
 - **[Pterodactyl panel — rutas del Client API](https://github.com/pterodactyl/panel/blob/develop/routes/api-client.php)**
   y sus requests (`SendCommandRequest`, `DeleteFileRequest`) — enviar un comando es
   `POST /api/client/servers/{server}/command` con `{"command": "..."}`; borrar archivos es

@@ -5,6 +5,47 @@ introducción. Los commits de este repositorio fueron `wip` sin cuerpo: el *por 
 no quedaba en ninguna parte, y una sesión no ve lo que otra aprendió. La referencia del formato
 está al final del archivo, para que nada entre este párrafo y la primera entrada capture texto.
 
+## 2026-10-01 · s-7985ee-a7d531 — Avisos por Discord, programador de escaneos, servidor-bundle y httpx2
+
+**Qué.**
+- **i-7985ee-b0264e.** Un servidor se asocia a su bundle; comparar no exige nombrarlo, y
+  refrescar desde el panel conserva la asociación.
+- **i-7985ee-0ec295, el programador.** `SCAN_EVERY_HOURS` y `SCAN_FULL_EVERY_DAYS`: escaneos
+  periódicos y uno completo cada cierto tiempo.
+- **i-7985ee-34933b.**
+  - `Notifier` entrega por la cola de trabajos (d-7985ee-de1061), con `RetryLater` para el
+    `Retry-After` de Discord.
+  - Avisa los builds nuevos, y el desvío o la vuelta de un servidor a su build, solo cuando
+    cambia.
+- **`httpx2==2.13.1`** en lugar de `httpx`, para quitar la integración deprecada de Authlib.
+
+**Por qué.** El dueño pidió seguir con el roadmap, cerrando después con documentación y commits.
+
+**Qué salió mal en el camino.**
+- `drift_message` en el módulo de avisos formaba un ciclo de imports con el servicio de
+  Pterodactyl; pasó a `src/library/scan.py`.
+- El tipo del notificador en `JobService` se resolvió con un `Protocol`: el test de cableado de
+  DI no podía resolver una referencia adelantada.
+- El test de DI exigía tantos argumentos como parámetros. Ahora exige los obligatorios y acepta
+  opcionales sin inyectar.
+- El script de humo usaba `httpx`, que ya no está instalado.
+- El primer webhook falso no mostraba su salida en `podman logs`; escribió a un archivo.
+
+**Arquitectura.** ✅ Cumple: router → servicio; el aviso nunca falla lo que avisa.
+
+**Qué quedó sin hacer.** Ver `docs/roadmap.md`, §Dónde estamos: lo que queda espera al dueño.
+
+**No verificado.**
+- Discord real.
+- El login con authentik sobre `httpx2`: Authlib lo usa, pero el flujo OIDC no se ejecutó.
+- Pterodactyl real.
+
+**Medido.**
+- Gate con Mongo: 191 pasan, sin advertencias.
+- **Prueba de humo en la imagen:** un build por HTTP congeló `fabric-loader` 0.19.5 desde la meta
+  real, sirvió su `.mrpack` y avisó a un webhook falso con el texto esperado y las menciones
+  apagadas. El token no aparece en los logs.
+
 ## 2026-10-01 · s-7985ee-bcd5de — Exportar mrpack, logs JSON, trabajos durables y robustez del escaneo
 
 **Qué.** Desarrollo sin decisiones nuevas del dueño, después del cierre (s-7985ee-9b0d95).

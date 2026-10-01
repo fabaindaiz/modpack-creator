@@ -38,20 +38,22 @@ Al cierre de la sesión de desarrollo del 2026-10-01 (detalle en
   4. los puntos de control de las fases 1 y 2, con `PTERODACTYL_WRITES` vacío: armar el pack de
      un servidor real, escanearlo y comparar. Con eso se decide si se suma packwiz y se abre la
      fase 3, que escribe en servidores.
-- **Hecho después del cierre** (s-7985ee-bcd5de):
-  - la exportación `.mrpack` verificada con descargas reales (i-7985ee-7352b3);
+- **Hecho después del primer cierre** (s-7985ee-bcd5de, s-7985ee-a7d531):
+  - la exportación `.mrpack`, verificada con descargas reales (i-7985ee-7352b3);
   - logs JSON con `request_id` (i-7985ee-90f944);
-  - trabajos durables con un primer tipo de solo lectura (i-7985ee-0ec295);
+  - trabajos durables con su programador de escaneos (i-7985ee-0ec295);
+  - avisos por Discord (i-7985ee-34933b);
+  - cada servidor sabe qué bundle corre (i-7985ee-b0264e);
   - esperar un 429 en las lecturas;
   - sugerir Iris para un shader;
-  - borrar `Settings.collection` (i-7985ee-c1de10).
-- **Pendiente de código, sin decisiones del dueño:**
-  - el scheduler de escaneos periódicos;
-  - el primer escaneo por `files/compress` (escribe: fase 3);
-  - pasar `httpx` a `httpx2`;
-  - igualar `mongo:8.0` de CI con la versión de producción;
-  - el panel del dueño (i-7985ee-50d411) y los avisos por Discord (i-7985ee-34933b), que
-    conviene definir con el dueño.
+  - borrar `Settings.collection` (i-7985ee-c1de10);
+  - `httpx2`.
+- **Pendiente de código, sin decisiones del dueño:** igualar `mongo:8.0` de CI con la versión de
+  producción, cuando se conozca. Lo demás espera al dueño:
+  - el panel del dueño (i-7985ee-50d411), que hay que definir;
+  - packwiz, que se decide en el punto de control de la fase 2;
+  - todo lo que escribe en servidores: la fase 3, el primer escaneo por `files/compress` y el
+    manifiesto en el servidor.
 
 ## Modpacks y versiones
 
@@ -267,6 +269,14 @@ borran.
 - **Lo que choca:** el archivo en el servidor puede quedar viejo si alguien edita a mano; el log de
   actividad lo detecta solo en parte (`research/2026-10-operacion-pterodactyl.md` §5).
 
+### Cada servidor sabe qué bundle corre — Hecha (2026-10-01) · i-7985ee-b0264e
+- **En qué quedó:**
+  - `PUT /v1/server/{id}/bundle?bundle_id=…` asocia un servidor a su bundle (vacío lo desasocia).
+  - Comparar un servidor ya no exige nombrar el bundle, y los avisos de desvío lo usan.
+  - Refrescar el servidor desde el panel conserva la asociación: antes la habría borrado, porque
+    `server_update` reemplaza el documento.
+- **Chequeo:** tres tests en `tests/test_server_scan.py`.
+
 ### Exportar el pack para jugadores — Hecha para .mrpack (2026-10-01) · i-7985ee-7352b3
 - **En qué quedó:**
   - `GET /v1/modpack/{id}/build/{n}/mrpack` sirve el build como `.mrpack`, validado contra la
@@ -421,7 +431,7 @@ backup, staging, swap a `mods.old/`, arrancar, verificar, rollback A (devolver `
 - **Depende de:** i-7985ee-0ec295, i-7985ee-63226e, i-7985ee-098611.
 - **Qué decidir primero:** el horario y si se avisa a los jugadores antes de parar.
 
-### Trabajos durables en MongoDB con leases — Hecha (2026-10-01), falta el scheduler · i-7985ee-0ec295
+### Trabajos durables en MongoDB con leases — Hecha (2026-10-01) · i-7985ee-0ec295
 - **En qué quedó:** `Job` y `JobDatabase`, con:
   - reclamo atómico con `find_one_and_update`;
   - lease, latido, checkpoint y fin condicionados a seguir siendo el dueño;
@@ -436,8 +446,10 @@ backup, staging, swap a `mods.old/`, arrancar, verificar, rollback A (devolver `
   tres errores: reclamar en dos pasos, escribir sin ser el dueño y quitar el índice.
 - **Prueba de humo en la imagen:** encolar da 202 y otra vez 409; contra un panel caído, el
   trabajo espera unos 30 s entre intentos.
-- **Lo que falta:** el scheduler (escaneos periódicos), y los trabajos que escriben (fase 3,
-  i-7985ee-495708).
+- **Programador:** con `SCAN_EVERY_HOURS`, encola el escaneo de cada servidor cuyo último
+  escaneo es más viejo que ese intervalo. Lo pide completo si el último completo tiene más de
+  `SCAN_FULL_EVERY_DAYS`, por defecto 7. El índice por servidor evita duplicados entre procesos.
+- **Lo que falta:** los trabajos que escriben (fase 3, i-7985ee-495708).
 Una colección `jobs` reclamada con `find_one_and_update`, con latidos, un checkpoint por paso y un
 índice único parcial de un trabajo activo por servidor. El worker y el scheduler corren en el
 `lifespan` (`research/2026-10-arquitectura.md` §1).
@@ -445,7 +457,20 @@ Una colección `jobs` reclamada con `find_one_and_update`, con latidos, un check
   (tarjeta `retry-over-irreversible-effect`).
 - **Depende de:** i-7985ee-ade111.
 
-### Avisos por webhook de Discord — Planeada · i-7985ee-34933b
+### Avisos por webhook de Discord — Hecha (2026-10-01) · i-7985ee-34933b
+- **En qué quedó:**
+  - `Notifier` encola cada aviso como un trabajo `notify`. Sin `DISCORD_WEBHOOK_URL` no hace
+    nada, y si encolar falla deja la línea `notification not queued` sin propagar el error.
+  - El envío es un paso con checkpoint. Ante un 429, el trabajo espera el `Retry-After` de
+    Discord (`RetryLater`).
+  - El texto no menciona a nadie (`allowed_mentions.parse` vacío) y se corta a 2000 caracteres.
+  - El token del webhook vive en la configuración: nunca en un trabajo ni en un log.
+  - **Eventos:** un build nuevo, y un servidor que se desvía de su build o vuelve a coincidir.
+    Solo cuando cambia el estado: `ServerScan.drift` guarda el último anunciado.
+- **Chequeo:** siete tests en `tests/test_notify.py`, más uno en `tests/test_builds.py`.
+- **Prueba de humo en la imagen**, con un webhook falso en la red de podman: el build nuevo llegó
+  como `📦 Smoke pack: build 1 creado, 2 archivos.` y el token no aparece en los logs.
+- **Lo que falta:** avisos de las actualizaciones de la fase 3.
 Un protocolo `Notifier` y una outbox entregada con reintentos que respetan `retry_after`. Un aviso
 que falla nunca tumba una actualización (tarjeta `best-effort-side-channels`).
 
@@ -508,9 +533,9 @@ nuevo cada vez. Es S1 de `plan-de-trabajo.md`.
   vio fallar sobre el archivo anterior (14 fallos).
 - **Lo que falta:** las dependencias transitivas siguen sin fijar (no hay lockfile; decisión
   consciente, como en `bluetooth-sync`). Authlib avisa que su integración con `httpx` está
-  deprecada en favor de `httpx2`. **`httpx` no sobra** (revisado el 2026-10-01): el código no lo
-  importa, pero `authlib.integrations.starlette_client` sí, y Authlib no lo declara como
-  dependencia. Pasar a `httpx2` es una subida de dependencia aparte.
+  deprecada en favor de `httpx2`. **Cambiado a `httpx2==2.13.1`** (2026-10-01): Authlib 1.8 lo
+  usa si está y cae a `httpx` deprecado si no. Un test lo exige sin la advertencia. No verificado:
+  el login real con authentik sobre `httpx2`.
 
 ### Los datos de MongoDB sobreviven y sus puertos no se publican — A medias (2026-10-01): en `main`, falta desplegar · i-7985ee-e21d5d
 - **En qué quedó:** volúmenes con nombre `mongodb-data` y `mongodb-config`; `mongo:${MONGO_VERSION:?}` sin
