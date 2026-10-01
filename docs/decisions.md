@@ -41,6 +41,7 @@ Una decisión se toma **una vez**: si se reabre sin un hecho nuevo, la respuesta
 | d-7985ee-57db37 | `.env.yaml` nunca se versiona y ningún agente lo lee | contiene los tokens de Pterodactyl, Modrinth y OIDC | `.gitignore`; `.claude/settings.json` `Read(./.env.yaml)` denegado |
 | d-7985ee-4e4aee | Sin CORS salvo orígenes nombrados en `CORS_ALLOW_ORIGINS`; la cookie de sesión es `SameSite=lax`, `https_only` y dura horas | con comodín y credenciales, Starlette devuelve cualquier `Origin`; `strict` rompe el callback OIDC. Desde S3 (antes: comodín) | `main.py` |
 | d-7985ee-5739fc | Toda escritura a Pterodactyl pasa por `PterodactylAPI._write`, y un interruptor de proceso (`PTERODACTYL_WRITES`, apagado por defecto) la rechaza antes de enviar nada | tarjeta `one-write-gate-makes-read-only-real`: importar y escanear servidores reales en solo lectura tiene que ser una garantía, no una costumbre (punto de control de la fase 2) | `scripts/audit.py` `ungated_writes`; `tests/test_write_gate.py` |
+| d-7985ee-536c67 | Los trabajos largos van en una cola propia en MongoDB con leases (`Job`), no en APScheduler, arq ni Taskiq | `research/2026-10-arquitectura.md` §1: APScheduler 3 no admite varias réplicas, el 4 es alfa, arq está en mantenimiento, Taskiq necesita otro proceso; la cola propia es durable y no suma servicios | `src/database/jobs.py`; `tests/test_jobs.py` (reclamo atómico, dueño, índice por clave) |
 
 ## Producto
 
@@ -53,6 +54,7 @@ Una decisión se toma **una vez**: si se reabre sin un hecho nuevo, la respuesta
 | d-7985ee-b15dd4 | Los mods que agrega el admin pasan por la misma resolución que el pack, marcados con su origen, y sobreviven a reemplazar el contenido del pack | decisión del dueño (2026-10-01): traen sus dependencias y se chequean contra el resto (requisito 4) | `ModpackService`; `tests/test_builds.py` |
 | d-7985ee-9170b8 | Shaders y resourcepacks se resuelven por su tipo y van solo al pack de cliente; los datapacks también van al servidor | decisión del dueño (2026-10-01); un shader no usa el loader de mods (i-7985ee-60822c) | `server_inclusion` y `Target` en `src/library/resolution.py`; `tests/test_resolution.py` |
 | d-7985ee-0277b6 | Los registros de versiones de servidores sin hash (`PterodactylVersion`, `PterodactylModpack`) se reemplazan por escaneos (`ServerScan`), sin migrar | eran el trabajo a medias de i-7985ee-4364a3: un registro por archivo sin hash no identifica nada; el mismo criterio que d-7985ee-30fe05 | — (la colección vieja queda sin leer) |
+| d-7985ee-53a818 | En el `.mrpack`, el lado servidor de cada archivo es la decisión del build y el lado cliente sale del `environment` (shaders y resourcepacks siempre en el cliente, datapacks nunca); un `environment` ausente o desconocido se instala en el cliente | el servidor ya lo decidió el admin (d-7985ee-f0c7a6); para el jugador, ausencia no es "no instalar", como hace un launcher con un archivo sin `env` | `client_env` en `src/library/mrpack.py`; `tests/test_mrpack.py` |
 
 ## Proceso
 

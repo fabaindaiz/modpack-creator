@@ -38,13 +38,20 @@ Al cierre de la sesión de desarrollo del 2026-10-01 (detalle en
   4. los puntos de control de las fases 1 y 2, con `PTERODACTYL_WRITES` vacío: armar el pack de
      un servidor real, escanearlo y comparar. Con eso se decide si se suma packwiz y se abre la
      fase 3, que escribe en servidores.
+- **Hecho después del cierre** (s-7985ee-bcd5de):
+  - la exportación `.mrpack` verificada con descargas reales (i-7985ee-7352b3);
+  - logs JSON con `request_id` (i-7985ee-90f944);
+  - trabajos durables con un primer tipo de solo lectura (i-7985ee-0ec295);
+  - esperar un 429 en las lecturas;
+  - sugerir Iris para un shader;
+  - borrar `Settings.collection` (i-7985ee-c1de10).
 - **Pendiente de código, sin decisiones del dueño:**
-  - el primer escaneo por `files/compress` y la pausa ante un 429;
-  - el chequeo de Iris u OptiFine para un shader;
-  - los logs JSON (i-7985ee-90f944);
-  - `Settings.collection` muerto (i-7985ee-c1de10);
+  - el scheduler de escaneos periódicos;
+  - el primer escaneo por `files/compress` (escribe: fase 3);
   - pasar `httpx` a `httpx2`;
-  - igualar `mongo:8.0` de CI con la versión de producción.
+  - igualar `mongo:8.0` de CI con la versión de producción;
+  - el panel del dueño (i-7985ee-50d411) y los avisos por Discord (i-7985ee-34933b), que
+    conviene definir con el dueño.
 
 ## Modpacks y versiones
 
@@ -66,7 +73,8 @@ Al cierre de la sesión de desarrollo del 2026-10-01 (detalle en
   coincidía nunca. Ahora se normalizan a UTC y milisegundos.
 - **Lo que falta:**
   - el primer escaneo de un servidor grande por `files/compress`, que escribe;
-  - pausar ante un 429 del panel;
+  - ~~pausar ante un 429 del panel~~: hecho. Las lecturas esperan `Retry-After`, como máximo
+    60 s, y lo intentan 4 veces; las escrituras nunca (`tests/test_rate_limit.py`);
   - **probar contra el panel real**, que es el punto de control de la fase 2 y le toca al dueño;
   - la opción 2 (packwiz), si se decide en ese punto de control.
 Saber qué versión de cada mod tiene instalada cada servidor, para poder actualizarla.
@@ -204,7 +212,7 @@ dueño", y eso sobrevive a actualizar el pack.
   al servidor y los datapacks siempre (d-7985ee-9170b8). Un tipo desconocido se pide
   (`needs_types`), y un modpack o plugin es un problema. El shader real de las respuestas
   grabadas (`environment: unknown`) resuelve y queda fuera del servidor.
-- **Lo que queda:** no se comprueba que el pack tenga Iris u OptiFine para un shader.
+- **También:** un shader para Iris en un pack sin Iris deja una sugerencia de Iris en el lock (no bloquea).
 La resolución filtra por el loader de mods del bundle. Un shader trae loaders `iris`/`optifine`,
 un resourcepack `minecraft`, un datapack `datapack`: con Modrinth real, un shader del pack salió
 `unresolvable`.
@@ -259,7 +267,22 @@ borran.
 - **Lo que choca:** el archivo en el servidor puede quedar viejo si alguien edita a mano; el log de
   actividad lo detecta solo en parte (`research/2026-10-operacion-pterodactyl.md` §5).
 
-### Exportar el pack para jugadores — Planeada · i-7985ee-7352b3
+### Exportar el pack para jugadores — Hecha para .mrpack (2026-10-01) · i-7985ee-7352b3
+- **En qué quedó:**
+  - `GET /v1/modpack/{id}/build/{n}/mrpack` sirve el build como `.mrpack`, validado contra la
+    spec antes de servirse: dominios, HTTPS, rutas, hashes, claves de dependencias y `env`.
+  - Cada tipo va a su carpeta. El lado servidor es la decisión del build y el lado cliente sale
+    del `environment` (d-7985ee-53a818).
+  - El build congela la versión del loader: la del admin (`loader_version`), o la estable de la
+    meta de Fabric o la más nueva sin beta de Quilt. Sin versión de loader (NeoForge y Forge sin
+    fijar), exportar da 409.
+  - Cada entrada del lock guarda su tipo.
+- **Chequeo:** 18 tests puros en `tests/test_mrpack.py`, tres del servicio y el contrato de las
+  metas.
+- **Con datos reales:** un build de Iris, Lithium, Fabric API y un shader para 26.3 se exportó, y
+  **cada archivo bajado de su URL coincidió** en sha1, sha512 y tamaño con el índice.
+- **Lo que falta:** packwiz, si se decide en el punto de control de la fase 2. Las `overrides/`
+  (configuraciones) no se exportan: el pack no las guarda todavía.
 `.mrpack` (y packwiz si se elige la opción 2) desde el mismo build que corre en el servidor, para
 que los jugadores coincidan. Solo URLs de los cuatro dominios permitidos; nunca embeber jars de
 terceros (CurseForge `allowModDistribution`).
@@ -398,7 +421,23 @@ backup, staging, swap a `mods.old/`, arrancar, verificar, rollback A (devolver `
 - **Depende de:** i-7985ee-0ec295, i-7985ee-63226e, i-7985ee-098611.
 - **Qué decidir primero:** el horario y si se avisa a los jugadores antes de parar.
 
-### Trabajos durables en MongoDB con leases — Planeada · i-7985ee-0ec295
+### Trabajos durables en MongoDB con leases — Hecha (2026-10-01), falta el scheduler · i-7985ee-0ec295
+- **En qué quedó:** `Job` y `JobDatabase`, con:
+  - reclamo atómico con `find_one_and_update`;
+  - lease, latido, checkpoint y fin condicionados a seguir siendo el dueño;
+  - reintentos con tope, y espera que se duplica entre intentos (30 s a 10 min);
+  - un trabajo activo por clave, por índice único parcial sobre `active` (sin `$in`, que exige
+    MongoDB 6.0).
+
+  `JobWorker` corre en el lifespan (`JOBS_WORKER: "off"` lo apaga), y `JobContext.step` no repite
+  un paso que ya tiene checkpoint. El primer tipo es `server_scan`, de solo lectura:
+  `POST /v1/server/{id}/scan/job` y `GET /v1/job/{id}` (d-7985ee-536c67).
+- **Chequeo:** once tests contra Mongo real en `tests/test_jobs.py`. Se vieron fallar plantando
+  tres errores: reclamar en dos pasos, escribir sin ser el dueño y quitar el índice.
+- **Prueba de humo en la imagen:** encolar da 202 y otra vez 409; contra un panel caído, el
+  trabajo espera unos 30 s entre intentos.
+- **Lo que falta:** el scheduler (escaneos periódicos), y los trabajos que escriben (fase 3,
+  i-7985ee-495708).
 Una colección `jobs` reclamada con `find_one_and_update`, con latidos, un checkpoint por paso y un
 índice único parcial de un trabajo activo por servidor. El worker y el scheduler corren en el
 `lifespan` (`research/2026-10-arquitectura.md` §1).
@@ -410,7 +449,10 @@ Una colección `jobs` reclamada con `find_one_and_update`, con latidos, un check
 Un protocolo `Notifier` y una outbox entregada con reintentos que respetan `retry_after`. Un aviso
 que falla nunca tumba una actualización (tarjeta `best-effort-side-channels`).
 
-### Las colecciones se llaman como la clase, no como dice `Settings.collection` — Planeada · i-7985ee-c1de10
+### Las colecciones se llaman como la clase, no como dice `Settings.collection` — Hecha (2026-10-01) · i-7985ee-c1de10
+- **En qué quedó:** se borró el `collection` muerto de los seis modelos, sin renombrar nada.
+  `test_every_collection_is_named_after_its_class` fija los nombres actuales; se vio fallar
+  agregando `name = "project"`. `UsersInternal` declara `use_cache = False` explícito.
 Los modelos declaran `class Settings: collection = "project"`, pero Beanie 2 lee `name`. Las
 colecciones reales son `ModrinthProject`, `ModrinthVersion`, `UsersInternal`, etc. (medido en S5).
 - **Con qué choca:** con los datos de producción, que viven con esos nombres. Cambiar a `name`
@@ -432,7 +474,13 @@ duplica usuarios.
   autenticado, sobre un índice. Ninguna caché en un modelo del que dependa un permiso.
 - **Chequeo:** un test con el fixture `mongo` que cambia un usuario y lo vuelve a leer por id.
 
-### Salud y logs estructurados — A medias (2026-10-01): la salud hecha, faltan los logs · i-7985ee-90f944
+### Salud y logs estructurados — Hecha (2026-10-01), salvo el latido del worker en /health · i-7985ee-90f944
+- **Logs:**
+  - todo sale en JSON (`src/library/logging.py`), también las advertencias de Python y uvicorn;
+  - `RequestIdMiddleware` acepta un `X-Request-ID` seguro o genera uno, lo devuelve y escribe una
+    línea por request sin la query;
+  - el access log de uvicorn está apagado.
+- **Chequeo:** cinco tests en `tests/test_logging.py`. En la imagen, cero líneas fuera de JSON.
 - **En qué quedó:**
   - `/health/live` y `/health/ready`, sin sesión (`src/routers/health.py` → `HealthService` →
     `HealthDatabase.ping`, con 2 s de límite); `ready` da 503 si Mongo no contesta.

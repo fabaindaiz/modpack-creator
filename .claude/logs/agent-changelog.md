@@ -5,6 +5,56 @@ introducción. Los commits de este repositorio fueron `wip` sin cuerpo: el *por 
 no quedaba en ninguna parte, y una sesión no ve lo que otra aprendió. La referencia del formato
 está al final del archivo, para que nada entre este párrafo y la primera entrada capture texto.
 
+## 2026-10-01 · s-7985ee-bcd5de — Exportar mrpack, logs JSON, trabajos durables y robustez del escaneo
+
+**Qué.** Desarrollo sin decisiones nuevas del dueño, después del cierre (s-7985ee-9b0d95).
+- **i-7985ee-c1de10.** Se borró `Settings.collection`, con un test que fija los nombres reales de
+  las colecciones.
+- **Escaneo.**
+  - Las lecturas de Pterodactyl esperan `Retry-After` ante un 429, con tope y 4 intentos; las
+    escrituras no.
+  - Un shader para Iris en un pack sin Iris sugiere Iris.
+- **i-7985ee-7352b3.** Exportar un build como `.mrpack`, validado contra la spec. El build congela
+  la versión del loader, tomada de las metas de Fabric y Quilt o fijada por el admin
+  (d-7985ee-53a818).
+- **i-7985ee-90f944.** Logs JSON con `request_id` por request, advertencias de Python como JSON y
+  sin el access log de uvicorn.
+- **i-7985ee-0ec295.** Cola de trabajos propia con leases (d-7985ee-536c67), un worker en el
+  lifespan y un primer tipo de solo lectura (`server_scan`).
+
+**Por qué.** El dueño pidió seguir con el desarrollo que no necesita sus pruebas.
+
+**Qué salió mal en el camino.**
+- Un regex para borrar `Settings` dejó clases vacías; se arreglaron a mano antes de correr nada.
+- La prueba de humo de la imagen mostró cuatro cosas que los tests no veían:
+  - el access log de uvicorn reaparecía (`configure_logging` lo reactivaba);
+  - un campo `color_message`;
+  - la advertencia de Authlib como texto suelto;
+  - tres reintentos seguidos contra un panel caído.
+
+  Las cuatro se corrigieron con test.
+- El test de advertencias pasaba solo y fallaba en la suite: pytest captura las advertencias, y
+  `captureWarnings(True)` no hace nada la segunda vez.
+
+**Arquitectura.** ✅ Cumple: el router de trabajos inyecta `JobService`, y las funciones del
+`.mrpack` son puras.
+
+**Qué quedó sin hacer.**
+- El scheduler de escaneos periódicos.
+- packwiz y las `overrides/` del `.mrpack`.
+- `httpx2`.
+
+**No verificado.** Pterodactyl real, que los jugadores importen el `.mrpack` en un launcher y el
+login OIDC.
+
+**Medido.**
+- Gate con Mongo: 179 pasan.
+- **Con datos reales:** un `.mrpack` de 5 archivos, cada uno bajado de su URL, coincidió en
+  hashes y tamaño.
+- **Prueba de humo de la imagen:** 202 y luego 409 al encolar, `request_id` del proxy en el log,
+  0 líneas fuera de JSON, 0 del access log, y unos 30 s de espera entre intentos.
+- Los errores plantados en trabajos (3), colecciones (1) y resolución se vieron fallar.
+
 ## 2026-10-01 · s-7985ee-9b0d95 — Cierre de la sesión de desarrollo del 2026-10-01: fases 0 a 2 en código
 
 Resumen de la jornada, de S4 a la fase 2. El detalle de cada parte está en las entradas de abajo;

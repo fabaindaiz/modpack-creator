@@ -27,6 +27,19 @@ bien escrita. Todas se leyeron en la fuente primaria el 2026-10-01.
 
   **Lo que confirma:** `src/model/modrinth/` y `newest_first`, con `tests/test_modrinth_catalog.py`.
 
+- **Metas de Fabric y Quilt, en vivo el 2026-10-01.** `meta.fabricmc.net/v2/versions/loader/26.3`
+  lista de la más nueva a la más vieja con `loader.stable` (`0.19.5` estable).
+  `meta.quiltmc.org/v3/versions/loader/26.3` viene desordenada y con betas mezcladas
+  (`0.20.0-beta.9`, …, `0.24.0`).
+
+  **Lo que confirma:** `fabric_loader_version` y `quilt_loader_version` en `src/library/mrpack.py`.
+
+- **`.mrpack` contra descargas reales (2026-10-01):** cada archivo de un build exportado, bajado
+  de su URL de `cdn.modrinth.com`, coincidió en sha1, sha512 y tamaño con el índice. packwiz mapea
+  `environment` a lados en `getSide` (`modrinth/modrinth.go`). Allí
+  `server_only_client_optional` cae en un `case` vacío y queda sin lado, aparentemente un
+  descuido; aquí cada valor tiene su mapeo (d-7985ee-53a818).
+
 - **[Pterodactyl panel — rutas del Client API](https://github.com/pterodactyl/panel/blob/develop/routes/api-client.php)**
   y sus requests (`SendCommandRequest`, `DeleteFileRequest`) — enviar un comando es
   `POST /api/client/servers/{server}/command` con `{"command": "..."}`; borrar archivos es
