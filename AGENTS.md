@@ -48,8 +48,14 @@ Decididas, no preferencias. `docs/decisions.md` indexa cada una con lo que la ha
   archivo ya se borró. *Audit*, solo aviso por ahora (d-7985ee-05d032).
 - **Contrasta cada llamada externa con su especificación** antes de escribirla: rutas, métodos y
   forma del cuerpo están en `docs/references.md`. El gate no habla con las APIs reales.
-- **CORS con comodín depende de `SameSite=lax`** en la cookie de sesión. No cambies `same_site`
-  sin cambiar antes `allow_origins` (d-7985ee-4e4aee; sin enforcer).
+- **Autenticarse no es estar autorizado.** Solo entra quien está en un grupo de
+  `OIDC_ALLOWED_GROUPS` o tiene un email verificado de `OIDC_ALLOWED_EMAILS`; la identidad es
+  `iss` + `sub`, nunca el email. `tests/test_auth.py` (d-7985ee-8befe2, d-7985ee-361ed0).
+- **Sin CORS salvo orígenes nombrados**, y la sesión `SameSite=lax`, `https_only`, de horas
+  (`main.py`, d-7985ee-4e4aee).
+- **Los datos de MongoDB viven en el volumen `mongodb-data`**: nunca `docker compose down -v`, y
+  `MONGO_VERSION` nunca menor que la que escribió los datos (d-7985ee-398653). Cualquier cambio
+  de despliegue que toque datos sigue un runbook de `docs/runbooks/`.
 
 ## Archivos que no se editan a mano
 
@@ -112,6 +118,7 @@ qué no se pudo verificar.
 | `docs/plan.md` | la visión, el modelo objetivo y el orden en fases |
 | `docs/plan-de-trabajo.md` | cómo seguir: decisiones previas, la rutina de cada sesión, la fase 0 en sesiones |
 | `docs/roadmap.md` | qué está en curso, qué sigue y dónde choca |
+| `docs/runbooks/` | pasos para el servidor que no se pueden probar en CI (migraciones de datos) |
 | `docs/research/` | las investigaciones completas: plataformas similares, resolución, Pterodactyl, arquitectura |
 | `docs/references.md` | qué dicen las especificaciones externas, y qué cambió aquí por eso |
 | `docs/requirements.md` | requisitos funcionales |

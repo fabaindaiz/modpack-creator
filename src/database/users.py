@@ -32,10 +32,22 @@ class UsersDatabase():
     
     async def user_from_provider(self, usersProvider: UsersProvider) -> UsersInternal:
         """
-        Get a user by their email from the provider.
-        
+        Get the user an already authorized provider identity belongs to, by issuer and subject.
+
+        Users stored before identities carried a subject are matched once by issuer and email,
+        and the subject is written to them. Otherwise the user is created.
+
         :param usersProvider: The UsersProvider object containing user data.
         :return: The UsersInternal object.
         """
-        unauth_user = usersProvider.users_export()
-        return await UsersInternal.find_one(UsersInternal.email == unauth_user.email) or await UsersInternal.insert(unauth_user)
+        user = await UsersInternal.find_one({"provider.iss": usersProvider.iss, "provider.sub": usersProvider.sub})
+        if user:
+            return user
+        legacy = await UsersInternal.find_one({
+            "provider.iss": usersProvider.iss,
+            "provider.sub": {"$exists": False},
+            "email": usersProvider.email,
+        })
+        if legacy:
+            return await legacy.set({"provider": usersProvider.model_dump(), "name": usersProvider.name})
+        return await UsersInternal.insert(usersProvider.users_export())

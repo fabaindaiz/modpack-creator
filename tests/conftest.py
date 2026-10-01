@@ -14,6 +14,7 @@ FAKE_ENV = {
     "OIDC_CLIENT_ID": "test",
     "OIDC_CLIENT_SECRET": "test",
     "OIDC_METADATA_URL": "http://127.0.0.1:1/.well-known/openid-configuration",
+    "OIDC_ALLOWED_GROUPS": "modpack-admins",
 }
 
 for key, value in FAKE_ENV.items():

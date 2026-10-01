@@ -5,6 +5,57 @@ introducción. Los commits de este repositorio fueron `wip` sin cuerpo: el *por 
 no quedaba en ninguna parte, y una sesión no ve lo que otra aprendió. La referencia del formato
 está al final del archivo, para que nada entre este párrafo y la primera entrada capture texto.
 
+## 2026-10-01 · s-7985ee-0a09db — S2 y S3: los datos de Mongo en un volumen con nombre, la imagen que arranca y el login con autorización
+
+**Qué.** En la rama `fase-0`:
+- S2 (i-7985ee-e21d5d, i-7985ee-a77cdc):
+  - el compose con volúmenes con nombre, `mongo:${MONGO_VERSION:?}`, puertos en `127.0.0.1`,
+    healthcheck y `service_healthy`;
+  - `.env.yaml` montado de solo lectura;
+  - el Dockerfile copia `main.py` y `src/`;
+  - `run.sh` falla sin `.env.yaml` y `stop.sh` advierte contra `-v`;
+  - un job `image` en CI;
+  - `docs/runbooks/migrar-mongo-a-volumen.md`.
+- S3 (i-7985ee-c64e06):
+  - `authorize` como función pura, con la identidad `iss` + `sub` y migración en el primer login;
+  - `UsersService.login` reemplaza a `provider_validate`;
+  - sesión `https_only` y 12 h, CORS solo con orígenes nombrados, 401 si la sesión no tiene
+    usuario, y `regex=` → `pattern=`.
+- CI corre en cada push, no solo en `main`.
+
+**Áreas.** `docker/`, `scripts/`, `main.py`, `src/library/auth/`, `src/services/users.py`,
+`src/database/users.py`, `src/model/users/`, `src/routers/v1/auth.py`, `src/dependences.py`,
+`.env.default`, `.github/workflows/check.yml`, `tests/`, `docs/`.
+
+**Por qué.** El dueño pidió aplicar las decisiones. Aceptó las recomendaciones 1, 2 y 4. La 3
+(¿hay datos en producción?) no se contestó: se supuso que sí.
+
+**Arquitectura.** ✅ Cumple: la decisión de autorizar vive en el servicio y el router solo lo llama
+(d-7985ee-16ed28).
+
+**Qué salió mal en el camino.**
+- La primera versión de `authorize` exigía `email_verified` siempre. La investigación previa a S2
+  mostró que authentik lo manda en `false` por defecto desde 2025.10: nadie habría podido
+  entrar. El grupo ya no lo exige; la lista de emails sí. Se vio fallar un test nuevo antes del
+  arreglo.
+- El script que esperaba a CI tenía un error de comillas y daba vueltas sin medir nada. Se cambió
+  por un script en archivo.
+
+**Qué quedó sin hacer.**
+- Desplegar S2 y S3 siguiendo el runbook. El grupo de authentik y las variables nuevas son del
+  dueño.
+- `user_from_provider` (consulta a Mongo) sin test hasta S4.
+- Un healthcheck de la API espera `/health` (S7).
+
+**No verificado.**
+- La imagen, el compose y su rechazo sin `MONGO_VERSION` no se probaron aquí (no hay Docker): los
+  prueba el job `image` de CI en la rama.
+- El runbook no se ejecutó.
+- El login real contra authentik no se probó.
+
+**Medido.** El gate local pasa con 21 tests (11 nuevos de autorización e identidad, contando el
+del aviso de authentik).
+
 ## 2026-10-01 · s-7985ee-46eda5 — S1: dependencias con versión exacta y una regla del audit que lo exige
 
 **Qué.**

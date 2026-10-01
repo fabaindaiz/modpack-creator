@@ -13,8 +13,10 @@ COPY requirements.txt /build/requirements.txt
 RUN pip3 install --upgrade pip \
  && pip3 install --no-cache-dir -r /build/requirements.txt
 
-# Copy application code
+# Copy application code. The imports are `src.*`, so src/ keeps its name; main.py is the entry point.
+# .env.yaml is not baked in: docker-compose.yaml mounts it read-only at /app/.env.yaml.
 WORKDIR /app
-COPY src .
+COPY main.py .
+COPY src ./src
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

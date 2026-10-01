@@ -58,7 +58,7 @@ async def get_current_user(
         request: Request,
         users: UsersService = Depends(Provide[Dependences.usersService])
         ) -> UsersInternal:
-    session = request.session
-    if not session:
+    user = request.session.get('user')
+    if not user:
         raise HTTP_401_UNAUTHORIZED("Not authenticated")
-    return UsersInternal.model_validate_json(session.get('user', {}))
+    return UsersInternal.model_validate_json(user)

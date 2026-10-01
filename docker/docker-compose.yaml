@@ -1,3 +1,10 @@
+# Variables que este archivo exige (en docker/.env o exportadas en la shell; ver
+# docs/runbooks/migrar-mongo-a-volumen.md):
+#   MONGO_VERSION      versión fija de la imagen de Mongo, igual o mayor que la que escribió los
+#                      datos y a lo sumo una versión mayor arriba (d-7985ee-398653)
+#   MONGODB_PASSWORD   contraseña del usuario root de Mongo
+#   MONGOWEB_PASSWORD  contraseña de mongo-express
+# Nunca correr `down -v`: borra el volumen con los datos.
 services:
   api:
     container_name: modpack-api
@@ -7,30 +14,57 @@ services:
       - "8000:8000"
     environment:
       ENVIRONMENT: "DEV"
+      # Detrás de un proxy inverso en otra IP, poner aquí la IP o red del proxy para que uvicorn
+      # confíe en X-Forwarded-Proto y el redirect del login salga en https.
+      FORWARDED_ALLOW_IPS: "${FORWARDED_ALLOW_IPS:-127.0.0.1}"
+    volumes:
+      # La configuración y los secretos, de solo lectura (d-7985ee-358aa6). create_host_path en
+      # false: si falta .env.yaml, falla en vez de crear un directorio con ese nombre.
+      - type: bind
+        source: ../.env.yaml
+        target: /app/.env.yaml
+        read_only: true
+        bind:
+          create_host_path: false
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
 
   mongodb:
     container_name: modpack-mongodb
-    image: mongo:latest
+    image: "mongo:${MONGO_VERSION:?MONGO_VERSION sin definir: ver docs/runbooks/migrar-mongo-a-volumen.md}"
     restart: "always"
+    # Solo desde el propio host: la API llega por la red de Compose (mongodb:27017).
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: "mongoadmin"
-      MONGO_INITDB_ROOT_PASSWORD: "${MONGODB_PASSWORD}"
-    #volumes:
-    #  - "./data:/var/lib/mongodb/data"
+      MONGO_INITDB_ROOT_PASSWORD: "${MONGODB_PASSWORD:?MONGODB_PASSWORD sin definir}"
+    volumes:
+      - mongodb-data:/data/db
+      - mongodb-config:/data/configdb
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   mongoweb:
     container_name: modpack-mongoweb
     image: mongo-express:latest
     restart: always
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     environment:
       ME_CONFIG_BASICAUTH_USERNAME: "mongoweb"
-      ME_CONFIG_BASICAUTH_PASSWORD: "${MONGOWEB_PASSWORD}"
+      ME_CONFIG_BASICAUTH_PASSWORD: "${MONGOWEB_PASSWORD:?MONGOWEB_PASSWORD sin definir}"
       ME_CONFIG_MONGODB_URL: "mongodb://mongoadmin:${MONGODB_PASSWORD}@mongodb:27017/"
     depends_on:
-      - mongodb
+      mongodb:
+        condition: service_healthy
+
+# Volúmenes con nombre (d-7985ee-398653): sobreviven a `down` y a recrear los contenedores.
+volumes:
+  mongodb-data:
+  mongodb-config:

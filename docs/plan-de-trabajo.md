@@ -11,10 +11,14 @@ Las estimaciones son suposiciones, para ordenar y no para comprometer.
 
 Bloquean la fase 0. Conviene tomarlas juntas, en una sola conversación.
 
+**Estado (2026-10-01):** el dueño aceptó las recomendaciones 1, 2 y 4 (d-7985ee-358aa6,
+d-7985ee-8befe2, d-7985ee-cd8f73). La 3 no se contestó: S2 supone que hay datos y trae el runbook
+`runbooks/migrar-mongo-a-volumen.md`.
+
 | # | Decisión | Opciones | Recomendación | Bloquea |
 |---|---|---|---|---|
 | 1 | ¿Cómo llega la configuración al contenedor? | montar `.env.yaml` · `env_file` | **montar `.env.yaml` como solo lectura**: la app ya lo lee con `load_env(".env.yaml")`, y `env_file` exige `CLAVE=valor`, que no es el formato YAML de la plantilla | S2 |
-| 2 | ¿Quién puede iniciar sesión? | lista de emails · grupo del IdP · los dos | **grupo del IdP**, más `email_verified`; la lista de emails como respaldo (`research/2026-10-arquitectura.md` §3) | S3 |
+| 2 | ¿Quién puede iniciar sesión? | lista de emails · grupo del IdP · los dos | **grupo del IdP**; la lista de emails como respaldo, solo con email verificado (authentik manda `email_verified: false` por defecto desde 2025.10) (`research/2026-10-arquitectura.md` §3) | S3 |
 | 3 | ¿Producción ya tiene datos en MongoDB? | sí · no | si sí, **respaldo (`mongodump`) antes de S2**: hoy el volumen está comentado y recrear el contenedor borra la base | S2, S5 |
 | 4 | ¿Cómo se fijan las dependencias? | versión exacta (`==`) · rango · lockfile | **versión exacta** en `requirements.txt`, como en `bluetooth-sync`; se suben a propósito, de a una, con CI | S1 |
 
@@ -78,7 +82,7 @@ El orden importa: cada sesión deja el gate verde y prepara la siguiente.
 - **Qué cambia:**
   - la decisión de autorizar sale de `login_callback` a una función pura
     (`userinfo → permitido o no`);
-  - `email_verified` obligatorio, y grupo o lista según la decisión 2;
+  - grupo o lista según la decisión 2; `email_verified` solo para la lista de emails;
   - no crear usuarios desconocidos, e identidad por `iss` + `sub`;
   - la sesión con `https_only` y un `max_age` de horas;
   - sin CORS comodín (d-7985ee-4e4aee pasa a tener enforcer);

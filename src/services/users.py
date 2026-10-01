@@ -1,20 +1,28 @@
+from collections.abc import Mapping
+from typing import Any
 from src.database.users import UsersDatabase
-from src.model.users import UsersInternal, UsersProvider
+from src.library.auth import authorize, parse_allowlist
+from src.library.utils import getenv, getenv_opt
+from src.model.users import UsersInternal, UsersProviderAuthentik
 from src.exceptions import *
+
+# Who may use the API besides being able to log in to the IdP (i-7985ee-c64e06). Required, so a
+# deploy that forgets it does not start; an empty value authorizes nobody.
+OIDC_ALLOWED_GROUPS = parse_allowlist(getenv("OIDC_ALLOWED_GROUPS"))
+OIDC_ALLOWED_EMAILS = parse_allowlist(getenv_opt("OIDC_ALLOWED_EMAILS"))
 
 class UsersService():
     def __init__(self,
             usersDB: UsersDatabase) -> None:
         self.usersDB = usersDB
 
-    async def provider_validate(self, usersProvider: UsersProvider) -> UsersInternal:
+    async def login(self, claims: Mapping[str, Any]) -> UsersInternal:
         """
-        Validate a user by their email.
+        Authorize the claims of a verified ID token and return the matching user.
 
-        :param email: The email of the user to validate.
-        :return: The UsersInternal object.
+        :param claims: The ID token claims (`token["userinfo"]`).
+        :return: The UsersInternal object, created on the first authorized login.
         """
-        database_user = await self.usersDB.user_from_provider(usersProvider)
-        if database_user.provider.users_validate(usersProvider):
-            return database_user
-        raise HTTP_401_UNAUTHORIZED(f"User '{usersProvider.email}' cannot be validated")
+        if not authorize(claims, OIDC_ALLOWED_GROUPS, OIDC_ALLOWED_EMAILS):
+            raise HTTP_403_FORBIDDEN(f"User '{claims.get('email')}' is not allowed to use this API")
+        return await self.usersDB.user_from_provider(UsersProviderAuthentik(**claims))

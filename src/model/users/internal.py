@@ -19,6 +19,7 @@ class UsersProviderBase(ABC, BaseModel):
 class UsersProviderAuthentik(UsersProviderBase):
     type: Literal[UsersProviderList.AUTHENTIK] = UsersProviderList.AUTHENTIK
     iss: str
+    sub: str
     name: str
     email: str
     email_verified: bool
@@ -35,7 +36,7 @@ class UsersProviderAuthentik(UsersProviderBase):
             return False
         return (
             self.iss == model.iss and
-            self.email == model.email
+            self.sub == model.sub
         )
 
 type UsersProvider = Annotated[

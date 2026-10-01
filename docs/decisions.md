@@ -32,8 +32,12 @@ Una decisión se toma **una vez**: si se reabre sin un hecho nuevo, la respuesta
 | Id | Decisión | Por qué | Se cumple en |
 |---|---|---|---|
 | d-7985ee-2e4d10 | La configuración obligatoria falla cerrada y toda variable obligatoria está en `.env.default` | un despliegue sin `SESSION_SECRET` o `MONGODB_URI` debe no arrancar, no arrancar con un default | `getenv` en `src/library/utils`; `scripts/audit.py` `env_template` |
+| d-7985ee-8befe2 | Solo usa la API una identidad que esté en un grupo permitido del IdP (`OIDC_ALLOWED_GROUPS`, obligatoria) o cuyo email verificado esté en `OIDC_ALLOWED_EMAILS` | antes, cualquier cuenta del IdP entraba y operaba los servidores. El grupo no exige email verificado porque authentik lo manda en `false` por defecto desde 2025.10 (`research/2026-10-arquitectura.md` §3). Decisión 2 del dueño (2026-10-01) | `src/library/auth/authorization.py`; `tests/test_auth.py` |
+| d-7985ee-361ed0 | La identidad de un usuario es `iss` + `sub` del ID token, nunca el email | OIDC Core §5.7: son los únicos claims estables; un emisor puede reusar un email. Los usuarios viejos se migran solos en su primer login | `UsersProviderAuthentik.users_validate`; `UsersDatabase.user_from_provider`; `tests/test_auth.py` |
+| d-7985ee-358aa6 | La configuración llega al contenedor montando `.env.yaml` de solo lectura | la app ya lo lee con `load_env`, y `env_file` exige otro formato. Decisión 1 del dueño (2026-10-01) | `docker/docker-compose.yaml` (`create_host_path: false`); `scripts/run.sh` |
+| d-7985ee-398653 | Los datos de MongoDB viven en un volumen con nombre, y la imagen tiene versión fija, igual o mayor que la que escribió los datos | con un volumen anónimo, `down` dejaba los datos huérfanos; MongoDB no admite bajar de versión y sube de a una versión mayor | `docker/docker-compose.yaml` (`${MONGO_VERSION:?}`); job `image` de CI |
 | d-7985ee-57db37 | `.env.yaml` nunca se versiona y ningún agente lo lee | contiene los tokens de Pterodactyl, Modrinth y OIDC | `.gitignore`; `.claude/settings.json` `Read(./.env.yaml)` denegado |
-| d-7985ee-4e4aee | CORS con `allow_origins=["*"]` y credenciales depende de que la cookie de sesión sea `SameSite=lax` | Starlette devuelve el `Origin` del pedido cuando hay credenciales; `lax` (su default) es lo que impide que otro sitio use la sesión | — (cambiar `same_site` a `none` en `SessionMiddleware` lo rompe sin aviso) |
+| d-7985ee-4e4aee | Sin CORS salvo orígenes nombrados en `CORS_ALLOW_ORIGINS`; la cookie de sesión es `SameSite=lax`, `https_only` y dura horas | con comodín y credenciales, Starlette devuelve cualquier `Origin`; `strict` rompe el callback OIDC. Desde S3 (antes: comodín) | `main.py` |
 
 ## Proceso
 

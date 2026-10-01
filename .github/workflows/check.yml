@@ -1,8 +1,8 @@
 name: check
 
 on:
+  # Every branch, not only main: work in a branch (plan-de-trabajo.md §2) is checked before it merges.
   push:
-    branches: [main]
   pull_request:
 
 jobs:
@@ -19,3 +19,34 @@ jobs:
         run: pipx install hatch==1.18.1
       - name: Gate
         run: hatch run gate
+
+  image:
+    # The deployable artefact (i-7985ee-a77cdc): the image builds and the app imports inside it with
+    # placeholder configuration, and the compose file is valid with its required variables set.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image
+        run: docker build -t modpack-creator-api:ci -f docker/Dockerfile .
+      - name: The app imports inside the image
+        run: >
+          docker run --rm
+          -e SESSION_SECRET=ci -e MONGODB_URI=mongodb://127.0.0.1:1 -e PTERODACTYL_API_URL=http://127.0.0.1:1/api/
+          -e OIDC_CLIENT_ID=ci -e OIDC_CLIENT_SECRET=ci -e OIDC_METADATA_URL=http://127.0.0.1:1/
+          -e OIDC_ALLOWED_GROUPS=ci
+          modpack-creator-api:ci python -c "import main; print(main.app.title)"
+      - name: The compose file is valid
+        env:
+          MONGO_VERSION: "8.0"
+          MONGODB_PASSWORD: ci
+          MONGOWEB_PASSWORD: ci
+        run: |
+          touch .env.yaml
+          docker compose -f docker/docker-compose.yaml config --quiet
+      - name: The compose file refuses to run without MONGO_VERSION
+        env:
+          MONGODB_PASSWORD: ci
+          MONGOWEB_PASSWORD: ci
+        run: |
+          touch .env.yaml
+          ! docker compose -f docker/docker-compose.yaml config --quiet

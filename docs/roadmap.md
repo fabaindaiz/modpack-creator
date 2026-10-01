@@ -16,8 +16,9 @@ este archivo en el mismo cambio que lo termina. Los ids se acuñan con
   hashes** (i-7985ee-43df2f).
 - Antes de seguir con eso, lo más barato y urgente es que la imagen arranque (i-7985ee-a77cdc) y que
   los updates escriban (i-7985ee-055362).
-- 2026-10-01: S1 de `plan-de-trabajo.md` hecha (dependencias fijas). Lo siguiente es S2, que espera
-  las decisiones 1 y 3 de `plan-de-trabajo.md` §1.
+- 2026-10-01: S1 hecha y en `main`. S2 y S3 hechas en la rama `fase-0`, con CI; **para desplegarlas,
+  seguir `docs/runbooks/migrar-mongo-a-volumen.md`** (respaldo antes: el volumen nuevo arranca
+  vacío). Lo siguiente es S4 (MongoDB real en CI).
 - 2026-10-01: después de una investigación de plataformas similares y de las APIs, el orden
   recomendado está en [`plan.md`](plan.md), en cinco fases. La **fase 0** (seguridad y arranque)
   va primero. Lo más urgente: hoy recrear el contenedor de Mongo borra la base (i-7985ee-e21d5d).
@@ -234,7 +235,11 @@ nuevo cada vez. Es S1 de `plan-de-trabajo.md`.
   deprecada en favor de `httpx2`; `httpx` está en `requirements.txt` y el código no lo importa:
   revisar si sobra.
 
-### Los datos de MongoDB sobreviven y sus puertos no se publican — Planeada, urgente · i-7985ee-e21d5d
+### Los datos de MongoDB sobreviven y sus puertos no se publican — A medias (2026-10-01): hecha en la rama `fase-0`, falta desplegar · i-7985ee-e21d5d
+- **En qué quedó:** volúmenes con nombre `mongodb-data` y `mongodb-config`; `mongo:${MONGO_VERSION:?}` sin
+  default; 27017 y 8081 atados a `127.0.0.1`; healthcheck con `mongosh` y `service_healthy`. El
+  despliegue sigue `docs/runbooks/migrar-mongo-a-volumen.md` (respaldo, versión, restaurar).
+- **Lo que falta:** desplegarlo en el servidor siguiendo el runbook.
 `docker/docker-compose.yaml` tiene el volumen de Mongo **comentado**: recrear el contenedor borra la
 base. Además publica 27017 y 8081 al host, usa `mongo:latest` y no tiene healthchecks.
 - **Qué decidir primero:** si producción ya corre así, respaldar antes de tocar el compose.
@@ -248,13 +253,23 @@ Una clave `ptlc_` de un usuario **no admin**, subusuario de cada servidor con lo
 `services: mongo` con versión fija en `check.yml` y una base descartable por sesión. mongomock-motor
 no sirve con el cliente async de PyMongo que usa Beanie 2 (`research/2026-10-arquitectura.md` §2).
 
-### La imagen Docker arranca: copia main.py y recibe su configuración — Planeada · i-7985ee-a77cdc
+### La imagen Docker arranca: copia main.py y recibe su configuración — A medias (2026-10-01): hecha en la rama `fase-0`, falta desplegar · i-7985ee-a77cdc
+- **En qué quedó:** el Dockerfile copia `main.py` y `src/`; `.env.yaml` se monta de solo lectura
+  (d-7985ee-358aa6); `run.sh` falla si falta. El job `image` de CI construye la imagen, importa
+  `main` dentro y valida el compose (también que rechace un `MONGO_VERSION` vacío).
+- **Lo que falta:** desplegar. Un healthcheck de la API espera `/health` (i-7985ee-90f944).
 `COPY src .` deja `main.py` fuera y aplana `src/`. `docker-compose.yaml` no entrega `.env.yaml` ni
 un `env_file`.
 - **Qué decidir primero:** ¿la configuración llega montando `.env.yaml` o con `env_file`?
 - **Chequeo:** construir la imagen en CI e importar `main` dentro de ella.
 
-### Quién puede iniciar sesión — Planeada, falta una decisión · i-7985ee-c64e06
+### Quién puede iniciar sesión — A medias (2026-10-01): hecha en la rama `fase-0`, falta desplegar · i-7985ee-c64e06
+- **En qué quedó:** `authorize` (grupo de `OIDC_ALLOWED_GROUPS`, o email verificado de
+  `OIDC_ALLOWED_EMAILS`; d-7985ee-8befe2); identidad `iss` + `sub` con migración en el primer
+  login (d-7985ee-361ed0); sesión `https_only` y 12 h; CORS solo con orígenes nombrados; una sesión
+  sin usuario da 401. Diez tests en `tests/test_auth.py`.
+- **Lo que falta:** crear el grupo en authentik y la variable en `.env.yaml` (runbook §4). La
+  búsqueda de usuarios en Mongo no tiene test hasta i-7985ee-ade111.
 `user_from_provider` crea a cualquier usuario que llegue del IdP, y todos los endpoints solo piden
 sesión. Cualquier cuenta del proveedor opera los servidores de Pterodactyl.
 - **Qué decidir primero:** una lista permitida, un grupo o rol del IdP, o que el IdP ya restrinja el
