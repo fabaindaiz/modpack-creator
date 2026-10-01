@@ -5,6 +5,38 @@ introducción. Los commits de este repositorio fueron `wip` sin cuerpo: el *por 
 no quedaba en ninguna parte, y una sesión no ve lo que otra aprendió. La referencia del formato
 está al final del archivo, para que nada entre este párrafo y la primera entrada capture texto.
 
+## 2026-10-01 · s-7985ee-46eda5 — S1: dependencias con versión exacta y una regla del audit que lo exige
+
+**Qué.**
+- `docs/plan-de-trabajo.md`: las decisiones previas, la rutina de cada sesión, la fase 0 en siete
+  sesiones, las fases siguientes con sus puntos de control, las cadencias y los riesgos. Enlazado
+  desde `plan.md` y `AGENTS.md`.
+- S1 (i-7985ee-bb2fde): `requirements.txt` con `==` en las 12 dependencias y sin el `fastapi`
+  repetido. Una regla nueva en `scripts/audit.py`, `pinned_requirements`, con su test.
+
+**Áreas.** `requirements.txt`, `scripts/audit.py`, `tests/test_audit.py`, `docs/`, `AGENTS.md`.
+
+**Por qué.** El dueño pidió un plan de trabajo y empezar a implementarlo. S1 es la única sesión de
+la fase 0 que no espera una de sus decisiones. La decisión 4 (versiones exactas) se tomó con la
+recomendación del plan (d-7985ee-cd8f73), y es fácil de revertir.
+
+**Arquitectura.** ✅ Cumple: d-7985ee-d0f29c sigue (una sola lista; la imagen y hatch quedan fijos
+a la vez).
+
+**Qué salió mal en el camino.** El docstring de la regla nueva citó primero un id de decisión
+inventado como marcador. Se reemplazó por el acuñado antes de correr el gate.
+
+**Qué quedó sin hacer.**
+- Las transitivas sin fijar.
+- `httpx` en `requirements.txt` sin uso en el código, con un aviso de deprecación de Authlib.
+- S2 a S7 esperan las decisiones 1 a 3.
+
+**No verificado.** CI con las versiones fijas: el cambio no está empujado. La imagen Docker no se
+construyó.
+
+**Medido.** La regla nueva marcó 14 fallos sobre el archivo anterior (13 sin versión y 1 repetida)
+y 0 después. El gate pasa con 11 tests.
+
 ## 2026-10-01 · s-7985ee-7c3cda — Investigación de plataformas similares y plan en fases
 
 **Qué.**

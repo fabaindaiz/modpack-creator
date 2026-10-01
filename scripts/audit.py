@@ -142,6 +142,23 @@ def python_versions(dockerfile: str, mypy_ini: str, pyproject: str) -> list[str]
     return []
 
 
+def pinned_requirements(text: str) -> list[str]:
+    """Cada dependencia lleva versión exacta y aparece una vez (d-7985ee-cd8f73): sin eso, CI y la
+    imagen instalan lo más nuevo cada vez y una release externa rompe el gate sin cambiar el repo."""
+    problems, seen = [], set()
+    for number, raw in enumerate(text.splitlines(), start=1):
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        name = re.split(r"[=<>!~\[; ]", line, maxsplit=1)[0].lower().replace("_", "-")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*(\[[A-Za-z0-9,._-]+\])?==[A-Za-z0-9.+!_-]+", line):
+            problems.append(f"requirements.txt:{number} {line}: sin versión exacta (==)")
+        if name in seen:
+            problems.append(f"requirements.txt:{number} {name}: repetida")
+        seen.add(name)
+    return problems
+
+
 def retried_writes(source: str, name: str) -> list[str]:
     """AVISO (d-7985ee-05d032): un reintento sobre un POST/PATCH/PUT/DELETE puede repetir un efecto en el servidor."""
     found = []
@@ -173,6 +190,7 @@ def main() -> int:
     failures += env_template(required, (ROOT / ".env.default").read_text())
     failures += python_versions((ROOT / "docker/Dockerfile").read_text(), (ROOT / ".mypy.ini").read_text(),
                                 (ROOT / "pyproject.toml").read_text())
+    failures += pinned_requirements((ROOT / "requirements.txt").read_text())
     advisories = [w for n, t in sources.items() if n.startswith("src/library/api/client/") for w in retried_writes(t, n)]
 
     for line in advisories:

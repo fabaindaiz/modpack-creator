@@ -52,6 +52,13 @@ def test_python_versions() -> None:
     assert audit.python_versions("ARG python=python:3.13-slim", "python_version = 3.12", pyproject)
 
 
+def test_pinned_requirements() -> None:
+    assert not audit.pinned_requirements("fastapi==0.142.2\nuvicorn[standard]==0.37.0  # server\n\n")
+    assert audit.pinned_requirements("fastapi\n")
+    assert audit.pinned_requirements("fastapi>=0.100\n")
+    assert audit.pinned_requirements("fastapi==1.0\nFastAPI==1.0\n")
+
+
 def test_retried_writes() -> None:
     client = ("@backoff.on_exception(backoff.expo, Exception, max_tries=2)\n"
               "async def power(self):\n    await self._request(method=METHOD.POST, path='p')\n"

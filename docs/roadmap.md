@@ -16,6 +16,8 @@ este archivo en el mismo cambio que lo termina. Los ids se acuñan con
   hashes** (i-7985ee-43df2f).
 - Antes de seguir con eso, lo más barato y urgente es que la imagen arranque (i-7985ee-a77cdc) y que
   los updates escriban (i-7985ee-055362).
+- 2026-10-01: S1 de `plan-de-trabajo.md` hecha (dependencias fijas). Lo siguiente es S2, que espera
+  las decisiones 1 y 3 de `plan-de-trabajo.md` §1.
 - 2026-10-01: después de una investigación de plataformas similares y de las APIs, el orden
   recomendado está en [`plan.md`](plan.md), en cinco fases. La **fase 0** (seguridad y arranque)
   va primero. Lo más urgente: hoy recrear el contenedor de Mongo borra la base (i-7985ee-e21d5d).
@@ -220,6 +222,17 @@ Mismo origen y misma sesión, sin CORS ni build de JS. starlette-admin es opcion
 documentos (podría reemplazar mongo-express).
 
 ## Seguridad y despliegue
+
+### Fijar las versiones de las dependencias — Hecha (2026-10-01) · i-7985ee-bb2fde
+`requirements.txt` no fijaba ninguna versión y repetía `fastapi`: CI y la imagen instalaban lo más
+nuevo cada vez. Es S1 de `plan-de-trabajo.md`.
+- **En qué quedó:** las 12 dependencias con `==`, en las versiones con las que el gate ya pasaba;
+  `fastapi` una sola vez. La regla `pinned_requirements` del audit lo exige (d-7985ee-cd8f73) y se
+  vio fallar sobre el archivo anterior (14 fallos).
+- **Lo que falta:** las dependencias transitivas siguen sin fijar (no hay lockfile; decisión
+  consciente, como en `bluetooth-sync`). Authlib avisa que su integración con `httpx` está
+  deprecada en favor de `httpx2`; `httpx` está en `requirements.txt` y el código no lo importa:
+  revisar si sobra.
 
 ### Los datos de MongoDB sobreviven y sus puertos no se publican — Planeada, urgente · i-7985ee-e21d5d
 `docker/docker-compose.yaml` tiene el volumen de Mongo **comentado**: recrear el contenedor borra la
