@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(./scripts/check.sh)",
+      "Bash(hatch run gate)",
+      "Bash(hatch run audit)",
+      "Bash(hatch run typecheck)",
+      "Bash(hatch run tests:*)",
+      "Bash(hatch run pytest:*)"
+    ],
+    "deny": [
+      "Read(./.env.yaml)",
+      "Edit(./.env.yaml)",
+      "Edit(./.agents/README.md)",
+      "Edit(./.agents/CHANGELOG.md)",
+      "Edit(./.agents/SHA256SUMS)",
+      "Edit(./.agents/method/**)",
+      "Edit(./.agents/knowledge/**)",
+      "Edit(./.agents/tools/**)",
+      "Edit(./.agents/agents/**)",
+      "Edit(./.agents/incoming/**)"
+    ]
+  }
+}

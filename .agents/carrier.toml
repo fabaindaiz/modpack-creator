@@ -3,7 +3,15 @@ carrier = "r-7985ee"
 adopted = "2026-10-01"
 upstream = "r-5ed7e8"
 adapted = [
-  "bundle.py runs under /opt/homebrew/bin/python3.14 through scripts/check.sh, because the machine's default python3 is 3.9 and cannot import tomllib",
   "AGENTS.md is the canonical root file and CLAUDE.md only imports it, so every assistant reads one source",
+  "the gate is `hatch run gate` (pyproject.toml), run by CI and by scripts/check.sh; bundle.py runs inside that Python 3.12 environment, because the machine's default python3 is 3.9 and cannot import tomllib",
+  "the structural audit is scripts/audit.py, next to the repository's other scripts, not tools/audit_<repo>.py",
+  "the repository's own documents are written in Spanish, the owner's language; .agents/ stays in English",
 ]
-declined = []
+declined = [
+  "nested area instruction files: the source is about two thousand lines and the area rules fit in the root file; revisit when one area grows its own rules",
+  "hooks in .claude/settings.json: the permissions and the CI gate cover every rule so far; revisit when a rule needs to run at a lifecycle event",
+  "docs/architecture.md: the layers and the exemplary files fit in the root file's first section",
+  "the troubleshoot and commit skills: there is no recorded failure history to build a troubleshooting skill from yet, and the commit rule is three lines in the root file",
+  "separate Cursor and Copilot surfaces: only Claude Code is in use; AGENTS.md is already the file the others read",
+]
