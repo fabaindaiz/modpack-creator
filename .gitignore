@@ -173,3 +173,7 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Panel assets
+node_modules/
+src/web/static/dist/

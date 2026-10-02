@@ -1,7 +1,15 @@
 # syntax=docker/dockerfile:1
 ARG python=python:3.12-slim-bookworm
 
-# Single stage:
+# The panel assets: Tailwind compiles the CSS from the templates, and htmx is copied from npm.
+FROM node:24-slim AS assets
+WORKDIR /build
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY src/web ./src/web
+RUN npm run build
+
+# The application:
 FROM ${python}
 
 # Install system dependencies
@@ -18,6 +26,8 @@ RUN pip3 install --upgrade pip \
 WORKDIR /app
 COPY main.py .
 COPY src ./src
+# The compiled panel assets are not in git: they come from the assets stage.
+COPY --from=assets /build/src/web/static/dist ./src/web/static/dist
 
 # --no-access-log: RequestIdMiddleware writes one JSON line per request, with its id.
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

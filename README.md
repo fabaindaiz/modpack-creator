@@ -24,5 +24,19 @@ Requiere [hatch](https://hatch.pypa.io). El entorno usa Python 3.12 y las depend
 ./scripts/check.sh   # el gate: lo mismo que corre CI
 ```
 
+## Panel: CSS
+
+El CSS del panel se compila con Tailwind y htmx se copia desde npm (Node 24 o superior). Los
+resultados van a `src/web/static/dist/`, que no se versiona.
+
+```bash
+npm ci           # instala las versiones exactas de package-lock.json
+npm run build    # compila app.css y copia htmx.min.js
+npm run dev      # lo mismo, y recompila app.css al cambiar las plantillas
+```
+
+La imagen Docker lo construye ella misma en una etapa de Node: no hace falta correr nada antes de
+`./scripts/build.sh`.
+
 Las reglas del repositorio, para personas y agentes, están en [`AGENTS.md`](AGENTS.md); las
 decisiones, en [`docs/decisions.md`](docs/decisions.md).

@@ -49,6 +49,10 @@ jobs:
           -e OIDC_CLIENT_ID=ci -e OIDC_CLIENT_SECRET=ci -e OIDC_METADATA_URL=http://127.0.0.1:1/
           -e OIDC_ALLOWED_GROUPS=ci -e OIDC_OPERATOR_GROUPS=ci
           modpack-creator-api:ci python -c "import main; print(main.app.title)"
+      - name: The panel assets are in the image
+        run: >
+          docker run --rm --entrypoint sh modpack-creator-api:ci
+          -c 'test -s /app/src/web/static/dist/app.css && test -s /app/src/web/static/dist/htmx.min.js'
       - name: The compose file is valid
         env:
           MONGO_VERSION: "8.0"
