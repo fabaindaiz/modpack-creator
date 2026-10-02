@@ -17,6 +17,7 @@ from src.database import (
     PterodactylDatabase,
 )
 from src.services.notify import Notifier
+from src.services.update import UpdateService
 from src.services import (
     HealthService,
     JobService,
@@ -52,6 +53,7 @@ class Dependences(containers.DeclarativeContainer):
     pterodactylService = providers.Singleton(PterodactylService, pterodactylAPI, pterodactylDatabase, modrinthAPI, modrinthDatabase, modpackDatabase)
     modpackService = providers.Singleton(ModpackService, modpackDatabase, modrinthDatabase, modrinthAPI, loaderAPI, notifier)
     jobService = providers.Singleton(JobService, jobDatabase, pterodactylService, pterodactylDatabase, notifier)
+    updateService = providers.Singleton(UpdateService, pterodactylAPI, pterodactylService, pterodactylDatabase, modpackDatabase, downloader, jobDatabase, notifier)
 
 async def close_clients(container: Dependences) -> None:
     """Close the HTTP session each client keeps (i-7985ee-57034c); the lifespan calls it on shutdown."""

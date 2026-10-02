@@ -36,8 +36,8 @@ async def lifespan(app: FastAPI):
     stop = asyncio.Event()
     worker = None
     if getenv("JOBS_WORKER", "on").strip().lower() != "off":
-        worker = asyncio.create_task(
-            JobWorker(container.jobDatabase(), container.jobService().handlers()).run_forever(stop))
+        handlers = {**container.jobService().handlers(), **container.updateService().handlers()}
+        worker = asyncio.create_task(JobWorker(container.jobDatabase(), handlers).run_forever(stop))
     # Periodic scans, only if SCAN_EVERY_HOURS is set; a full one every SCAN_FULL_EVERY_DAYS.
     scheduler = None
     scan_every = getenv_opt("SCAN_EVERY_HOURS")

@@ -28,6 +28,10 @@ class RetryLater(Exception):
         super().__init__(message)
         self.wait = wait
 
+class JobFailed(Exception):
+    """A handler ends its job failed, without another attempt: retrying would not help, or would
+    act again on a real server that a person has to look at first."""
+
 class LeaseLost(Exception):
     """The job was claimed by another worker: this one must stop without writing."""
 
@@ -81,6 +85,9 @@ class JobWorker:
             await self.jobs.finish(job.id, self.owner, self.clock(), error=None)
         except LeaseLost:
             logger.warning("lease lost", extra={"job_id": str(job.id), "kind": job.kind})
+        except JobFailed as failed:
+            logger.warning("job failed for good", extra={"job_id": str(job.id), "kind": job.kind, "reason": str(failed)})
+            await self.jobs.finish(job.id, self.owner, self.clock(), error=str(failed))
         except RetryLater as later:
             if job.attempts >= job.max_attempts:
                 await self.jobs.finish(job.id, self.owner, self.clock(), error=str(later))
