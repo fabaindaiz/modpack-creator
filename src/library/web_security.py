@@ -24,7 +24,7 @@ class SameOriginMiddleware:
         fetch_site = headers.get("sec-fetch-site")
         origin = headers.get("origin")
         if fetch_site is not None:
-            allowed = fetch_site in ("same-origin", "none")
+            allowed = fetch_site == "same-origin"
         elif origin is not None:
             allowed = origin == f"{scope['scheme']}://{headers.get('host', '')}"
         else:
@@ -45,7 +45,8 @@ class SecurityHeadersMiddleware:
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
-        exempt = scope["path"].startswith(self.exempt_prefixes)
+        path = scope["path"]
+        exempt = any(path == p or path.startswith(p + "/") for p in self.exempt_prefixes)
 
         async def send_with_headers(message: Message) -> None:
             if message["type"] == "http.response.start":

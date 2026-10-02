@@ -86,8 +86,12 @@ app.add_middleware(
 # Unsafe requests must come from this origin, and responses carry a strict CSP (the API docs are
 # exempt: they load their assets from a CDN). Both sit inside RequestIdMiddleware.
 from src.library.web_security import SameOriginMiddleware, SecurityHeadersMiddleware
-app.add_middleware(SecurityHeadersMiddleware, exempt_prefixes=(DOCS_PATH, "/openapi.json"))
+# SecurityHeadersMiddleware is outside SameOriginMiddleware, so its 403 carries the headers too.
+REDOCS_PATH = getenv_opt("REDOCS_PATH")
 app.add_middleware(SameOriginMiddleware)
+app.add_middleware(
+    SecurityHeadersMiddleware,
+    exempt_prefixes=(DOCS_PATH, "/openapi.json", *([REDOCS_PATH] if REDOCS_PATH else [])))
 
 # Added last, so it runs first: every request, including the session's 401s, gets an id and a line.
 app.add_middleware(RequestIdMiddleware)

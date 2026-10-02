@@ -1,6 +1,8 @@
 """Web defences: same-origin check on writes and the security headers."""
 from typing import Any, cast
 
+import pytest
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
@@ -83,3 +85,33 @@ def test_csp_header_on_responses():
 def test_csp_absent_on_exempt_prefix():
     r = _csp_client().get("/docs")
     assert "Content-Security-Policy" not in r.headers
+
+
+def test_sec_fetch_site_none_post_is_refused():
+    assert _client().post("/x", headers={"Sec-Fetch-Site": "none"}).status_code == 403
+
+
+@pytest.mark.parametrize("method", ["PUT", "PATCH", "DELETE"])
+def test_other_unsafe_methods_cross_site_are_refused(method):
+    r = _client().request(method, "/x", headers={"Sec-Fetch-Site": "cross-site"})
+    assert r.status_code == 403
+
+
+def test_null_origin_is_refused():
+    assert _client().post("/x", headers={"Origin": "null"}).status_code == 403
+
+
+def test_refusal_carries_the_security_headers():
+    # Same order as main.py: headers outside the origin check.
+    stack = SecurityHeadersMiddleware(SameOriginMiddleware(_app()), exempt_prefixes=("/docs",))
+    r = TestClient(stack, base_url="https://app.example").post(
+        "/x", headers={"Sec-Fetch-Site": "cross-site"})
+    assert r.status_code == 403
+    assert r.headers["Content-Security-Policy"] == CSP
+    assert r.headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_exempt_prefix_matches_whole_segments_only():
+    client = _csp_client()
+    assert client.get("/docsfoo").headers["Content-Security-Policy"] == CSP
+    assert "Content-Security-Policy" not in client.get("/docs/oauth2-redirect").headers
