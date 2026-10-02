@@ -9,6 +9,7 @@ from src.exceptions import *
 # Who may use the API besides being able to log in to the IdP (i-7985ee-c64e06). Required, so a
 # deploy that forgets it does not start; an empty value authorizes nobody.
 OIDC_ALLOWED_GROUPS = parse_allowlist(getenv("OIDC_ALLOWED_GROUPS"))
+OIDC_OPERATOR_GROUPS = parse_allowlist(getenv("OIDC_OPERATOR_GROUPS"))
 OIDC_ALLOWED_EMAILS = parse_allowlist(getenv_opt("OIDC_ALLOWED_EMAILS"))
 
 class UsersService():

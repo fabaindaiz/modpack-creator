@@ -35,6 +35,7 @@ async def login_callback(
         raise HTTP_401_UNAUTHORIZED("The identity provider returned no ID token claims")
     database_user = await users.login(claims)
     request.session['user'] = database_user.model_dump_json()
+    request.session['groups'] = [str(g) for g in claims.get('groups') or [] if isinstance(g, str)]
     return RedirectResponse(url=redirect)
 
 @router.get('/logout')
@@ -43,4 +44,5 @@ async def logout(
         redirect: str = Query("/", description="Redirect URL after login", pattern=r"^/[a-zA-Z0-9/_\-\?\=\&]*$")
         ):
     request.session.pop('user', None)
+    request.session.pop('groups', None)
     return RedirectResponse(url=redirect)

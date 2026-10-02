@@ -28,8 +28,11 @@ from src.services import (
     PterodactylService,
 )
 from src.model.users import (
+    Actor,
     UsersInternal
 )
+from src.library.auth.roles import actor_from_session
+from src.services.users import OIDC_OPERATOR_GROUPS
 from src.library.utils import getenv
 from src.exceptions import *
 
@@ -84,3 +87,6 @@ async def get_current_user(
     if not user:
         raise HTTP_401_UNAUTHORIZED("Not authenticated")
     return UsersInternal.model_validate_json(user)
+
+async def get_current_actor(request: Request) -> Actor:
+    return actor_from_session(request.session, OIDC_OPERATOR_GROUPS)

@@ -47,7 +47,7 @@ jobs:
           docker run --rm
           -e SESSION_SECRET=ci -e MONGODB_URI=mongodb://127.0.0.1:1 -e PTERODACTYL_API_URL=http://127.0.0.1:1/api/
           -e OIDC_CLIENT_ID=ci -e OIDC_CLIENT_SECRET=ci -e OIDC_METADATA_URL=http://127.0.0.1:1/
-          -e OIDC_ALLOWED_GROUPS=ci
+          -e OIDC_ALLOWED_GROUPS=ci -e OIDC_OPERATOR_GROUPS=ci
           modpack-creator-api:ci python -c "import main; print(main.app.title)"
       - name: The compose file is valid
         env:
