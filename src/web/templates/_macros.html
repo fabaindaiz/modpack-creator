@@ -1,0 +1,129 @@
+{#
+  Building blocks every page uses. Nothing here may need inline script or style (CSP): behaviour
+  goes through htmx attributes and static/app.js, looks through Tailwind classes.
+
+  `attrs` are extra attributes (hx-post, name, value...), rendered escaped with xmlattr.
+#}
+
+{% set BUTTON_KINDS = {
+  "primary": "bg-emerald-600 text-white hover:bg-emerald-700 focus-visible:outline-emerald-600 dark:bg-emerald-500 dark:text-zinc-950 dark:hover:bg-emerald-400",
+  "secondary": "bg-white text-zinc-800 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50 focus-visible:outline-zinc-400 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-700 dark:hover:bg-zinc-800",
+  "danger": "bg-red-600 text-white hover:bg-red-700 focus-visible:outline-red-600 dark:bg-red-500 dark:hover:bg-red-400",
+  "ghost": "text-zinc-700 hover:bg-zinc-100 focus-visible:outline-zinc-400 dark:text-zinc-300 dark:hover:bg-zinc-800",
+} %}
+
+{% set BADGE_TONES = {
+  "neutral": "bg-zinc-100 text-zinc-700 ring-zinc-500/20 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-400/20",
+  "accent": "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/30",
+  "warning": "bg-amber-50 text-amber-800 ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-400/30",
+  "danger": "bg-red-50 text-red-700 ring-red-600/20 dark:bg-red-500/10 dark:text-red-300 dark:ring-red-400/30",
+  "info": "bg-sky-50 text-sky-700 ring-sky-600/20 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-400/30",
+} %}
+
+{% set NOTICE_TONES = {
+  "error": "border-red-300 bg-red-50 text-red-800 dark:border-red-500/40 dark:bg-red-950/60 dark:text-red-200",
+  "warning": "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-950/60 dark:text-amber-200",
+  "success": "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-950/60 dark:text-emerald-200",
+  "info": "border-sky-300 bg-sky-50 text-sky-900 dark:border-sky-500/40 dark:bg-sky-950/60 dark:text-sky-200",
+} %}
+
+{# A button. `disabled_reason` disables it and says why (e.g. "Requiere operador"). #}
+{% macro button(label, kind="primary", type="button", attrs={}, disabled_reason=None, small=False) %}
+<button type="{{ type }}"
+  class="inline-flex items-center justify-center gap-1.5 rounded-md font-medium shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 {{ 'px-2 py-1 text-xs' if small else 'px-3 py-1.5 text-sm' }} {{ BUTTON_KINDS[kind] }}"
+  {%- if disabled_reason %} disabled title="{{ disabled_reason }}" aria-disabled="true"{% endif %}
+  {{- attrs | xmlattr }}>{{ label }}</button>
+{%- if disabled_reason %}<span class="sr-only"> ({{ disabled_reason }})</span>{% endif %}
+{% endmacro %}
+
+{# A link styled as a button. #}
+{% macro link_button(label, href, kind="secondary", small=False) %}
+<a href="{{ href }}"
+  class="inline-flex items-center justify-center gap-1.5 rounded-md font-medium shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 {{ 'px-2 py-1 text-xs' if small else 'px-3 py-1.5 text-sm' }} {{ BUTTON_KINDS[kind] }}">{{ label }}</a>
+{% endmacro %}
+
+{# A small label: a role, a status, a state. #}
+{% macro badge(text, tone="neutral", title=None) %}
+<span class="inline-flex items-center rounded-md px-1.5 py-0.5 text-xs font-medium whitespace-nowrap ring-1 ring-inset {{ BADGE_TONES[tone] }}"
+  {%- if title %} title="{{ title }}"{% endif %}>{{ text }}</span>
+{% endmacro %}
+
+{#
+  A table. The rows come from the call block:
+    {% call table(["Nombre", "Estado"]) %}<tr>...</tr>{% endcall %}
+  `empty` is shown when the block renders no row.
+#}
+{% macro table(headers, empty="Nada que mostrar.", caption=None) %}
+{% set rows = caller() %}
+<div class="overflow-x-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+  <table class="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
+    {% if caption %}<caption class="sr-only">{{ caption }}</caption>{% endif %}
+    <thead class="bg-zinc-50 dark:bg-zinc-900/60">
+      <tr>
+        {% for header in headers %}
+        <th scope="col" class="px-3 py-2 text-left text-xs font-semibold tracking-wide whitespace-nowrap text-zinc-500 uppercase dark:text-zinc-400">{{ header }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800 [&_td]:px-3 [&_td]:py-2 [&_td]:align-top">
+      {% if rows | trim %}
+      {{ rows }}
+      {% else %}
+      <tr><td colspan="{{ headers | length }}" class="text-center text-zinc-500 dark:text-zinc-400">{{ empty }}</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}
+
+{# A message for the person: an error, a warning, a success. The close button is handled by app.js. #}
+{% macro notice(message, tone="error") %}
+<div data-notice role="{{ 'alert' if tone == 'error' else 'status' }}"
+  class="flex items-start gap-3 rounded-md border px-3 py-2 text-sm shadow-sm {{ NOTICE_TONES[tone] }}">
+  <p class="min-w-0 flex-1 break-words whitespace-pre-line">{{ message }}</p>
+  <button type="button" data-notice-close class="-my-0.5 shrink-0 rounded px-1 text-base leading-none opacity-70 hover:opacity-100" aria-label="Cerrar aviso">&times;</button>
+</div>
+{% endmacro %}
+
+{#
+  A confirmation dialog (<dialog>). A button with data-dialog-open="<id>" opens it (app.js); the
+  form's fields come from the call block, and `form_attrs` says where it goes (hx-post...). The
+  dialog closes when the form's htmx request is answered. The server repeats every check.
+#}
+{% macro confirm_dialog(id, title, confirm_label="Confirmar", kind="danger", form_attrs={}) %}
+<dialog id="{{ id }}" aria-labelledby="{{ id }}-title"
+  class="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-lg border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-zinc-950/50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+  <form class="space-y-4 p-5" {{- form_attrs | xmlattr }}>
+    <h2 id="{{ id }}-title" class="text-base font-semibold">{{ title }}</h2>
+    <div class="space-y-3 text-sm text-zinc-700 dark:text-zinc-300">{{ caller() }}</div>
+    <div class="flex justify-end gap-2">
+      {{ button("Cancelar", kind="secondary", attrs={"data-dialog-close": ""}) }}
+      {{ button(confirm_label, kind=kind, type="submit") }}
+    </div>
+  </form>
+</dialog>
+{% endmacro %}
+
+{# A page heading with optional actions on the right (call block). #}
+{% macro page_header(title, subtitle=None) %}
+<div class="flex flex-wrap items-end justify-between gap-3">
+  <div class="min-w-0">
+    <h1 class="text-xl font-semibold tracking-tight">{{ title }}</h1>
+    {% if subtitle %}<p class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">{{ subtitle }}</p>{% endif %}
+  </div>
+  {% if caller is defined %}<div class="flex flex-wrap gap-2">{{ caller() }}</div>{% endif %}
+</div>
+{% endmacro %}
+
+{# A titled section of a page. #}
+{% macro section(title, id=None) %}
+<section class="space-y-2"{% if id %} id="{{ id }}"{% endif %}>
+  <h2 class="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{{ title }}</h2>
+  {{ caller() }}
+</section>
+{% endmacro %}
+
+{# A date as people read it, in UTC; a dash when there is none. #}
+{% macro when(value) %}
+{% if value %}<time datetime="{{ value.isoformat() }}" class="whitespace-nowrap tabular-nums">{{ value.strftime("%Y-%m-%d %H:%M") }}</time>{% else %}<span class="text-zinc-400 dark:text-zinc-500">—</span>{% endif %}
+{% endmacro %}

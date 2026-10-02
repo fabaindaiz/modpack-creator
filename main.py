@@ -7,12 +7,14 @@ configure_logging(getenv("LOG_LEVEL", "INFO"))
 
 import src.routers.health as health
 from src.routers.v1 import MODULES_V1, include_routers_v1, tags_metadata
+from src.routers.web import WEB_MODULES, include_routers_web
 import src.dependences as dependences
 container = dependences.Dependences()
 container.wire(
     modules=[
         health,
         *MODULES_V1,
+        *WEB_MODULES,
         dependences
     ])
 
@@ -64,6 +66,13 @@ app = FastAPI(title="Modpack Creator API",
               lifespan=lifespan)
 # Mounted at import: it needs nothing the lifespan sets up, and has no session (i-7985ee-90f944).
 app.include_router(health.router)
+# The panel, also at import: its pages need only the session, and its handler for requests without
+# one. /static serves app.js and the built assets; without `npm run build` dist/ is missing and the
+# panel renders unstyled, but the app starts (check_dir=False).
+from fastapi.staticfiles import StaticFiles
+from src.web import STATIC_DIR
+include_routers_web(app)
+app.mount("/static", StaticFiles(directory=STATIC_DIR, check_dir=False), name="static")
 
 # CORS only for origins named explicitly: with credentials, a wildcard makes Starlette echo any
 # Origin back (d-7985ee-4e4aee). Without CORS_ALLOW_ORIGINS there is no cross-origin access.

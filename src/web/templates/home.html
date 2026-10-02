@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% set nav_active = "home" %}
+{% block title %}Tablero{% endblock %}
+
+{% set DRIFT = {
+  "sync": ("Coincide", "accent"),
+  "drift": ("Desviado", "warning"),
+  "unknown": ("Sin comparar", "neutral"),
+  "none": ("Sin escaneo", "neutral"),
+} %}
+{% set JOB_STATUS = {
+  "queued": ("En cola", "info"),
+  "running": ("En curso", "info"),
+  "done": ("Listo", "accent"),
+  "failed": ("Falló", "danger"),
+} %}
+
+{% block content %}
+{{ ui.page_header("Tablero", "Servidores, builds y trabajos recientes.") }}
+
+<div class="grid gap-6 xl:grid-cols-5">
+  <div class="space-y-6 xl:col-span-3">
+    {% call ui.section("Servidores", id="servidores") %}
+    {% call ui.table(["Servidor", "Modpack", "Estado", "Último escaneo"], empty="No hay servidores registrados.", caption="Servidores") %}
+    {% for row in servers %}
+    <tr>
+      <td class="max-w-[16rem]">
+        <a href="/servers/{{ row.server.id }}" class="font-medium break-words text-zinc-900 hover:text-emerald-700 hover:underline dark:text-zinc-100 dark:hover:text-emerald-300">{{ row.server.name }}</a>
+        <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ row.server.node }}</div>
+      </td>
+      <td class="break-words">
+        {% if row.bundle_name %}
+        <a href="/modpacks/{{ row.server.bundle_id }}" class="hover:underline">{{ row.bundle_name }}</a>
+        {% elif row.server.bundle_id %}
+        <span class="text-zinc-500 dark:text-zinc-400">Modpack desconocido</span>
+        {% else %}
+        <span class="text-zinc-400 dark:text-zinc-500">Sin modpack</span>
+        {% endif %}
+      </td>
+      <td>
+        {% set label, tone = DRIFT[row.state] %}
+        {% if row.drift and row.state == "drift" %}
+        <details class="group">
+          <summary class="cursor-pointer list-none">{{ ui.badge(label, tone) }} <span class="text-xs text-zinc-500 group-open:hidden dark:text-zinc-400">ver</span></summary>
+          <pre class="mt-2 max-w-md overflow-x-auto rounded bg-zinc-50 p-2 font-mono text-xs whitespace-pre-wrap text-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">{{ row.drift }}</pre>
+        </details>
+        {% else %}
+        {{ ui.badge(label, tone, title=row.drift) }}
+        {% endif %}
+      </td>
+      <td>{{ ui.when(row.scanned_at) }}</td>
+    </tr>
+    {% endfor %}
+    {% endcall %}
+    {% endcall %}
+
+    {% call ui.section("Trabajos recientes", id="trabajos") %}
+    {% call ui.table(["Trabajo", "Estado", "Paso", "Creado"], empty="Todavía no hay trabajos.", caption="Trabajos recientes") %}
+    {% for job in jobs %}
+    {% set label, tone = JOB_STATUS.get(job.status, (job.status, "neutral")) %}
+    <tr>
+      <td>
+        <span class="font-mono text-xs">{{ job.kind }}</span>
+        {% if job.key %}<div class="text-xs break-all text-zinc-500 dark:text-zinc-400">{{ job.key }}</div>{% endif %}
+      </td>
+      <td>
+        {{ ui.badge(label, tone, title=job.status) }}
+        {% if job.status == "failed" and job.error %}<div class="mt-1 max-w-xs text-xs break-words text-red-700 dark:text-red-300">{{ job.error }}</div>{% endif %}
+      </td>
+      <td class="font-mono text-xs">{{ job.step or "—" }}</td>
+      <td>{{ ui.when(job.created_at) }}</td>
+    </tr>
+    {% endfor %}
+    {% endcall %}
+    {% endcall %}
+  </div>
+
+  <div class="xl:col-span-2">
+    {% call ui.section("Últimos builds", id="builds") %}
+    {% call ui.table(["Modpack", "Último", "Recomendado"], empty="No hay modpacks.", caption="Últimos builds") %}
+    {% for bundle, build in builds %}
+    <tr>
+      <td class="break-words">
+        <a href="/modpacks/{{ bundle.id }}" class="font-medium hover:underline">{{ bundle.name }}</a>
+        <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ bundle.version }} · {{ bundle.loader.value }}</div>
+      </td>
+      <td>
+        {% if build %}
+        <span class="font-medium tabular-nums">#{{ build.number }}</span>
+        <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ ui.when(build.created_at) }}</div>
+        {% else %}
+        <span class="text-zinc-400 dark:text-zinc-500">Sin builds</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if bundle.recommended_build is not none %}
+        {{ ui.badge("#" ~ bundle.recommended_build, "accent") }}
+        {% else %}
+        <span class="text-zinc-400 dark:text-zinc-500">—</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    {% endcall %}
+    {% endcall %}
+  </div>
+</div>
+{% endblock %}

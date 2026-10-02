@@ -1,5 +1,5 @@
 import re
-from beanie import PydanticObjectId
+from beanie import PydanticObjectId, SortDirection
 from datetime import datetime, timedelta, timezone
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
@@ -34,6 +34,10 @@ class JobDatabase():
     async def active_for(self, key: str) -> Optional[Job]:
         """The active job holding this key, if any."""
         return await Job.find_one(Job.key == key, Job.active == True)  # noqa: E712
+
+    async def recent(self, limit: int) -> list[Job]:
+        """The newest jobs, whatever their status."""
+        return await Job.find().sort(("created_at", SortDirection.DESCENDING)).limit(limit).to_list()
 
     async def get(self, job_id: str) -> Job:
         job = await Job.get(job_id) if PydanticObjectId.is_valid(job_id) else None

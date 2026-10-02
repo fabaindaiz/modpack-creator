@@ -196,6 +196,10 @@ class JobService():
     async def get(self, job_id: str) -> Job:
         return await self.jobDB.get(job_id)
 
+    async def recent(self, limit: int = 10) -> list[Job]:
+        """The newest jobs first, whatever their status."""
+        return await self.jobDB.recent(limit)
+
     async def schedule_scans(self, now: datetime, every: timedelta, full_every: timedelta) -> list[Job]:
         """
         Queue a scan of every server whose last scan is older than `every`, full if its last full

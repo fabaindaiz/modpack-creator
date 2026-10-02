@@ -7,6 +7,8 @@ beanie==2.2.0
 dependency-injector==4.49.1
 httpx2==2.13.1  # authlib.integrations.starlette_client lo importa sin declararlo; httpx está deprecado allí
 itsdangerous==2.2.0
+jinja2==3.1.6
 pydantic==2.13.5
 pyjwt==2.15.1
+python-multipart==0.0.32
 pyyaml==6.0.3

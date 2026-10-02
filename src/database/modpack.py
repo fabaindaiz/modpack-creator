@@ -136,6 +136,15 @@ class ModpackDatabase():
         return await ModpackBuild.find(ModpackBuild.bundle_id == self._bundle_oid(bundle_id)) \
             .sort(("number", SortDirection.DESCENDING)).to_list()
 
+    async def build_find_latest(self, bundles: Iterable[ModpackBundle]) -> dict[PydanticObjectId, ModpackBuild]:
+        """The build each bundle's `latest_build` points to, by bundle id, in one query; a bundle
+        without builds is left out."""
+        wanted = [{"bundle_id": b.id, "number": b.latest_build} for b in bundles if b.latest_build is not None]
+        if not wanted:
+            return {}
+        builds = await ModpackBuild.find({"$or": wanted}).to_list()
+        return {build.bundle_id: build for build in builds}
+
     async def build_get(self, bundle_id: str, number: int) -> ModpackBuild:
         build = await ModpackBuild.find_one(ModpackBuild.bundle_id == self._bundle_oid(bundle_id),
                                             ModpackBuild.number == number)

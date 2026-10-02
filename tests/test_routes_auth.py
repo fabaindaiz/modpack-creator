@@ -1,12 +1,15 @@
-"""Ninguna ruta de /v1 atiende sin sesión, salvo las del login (i-7985ee-c64e06).
+"""Ninguna ruta de /v1 ni del panel atiende sin sesión, salvo las del login (i-7985ee-c64e06).
 
-Se arma la app con los routers de /v1 y se manda a cada ruta un request sin cookie: la respuesta
-tiene que ser 401 antes de tocar la base o una API externa. Un router nuevo, o uno que se
-reescriba al moverlo a su servicio, queda cubierto sin escribir un caso por ruta.
+Se arma la app con los routers de /v1 y del panel, y se manda a cada ruta un request sin cookie:
+en /v1 la respuesta tiene que ser 401; en el panel, 303 al login (o 401 con `HX-Redirect` si viene
+de htmx). Todo antes de tocar la base o una API externa. Un router nuevo, o uno que se reescriba
+al moverlo a su servicio, queda cubierto sin escribir un caso por ruta.
 """
 import re
+from typing import Any
 
 from fastapi import FastAPI
+from fastapi.routing import APIRoute, iter_route_contexts
 from fastapi.testclient import TestClient
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -34,3 +37,32 @@ def test_every_v1_route_refuses_a_request_without_a_session() -> None:
     answers = {(method, path): client.request(method, re.sub(r"\{[^}]+\}", "x", path)).status_code
                for method, path in routes}
     assert {k: v for k, v in answers.items() if v != 401} == {}
+
+
+def web_app() -> FastAPI:
+    import main  # cablea el contenedor de dependencias
+    from src.routers.web import include_routers_web
+
+    application = FastAPI()
+    application.add_middleware(SessionMiddleware, secret_key="test")
+    include_routers_web(application)
+    return application
+
+
+def test_every_web_route_sends_a_request_without_a_session_to_the_login() -> None:
+    application = web_app()
+    client = TestClient(application, follow_redirects=False)
+    # app.routes y no openapi(): las rutas del panel no están en el esquema.
+    routes = [(method, str(context.path)) for context in iter_route_contexts(application.routes)
+              if isinstance(context.original_route, APIRoute) for method in sorted(context.methods or ())]
+    assert ("GET", "/") in routes
+    plain: dict[tuple[str, str], Any] = {}
+    htmx: dict[tuple[str, str], Any] = {}
+    for method, path in routes:
+        url = re.sub(r"\{[^}]+\}", "x", path)
+        plain[(method, path)] = client.request(method, url)
+        htmx[(method, path)] = client.request(method, url, headers={"HX-Request": "true"})
+    assert {k: r.status_code for k, r in plain.items()
+            if r.status_code != 303 or not r.headers["location"].startswith("/v1/login?redirect=")} == {}
+    assert {k: r.status_code for k, r in htmx.items()
+            if r.status_code != 401 or not r.headers.get("hx-redirect", "").startswith("/v1/login?redirect=")} == {}

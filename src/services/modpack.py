@@ -205,6 +205,12 @@ class ModpackService():
     async def build_find(self, bundle_id: str) -> list[ModpackBuild]:
         return await self.modpackDB.build_find(bundle_id)
 
+    async def latest_builds(self) -> list[tuple[ModpackBundle, Optional[ModpackBuild]]]:
+        """Every bundle with its newest build, or None if it has none yet."""
+        bundles = await self.modpackDB.bundle_find().to_list()
+        latest = await self.modpackDB.build_find_latest(bundles)
+        return [(bundle, latest.get(bundle.id) if bundle.id is not None else None) for bundle in bundles]
+
     async def build_get(self, bundle_id: str, number: int) -> ModpackBuild:
         return await self.modpackDB.build_get(bundle_id, number)
 

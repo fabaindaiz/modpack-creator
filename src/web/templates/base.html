@@ -1,0 +1,69 @@
+{% import "_macros.html" as ui %}
+{% set nav_active = nav_active | default("") %}
+{% set NAV = [
+  ("home", "/", "Tablero"),
+  ("modpacks", "/modpacks", "Modpacks"),
+  ("servers", "/servers", "Servidores"),
+  ("jobs", "/jobs", "Trabajos"),
+  ("audit", "/audit", "Auditoría"),
+] %}
+<!doctype html>
+<html lang="es" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="htmx-config" content='{"allowEval":false,"selfRequestsOnly":true,"includeIndicatorStyles":false}'>
+  <title>{% block title %}Panel{% endblock %} · Modpack Creator</title>
+  <link rel="stylesheet" href="{{ asset_url('app.css') }}">
+  <script src="{{ asset_url('htmx.min.js') }}" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body class="min-h-full bg-zinc-50 font-sans text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100">
+  <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded focus:bg-white focus:px-3 focus:py-1.5 focus:text-sm focus:shadow dark:focus:bg-zinc-900">Saltar al contenido</a>
+  <header class="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+    <div class="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2 sm:px-6">
+      <a href="/" class="flex shrink-0 items-center gap-2 font-semibold tracking-tight">
+        <span class="inline-block size-3 rounded-sm bg-emerald-600 dark:bg-emerald-400" aria-hidden="true"></span>
+        Modpack Creator
+      </a>
+      <nav aria-label="Secciones" class="order-last -mx-1 w-full overflow-x-auto md:order-none md:mx-0 md:w-auto md:flex-1">
+        <ul class="flex gap-1 text-sm whitespace-nowrap">
+          {% for key, href, label in NAV %}
+          <li>
+            <a href="{{ href }}"
+              {%- if key == nav_active %} aria-current="page"{% endif %}
+              class="block rounded-md px-2.5 py-1.5 font-medium {{ 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-white' if key == nav_active else 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white' }}">{{ label }}</a>
+          </li>
+          {% endfor %}
+        </ul>
+      </nav>
+      <div class="ml-auto flex min-w-0 items-center gap-2 text-sm">
+        <span class="max-w-[12rem] truncate text-zinc-700 dark:text-zinc-300" title="{{ actor.name }}">{{ actor.name }}</span>
+        {% if actor.is_operator %}
+        {{ ui.badge("Operador", "accent", title="Puede escribir en los servidores") }}
+        {% else %}
+        {{ ui.badge("Editor", "neutral", title="No escribe en los servidores: eso requiere operador") }}
+        {% endif %}
+        <a href="/v1/logout" class="rounded-md px-2 py-1 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white">Salir</a>
+      </div>
+    </div>
+  </header>
+
+  <div class="mx-auto max-w-7xl px-4 sm:px-6">
+    <div id="notices" aria-live="polite" class="mt-4 space-y-2 empty:mt-0">{% block notices %}{% endblock %}</div>
+  </div>
+
+  <main id="main" class="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6">
+    {% block content %}{% endblock %}
+  </main>
+
+  {# Cloned by app.js when the server fails (5xx) or cannot be reached; it fills in the request id. #}
+  <template id="notice-server-error">
+    {{ ui.notice("Error inesperado del servidor. Si se repite, avisa con este identificador: ", "error") }}
+  </template>
+  <template id="notice-network-error">
+    {{ ui.notice("No se pudo contactar al servidor. Revisa la conexión y vuelve a intentarlo.", "warning") }}
+  </template>
+</body>
+</html>

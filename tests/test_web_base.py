@@ -1,0 +1,275 @@
+"""La base del panel y el tablero (etapa 1): login, rol, assets, CSP y escapado.
+
+Los servicios se sustituyen con dobles en el contenedor, como en `tests/test_health.py`, y la app
+se arma sin `with`: el lifespan abriría MongoDB y el proveedor OIDC.
+"""
+import re
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Optional, cast
+
+import pytest
+from beanie import PydanticObjectId
+from dependency_injector import providers
+from fastapi.testclient import TestClient
+
+from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
+from src.model.jobs import Job
+from src.model.modpack import ModpackBuild, ModpackBundle
+from src.model.pterodactyl import PterodactylServer, ServerScan
+from src.model.users import Actor
+from src.model.utils import MinecraftLoaders
+from tests._actors import EDITOR, OPERATOR, session_for
+from tests._session import session_cookie
+from tests.conftest import MongoRunner
+
+T0 = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
+BUNDLE_ID = PydanticObjectId()
+
+
+def server(name: str, bundle_id: Optional[str] = None) -> PterodactylServer:
+    # model_construct: un Document de Beanie no se instancia sin init_beanie.
+    return PterodactylServer.model_construct(
+        id=PydanticObjectId(), identifier="1a2b", internal_id=1, uuid="1a2b-0", name=name, node="n1",
+        description="", status=None, is_suspended=False, is_installing=False, is_transferring=False,
+        bundle_id=bundle_id)
+
+
+class FakePterodactyl:
+    def __init__(self, servers: list[PterodactylServer], drifts: dict[str, Optional[str]]) -> None:
+        self.servers = servers
+        self.drifts = drifts
+
+    async def server_find(self) -> list[PterodactylServer]:
+        return self.servers
+
+    async def scan_latest(self, server_id: str, directory: str = "/mods") -> ServerScan:
+        if server_id not in self.drifts:
+            raise HTTP_404_NOT_FOUND(f"Server '{server_id}' has no scan of {directory}")
+        return ServerScan.model_construct(id=PydanticObjectId(), server_id=PydanticObjectId(server_id),
+                                          directory=directory, scanned_at=T0, full=False, files=[],
+                                          drift=self.drifts[server_id])
+
+
+class FakeModpack:
+    def __init__(self, rows: list[tuple[ModpackBundle, Optional[ModpackBuild]]]) -> None:
+        self.rows = rows
+
+    async def latest_builds(self) -> list[tuple[ModpackBundle, Optional[ModpackBuild]]]:
+        return self.rows
+
+
+class FakeJobs:
+    def __init__(self, jobs: list[Job]) -> None:
+        self.jobs = jobs
+        self.limits: list[int] = []
+
+    async def recent(self, limit: int = 10) -> list[Job]:
+        self.limits.append(limit)
+        return self.jobs[:limit]
+
+
+def default_fakes(server_name: str = "Survival") -> tuple[FakePterodactyl, FakeModpack, FakeJobs]:
+    bundle = ModpackBundle.model_construct(id=BUNDLE_ID, name="Pack Uno", description="", version="1.21.1",
+                                           loader=MinecraftLoaders.fabric, latest_build=3, recommended_build=2)
+    build = ModpackBuild.model_construct(id=PydanticObjectId(), bundle_id=BUNDLE_ID, number=3, created_at=T0)
+    linked = server(server_name, bundle_id=str(BUNDLE_ID))
+    other = server("Creativo")
+    drifts: dict[str, Optional[str]] = {str(linked.id): "⚠️ Survival no coincide con Pack Uno, build 3:\n- sobra mods/x.jar"}
+    jobs = [Job.model_construct(id=PydanticObjectId(), kind="server_scan", key=f"server:{linked.id}",
+                                status="running", step="scan", created_at=T0, attempts=1, max_attempts=3)]
+    return FakePterodactyl([linked, other], drifts), FakeModpack([(bundle, build)]), FakeJobs(jobs)
+
+
+@pytest.fixture(autouse=True)
+def reset_overrides() -> Any:
+    yield
+    import main
+
+    for provider in (main.container.pterodactylService, main.container.modpackService, main.container.jobService):
+        provider.reset_override()
+
+
+def client(actor: Optional[Actor], fakes: Optional[tuple[FakePterodactyl, FakeModpack, FakeJobs]] = None) -> TestClient:
+    import main
+
+    pterodactyl, modpack, jobs = fakes or default_fakes()
+    main.container.pterodactylService.override(providers.Object(pterodactyl))
+    main.container.modpackService.override(providers.Object(modpack))
+    main.container.jobService.override(providers.Object(jobs))
+    # Sin `with`: el lifespan abriría MongoDB y el proveedor OIDC.
+    test_client = TestClient(main.app, base_url="https://testserver", follow_redirects=False)
+    if actor is not None:
+        test_client.cookies.set("session", session_cookie(session_for(actor)))
+    return test_client
+
+
+def test_home_without_session_redirects_to_login() -> None:
+    response = client(None).get("/")
+    assert response.status_code == 303
+    assert response.headers["location"] == "/v1/login?redirect=/"
+
+
+def test_htmx_without_session_gets_hx_redirect() -> None:
+    response = client(None).get("/", headers={"HX-Request": "true"})
+    assert response.status_code == 401
+    assert response.headers["hx-redirect"] == "/v1/login?redirect=/"
+
+
+def test_htmx_redirect_returns_to_the_page_in_the_browser() -> None:
+    response = client(None).get("/", headers={"HX-Request": "true",
+                                               "HX-Current-URL": "https://testserver/servers/abc?x=1"})
+    assert response.headers["hx-redirect"] == "/v1/login?redirect=/servers/abc%3Fx%3D1"
+
+
+def test_home_renders_for_editor_with_role_badge() -> None:
+    response = client(EDITOR).get("/")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Editor" in response.text
+    assert "Operador" not in response.text
+    assert EDITOR.name in response.text
+    assert "Survival" in response.text
+
+
+def test_home_shows_operator_badge_for_operator() -> None:
+    response = client(OPERATOR).get("/")
+    assert response.status_code == 200
+    assert "Operador" in response.text
+    assert OPERATOR.name in response.text
+
+
+def test_home_shows_bundle_drift_builds_and_jobs() -> None:
+    fakes = default_fakes()
+    response = client(EDITOR, fakes).get("/")
+    text = response.text
+    assert "Pack Uno" in text  # the server's bundle and the bundle's builds
+    assert "Desviado" in text and "sobra mods/x.jar" in text
+    assert "Sin escaneo" in text  # the server without a scan
+    assert "server_scan" in text and "running" in text
+    assert fakes[2].limits == [10]
+
+
+def test_layout_has_nav_logout_notices_and_htmx_config() -> None:
+    text = client(EDITOR).get("/").text
+    for label in ("Tablero", "Modpacks", "Servidores", "Trabajos", "Auditoría", "Salir"):
+        assert label in text
+    assert 'href="/v1/logout"' in text
+    assert re.search(r'<div id="notices"[^>]*aria-live="polite"', text)
+    assert ('<meta name="htmx-config" '
+            'content=\'{"allowEval":false,"selfRequestsOnly":true,"includeIndicatorStyles":false}\'>') in text
+    assert '<script src="/static/app.js" defer></script>' in text
+
+
+def test_page_links_hashed_css() -> None:
+    import src.web as web
+
+    text = client(EDITOR).get("/").text
+    assert "/static/dist/app.css" in text
+    assert "/static/dist/htmx.min.js" in text
+    if (web.DIST_DIR / "app.css").is_file():
+        assert re.search(r'/static/dist/app\.css\?v=[0-9a-f]{12}"', text)
+
+
+def test_page_has_no_inline_script_or_style() -> None:
+    text = client(OPERATOR).get("/").text
+    scripts = re.findall(r"<script\b[^>]*>", text)
+    assert scripts and all(re.search(r'\bsrc="', tag) for tag in scripts)
+    assert not re.search(r"<script\b[^>]*>(?!</script>)", text)  # nothing between <script> and </script>
+    assert "<style" not in text
+    assert not re.search(r"\sstyle=", text)
+    assert not re.search(r"\shx-on", text)
+    assert not re.search(r"\son[a-z]+=", text)
+
+
+def test_names_are_escaped() -> None:
+    text = client(EDITOR, default_fakes(server_name="<script>x</script>")).get("/").text
+    assert "&lt;script&gt;x&lt;/script&gt;" in text
+    assert "<script>x</script>" not in text
+
+
+def test_app_starts_without_built_assets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import src.web as web
+
+    monkeypatch.setattr(web, "ASSETS", web.AssetVersions(tmp_path / "dist"))
+    response = client(EDITOR).get("/")
+    assert response.status_code == 200
+    assert 'href="/static/dist/app.css"' in response.text
+
+
+def test_static_app_js_is_served_without_eval() -> None:
+    response = client(None).get("/static/app.js")
+    assert response.status_code == 200
+    assert "eval(" not in response.text and "new Function" not in response.text
+    assert "htmx:beforeSwap" in response.text
+
+
+class FailingPterodactyl(FakePterodactyl):
+    def __init__(self, error: Exception) -> None:
+        super().__init__([], {})
+        self.error = error
+
+    async def server_find(self) -> list[PterodactylServer]:
+        raise self.error
+
+
+def test_htmx_error_from_a_service_is_a_notice_fragment() -> None:
+    _, modpack, jobs = default_fakes()
+    fakes = (FailingPterodactyl(HTTP_409_CONFLICT("El servidor <b>ocupado</b>")), modpack, jobs)
+    response = client(EDITOR, fakes).get("/", headers={"HX-Request": "true"})
+    assert response.status_code == 409
+    assert "data-notice" in response.text
+    assert "El servidor &lt;b&gt;ocupado&lt;/b&gt;" in response.text
+    assert "<html" not in response.text
+
+
+def test_error_from_a_service_without_htmx_is_a_page_with_the_notice() -> None:
+    _, modpack, jobs = default_fakes()
+    fakes = (FailingPterodactyl(HTTP_404_NOT_FOUND("No existe")), modpack, jobs)
+    response = client(EDITOR, fakes).get("/")
+    assert response.status_code == 404
+    assert "<html" in response.text and "No existe" in response.text and "Editor" in response.text
+
+
+# Lecturas nuevas para el tablero, contra MongoDB real.
+
+
+@pytest.mark.network
+def test_recent_jobs_are_newest_first_and_limited(mongo: MongoRunner) -> None:
+    from datetime import timedelta
+
+    from src.database.jobs import JobDatabase
+    from src.services.jobs import JobService
+
+    async def scenario() -> list[str]:
+        jobs = JobDatabase()
+        for minutes in (5, 1, 3, 2, 4):
+            await jobs.enqueue("server_scan", key=None, payload={"m": minutes}, now=T0 + timedelta(minutes=minutes))
+        service = JobService(jobs, cast(Any, None), cast(Any, None), cast(Any, None))
+        return [job.payload["m"] for job in await service.recent(limit=3)]
+
+    assert mongo(scenario) == [5, 4, 3]
+
+
+@pytest.mark.network
+def test_latest_builds_pairs_each_bundle_with_its_newest_build(mongo: MongoRunner) -> None:
+    from src.database.modpack import ModpackDatabase
+    from src.library.resolution import Lock, ResolveRequest, Target
+    from src.services.modpack import ModpackService
+
+    async def scenario() -> list[tuple[str, Optional[int]]]:
+        db = ModpackDatabase()
+        built = await db.bundle_insert(ModpackBundle(name="con builds", description="", version="1.21.1",
+                                                     loader=MinecraftLoaders.fabric))
+        await db.bundle_insert(ModpackBundle(name="sin builds", description="", version="1.21.1",
+                                             loader=MinecraftLoaders.fabric))
+        request = ResolveRequest(target=Target(game_version="1.21.1", loader="fabric"), projects=[])
+        lock = Lock(entries=[], problems=[], suggestions=[], needs_projects=set(), needs_types=set(), needs_versions=set())
+        for number in (1, 2):
+            assert built.id is not None
+            await db.build_insert(ModpackBuild(bundle_id=built.id, number=number, created_at=T0, request=request, lock=lock))
+            await db.bundle_latest_build(str(built.id), number)
+        service = ModpackService(db, cast(Any, None), cast(Any, None), cast(Any, None), cast(Any, None))
+        return sorted((bundle.name, build.number if build else None) for bundle, build in await service.latest_builds())
+
+    assert mongo(scenario) == [("con builds", 2), ("sin builds", None)]

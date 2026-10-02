@@ -1,7 +1,7 @@
 from beanie import Document
 from datetime import datetime
 from pydantic import Field
-from pymongo import ASCENDING, IndexModel
+from pymongo import ASCENDING, DESCENDING, IndexModel
 from typing import Any, Optional
 from src.model.users.actor import ActorRef
 
@@ -38,4 +38,6 @@ class Job(Document):
             IndexModel([("key", ASCENDING)], unique=True, name="one_active_job_per_key",
                        partialFilterExpression={"active": True, "key": {"$type": "string"}}),
             IndexModel([("status", ASCENDING), ("created_at", ASCENDING)]),
+            # The panel's list of recent jobs.
+            IndexModel([("created_at", DESCENDING)]),
         ]
