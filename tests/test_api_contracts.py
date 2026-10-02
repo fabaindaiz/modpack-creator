@@ -150,6 +150,15 @@ def test_project_versions_ask_for_all_versions_without_changelogs(mongo: MongoRu
     assert [v.version_id for v in result] == ["v1"]
 
 
+def test_search_sends_the_query_and_facets_as_a_json_array() -> None:
+    hits = [{"project_id": "gvQqBUqZ", "slug": "lithium", "title": "Lithium", "project_type": "mod"}]
+    result, seen = run({("GET", "/search"): json_reply({"hits": hits, "offset": 0, "limit": 3, "total_hits": 1})},
+                       lambda base: modrinth(base).search("Lithium", [["project_type:mod"]], limit=3))
+    assert [(s.method, s.path, s.query) for s in seen] == [
+        ("GET", "/search", {"query": "Lithium", "facets": '[["project_type:mod"]]', "limit": "3"})]
+    assert result == hits
+
+
 def test_game_versions_are_read_from_the_tag_in_the_order_modrinth_gives() -> None:
     tags = [{"version": "26.3", "version_type": "release", "date": "2026-09-15T11:23:02Z", "major": False},
             {"version": "1.21.11", "version_type": "release", "date": "2025-12-09T12:00:00Z", "major": False}]
@@ -208,6 +217,79 @@ def test_deleting_files_is_a_post_with_root_and_files_in_the_body() -> None:
     assert result is True
 
 
+BACKUP = {"object": "backup", "attributes": {
+    "uuid": "b-1", "is_successful": True, "is_locked": True, "name": "pre-update job-1", "ignored_files": [],
+    "checksum": "sha1:abc", "bytes": 1024, "created_at": "2026-10-01T12:00:00+00:00",
+    "completed_at": "2026-10-01T12:01:00+00:00"}}
+
+
+def test_the_server_state_reads_its_flags_and_backup_limit() -> None:
+    details = {"object": "server", "attributes": {"status": None, "is_suspended": False, "is_installing": False,
+                                                  "is_transferring": False, "feature_limits": {"databases": 0, "allocations": 1, "backups": 3}}}
+    result, seen = run({("GET", "/api/client/servers/abc"): json_reply(details)},
+                       lambda base: pterodactyl(base).server_state("abc"))
+    assert [(s.method, s.path) for s in seen] == [("GET", "/api/client/servers/abc")]
+    assert (result.status, result.is_suspended, result.backup_limit) == (None, False, 3)
+
+
+def test_resources_read_the_power_state_and_uptime() -> None:
+    stats = {"object": "stats", "attributes": {"current_state": "running", "is_suspended": False, "resources": {
+        "memory_bytes": 1, "cpu_absolute": 1.0, "disk_bytes": 1, "network_rx_bytes": 1, "network_tx_bytes": 1, "uptime": 90000}}}
+    result, seen = run({("GET", "/api/client/servers/abc/resources"): json_reply(stats)},
+                       lambda base: pterodactyl(base).resources("abc"))
+    assert (result.current_state, result.uptime_ms) == ("running", 90000)
+
+
+def test_backups_are_listed_with_the_count_the_panel_holds_against_the_limit() -> None:
+    listing = {"object": "list", "data": [BACKUP], "meta": {"backup_count": 1, "pagination": {}}}
+    result, seen = run({("GET", "/api/client/servers/abc/backups"): json_reply(listing)},
+                       lambda base: pterodactyl(base).backups("abc"))
+    backups, count = result
+    assert [b.uuid for b in backups] == ["b-1"] and count == 1
+
+
+def test_creating_a_locked_backup_posts_its_name() -> None:
+    result, seen = run({("POST", "/api/client/servers/abc/backups"): json_reply(BACKUP)},
+                       lambda base: pterodactyl(base).backup_create("abc", "pre-update job-1", locked=True))
+    assert [(s.method, s.path, s.json) for s in seen] == [
+        ("POST", "/api/client/servers/abc/backups", {"name": "pre-update job-1", "is_locked": True})]
+    assert result.uuid == "b-1"
+
+
+def test_a_backup_is_read_and_its_lock_toggled() -> None:
+    routes = {("GET", "/api/client/servers/abc/backups/b-1"): json_reply(BACKUP),
+              ("POST", "/api/client/servers/abc/backups/b-1/lock"): json_reply(BACKUP)}
+
+    async def call(base: str) -> Any:
+        api = pterodactyl(base)
+        return await api.backup_get("abc", "b-1"), await api.backup_lock_toggle("abc", "b-1")
+
+    (read, toggled), seen = run(routes, call)
+    assert [(s.method, s.path) for s in seen] == [("GET", "/api/client/servers/abc/backups/b-1"),
+                                                  ("POST", "/api/client/servers/abc/backups/b-1/lock")]
+    assert read.is_successful and toggled.uuid == "b-1"
+
+
+def test_restoring_a_backup_posts_truncate_and_is_answered_204() -> None:
+    result, seen = run({("POST", "/api/client/servers/abc/backups/b-1/restore"): empty_reply()},
+                       lambda base: pterodactyl(base).backup_restore("abc", "b-1", truncate=True))
+    assert [(s.method, s.json) for s in seen] == [("POST", {"truncate": True})] and result is True
+
+
+def test_renaming_is_a_put_with_root_and_pairs() -> None:
+    result, seen = run({("PUT", "/api/client/servers/abc/files/rename"): empty_reply()},
+                       lambda base: pterodactyl(base).files_rename("abc", "/", [("mods/a.jar", "mods.old/j1/a.jar")]))
+    assert [(s.method, s.path, s.json) for s in seen] == [
+        ("PUT", "/api/client/servers/abc/files/rename", {"root": "/", "files": [{"from": "mods/a.jar", "to": "mods.old/j1/a.jar"}]})]
+    assert result is True
+
+
+def test_creating_a_folder_posts_root_and_name() -> None:
+    result, seen = run({("POST", "/api/client/servers/abc/files/create-folder"): empty_reply()},
+                       lambda base: pterodactyl(base).files_create_folder("abc", "/", "mods.staging"))
+    assert [(s.method, s.json) for s in seen] == [("POST", {"root": "/", "name": "mods.staging"})] and result is True
+
+
 def signed(path: str) -> Reply:
     async def reply(request: web.Request, base: str) -> web.StreamResponse:
         return web.json_response({"object": "signed_url", "attributes": {"url": f"{base}{path}?token=jwt"}})
@@ -219,12 +301,13 @@ def test_uploading_asks_the_panel_for_a_signed_url_and_posts_the_file_to_wings_w
         ("GET", "/api/client/servers/abc/files/upload"): signed("/upload/file"),
         ("POST", "/upload/file"): empty_reply(200),
     }
-    result, seen = run(routes, lambda base: pterodactyl(base).server_files_upload("abc", "/mods", "a.jar", b"jar"))
+    # A name with "+", like most Modrinth jars (`+mc26.3`): it must arrive as is, not percent-encoded.
+    result, seen = run(routes, lambda base: pterodactyl(base).server_files_upload("abc", "/mods", "a+mc26.3.jar", b"jar"))
     assert [(s.method, s.path) for s in seen] == [
         ("GET", "/api/client/servers/abc/files/upload"), ("POST", "/upload/file")]
     wings = seen[1]
     assert wings.query == {"token": "jwt", "directory": "/mods"}
-    assert wings.form == {"files": ("a.jar", b"jar")}
+    assert wings.form == {"files": ("a+mc26.3.jar", b"jar")}
     assert wings.authorization is None
     assert result is True
 

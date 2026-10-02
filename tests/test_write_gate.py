@@ -77,5 +77,8 @@ def test_the_audit_fails_on_a_write_outside_the_gate() -> None:
               "async def power(self):\n    await self._write(path='p')\n"
               "async def read(self):\n    await self._request(method=METHOD.GET, path='p')\n")
     assert audit.ungated_writes(inside, "c.py") == []
+    # Naming a method for the gate is not a write outside it.
+    renames = inside + "async def rename(self):\n    await self._write(path='p', method=METHOD.PUT)\n"
+    assert audit.ungated_writes(renames, "c.py") == []
     outside = inside + "async def sneaky(self):\n    await self._request(method=METHOD.DELETE, path='p')\n"
     assert audit.ungated_writes(outside, "c.py") == ["c.py:7 sneaky: escribe en Pterodactyl sin pasar por _write"]

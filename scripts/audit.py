@@ -182,10 +182,13 @@ def ungated_writes(source: str, name: str) -> list[str]:
     detiene (tarjeta one-write-gate-makes-read-only-real)."""
     found = []
     for node in ast.walk(ast.parse(source)):
-        if isinstance(node, ast.AsyncFunctionDef) and node.name != "_write":
-            methods = {m.group(1) for m in re.finditer(r"METHOD\.([A-Z]+)", ast.unparse(node))}
-            if methods & NON_IDEMPOTENT:
+        if not isinstance(node, ast.AsyncFunctionDef) or node.name == "_write":
+            continue
+        for call in ast.walk(node):
+            if (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == "_request"
+                    and {m.group(1) for m in re.finditer(r"METHOD\.([A-Z]+)", ast.unparse(call))} & NON_IDEMPOTENT):
                 found.append(f"{name}:{node.lineno} {node.name}: escribe en Pterodactyl sin pasar por _write")
+                break
     return found
 
 

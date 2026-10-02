@@ -1,6 +1,6 @@
 import backoff
 import json
-from typing import Generator, Optional, Sequence
+from typing import Any, Generator, Optional, Sequence
 from src.library.api import HttpAPI, METHOD
 from src.library.api.handler import JsonResponse
 from src.library.api.session import TokenAuthorization
@@ -39,6 +39,17 @@ class ModrinthAPI(HttpAPI):
             query={"ids": json.dumps(slugs)})
         return (ModrinthProject.parse(**item) for item in handler.json)
     
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
+    async def search(self, query: str, facets: list[list[str]], limit: int = 5) -> list[dict[str, Any]]:
+        """GET /search: the hits for a text, filtered by facets (a JSON array of OR-groups, ANDed),
+        as Modrinth returns them (openapi.yaml v2.7.0, SearchResults)."""
+        handler: JsonResponse = await self._request(
+            method=METHOD.GET,
+            path='search',
+            query={"query": query, "facets": json.dumps(facets), "limit": str(limit)})
+        hits: list[dict[str, Any]] = handler.json.get("hits", [])
+        return hits
+
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
     async def game_versions(self) -> list[ModrinthGameVersion]:
         """Every game version Modrinth knows, newest first: the order to compare them by."""
