@@ -36,6 +36,12 @@ class ModrinthDatabase():
             query = query.find(In(ModrinthProject.loaders, [loader]))
         return query
 
+    async def project_find_by_modrinth_id(self, project_ids: list[str]) -> list[ModrinthProject]:
+        """The stored projects with these Modrinth project ids; the ones not stored are absent."""
+        if not project_ids:
+            return []
+        return await ModrinthProject.find(In(ModrinthProject.project_id, project_ids)).to_list()
+
     async def project_get(self, project_id: str) -> ModrinthProject:
         """
         Get a single project by its ID.

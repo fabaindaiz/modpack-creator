@@ -1,0 +1,81 @@
+{# The resolved lock and the server decisions; the fragment htmx swaps into #lock. `lock` is None
+   until the first resolution. #}
+{% import "_macros.html" as ui %}
+{% set SERVER = {
+  "include": ("En el servidor", "accent"),
+  "exclude": ("Solo cliente", "neutral"),
+  "admin": ("Sin decidir", "warning"),
+} %}
+<div id="lock" class="space-y-3">
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    <p class="text-sm text-zinc-600 dark:text-zinc-400">
+      {% if lock is none %}Todavía no se resolvió. Resolver consulta Modrinth y no guarda nada.{% else %}{{ lock.entries | length }} archivos resueltos.{% endif %}
+    </p>
+    {{ ui.button("Resolver" if lock is none else "Resolver de nuevo", kind="secondary", attrs={
+      "hx-post": "/modpacks/" ~ bundle_id ~ "/resolve", "hx-target": "#lock", "hx-swap": "outerHTML"}) }}
+  </div>
+
+  {% if lock is not none %}
+  {% if not lock.complete %}
+  {{ ui.notice("La resolución no terminó: la cadena de dependencias es demasiado larga.", "warning") }}
+  {% endif %}
+
+  {% if lock.problems %}
+  <div class="space-y-1 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-500/40 dark:bg-red-950/60 dark:text-red-200">
+    <h3 class="font-semibold">Problemas ({{ lock.problems | length }})</h3>
+    <ul class="list-disc space-y-0.5 pl-5">
+      {% for problem in lock.problems %}
+      <li class="break-words">{% if problem.project_id %}<span class="font-medium">{{ titles.get(problem.project_id, problem.project_id) }}</span>: {% endif %}{{ problem.detail }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if lock.suggestions %}
+  <div class="space-y-1 rounded-lg border border-sky-300 bg-sky-50 p-3 text-sm text-sky-900 dark:border-sky-500/40 dark:bg-sky-950/60 dark:text-sky-200">
+    <h3 class="font-semibold">Sugerencias</h3>
+    <ul class="list-disc space-y-0.5 pl-5">
+      {% for suggestion in lock.suggestions %}
+      <li class="break-words">{{ titles.get(suggestion.project_id, suggestion.project_id) }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if lock.undecided %}
+  <div class="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-950/60 dark:text-amber-200">
+    <h3 class="font-semibold">Mods por decidir ({{ lock.undecided | length }})</h3>
+    <p>Modrinth no dice si estos mods van en el servidor. Hasta que lo decidas no se puede crear un build.</p>
+    <ul class="space-y-2">
+      {% for entry in lock.undecided %}
+      <li>
+        <form hx-post="/modpacks/{{ bundle_id }}/decisions" hx-target="#lock" hx-swap="outerHTML" class="flex flex-wrap items-center gap-2">
+          <input type="hidden" name="project_id" value="{{ entry.project_id }}">
+          <span class="min-w-0 flex-1 font-medium break-words">{{ titles.get(entry.project_id, entry.project_id) }}</span>
+          <label for="server-{{ entry.project_id }}" class="text-xs">¿Va en el servidor?</label>
+          <select id="server-{{ entry.project_id }}" name="server" required class="rounded-md border-0 bg-white px-2 py-1 text-sm text-zinc-900 ring-1 ring-inset ring-amber-400 dark:bg-zinc-900 dark:text-zinc-100">
+            <option value="" disabled selected>Elige…</option>
+            <option value="yes">sí</option>
+            <option value="no">no</option>
+          </select>
+          {{ ui.button("Decidir", type="submit", small=True) }}
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% call ui.table(["Proyecto", "Versión", "Servidor", "Por qué"], empty="El lock está vacío.", caption="Lock") %}
+  {% for entry in lock.entries %}
+  {% set label, tone = SERVER[entry.server] %}
+  <tr data-entry="{{ entry.project_id }}">
+    <td class="max-w-[14rem] break-words font-medium">{{ titles.get(entry.project_id, entry.project_id) }}</td>
+    <td class="font-mono text-xs break-all">{{ entry.version_number }}</td>
+    <td>{{ ui.badge(label, tone) }}</td>
+    <td class="max-w-[14rem] text-xs break-words text-zinc-500 dark:text-zinc-400">{{ entry.reason }}</td>
+  </tr>
+  {% endfor %}
+  {% endcall %}
+  {% endif %}
+</div>

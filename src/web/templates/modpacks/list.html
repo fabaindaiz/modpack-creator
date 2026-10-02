@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% set nav_active = "modpacks" %}
+{% block title %}Modpacks{% endblock %}
+
+{% set FIELD = "mt-1 block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm text-zinc-900 shadow-xs ring-1 ring-inset ring-zinc-300 placeholder:text-zinc-400 focus-visible:outline-2 focus-visible:outline-emerald-600 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-700" %}
+
+{% block content %}
+{% call ui.page_header("Modpacks", "Cada modpack define qué se instala; los builds congelan lo resuelto.") %}
+{{ ui.link_button("Reemplazos globales", "/replacements") }}
+{% endcall %}
+
+<div class="grid gap-6 lg:grid-cols-3">
+  <div class="lg:col-span-2">
+    {% call ui.section("Modpacks", id="modpacks") %}
+    {% call ui.table(["Modpack", "Versión", "Loader", "Último build", "Recomendado"], empty="Todavía no hay modpacks.", caption="Modpacks") %}
+    {% for bundle in bundles %}
+    <tr>
+      <td class="max-w-[18rem] break-words">
+        <a href="/modpacks/{{ bundle.id }}" class="font-medium hover:text-emerald-700 hover:underline dark:hover:text-emerald-300">{{ bundle.name }}</a>
+        {% if bundle.description %}<div class="line-clamp-2 text-xs text-zinc-500 dark:text-zinc-400">{{ bundle.description }}</div>{% endif %}
+      </td>
+      <td class="whitespace-nowrap">{{ bundle.version }}</td>
+      <td>{{ ui.badge(bundle.loader.value) }}</td>
+      <td class="tabular-nums">{% if bundle.latest_build is not none %}#{{ bundle.latest_build }}{% else %}<span class="text-zinc-400 dark:text-zinc-500">—</span>{% endif %}</td>
+      <td>{% if bundle.recommended_build is not none %}{{ ui.badge("#" ~ bundle.recommended_build, "accent") }}{% else %}<span class="text-zinc-400 dark:text-zinc-500">—</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    {% endcall %}
+    {% endcall %}
+  </div>
+
+  <div>
+    {% call ui.section("Nuevo modpack", id="nuevo") %}
+    <form method="post" action="/modpacks" class="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      <div>
+        <label for="new-name" class="text-sm font-medium">Nombre</label>
+        <input id="new-name" name="name" type="text" required maxlength="120" class="{{ FIELD }}">
+      </div>
+      <div>
+        <label for="new-description" class="text-sm font-medium">Descripción</label>
+        <textarea id="new-description" name="description" rows="2" maxlength="2000" class="{{ FIELD }}"></textarea>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label for="new-version" class="text-sm font-medium">Versión de Minecraft</label>
+          <input id="new-version" name="version" type="text" required maxlength="40" placeholder="1.21.1" class="{{ FIELD }}">
+        </div>
+        <div>
+          <label for="new-loader" class="text-sm font-medium">Loader</label>
+          <select id="new-loader" name="loader" class="{{ FIELD }}">
+            {% for loader in loaders %}
+            <option value="{{ loader }}"{% if loader == "fabric" %} selected{% endif %}>{{ loader }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label for="new-loader-version" class="text-sm font-medium">Versión del loader <span class="font-normal text-zinc-500 dark:text-zinc-400">(opcional)</span></label>
+        <input id="new-loader-version" name="loader_version" type="text" maxlength="40" class="{{ FIELD }}">
+      </div>
+      {{ ui.button("Crear modpack", type="submit") }}
+    </form>
+    {% endcall %}
+  </div>
+</div>
+{% endblock %}

@@ -1,10 +1,14 @@
 import asyncio
-from typing import Iterable, Optional, Sequence
+from typing import Any, Iterable, Optional, Sequence
+from src.library.resolution import LOADER_ACCEPTS, TYPE_LOADERS
 from src.library.api.client.modrinth import ModrinthAPI
 from src.database.modrinth import ModrinthDatabase
 from src.model.modrinth import ModrinthProject, ModrinthVersion
 from src.model.modrinth.version import ModrinthVersionDependency
 from src.exceptions import *
+
+# The project types a pack takes (resolution's SUPPORTED_TYPES), as Modrinth's search names them.
+SEARCH_TYPES = ("mod", "shader", "resourcepack", "datapack")
 
 class ModrinthService():
     def __init__(self,
@@ -16,6 +20,27 @@ class ModrinthService():
 
     async def project_find(self, game_version: Optional[str] = None, loader: Optional[str] = None) -> list[ModrinthProject]:
         return await self.modrinthDB.project_find(game_version=game_version, loader=loader).to_list()
+
+    async def search(self, query: str, game_version: Optional[str], loader: Optional[str], limit: int = 10) -> list[dict[str, Any]]:
+        """
+        Search Modrinth for projects to add to a pack, as Modrinth returns the hits.
+
+        Facets are ANDed groups of ORed clauses: any type a pack takes, the game version, and the
+        loaders that run in the pack. Shaders, resource packs and datapacks have loaders of their
+        own, so those are in the loader group: a Fabric filter alone would hide them all.
+        """
+        facets = [[f"project_type:{t}" for t in SEARCH_TYPES]]
+        if game_version:
+            facets.append([f"versions:{game_version}"])
+        if loader:
+            loaders = set(LOADER_ACCEPTS.get(loader, {loader})).union(*TYPE_LOADERS.values())
+            facets.append([f"categories:{name}" for name in sorted(loaders)])
+        return await self.modrinthAPI.search(query, facets, limit)
+
+    async def projects_by_id(self, project_ids: list[str]) -> dict[str, ModrinthProject]:
+        """The catalog's projects by their Modrinth project id; what is not stored is absent."""
+        found = await self.modrinthDB.project_find_by_modrinth_id(project_ids)
+        return {project.project_id: project for project in found}
 
     async def project_get(self, project_id: str) -> ModrinthProject:
         return await self.modrinthDB.project_get(project_id)

@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% set nav_active = "modpacks" %}
+{% block title %}Reemplazos{% endblock %}
+
+{% block content %}
+{% call ui.page_header("Reemplazos globales", "Valen para todos los modpacks; las reglas de un modpack tienen prioridad.") %}
+{{ ui.link_button("Modpacks", "/modpacks") }}
+{% endcall %}
+{% include "modpacks/_replacements.html" %}
+{% endblock %}
