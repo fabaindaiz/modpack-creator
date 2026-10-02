@@ -1,0 +1,36 @@
+{#
+  One job as a row: kind, status, step, who asked and when. While the job is active the row
+  polls /jobs/{id}/row and replaces itself; a finished row does not poll. A dry-run update shows
+  its plan once it is done. Needs `job`.
+#}
+{% import "_macros.html" as ui %}
+{% set JOB_STATUS = {
+  "queued": ("En cola", "info"),
+  "running": ("En curso", "info"),
+  "done": ("Listo", "accent"),
+  "failed": ("Falló", "danger"),
+} %}
+{% set JOB_KIND = {
+  "server_scan": "Escaneo",
+  "server_update": "Actualización",
+  "server_rollback": "Rollback",
+} %}
+{% set label, tone = JOB_STATUS.get(job.status, (job.status, "neutral")) %}
+{% set dry_run = job.kind == "server_update" and job.payload.get("dry_run", False) %}
+<div id="job-{{ job.id }}" data-job="{{ job.id }}"
+  class="space-y-2 rounded-lg border border-zinc-200 bg-white p-3 text-sm dark:border-zinc-800 dark:bg-zinc-900"
+  {%- if job.active %} hx-get="/jobs/{{ job.id }}/row" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+    <span class="font-medium">{{ JOB_KIND.get(job.kind, job.kind) }}{% if dry_run %} (simulación){% endif %}</span>
+    {{ ui.badge(label, tone, title=job.status) }}
+    {% if job.step %}<span class="font-mono text-xs text-zinc-500 dark:text-zinc-400">{{ job.step }}</span>{% endif %}
+    <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ job.requested_by.name if job.requested_by else "programado" }}</span>
+    <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ ui.when(job.created_at) }}</span>
+  </div>
+  {% if job.status == "failed" and job.error %}
+  <p class="break-words text-xs text-red-700 dark:text-red-300">{{ job.error }}</p>
+  {% endif %}
+  {% if dry_run and job.status == "done" %}
+  {% include "servers/_dry_run.html" %}
+  {% endif %}
+</div>

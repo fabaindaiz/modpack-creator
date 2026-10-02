@@ -1,0 +1,42 @@
+{# The result of importing a server; the fragment htmx swaps into #import-result. #}
+{% import "_macros.html" as ui %}
+<div id="import-result" class="space-y-4">
+  <ul class="space-y-1 text-sm">
+    <li>Proyectos agregados al modpack: <strong>{{ result.added | length }}</strong>
+      {% if result.added %}<span class="text-zinc-600 dark:text-zinc-400">({% for id in result.added %}{{ titles.get(id, id) }}{{ ", " if not loop.last }}{% endfor %})</span>{% endif %}</li>
+    <li>Archivos locales registrados: <strong>{{ result.local | length }}</strong></li>
+    <li>Pendientes de tu decisión: <strong>{{ result.candidates | length }}</strong></li>
+  </ul>
+  {% if result.local %}
+  <ul class="space-y-0.5 font-mono text-xs break-all text-zinc-600 dark:text-zinc-400">{% for path in result.local %}<li>{{ path }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if result.too_large %}
+  {{ ui.notice("Estos archivos son demasiado grandes para leerlos y no se importaron: " ~ (result.too_large | join(", ")), "warning") }}
+  {% endif %}
+  {% if result.candidates %}
+  <ul class="space-y-3">
+    {% for item in result.candidates %}
+    <li class="space-y-2 rounded-md border border-zinc-200 p-3 text-sm dark:border-zinc-700" data-candidate="{{ item.path }}">
+      <div>
+        <span class="font-mono text-xs break-all">{{ item.path }}</span>
+        {% if item.metadata %}<div class="text-xs text-zinc-500 dark:text-zinc-400">{{ item.metadata.name or item.metadata.mod_id }} · {{ item.metadata.loader }}</div>{% endif %}
+      </div>
+      <p class="text-xs text-zinc-600 dark:text-zinc-400">Modrinth no lo conoce por hash. Puede ser uno de estos proyectos; confirma solo si lo es.</p>
+      <div class="flex flex-wrap gap-2">
+        {% for candidate in item.candidates %}
+        <form hx-post="/servers/{{ server_id }}/import/confirm" hx-target="closest li" hx-swap="outerHTML">
+          <input type="hidden" name="path" value="{{ item.path }}">
+          <input type="hidden" name="project_id" value="{{ candidate.project_id }}">
+          {{ ui.button(titles.get(candidate.project_id, candidate.title) ~ " (" ~ candidate.slug ~ ")", kind="secondary", type="submit", small=True) }}
+        </form>
+        {% endfor %}
+        <form hx-post="/servers/{{ server_id }}/import/local" hx-target="closest li" hx-swap="outerHTML">
+          <input type="hidden" name="path" value="{{ item.path }}">
+          {{ ui.button("Ninguno: conservar como local", kind="ghost", type="submit", small=True) }}
+        </form>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>

@@ -1,0 +1,46 @@
+{#
+  Updating a game server: a dry run first (reads, writes nothing), then the real run, which asks
+  for the server's exact name. The route repeats the check and the service the role; here the
+  buttons only mirror it. Needs `server`, `server_id`, `failed_update`.
+#}
+{% import "_macros.html" as ui %}
+{% set reason = None if actor.is_operator else "requiere operador" %}
+<div class="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+  <p class="text-zinc-600 dark:text-zinc-400">Primero simula: muestra qué jars cambiarían y qué escribiría en el servidor, sin tocarlo.</p>
+  <div class="flex flex-wrap gap-2">
+    {% if actor.is_operator %}
+    {{ ui.button("Simular actualización", kind="secondary", attrs={"hx-post": "/servers/" ~ server_id ~ "/update/preview", "hx-target": "#server-job", "hx-swap": "innerHTML"}) }}
+    {% else %}
+    {{ ui.button("Simular actualización", kind="secondary", disabled_reason=reason) }}
+    {% endif %}
+    {{ ui.button("Actualizar…", kind="danger", disabled_reason=reason, attrs={"data-dialog-open": "update-dialog"}) }}
+  </div>
+
+  {% if actor.is_operator %}
+  {% call ui.confirm_dialog("update-dialog", "Actualizar " ~ server.name, "Actualizar servidor", "danger",
+      {"hx-post": "/servers/" ~ server_id ~ "/update", "hx-target": "#server-job", "hx-swap": "innerHTML"}) %}
+  <p>Esto apaga el servidor de juego, hace un backup, cambia los jars y lo vuelve a arrancar. Los jugadores serán desconectados.</p>
+  <label for="update-confirm" class="block font-medium">Escribe el nombre exacto del servidor para confirmar: <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{{ server.name }}</code></label>
+  <input id="update-confirm" name="confirm" type="text" required autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200"
+    class="block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 focus-visible:outline-2 focus-visible:outline-red-600 dark:bg-zinc-900 dark:ring-zinc-700">
+  {% endcall %}
+  {% endif %}
+
+  {% if failed_update %}
+  <div class="space-y-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+    <p class="font-medium text-red-700 dark:text-red-300">La última actualización falló{% if failed_update.error %}: {{ failed_update.error }}{% endif %}</p>
+    <p class="text-xs text-zinc-600 dark:text-zinc-400">A devuelve los jars anteriores; B restaura el backup previo a la actualización.</p>
+    <div class="flex flex-wrap gap-2">
+      {% for mode, step, label in [("A", "swap", "Rollback A: devolver los jars"), ("B", "backup", "Rollback B: restaurar el backup")] %}
+      {% if step in failed_update.checkpoint %}
+      <form{% if actor.is_operator %} hx-post="/servers/{{ server_id }}/rollback" hx-target="#server-job" hx-swap="innerHTML" hx-confirm="¿Hacer el {{ label | lower }}?"{% endif %}>
+        <input type="hidden" name="update_id" value="{{ failed_update.id }}">
+        <input type="hidden" name="mode" value="{{ mode }}">
+        {{ ui.button(label, kind="danger", type="submit", small=True, disabled_reason=reason) }}
+      </form>
+      {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>

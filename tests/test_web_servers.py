@@ -1,0 +1,515 @@
+"""Las páginas de servidores del panel (etapa 3): lista, detalle, importar, actualizar y rollback.
+
+Los servicios se sustituyen con dobles en el contenedor, como en `tests/test_web_modpacks.py`. Cada
+doble anota qué recibió: toda mutación lleva el `actor` de la sesión, y una confirmación que no
+coincide no llega nunca al servicio.
+"""
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+import pytest
+from beanie import PydanticObjectId
+from dependency_injector import providers
+from fastapi.testclient import TestClient
+
+from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
+from src.library.jarmeta import ModMetadata
+from src.library.scan import Comparison, ExpectedEntry, ScanFile
+from src.model.jobs import Job
+from src.model.modpack import ModpackBundle, PackProject, ProjectOrigin
+from src.model.modrinth import ModrinthProject
+from src.model.pterodactyl import ImportCandidate, ImportResult, ProjectCandidate, PterodactylServer, ServerScan
+from src.model.users import Actor
+from src.model.users.actor import ActorRef
+from src.model.utils import MinecraftLoaders
+from tests._actors import EDITOR, OPERATOR, session_for
+from tests._session import session_cookie
+
+T0 = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
+SERVER_ID = PydanticObjectId()
+BUNDLE_ID = PydanticObjectId()
+SAME_ORIGIN = {"Sec-Fetch-Site": "same-origin"}
+HTMX = {"HX-Request": "true", **SAME_ORIGIN}
+EXACT_NAME = "Survival"
+
+
+def server(name: str = EXACT_NAME, bundle_id: Optional[str] = str(BUNDLE_ID), uuid: str = "uuid-1",
+           server_id: Optional[PydanticObjectId] = None) -> PterodactylServer:
+    return PterodactylServer.model_construct(
+        id=server_id or SERVER_ID, identifier="abc123", internal_id=1, uuid=uuid, name=name, node="node-1",
+        description="", status=None, is_suspended=False, is_installing=False, is_transferring=False,
+        bundle_id=bundle_id)
+
+
+def bundle() -> ModpackBundle:
+    return ModpackBundle.model_construct(
+        id=BUNDLE_ID, name="Pack Uno", description="", version="1.21.1", loader=MinecraftLoaders.fabric,
+        projects=[PackProject(project_id="P1", origin=ProjectOrigin.pack)], latest_build=2, recommended_build=2)
+
+
+def scan_file(path: str, project_id: Optional[str] = None, status: str = "identified") -> ScanFile:
+    return ScanFile(path=path, size=10, modified_at=T0, status=status,  # type: ignore[arg-type]
+                    sha1="s1", sha512="s5-" + path, project_id=project_id, version_id="v" if project_id else None)
+
+
+def scan(drift: Optional[str] = "✅ todo en orden") -> ServerScan:
+    return ServerScan.model_construct(id=PydanticObjectId(), server_id=SERVER_ID, directory="/mods", scanned_at=T0,
+                                      full=False, files=[scan_file("/mods/sodium.jar", "P1")], drift=drift)
+
+
+def job(kind: str = "server_scan", status: str = "queued", active: bool = True, payload: Optional[dict[str, Any]] = None,
+        checkpoint: Optional[dict[str, Any]] = None, error: Optional[str] = None,
+        requested_by: Optional[ActorRef] = None, key: Optional[str] = f"server:{SERVER_ID}") -> Job:
+    return Job.model_construct(id=PydanticObjectId(), kind=kind, key=key, payload=payload or {}, status=status,
+                               active=active, step="preflight", checkpoint=checkpoint or {}, error=error,
+                               created_at=T0, finished_at=None if active else T0, requested_by=requested_by)
+
+
+def comparison() -> Comparison:
+    return Comparison(
+        matching=[scan_file("/mods/sodium.jar", "P1")],
+        different_version=[(scan_file("/mods/lithium-old.jar", "P2"), ExpectedEntry(project_id="P2", version_id="v9", server="include"))],
+        missing=[ExpectedEntry(project_id="P3", version_id="v3", server="include")],
+        extra=[scan_file("/mods/extra.jar", "P4")],
+        unknown=[scan_file("/mods/mystery.jar", None, "unknown")])
+
+
+class FakePterodactyl:
+    def __init__(self) -> None:
+        self.server = server()
+        self.external = [server(), server("Creative", None, "uuid-2", PydanticObjectId())]
+        self.scan: Optional[ServerScan] = scan()
+        self.comparison: Optional[Comparison] = comparison()
+        self.import_result = ImportResult(
+            added=["P5"], local=["/mods/local.jar"], too_large=["/mods/huge.jar"],
+            candidates=[ImportCandidate(
+                path="/mods/odd.jar", sha512="s5", metadata=ModMetadata(loader="fabric", mod_id="odd", name="Odd Mod", version="1"),
+                candidates=[ProjectCandidate(project_id="C1", slug="odd", title="Odd Mod", via="slug")])])
+        self.calls: list[tuple[Any, ...]] = []
+        self.error: Optional[Exception] = None
+
+    def _record(self, *call: Any) -> None:
+        self.calls.append(call)
+        if self.error is not None:
+            raise self.error
+
+    async def server_external(self) -> list[PterodactylServer]:
+        return self.external
+
+    async def server_find(self) -> list[PterodactylServer]:
+        return [self.server]
+
+    async def server_get(self, server_id: str) -> PterodactylServer:
+        return self.server
+
+    async def server_create(self, uuid: str, actor: Actor) -> PterodactylServer:
+        self._record("server_create", uuid, actor)
+        return self.server
+
+    async def server_update(self, server_id: str, actor: Actor) -> PterodactylServer:
+        self._record("server_update", server_id, actor)
+        return self.server
+
+    async def server_link_bundle(self, server_id: str, bundle_id: Optional[str], actor: Actor) -> PterodactylServer:
+        self._record("server_link_bundle", server_id, bundle_id, actor)
+        return self.server
+
+    async def scan_latest(self, server_id: str) -> ServerScan:
+        if self.scan is None:
+            raise HTTP_404_NOT_FOUND("no scan")
+        return self.scan
+
+    async def compare(self, server_id: str, bundle_id: Optional[str] = None, build: Optional[int] = None) -> Comparison:
+        if self.comparison is None:
+            raise HTTP_409_CONFLICT("not linked")
+        return self.comparison
+
+    async def import_server(self, server_id: str, actor: Actor) -> ImportResult:
+        self._record("import_server", server_id, actor)
+        return self.import_result
+
+    async def import_confirm(self, server_id: str, path: str, project_id: str, actor: Actor) -> list[PackProject]:
+        self._record("import_confirm", server_id, path, project_id, actor)
+        return []
+
+    async def import_local(self, server_id: str, path: str, actor: Actor) -> list[Any]:
+        self._record("import_local", server_id, path, actor)
+        return []
+
+
+class FakeJobs:
+    def __init__(self) -> None:
+        self.jobs: list[Job] = []
+        self.calls: list[tuple[Any, ...]] = []
+
+    async def enqueue_scan(self, server_id: str, actor: Actor, full: bool = False) -> Job:
+        self.calls.append(("enqueue_scan", server_id, actor, full))
+        return job("server_scan", requested_by=actor.ref())
+
+    async def get(self, job_id: str) -> Job:
+        return self.jobs[0]
+
+    async def recent(self, limit: int = 10) -> list[Job]:
+        return self.jobs
+
+
+class FakeUpdate:
+    def __init__(self) -> None:
+        self.calls: list[tuple[Any, ...]] = []
+        self.errors: list[Optional[Exception]] = []
+
+    def _record(self, *call: Any) -> None:
+        self.calls.append(call)
+        if self.errors:
+            error = self.errors.pop(0)
+            if error is not None:
+                raise error
+
+    async def enqueue_update(self, server_id: str, actor: Actor, build: Optional[int] = None, dry_run: bool = True) -> Job:
+        self._record("enqueue_update", server_id, actor, build, dry_run)
+        return job("server_update", payload={"server_id": server_id, "dry_run": dry_run}, requested_by=actor.ref())
+
+    async def enqueue_rollback(self, server_id: str, update_id: str, mode: str, actor: Actor) -> Job:
+        self._record("enqueue_rollback", server_id, update_id, mode, actor)
+        return job("server_rollback", requested_by=actor.ref())
+
+
+class FakeModpack:
+    async def bundle_find(self) -> list[ModpackBundle]:
+        return [bundle()]
+
+    async def bundle_get(self, bundle_id: str) -> ModpackBundle:
+        return bundle()
+
+
+class FakeModrinth:
+    async def projects_by_id(self, project_ids: list[str]) -> dict[str, ModrinthProject]:
+        titles = {"P1": "Sodium", "P2": "Lithium", "P3": "Iris", "P4": "Phosphor", "C1": "Odd Mod Project"}
+        return {i: ModrinthProject.model_construct(project_id=i, slug=i.lower(), title=titles[i])
+                for i in project_ids if i in titles}
+
+
+class Fakes:
+    def __init__(self) -> None:
+        self.ptero, self.jobs, self.update = FakePterodactyl(), FakeJobs(), FakeUpdate()
+        self.modpack, self.modrinth = FakeModpack(), FakeModrinth()
+
+
+PROVIDERS = ("pterodactylService", "jobService", "updateService", "modpackService", "modrinthService")
+
+
+@pytest.fixture(autouse=True)
+def reset_overrides() -> Any:
+    yield
+    import main
+
+    for name in PROVIDERS:
+        getattr(main.container, name).reset_override()
+
+
+def setup(actor: Optional[Actor] = EDITOR) -> tuple[TestClient, Fakes]:
+    import main
+
+    fakes = Fakes()
+    main.container.pterodactylService.override(providers.Object(fakes.ptero))
+    main.container.jobService.override(providers.Object(fakes.jobs))
+    main.container.updateService.override(providers.Object(fakes.update))
+    main.container.modpackService.override(providers.Object(fakes.modpack))
+    main.container.modrinthService.override(providers.Object(fakes.modrinth))
+    client = TestClient(main.app, base_url="https://testserver", follow_redirects=False)
+    if actor is not None:
+        client.cookies.set("session", session_cookie(session_for(actor)))
+    return client, fakes
+
+
+def only(calls: list[tuple[Any, ...]], name: str) -> tuple[Any, ...]:
+    [found] = [c for c in calls if c[0] == name]
+    return found
+
+
+# Lista.
+
+def test_list_shows_servers_and_additions_from_the_panel() -> None:
+    client, _ = setup()
+    response = client.get("/servers")
+    assert response.status_code == 200
+    assert f'href="/servers/{SERVER_ID}"' in response.text and "Survival" in response.text
+    # "Creative" está en el panel y no aquí: se ofrece como alta; "Survival" ya está.
+    assert 'value="uuid-2"' in response.text and 'value="uuid-1"' not in response.text
+    assert 'action="/servers"' in response.text
+
+
+def test_list_survives_an_unreachable_panel() -> None:
+    client, fakes = setup()
+
+    async def down() -> list[PterodactylServer]:
+        raise RuntimeError("panel down")
+
+    fakes.ptero.server_external = down  # type: ignore[method-assign]
+    response = client.get("/servers")
+    assert response.status_code == 200 and "Survival" in response.text
+    assert "No se pudo consultar el panel" in response.text
+
+
+def test_create_registers_the_server_with_the_actor() -> None:
+    client, fakes = setup()
+    response = client.post("/servers", headers=SAME_ORIGIN, data={"uuid": "uuid-2"})
+    assert response.status_code == 303 and response.headers["location"] == f"/servers/{SERVER_ID}"
+    assert only(fakes.ptero.calls, "server_create")[1:] == ("uuid-2", EDITOR)
+
+
+# Detalle.
+
+def test_detail_shows_bundle_scan_and_comparison() -> None:
+    client, _ = setup()
+    response = client.get(f"/servers/{SERVER_ID}")
+    assert response.status_code == 200
+    text = response.text
+    assert "Survival" in text and f'href="/modpacks/{BUNDLE_ID}"' in text and "Pack Uno" in text
+    assert "todo en orden" in text and "2026-10-01 12:00" in text
+    assert f'hx-post="/servers/{SERVER_ID}/scan"' in text and f'hx-post="/servers/{SERVER_ID}/refresh"' in text
+    assert 'id="compare"' in text and "Sodium" in text
+
+
+def test_detail_without_scan_or_bundle_says_so() -> None:
+    client, fakes = setup()
+    fakes.ptero.server = server(bundle_id=None)
+    fakes.ptero.scan = None
+    fakes.ptero.comparison = None
+    response = client.get(f"/servers/{SERVER_ID}")
+    assert response.status_code == 200
+    assert "Sin escaneo" in response.text and "Sin modpack" in response.text
+
+
+def test_detail_of_a_missing_server_is_a_404() -> None:
+    client, fakes = setup()
+
+    async def missing(server_id: str) -> PterodactylServer:
+        raise HTTP_404_NOT_FOUND("Server 'x' not found")
+
+    fakes.ptero.server_get = missing  # type: ignore[method-assign]
+    assert client.get(f"/servers/{SERVER_ID}").status_code == 404
+
+
+def test_detail_shows_the_active_job_polling() -> None:
+    client, fakes = setup()
+    running = job("server_scan", "running")
+    fakes.jobs.jobs = [running, job("server_scan", "done", False, key="server:other")]
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert f'hx-get="/jobs/{running.id}/row"' in text
+
+
+def test_compare_renders_every_category() -> None:
+    client, _ = setup()
+    text = client.get(f"/servers/{SERVER_ID}").text
+    for fragment in ("Coincide", "Otra versión", "Falta", "Sobra", "Desconocido"):
+        assert fragment in text
+    for shown in ("Sodium", "sodium.jar", "lithium-old.jar", "Lithium", "Iris", "Phosphor", "extra.jar", "mystery.jar"):
+        assert shown in text
+
+
+# Escanear y refrescar.
+
+def test_scan_returns_a_polling_job_row_with_the_actor() -> None:
+    client, fakes = setup()
+    response = client.post(f"/servers/{SERVER_ID}/scan", headers=HTMX)
+    assert response.status_code == 200
+    assert only(fakes.jobs.calls, "enqueue_scan")[1:] == (str(SERVER_ID), EDITOR, False)
+    assert 'hx-trigger="every 2s"' in response.text and 'hx-swap="outerHTML"' in response.text
+    assert "/row" in response.text and "Eddie Editor" in response.text
+
+
+def test_scan_of_a_busy_server_is_a_conflict_notice() -> None:
+    client, fakes = setup()
+
+    async def busy(server_id: str, actor: Actor, full: bool = False) -> Job:
+        raise HTTP_409_CONFLICT(f"There is already an active job for server:{server_id}")
+
+    fakes.jobs.enqueue_scan = busy  # type: ignore[method-assign]
+    response = client.post(f"/servers/{SERVER_ID}/scan", headers=HTMX)
+    assert response.status_code == 409 and "There is already an active job" in response.text
+
+
+def test_refresh_updates_from_the_panel_with_the_actor() -> None:
+    client, fakes = setup()
+    response = client.post(f"/servers/{SERVER_ID}/refresh", headers=HTMX)
+    assert response.status_code == 200 and response.headers["HX-Redirect"] == f"/servers/{SERVER_ID}"
+    assert only(fakes.ptero.calls, "server_update")[1:] == (str(SERVER_ID), EDITOR)
+
+
+# Acciones de operador.
+
+def test_link_bundle() -> None:
+    client, fakes = setup(OPERATOR)
+    response = client.put(f"/servers/{SERVER_ID}/bundle", headers=HTMX, data={"bundle_id": str(BUNDLE_ID)})
+    assert response.status_code == 200 and response.headers["HX-Redirect"] == f"/servers/{SERVER_ID}"
+    assert only(fakes.ptero.calls, "server_link_bundle")[1:] == (str(SERVER_ID), str(BUNDLE_ID), OPERATOR)
+
+
+def test_unlink_bundle_with_an_empty_choice() -> None:
+    client, fakes = setup(OPERATOR)
+    client.put(f"/servers/{SERVER_ID}/bundle", headers=HTMX, data={"bundle_id": ""})
+    assert only(fakes.ptero.calls, "server_link_bundle")[2] is None
+
+
+def test_import_shows_added_local_too_large_and_candidates() -> None:
+    client, fakes = setup(OPERATOR)
+    response = client.post(f"/servers/{SERVER_ID}/import", headers=HTMX)
+    assert response.status_code == 200
+    assert only(fakes.ptero.calls, "import_server")[1:] == (str(SERVER_ID), OPERATOR)
+    text = response.text
+    assert "/mods/local.jar" in text and "/mods/huge.jar" in text and "/mods/odd.jar" in text
+    assert "Odd Mod Project" in text or "Odd Mod" in text
+    assert f'hx-post="/servers/{SERVER_ID}/import/confirm"' in text and f'hx-post="/servers/{SERVER_ID}/import/local"' in text
+    assert 'name="project_id" value="C1"' in text
+
+
+def test_import_confirm_and_local_carry_the_actor() -> None:
+    client, fakes = setup(OPERATOR)
+    response = client.post(f"/servers/{SERVER_ID}/import/confirm", headers=HTMX,
+                           data={"path": "/mods/odd.jar", "project_id": "C1"})
+    assert response.status_code == 200
+    assert only(fakes.ptero.calls, "import_confirm")[1:] == (str(SERVER_ID), "/mods/odd.jar", "C1", OPERATOR)
+    response = client.post(f"/servers/{SERVER_ID}/import/local", headers=HTMX, data={"path": "/mods/odd.jar"})
+    assert response.status_code == 200
+    assert only(fakes.ptero.calls, "import_local")[1:] == (str(SERVER_ID), "/mods/odd.jar", OPERATOR)
+
+
+def test_preview_is_a_dry_run_and_returns_a_polling_row() -> None:
+    client, fakes = setup(OPERATOR)
+    response = client.post(f"/servers/{SERVER_ID}/update/preview", headers=HTMX)
+    assert response.status_code == 200
+    assert only(fakes.update.calls, "enqueue_update")[1:] == (str(SERVER_ID), OPERATOR, None, True)
+    assert 'hx-trigger="every 2s"' in response.text
+
+
+def test_update_with_the_exact_name_queues_a_real_run() -> None:
+    client, fakes = setup(OPERATOR)
+    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": EXACT_NAME})
+    assert response.status_code == 200
+    assert only(fakes.update.calls, "enqueue_update")[1:] == (str(SERVER_ID), OPERATOR, None, False)
+
+
+def test_rollback_carries_the_mode_and_actor() -> None:
+    client, fakes = setup(OPERATOR)
+    update_id = str(PydanticObjectId())
+    response = client.post(f"/servers/{SERVER_ID}/rollback", headers=HTMX, data={"update_id": update_id, "mode": "B"})
+    assert response.status_code == 200
+    assert only(fakes.update.calls, "enqueue_rollback")[1:] == (str(SERVER_ID), update_id, "B", OPERATOR)
+    assert client.post(f"/servers/{SERVER_ID}/rollback", headers=HTMX,
+                       data={"update_id": update_id, "mode": "C"}).status_code == 422
+
+
+def test_rollback_buttons_follow_the_steps_the_failed_update_reached() -> None:
+    client, fakes = setup(OPERATOR)
+    failed = job("server_update", "failed", False, {"server_id": str(SERVER_ID), "dry_run": False},
+                 {"swap": {}, "backup": {}}, "server stopped")
+    fakes.jobs.jobs = [failed]
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert f'name="update_id" value="{failed.id}"' in text
+    assert 'name="mode" value="A"' in text and 'name="mode" value="B"' in text
+    failed.checkpoint = {"backup": {}}
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert 'name="mode" value="A"' not in text and 'name="mode" value="B"' in text
+
+
+# Los focos de revisión.
+
+@pytest.mark.parametrize("typed", ["survival", "Surv", "Survival 2", "", "SURVIVAL", "Sur vival"])
+def test_update_requires_exact_name(typed: str) -> None:
+    client, fakes = setup(OPERATOR)
+    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": typed})
+    assert response.status_code == 422 and "Escribe el nombre exacto del servidor" in response.text
+    assert fakes.update.calls == []
+
+
+def test_update_accepts_the_name_with_surrounding_whitespace() -> None:
+    client, fakes = setup(OPERATOR)
+    fakes.ptero.server = server("Survival")
+    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": "  Survival "})
+    assert response.status_code == 200
+    assert only(fakes.update.calls, "enqueue_update")[-1] is False
+
+
+def test_update_without_the_field_is_the_same_422() -> None:
+    client, fakes = setup(OPERATOR)
+    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX)
+    assert response.status_code == 422 and fakes.update.calls == []
+
+
+def test_second_real_update_shows_conflict_notice() -> None:
+    client, fakes = setup(OPERATOR)
+    fakes.update.errors = [None, HTTP_409_CONFLICT("There is already an active job for server:x")]
+    first = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": EXACT_NAME})
+    assert first.status_code == 200
+    second = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": EXACT_NAME})
+    assert second.status_code == 409
+    assert "There is already an active job for server:x" in second.text and "data-notice" in second.text
+
+
+def test_editor_sees_operator_buttons_disabled() -> None:
+    client, _ = setup(EDITOR)
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert "requiere operador" in text
+    assert 'data-dialog-open="update-dialog"' in text and "disabled" in text
+    assert 'id="update-dialog"' not in text
+    assert f'hx-post="/servers/{SERVER_ID}/update/preview"' not in text
+    assert f'hx-post="/servers/{SERVER_ID}/import"' not in text
+
+
+def test_operator_sees_the_operator_buttons_enabled() -> None:
+    client, _ = setup(OPERATOR)
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert f'hx-post="/servers/{SERVER_ID}/update/preview"' in text and f'hx-post="/servers/{SERVER_ID}/import"' in text
+    assert 'id="update-dialog"' in text and 'name="confirm"' in text and "requiere operador" not in text
+
+
+def test_an_editor_is_refused_before_anything_is_compared() -> None:
+    client, fakes = setup(EDITOR)
+    from src.exceptions import HTTP_403_FORBIDDEN
+
+    async def refuse(*args: Any, **kwargs: Any) -> Job:
+        raise HTTP_403_FORBIDDEN("This action requires the operator role")
+
+    fakes.update.enqueue_update = refuse  # type: ignore[method-assign]
+    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": EXACT_NAME})
+    assert response.status_code == 403
+
+
+# La fila de trabajo.
+
+def test_job_row_polls_while_active_and_stops_when_finished() -> None:
+    from src.web import templates
+
+    def render(j: Job) -> str:
+        return templates.get_template("activity/_job_row.html").render(job=j)
+
+    active = render(job("server_scan", "running", requested_by=ActorRef(iss="i", sub="s", name="Ana")))
+    assert f'hx-get="/jobs/' in active and 'hx-trigger="every 2s"' in active and 'hx-swap="outerHTML"' in active
+    assert "Ana" in active and "En curso" in active
+    done = render(job("server_scan", "done", False))
+    assert "hx-trigger" not in done and "programado" in done and "Listo" in done
+
+
+def test_finished_dry_run_row_shows_the_plan_and_what_it_would_do() -> None:
+    from src.web import templates
+
+    plan = {"build": 2, "bundle": "Pack Uno", "remove": ["/mods/old.jar"],
+            "install": [{"project_id": "P2", "filename": "lithium-2.jar", "url": "u", "sha512": "x", "size": 1}]}
+    finished = job("server_update", "done", False, {"server_id": "x", "dry_run": True},
+                   {"preflight": plan, "log": {"lines": ["stop server", "<b>upload</b> mods"]}})
+    html = templates.get_template("activity/_job_row.html").render(job=finished)
+    assert "lithium-2.jar" in html and "/mods/old.jar" in html and "stop server" in html
+    assert "<b>upload</b>" not in html and "&lt;b&gt;upload" in html
+    failed = job("server_update", "failed", False, {"server_id": "x", "dry_run": True}, error="no backup slot left")
+    assert "no backup slot left" in templates.get_template("activity/_job_row.html").render(job=failed)
+    empty = job("server_update", "done", False, {"server_id": "x", "dry_run": True},
+                {"preflight": {"build": 2, "bundle": "P", "remove": [], "install": []}})
+    assert "Nada que cambiar" in templates.get_template("activity/_job_row.html").render(job=empty)
+
+
+def test_names_are_escaped() -> None:
+    client, fakes = setup()
+    fakes.ptero.server = server('<script>alert(1)</script>')
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert "<script>alert" not in text and "&lt;script&gt;" in text

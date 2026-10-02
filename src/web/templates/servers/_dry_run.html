@@ -1,0 +1,34 @@
+{# What a dry-run update would do, from the finished job's checkpoint: the plan and the writes it would send. Needs `job`. #}
+{% set plan = job.checkpoint.get("preflight") %}
+{% set lines = job.checkpoint.get("log", {}).get("lines", []) %}
+{% if plan %}
+<div class="space-y-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">
+  {% if not plan.install and not plan.remove %}
+  <p class="text-zinc-600 dark:text-zinc-400">Nada que cambiar: el servidor ya coincide con el build {{ plan.build }} de {{ plan.bundle }}.</p>
+  {% else %}
+  <p class="text-zinc-700 dark:text-zinc-300">Pasaría al build {{ plan.build }} de {{ plan.bundle }}.</p>
+  <div class="grid gap-3 sm:grid-cols-2">
+    <div>
+      <h3 class="text-xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">Se instalan ({{ plan.install | length }})</h3>
+      <ul class="mt-1 space-y-0.5 font-mono text-xs break-all">
+        {% for item in plan.install %}<li>{{ item.filename }}</li>{% else %}<li class="text-zinc-400">—</li>{% endfor %}
+      </ul>
+    </div>
+    <div>
+      <h3 class="text-xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">Se quitan ({{ plan.remove | length }})</h3>
+      <ul class="mt-1 space-y-0.5 font-mono text-xs break-all">
+        {% for path in plan.remove %}<li>{{ path }}</li>{% else %}<li class="text-zinc-400">—</li>{% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endif %}
+  {% if lines %}
+  <details>
+    <summary class="cursor-pointer text-xs text-zinc-600 dark:text-zinc-400">Qué escribiría en el servidor ({{ lines | length }})</summary>
+    <ol class="mt-1 list-decimal space-y-0.5 pl-5 font-mono text-xs break-all">
+      {% for line in lines %}<li>{{ line }}</li>{% endfor %}
+    </ol>
+  </details>
+  {% endif %}
+</div>
+{% endif %}

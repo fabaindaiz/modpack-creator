@@ -1,0 +1,50 @@
+{# A server's files against its build, by category. Needs `comparison` and `titles`. #}
+{% import "_macros.html" as ui %}
+{% macro name(project_id) %}{{ titles.get(project_id, project_id) if project_id else "—" }}{% endmacro %}
+<div id="compare" class="space-y-3">
+  {% if comparison.in_sync %}
+  {{ ui.notice("El servidor coincide con el build " ~ build_number ~ ".", "success") }}
+  {% endif %}
+  {% call ui.table(["Estado", "Mod", "Archivo", "Detalle"], empty="Nada que comparar.", caption="Comparación con el build " ~ build_number) %}
+  {% for file in comparison.different_version %}
+  <tr data-category="different_version">
+    <td>{{ ui.badge("Otra versión", "warning") }}</td>
+    <td class="break-words">{{ name(file[1].project_id) }}</td>
+    <td class="font-mono text-xs break-all">{{ file[0].path }}</td>
+    <td class="text-xs text-zinc-500 dark:text-zinc-400">el build espera la versión {{ file[1].version_id }}</td>
+  </tr>
+  {% endfor %}
+  {% for entry in comparison.missing %}
+  <tr data-category="missing">
+    <td>{{ ui.badge("Falta", "danger") }}</td>
+    <td class="break-words">{{ name(entry.project_id) }}</td>
+    <td class="text-zinc-400">—</td>
+    <td class="text-xs text-zinc-500 dark:text-zinc-400">versión {{ entry.version_id }}</td>
+  </tr>
+  {% endfor %}
+  {% for file in comparison.extra %}
+  <tr data-category="extra">
+    <td>{{ ui.badge("Sobra", "warning") }}</td>
+    <td class="break-words">{{ name(file.project_id) }}</td>
+    <td class="font-mono text-xs break-all">{{ file.path }}</td>
+    <td class="text-xs text-zinc-500 dark:text-zinc-400">el build no lo incluye</td>
+  </tr>
+  {% endfor %}
+  {% for file in comparison.unknown %}
+  <tr data-category="unknown">
+    <td>{{ ui.badge("Desconocido", "neutral") }}</td>
+    <td class="text-zinc-400">—</td>
+    <td class="font-mono text-xs break-all">{{ file.path }}</td>
+    <td class="text-xs text-zinc-500 dark:text-zinc-400">{{ "demasiado grande para leerlo" if file.status == "too_large" else "Modrinth no lo conoce" }}</td>
+  </tr>
+  {% endfor %}
+  {% for file in comparison.matching %}
+  <tr data-category="matching">
+    <td>{{ ui.badge("Coincide", "accent") }}</td>
+    <td class="break-words">{{ name(file.project_id) }}</td>
+    <td class="font-mono text-xs break-all">{{ file.path }}</td>
+    <td></td>
+  </tr>
+  {% endfor %}
+  {% endcall %}
+</div>
