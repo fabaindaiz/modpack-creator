@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+import src.routers.web.activity as activity
 import src.routers.web.home as home
 import src.routers.web.modpacks as modpacks
 import src.routers.web.servers as servers
@@ -8,6 +9,7 @@ WEB_MODULES = [
     home,
     modpacks,
     servers,
+    activity,
 ]
 
 def include_routers_web(app: FastAPI) -> None:

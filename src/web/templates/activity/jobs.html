@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% set nav_active = "jobs" %}
+{% block title %}Trabajos{% endblock %}
+
+{% block content %}
+{{ ui.page_header("Trabajos", "Lo último que el panel y el worker han hecho o están haciendo, con quién lo pidió.") }}
+
+<div class="space-y-2" id="trabajos">
+  {% for job in jobs %}
+  {% include "activity/_job_row.html" %}
+  {% else %}
+  <p class="text-sm text-zinc-500 dark:text-zinc-400">Todavía no hay trabajos.</p>
+  {% endfor %}
+</div>
+{% endblock %}
