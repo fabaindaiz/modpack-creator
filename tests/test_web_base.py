@@ -6,11 +6,12 @@ se arma sin `with`: el lifespan abriría MongoDB y el proveedor OIDC.
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Annotated, Any, Optional, cast
 
 import pytest
 from beanie import PydanticObjectId
 from dependency_injector import providers
+from fastapi import Request
 from fastapi.testclient import TestClient
 
 from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
@@ -158,7 +159,7 @@ def test_layout_has_nav_logout_notices_and_htmx_config() -> None:
     assert re.search(r'<div id="notices"[^>]*aria-live="polite"', text)
     assert ('<meta name="htmx-config" '
             'content=\'{"allowEval":false,"selfRequestsOnly":true,"includeIndicatorStyles":false}\'>') in text
-    assert '<script src="/static/app.js" defer></script>' in text
+    assert re.search(r'<script src="/static/app\.js\?v=[0-9a-f]{12}" defer></script>', text)
 
 
 def test_page_links_hashed_css() -> None:
@@ -169,6 +170,12 @@ def test_page_links_hashed_css() -> None:
     assert "/static/dist/htmx.min.js" in text
     if (web.DIST_DIR / "app.css").is_file():
         assert re.search(r'/static/dist/app\.css\?v=[0-9a-f]{12}"', text)
+
+
+def test_app_js_is_linked_with_its_hash() -> None:
+    # app.js is versioned in the repo, so it always exists: a deploy never serves a stale copy.
+    text = client(EDITOR).get("/").text
+    assert re.search(r'<script src="/static/app\.js\?v=[0-9a-f]{12}" defer></script>', text)
 
 
 def test_page_has_no_inline_script_or_style() -> None:
@@ -202,6 +209,8 @@ def test_static_app_js_is_served_without_eval() -> None:
     assert response.status_code == 200
     assert "eval(" not in response.text and "new Function" not in response.text
     assert "htmx:beforeSwap" in response.text
+    # Only an HTML notice is swapped in; a JSON body (FastAPI's, Starlette's) never reaches innerHTML.
+    assert "text/html" in response.text and "notice-client-error" in response.text
 
 
 class FailingPterodactyl(FakePterodactyl):
@@ -273,3 +282,53 @@ def test_latest_builds_pairs_each_bundle_with_its_newest_build(mongo: MongoRunne
         return sorted((bundle.name, build.number if build else None) for bundle, build in await service.latest_builds())
 
     assert mongo(scenario) == [("con builds", 2), ("sin builds", None)]
+
+
+# Validation errors: a form route missing a field answers a notice, never FastAPI's JSON (which
+# echoes the submitted input).
+
+
+def form_app() -> TestClient:
+    from fastapi import APIRouter, Depends, FastAPI, Form
+    from starlette.middleware.sessions import SessionMiddleware
+
+    from src.web import WebRoute, get_web_actor, render
+
+    router = APIRouter(route_class=WebRoute)
+
+    @router.post("/form")
+    async def form(request: Request, name: Annotated[str, Form()], count: Annotated[int, Form()],
+                   actor: Actor = Depends(get_web_actor)) -> Any:
+        return render(request, "_notice.html", actor, message=name, tone="success")
+
+    application = FastAPI()
+    application.add_middleware(SessionMiddleware, secret_key="test-session-secret")
+    application.include_router(router)
+    test_client = TestClient(application, base_url="https://testserver")
+    test_client.cookies.set("session", session_cookie(session_for(EDITOR)))
+    return test_client
+
+
+INJECTED = "<img src=x>zz-injected"
+
+
+def test_htmx_form_missing_a_field_gets_a_notice_without_the_input() -> None:
+    response = form_app().post("/form", data={"count": INJECTED}, headers={"HX-Request": "true"})
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("text/html")
+    assert "Revisa los datos del formulario." in response.text and "data-notice" in response.text
+    assert "zz-injected" not in response.text
+    assert "<html" not in response.text
+
+
+def test_form_missing_a_field_without_htmx_gets_the_error_page() -> None:
+    response = form_app().post("/form", data={"count": INJECTED})
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("text/html")
+    assert "<html" in response.text and "Revisa los datos del formulario." in response.text
+    assert "zz-injected" not in response.text
+
+
+def test_a_valid_form_still_reaches_the_route() -> None:
+    response = form_app().post("/form", data={"name": "ok", "count": "2"}, headers={"HX-Request": "true"})
+    assert response.status_code == 200 and "ok" in response.text

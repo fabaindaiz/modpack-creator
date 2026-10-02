@@ -17,7 +17,7 @@
   <title>{% block title %}Panel{% endblock %} · Modpack Creator</title>
   <link rel="stylesheet" href="{{ asset_url('app.css') }}">
   <script src="{{ asset_url('htmx.min.js') }}" defer></script>
-  <script src="/static/app.js" defer></script>
+  <script src="{{ static_url('app.js') }}" defer></script>
 </head>
 <body class="min-h-full bg-zinc-50 font-sans text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100">
   <a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded focus:bg-white focus:px-3 focus:py-1.5 focus:text-sm focus:shadow dark:focus:bg-zinc-900">Saltar al contenido</a>
@@ -61,6 +61,10 @@
   {# Cloned by app.js when the server fails (5xx) or cannot be reached; it fills in the request id. #}
   <template id="notice-server-error">
     {{ ui.notice("Error inesperado del servidor. Si se repite, avisa con este identificador: ", "error") }}
+  </template>
+  {# Cloned by app.js when a 4xx answer is not an HTML notice (a JSON error, an unknown path). #}
+  <template id="notice-client-error">
+    {{ ui.notice("No se pudo completar la acción. Recarga la página y vuelve a intentarlo.", "error") }}
   </template>
   <template id="notice-network-error">
     {{ ui.notice("No se pudo contactar al servidor. Revisa la conexión y vuelve a intentarlo.", "warning") }}

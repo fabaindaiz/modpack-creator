@@ -3,7 +3,7 @@
 (function () {
   'use strict';
 
-  // Errors a route answers with a notice fragment (_notice.html): shown in #notices.
+  // Errors a route answers with a notice fragment (_notice.html): shown in #notices if HTML.
   var NOTICE_STATUSES = [403, 404, 409, 422];
 
   function notices() {
@@ -27,9 +27,18 @@
     target.replaceChildren(notice);
   }
 
+  // Only our notice fragments are HTML; a JSON error (FastAPI's, Starlette's 404 for an unknown
+  // path) must never reach innerHTML: it may echo what was submitted.
+  function isHtml(xhr) {
+    return (xhr.getResponseHeader('Content-Type') || '').toLowerCase().indexOf('text/html') === 0;
+  }
+
   document.addEventListener('htmx:beforeSwap', function (evt) {
     var status = evt.detail.xhr.status;
-    if (NOTICE_STATUSES.indexOf(status) !== -1 && notices()) {
+    if (NOTICE_STATUSES.indexOf(status) !== -1 && !isHtml(evt.detail.xhr)) {
+      evt.detail.shouldSwap = false;
+      showTemplate('notice-client-error');
+    } else if (NOTICE_STATUSES.indexOf(status) !== -1 && notices()) {
       evt.detail.shouldSwap = true;
       evt.detail.target = notices();
       // The notice replaces the previous one, whatever the triggering element asked for.

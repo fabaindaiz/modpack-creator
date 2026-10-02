@@ -6,8 +6,9 @@ decorador sale del registro, y un barrido que leyera el registro lo perdería ta
 se compara con la lista, así que quitar o agregar un `@operator_only` en `src/` hace fallar el test.
 
 Las rutas se descubren, no se listan: se recorren las rutas reales de la app (también las del
-panel y las que no están en el esquema) y, por AST, se eligen las funciones cuyo cuerpo llama a
-un atributo con el nombre de uno de esos métodos. A cada una se le manda un request con la sesión
+panel y las que no están en el esquema) y, por AST, se eligen las funciones que llaman a un
+atributo con el nombre de uno de esos métodos, en su cuerpo o en el de los helpers del mismo
+módulo a los que llaman. A cada una se le manda un request con la sesión
 de un editor, y la respuesta tiene que ser 403. El 403 sale de `operator_only` antes de tocar la
 base o el panel: los tests no abren conexiones, así que una ruta que llegara a MongoDB daría un
 error y no un 403.
@@ -71,11 +72,30 @@ def registered_in_src() -> set[str]:
     return found
 
 
+def module_functions(module_name: str) -> dict[str, ast.AST]:
+    """Las funciones de nivel de módulo, por nombre: los helpers a los que una ruta puede llamar."""
+    tree = ast.parse(inspect.getsource(sys.modules[module_name]))
+    return {node.name: node for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+
 def calls_any(endpoint: Callable[..., Any], methods: set[str]) -> set[str]:
-    """Los nombres de `methods` a los que el cuerpo de la función llama como `<algo>.<método>(...)`."""
-    source = textwrap.dedent(inspect.getsource(inspect.unwrap(endpoint)))
-    return {node.func.attr for node in ast.walk(ast.parse(source))
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in methods}
+    """Los nombres de `methods` a los que la función llama como `<algo>.<método>(...)`, en su cuerpo
+    o en el de una función del mismo módulo a la que llama por nombre, transitivamente."""
+    function = inspect.unwrap(endpoint)
+    helpers = module_functions(function.__module__)
+    found: set[str] = set()
+    visited: set[str] = set()
+    pending: list[ast.AST] = [ast.parse(textwrap.dedent(inspect.getsource(function)))]
+    while pending:
+        for node in ast.walk(pending.pop()):
+            if not isinstance(node, ast.Call):
+                continue
+            if isinstance(node.func, ast.Attribute) and node.func.attr in methods:
+                found.add(node.func.attr)
+            elif isinstance(node.func, ast.Name) and node.func.id in helpers and node.func.id not in visited:
+                visited.add(node.func.id)
+                pending.append(helpers[node.func.id])
+    return found
 
 
 def flat(dependant: Dependant) -> Iterator[Dependant]:
@@ -163,3 +183,37 @@ def test_the_sweep_finds_a_route_by_what_it_calls() -> None:
     [route] = operator_routes(application, {"enqueue_rollback"})
     assert (route.method, route.path, route.params, route.form) == ("POST", "/panel/x/thing", {"mode": "A"}, {"confirm": "x"})
     assert route.key == (__name__, "thing")
+
+
+async def _rollback_through_a_helper(actor: Any) -> None:
+    await _and_another_helper(actor)
+
+
+async def _and_another_helper(actor: Any) -> None:
+    import main
+
+    await main.container.updateService().enqueue_rollback("x", "x", "A", actor=actor)
+
+
+def test_the_sweep_follows_helpers_of_the_same_module() -> None:
+    """Una ruta que llama al método de operador a través de funciones del módulo (como las de
+    `src/routers/web/home.py`) también entra al barrido, y responde 403 a un editor."""
+    from fastapi import APIRouter, Depends
+
+    from src.dependences import get_current_actor
+
+    router = APIRouter()
+
+    @router.post("/panel/{id}/indirect", include_in_schema=False)
+    async def indirect(id: str, actor: Any = Depends(get_current_actor)) -> None:
+        await _rollback_through_a_helper(actor)
+
+    application = FastAPI()
+    application.add_middleware(SessionMiddleware, secret_key=SECRET)
+    application.include_router(router)
+    [route] = operator_routes(application, {"enqueue_rollback"})
+    assert (route.method, route.path, route.calls) == ("POST", "/panel/x/indirect", {"enqueue_rollback"})
+
+    client = TestClient(application)
+    client.cookies.set("session", session_cookie(session_for(EDITOR), SECRET))
+    assert client.post(route.path, headers={"Sec-Fetch-Site": "same-origin"}).status_code == 403

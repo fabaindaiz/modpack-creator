@@ -121,3 +121,4 @@ def test_an_unhandled_error_answers_500_with_the_request_id() -> None:
     response = TestClient(app, raise_server_exceptions=False).get("/boom", headers={"X-Request-ID": "abc-123"})
     assert response.status_code == 500
     assert response.headers["x-request-id"] == "abc-123"
+    assert response.headers["x-content-type-options"] == "nosniff"

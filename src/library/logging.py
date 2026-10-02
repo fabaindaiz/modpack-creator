@@ -92,7 +92,8 @@ class RequestIdMiddleware:
             # Answer the 500 here, with the id, so the panel can show it; Starlette's error
             # middleware, outside this one, sees the response started and only re-raises.
             if not started:
-                await PlainTextResponse("Internal Server Error", status_code=500)(scope, receive, send_with_id)
+                await PlainTextResponse("Internal Server Error", status_code=500,
+                                        headers={"X-Content-Type-Options": "nosniff"})(scope, receive, send_with_id)
             raise
         finally:
             self.logger.info("request", extra={

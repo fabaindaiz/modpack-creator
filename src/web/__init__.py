@@ -11,6 +11,7 @@ from urllib.parse import quote, urlsplit
 
 import jinja2
 from fastapi import HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.routing import APIRoute
 from fastapi.templating import Jinja2Templates
@@ -28,6 +29,8 @@ DIST_DIR = STATIC_DIR / "dist"
 LOGIN_REDIRECT = re.compile(r"^/[a-zA-Z0-9/_\-\?\=\&]*$")
 # Errors a page shows as a notice: htmx swaps these into #notices (static/app.js).
 NOTICE_STATUSES = frozenset({403, 404, 409, 422})
+# What a request that fails validation is told. Never FastAPI's error list: it echoes the input.
+INVALID_FORM = "Revisa los datos del formulario."
 
 
 class AssetVersions:
@@ -51,11 +54,18 @@ class AssetVersions:
 
 
 ASSETS = AssetVersions(DIST_DIR)
+# The panel's own files under static/ (app.js), versioned in the repo: hashed the same way.
+STATIC = AssetVersions(STATIC_DIR, prefix="/static/")
 
 
 def asset_url(name: str) -> str:
     """`/static/dist/<name>?v=<sha256[:12]>`, or the path without `?v` when the file is missing."""
     return ASSETS.url(name)
+
+
+def static_url(name: str) -> str:
+    """`/static/<name>?v=<sha256[:12]>`: a file of static/ that is not built (app.js)."""
+    return STATIC.url(name)
 
 
 templates = Jinja2Templates(env=jinja2.Environment(
@@ -66,6 +76,7 @@ templates = Jinja2Templates(env=jinja2.Environment(
     lstrip_blocks=True,
 ))
 templates.env.globals["asset_url"] = asset_url
+templates.env.globals["static_url"] = static_url
 
 
 class LoginRequired(Exception):
@@ -124,22 +135,22 @@ def render(request: Request, name: str, actor: Actor, **context: Any) -> HTMLRes
     return templates.TemplateResponse(request, name, {"actor": actor, **context})
 
 
-def _notice_response(request: Request, error: HTTPException) -> Optional[Response]:
-    message = str(error.detail) if error.detail else "No se pudo completar la acción."
+def _notice_response(request: Request, message: str, status: int) -> Optional[Response]:
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse(request, "_notice.html", {"message": message, "tone": "error"},
-                                          status_code=error.status_code)
+                                          status_code=status)
     actor = getattr(request.state, "actor", None)
     if not isinstance(actor, Actor):
         return None
     return templates.TemplateResponse(request, "error.html",
-                                      {"actor": actor, "message": message, "status": error.status_code},
-                                      status_code=error.status_code)
+                                      {"actor": actor, "message": message, "status": status},
+                                      status_code=status)
 
 
 class WebRoute(APIRoute):
-    """A panel route: a 403, 404, 409 or 422 from a service is shown as a notice, a fragment for
-    htmx (static/app.js swaps it into #notices) or a page with the layout otherwise."""
+    """A panel route: a 403, 404, 409 or 422 from a service, or a request that fails validation
+    (422, with a fixed message), is shown as a notice: a fragment for htmx (static/app.js swaps
+    it into #notices), a page with the layout otherwise."""
 
     def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
         handler = super().get_route_handler()
@@ -150,7 +161,13 @@ class WebRoute(APIRoute):
             except HTTPException as error:
                 if error.status_code not in NOTICE_STATUSES:
                     raise
-                response = _notice_response(request, error)
+                message = str(error.detail) if error.detail else "No se pudo completar la acción."
+                response = _notice_response(request, message, error.status_code)
+                if response is None:
+                    raise
+                return response
+            except RequestValidationError:
+                response = _notice_response(request, INVALID_FORM, 422)
                 if response is None:
                     raise
                 return response
