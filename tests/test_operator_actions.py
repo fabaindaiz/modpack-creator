@@ -63,7 +63,7 @@ def test_editor_cannot_dry_run_either(mongo: MongoRunner) -> None:
 
 
 def test_operator_update_records_the_event_before_the_job(mongo: MongoRunner) -> None:
-    async def scenario() -> tuple[str, list[tuple[str, Any, Any, Any]], Any]:
+    async def scenario() -> tuple[str, list[tuple[str, Any, Any, Any, Any]], Any]:
         audit = RecordingAudit(on_record=count_jobs)
         s = await update_setup(audit=audit)
         job = await s.update.enqueue_update(s.server_id, actor=OPERATOR, dry_run=False)
@@ -72,12 +72,12 @@ def test_operator_update_records_the_event_before_the_job(mongo: MongoRunner) ->
 
     server_id, events, requested_by = mongo(scenario)
     # hook_result 0: cuando se grabó el evento, todavía no había ningún job.
-    assert events == [("server.update", AuditTarget(kind="server", id=server_id), {"build": 1, "dry_run": False}, 0)]
+    assert events == [("server.update", AuditTarget(kind="server", id=server_id), {"build": 1, "dry_run": False}, 0, OPERATOR.ref())]
     assert requested_by == OPERATOR.ref()
 
 
 def test_operator_rollback_records_the_event_before_the_job(mongo: MongoRunner) -> None:
-    async def scenario() -> tuple[str, str, list[tuple[str, Any, Any, Any]], Any, int]:
+    async def scenario() -> tuple[str, str, list[tuple[str, Any, Any, Any, Any]], Any, int]:
         audit = RecordingAudit(on_record=count_jobs)
         s = await update_setup(audit=audit)
         failed = await Job(kind="server_update", key=f"server:{s.server_id}", payload={"server_id": s.server_id},
@@ -89,7 +89,7 @@ def test_operator_rollback_records_the_event_before_the_job(mongo: MongoRunner) 
     server_id, update_id, events, requested_by, jobs = mongo(scenario)
     # hook_result 1: al grabar el evento solo existía la actualización fallida.
     assert events == [("server.rollback", AuditTarget(kind="server", id=server_id),
-                       {"update_id": update_id, "mode": "A"}, 1)]
+                       {"update_id": update_id, "mode": "A"}, 1, OPERATOR.ref())]
     assert requested_by == OPERATOR.ref() and jobs == 2
 
 
@@ -98,13 +98,18 @@ def test_failed_audit_queues_nothing(mongo: MongoRunner) -> None:
         s = await update_setup(audit=RecordingAudit(fail=True))
         with pytest.raises(RuntimeError):
             await s.update.enqueue_update(s.server_id, actor=OPERATOR, dry_run=False)
+        failed = await Job(kind="server_update", key=f"server:{s.server_id}", payload={"server_id": s.server_id},
+                           status="failed", active=False, checkpoint={"swap": {}}, created_at=NOW).insert()
+        with pytest.raises(RuntimeError):
+            await s.update.enqueue_rollback(s.server_id, str(failed.id), "A", actor=OPERATOR)
         return await count_jobs()
 
-    assert mongo(scenario) == 0
+    # Only the failed update this test inserted by hand: neither request queued anything.
+    assert mongo(scenario) == 1
 
 
 def test_a_refused_request_is_not_audited(mongo: MongoRunner) -> None:
-    """Los 409 de siempre van primero: un pedido que no se puede encolar no queda como hecho."""
+    """Un servidor sin bundle ni build responde 409 antes de auditar: no queda ningún evento."""
     async def scenario() -> tuple[int, int]:
         audit = RecordingAudit()
         s = await update_setup(audit=audit)
@@ -117,6 +122,28 @@ def test_a_refused_request_is_not_audited(mongo: MongoRunner) -> None:
         return await count_jobs(), len(audit.events)
 
     assert mongo(scenario) == (0, 0)
+
+
+def test_a_busy_server_is_refused_before_auditing(mongo: MongoRunner) -> None:
+    """Un escaneo activo comparte la clave `server:{id}`: el 409 llega antes del evento."""
+    async def scenario() -> tuple[list[int], int, int]:
+        audit = RecordingAudit()
+        s = await update_setup(audit=audit)
+        await Job(kind="server_scan", key=f"server:{s.server_id}", payload={"server_id": s.server_id},
+                  created_at=NOW).insert()
+        failed = await Job(kind="server_update", key=None, payload={"server_id": s.server_id},
+                           status="failed", active=False, checkpoint={"swap": {}}, created_at=NOW).insert()
+        codes = []
+        for call in (lambda: s.update.enqueue_update(s.server_id, actor=OPERATOR, dry_run=False),
+                     lambda: s.update.enqueue_rollback(s.server_id, str(failed.id), "A", actor=OPERATOR)):
+            with pytest.raises(HTTPException) as refused:
+                await call()
+            codes.append(refused.value.status_code)
+        assert refused.value.detail == f"There is already an active job for server:{s.server_id}"
+        return codes, await count_jobs(), len(audit.events)
+
+    # Two 409s; the scan and the failed update are the only jobs; no event.
+    assert mongo(scenario) == ([409, 409], 2, 0)
 
 
 def test_editor_cannot_import_or_link(mongo: MongoRunner) -> None:
@@ -140,7 +167,7 @@ def test_editor_cannot_import_or_link(mongo: MongoRunner) -> None:
 
 
 def test_operator_imports_and_links_are_recorded_after_they_succeed(mongo: MongoRunner) -> None:
-    async def scenario() -> tuple[str, str, list[tuple[str, Any, Any, Any]]]:
+    async def scenario() -> tuple[str, str, list[tuple[str, Any, Any, Any, Any]]]:
         service, server_id, bundle_id = await linked_server({"lithium-dev.jar": fabric_jar("lithium", "Lithium"),
                                                              "privado.jar": b"opaque"})
         await service.import_server(server_id, actor=OPERATOR)
@@ -150,12 +177,13 @@ def test_operator_imports_and_links_are_recorded_after_they_succeed(mongo: Mongo
 
     server_id, bundle_id, events = mongo(scenario)
     target = AuditTarget(kind="server", id=server_id)
-    assert [(action, t) for action, t, _, _ in events] == [
+    assert [(action, t) for action, t, _, _, _ in events] == [
         ("server.bundle", target), ("server.import", target), ("server.import.confirm", target),
         ("server.import.local", target)]
     assert events[0][2] == {"bundle_id": bundle_id}
     assert events[2][2] == {"bundle_id": bundle_id, "path": "/mods/lithium-dev.jar", "project_id": LITHIUM}
     assert events[3][2] == {"bundle_id": bundle_id, "path": "/mods/privado.jar"}
+    assert [event[4] for event in events] == [OPERATOR.ref()] * 4
 
 
 def test_job_without_requested_by_still_loads(mongo: MongoRunner) -> None:

@@ -30,10 +30,10 @@ class RecordingAudit:
     def __init__(self, fail: bool = False, on_record: Optional[Callable[[], Awaitable[Any]]] = None) -> None:
         self.fail = fail
         self.on_record = on_record
-        self.events: list[tuple[str, Any, Any, Any]] = []
+        self.events: list[tuple[str, Any, Any, Any, Any]] = []
 
     async def record(self, actor: Actor, action: str, target: Any, details: Any = None) -> None:
         hook_result = await self.on_record() if self.on_record else None
         if self.fail:
             raise RuntimeError("audit failed")
-        self.events.append((action, target, details, hook_result))
+        self.events.append((action, target, details, hook_result, actor.ref()))

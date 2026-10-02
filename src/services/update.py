@@ -107,6 +107,7 @@ class UpdateService():
         if number is None:
             raise HTTP_409_CONFLICT(f"Bundle '{bundle.id}' has no build")
         await self.modpackDB.build_get(str(bundle.id), number)
+        await self._refuse_if_busy(server_id)
         await self.audit.record(actor, "server.update", AuditTarget(kind="server", id=server_id),
                                 {"build": number, "dry_run": dry_run})
         return await self.jobDB.enqueue("server_update", key=f"server:{server_id}",
@@ -125,11 +126,19 @@ class UpdateService():
         needed = "swap" if mode == "A" else "backup"
         if needed not in update.checkpoint:
             raise HTTP_409_CONFLICT(f"The update never reached its {needed} step: nothing to roll back with {mode}")
+        await self._refuse_if_busy(server_id)
         await self.audit.record(actor, "server.rollback", AuditTarget(kind="server", id=server_id),
                                 {"update_id": update_id, "mode": mode})
         return await self.jobDB.enqueue("server_rollback", key=f"server:{server_id}",
                                         payload={"server_id": server_id, "update_id": update_id, "mode": mode},
                                         requested_by=actor.ref())
+
+    async def _refuse_if_busy(self, server_id: str) -> None:
+        """Same 409 as JobDatabase.enqueue, raised before the event is recorded: a refused request
+        leaves no event. Only a race between two requests can still reach the unique index."""
+        key = f"server:{server_id}"
+        if await self.jobDB.active_for(key) is not None:
+            raise HTTP_409_CONFLICT(f"There is already an active job for {key}")
 
     def handlers(self) -> dict[str, Handler]:
         return {"server_update": self._update, "server_rollback": self._rollback}

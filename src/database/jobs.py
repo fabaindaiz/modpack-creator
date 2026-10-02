@@ -31,6 +31,10 @@ class JobDatabase():
         except DuplicateKeyError as error:
             raise HTTP_409_CONFLICT(f"There is already an active job for {key}") from error
 
+    async def active_for(self, key: str) -> Optional[Job]:
+        """The active job holding this key, if any."""
+        return await Job.find_one(Job.key == key, Job.active == True)  # noqa: E712
+
     async def get(self, job_id: str) -> Job:
         job = await Job.get(job_id) if PydanticObjectId.is_valid(job_id) else None
         if job is None:
