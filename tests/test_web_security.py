@@ -115,3 +115,26 @@ def test_exempt_prefix_matches_whole_segments_only():
     client = _csp_client()
     assert client.get("/docsfoo").headers["Content-Security-Policy"] == CSP
     assert "Content-Security-Policy" not in client.get("/docs/oauth2-redirect").headers
+
+
+# The real app: the middlewares above only protect it if main.py adds them. Without `with`, so
+# the lifespan (MongoDB, OIDC) does not run and /v1 is not mounted: the 403 can only come from the
+# same-origin check, which runs before routing.
+
+def test_main_app_refuses_a_cross_site_write_to_v1() -> None:
+    import main
+
+    client = TestClient(main.app)
+    refused = client.post("/v1/modpack", headers={"Sec-Fetch-Site": "cross-site"}, json={})
+    assert (refused.status_code, refused.json()) == (403, {"detail": "Cross-origin request refused"})
+    assert client.post("/v1/modpack", json={}).status_code != 403
+
+
+def test_main_app_sends_the_csp_on_the_panel_and_not_on_the_docs() -> None:
+    import main
+
+    client = TestClient(main.app)
+    panel = client.get("/", follow_redirects=False)
+    assert panel.status_code in (302, 303, 307) and panel.headers["Content-Security-Policy"] == CSP
+    docs = client.get(main.DOCS_PATH)
+    assert docs.status_code == 200 and "Content-Security-Policy" not in docs.headers
