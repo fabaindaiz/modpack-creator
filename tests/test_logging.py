@@ -106,3 +106,18 @@ def test_python_warnings_become_json_lines_and_uvicorns_access_log_stays_off() -
         logging.captureWarnings(False)
         root.handlers, level = saved
         root.setLevel(level)
+
+
+def test_an_unhandled_error_answers_500_with_the_request_id() -> None:
+    """The panel shows a 500 with its id (static/app.js): the error response, made before
+    Starlette's own outside this middleware, carries it too. The exception still propagates."""
+    app = FastAPI()
+    app.add_middleware(RequestIdMiddleware)
+
+    @app.get("/boom")
+    async def boom() -> None:
+        raise RuntimeError("boom")
+
+    response = TestClient(app, raise_server_exceptions=False).get("/boom", headers={"X-Request-ID": "abc-123"})
+    assert response.status_code == 500
+    assert response.headers["x-request-id"] == "abc-123"

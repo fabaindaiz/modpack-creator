@@ -9,6 +9,7 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any, Optional
 from uuid import uuid4
+from starlette.responses import PlainTextResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 _request_id: ContextVar[Optional[str]] = ContextVar("request_id", default=None)
@@ -78,8 +79,21 @@ class RequestIdMiddleware:
                 message["headers"] = [*message.get("headers", []), (b"x-request-id", rid.encode())]
             await send(message)
 
+        started = False
+
+        async def send_tracked(message: Message) -> None:
+            nonlocal started
+            started = started or message["type"] == "http.response.start"
+            await send_with_id(message)
+
         try:
-            await self.app(scope, receive, send_with_id)
+            await self.app(scope, receive, send_tracked)
+        except Exception:
+            # Answer the 500 here, with the id, so the panel can show it; Starlette's error
+            # middleware, outside this one, sees the response started and only re-raises.
+            if not started:
+                await PlainTextResponse("Internal Server Error", status_code=500)(scope, receive, send_with_id)
+            raise
         finally:
             self.logger.info("request", extra={
                 "method": scope["method"], "path": scope["path"], "status": status,
