@@ -5,13 +5,67 @@ introducción. Los commits de este repositorio fueron `wip` sin cuerpo: el *por 
 no quedaba en ninguna parte, y una sesión no ve lo que otra aprendió. La referencia del formato
 está al final del archivo, para que nada entre este párrafo y la primera entrada capture texto.
 
-## 2026-10-02 · s-7985ee-83825d — Auditoría: modelo, base y servicio (tarea 4 del panel)
+## 2026-10-02 · s-7985ee-aeb6be — Panel web, roles y auditoría, y despliegue seguro (i-7985ee-50d411)
 
-**Qué.** `AuditEvent` (base `audit`), `AuditDatabase` y `AuditService.record/find`, cableados en el contenedor. Nada los llama todavía.
+**Qué.**
+- **Panel web** (`src/routers/web/`, `src/web/`): Jinja2, htmx y Tailwind, en español, con modo
+  oscuro. Tablero, modpacks (crear, editar, armar builds), servidores (escanear, importar,
+  vincular, simular, actualizar, rollback), trabajos con seguimiento y auditoría paginada.
+- **Roles** (d-7985ee-edef1e): editor y operador, derivados de los grupos del IdP
+  (`OIDC_OPERATOR_GROUPS`) y hechos cumplir en los servicios con `operator_only`. Una sesión sin
+  `groups` es editor.
+- **Auditoría** (d-7985ee-b4719f): `AuditEvent` en la base `audit`. Una actualización o un
+  rollback escribe su evento antes de encolarse. `Job` suma `requested_by`.
+- **Defensa web** (d-7985ee-491c83): rechazo de peticiones inseguras que no son del mismo origen
+  (Fetch Metadata y `Origin`) y CSP estricta, ambos como middleware.
+- **Compilación** (d-7985ee-d948fc): el CSS se compila con Tailwind en una etapa Node de la imagen.
+- **Latido del worker** en `/health/ready` (120 s).
+- **Despliegue:** `FORWARDED_ALLOW_IPS` pasa a obligatoria en el compose, y en CI. Runbook
+  `docs/runbooks/desplegar-panel.md`; `OIDC_OPERATOR_GROUPS` y `FORWARDED_ALLOW_IPS` documentadas
+  en el README y en `migrar-mongo-a-volumen.md`.
+- **Seguridad, de paso:** `/v1/login`, `/v1/login/callback` y `/v1/logout` aceptaban
+  `redirect=//otro.host` (redirect abierto, protocolo relativo). Ahora dan 422.
 
-**Por qué.** El panel necesita saber quién hizo qué; `find` usa solo igualdad (nunca `$regex`), acota `limit` a 1..200 y `record` rechaza claves de secretos en `details` (a cualquier profundidad, por subcadena).
+**Por qué.** El dueño pidió un panel web para operar sin llamar a la API a mano, con dos niveles
+de permiso y un registro de quién hizo qué sobre servidores reales. Cada decisión se registró en
+`docs/decisions.md`; el roadmap cierra i-7985ee-50d411 y corrige tres entradas que habían quedado
+desactualizadas (logs con `request_id`, trabajos que escriben, avisos de la fase 3).
 
-**Sin hacer / sin verificar.** Nadie llama aún a `record`. El audit falla solo por `OIDC_OPERATOR_GROUPS` ausente de `.env.default` (del dueño).
+**Arquitectura.** ✅ Cumple: los routers del panel solo inyectan `*Service`; la baseline de capas
+sigue vacía. `AGENTS.md` suma dos invariantes (roles en los servicios, mismo origen y CSP).
+
+**Qué salió mal en el camino.** Cada punto lo encontró una revisión, no el primer intento.
+- `Sec-Fetch-Site: none` (una navegación del usuario) pasaba el chequeo de origen, y el 403 no
+  llevaba la CSP. Ahora solo `same-origin` pasa en una petición insegura.
+- La paginación de la auditoría por fecha se saltaba los eventos del mismo milisegundo. Ahora
+  el cursor es el id del último evento y el orden desempata por `_id`.
+- Un 422 de validación llegaba al panel como JSON con la entrada del usuario dentro de un aviso;
+  ahora todo error del panel se muestra como aviso.
+- Las decisiones sobre qué va al servidor se guardaban leyendo y reescribiendo el documento, y
+  una decisión concurrente se perdía; ahora es un `$set` atómico por proyecto.
+- Una actualización real no estaba atada a la simulación: podía instalar un build no previsualizado.
+  Ahora solo se ofrece desde una simulación terminada y lleva su build.
+- Un rollback se aceptaba sobre una simulación o sobre una actualización ya superada, y la
+  búsqueda del último trabajo miraba solo los 50 más recientes. El servicio lo rechaza.
+- El redirect abierto, ya existente, apareció al revisar el login. Un primer intento con
+  *lookahead* en el patrón rompió el arranque: el motor de regex de pydantic no lo admite.
+
+**Qué quedó sin hacer.**
+- La revisión visual del panel con un navegador real (diseños en 360 y 1280 px).
+- Una consulta de títulos de Modrinth por fragmento y la espera secuencial del tablero (menores).
+- Los índices por `target_id` y por acción en la auditoría (se escanea la colección; chica).
+- Desplegar, y las comprobaciones de `desplegar-panel.md`.
+
+**No verificado.**
+- **La imagen Docker:** no hay Docker en esta máquina. La etapa `assets`, el import dentro de la
+  imagen y `docker compose config` corren por primera vez en el job `image` de CI (el YAML solo se
+  leyó y se cargó con un parser).
+- **Un login real** de editor y de operador con authentik, y el claim `groups`.
+- **Pterodactyl y Modrinth reales:** nada de esto toca un servidor de juego; el flujo de
+  actualización se probó con un panel simulado.
+- **La versión de MongoDB de CI** (`mongo:8.0`): espera la versión que corre en producción.
+- **`.env.default`:** `OIDC_OPERATOR_GROUPS: ""` lo agrega el dueño (el agente no lo lee ni lo
+  edita); hasta entonces el audit `env_template` falla.
 
 ## 2026-10-01 · s-7985ee-2ab23b — Fase 3: importar servidores y actualizar con backup, verificación y rollback a pedido
 

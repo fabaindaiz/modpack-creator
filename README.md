@@ -9,10 +9,11 @@ servidores de un panel de Pterodactyl propio.
 > **Antes del próximo `./scripts/update.sh` en un servidor que ya corría:** seguir
 > [`docs/runbooks/migrar-mongo-a-volumen.md`](docs/runbooks/migrar-mongo-a-volumen.md). Desde
 > 2026-10-01 MongoDB guarda sus datos en un volumen nuevo que arranca vacío, y la API exige
-> `OIDC_ALLOWED_GROUPS`.
+> `OIDC_ALLOWED_GROUPS` y `OIDC_OPERATOR_GROUPS` (los grupos que operan servidores; vacía = nadie
+> opera). Para el panel web, además: [`docs/runbooks/desplegar-panel.md`](docs/runbooks/desplegar-panel.md).
 
 1. Copia `.env.default` a `.env.yaml` y completa los valores (nunca se versiona).
-2. Crea `docker/.env` con `MONGO_VERSION`, `MONGODB_PASSWORD` y `MONGOWEB_PASSWORD` (ver el runbook).
+2. Crea `docker/.env` con `MONGO_VERSION`, `MONGODB_PASSWORD`, `MONGOWEB_PASSWORD` y `FORWARDED_ALLOW_IPS` (ver el runbook).
 3. `./scripts/build.sh` y `./scripts/run.sh` levantan la API, MongoDB y mongo-express con Docker.
 
 ## Desarrollar

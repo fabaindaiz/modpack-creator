@@ -58,10 +58,12 @@ Crear `docker/.env`, que no se versiona (`.gitignore` ya cubre `.env`):
 MONGO_VERSION=8.0          # la del paso 1
 MONGODB_PASSWORD=…
 MONGOWEB_PASSWORD=…
-# FORWARDED_ALLOW_IPS=…    # solo detrás de un proxy inverso: su IP o red
+FORWARDED_ALLOW_IPS=…      # la IP o red del proxy inverso (para uvicorn: confiar en X-Forwarded-Proto)
 ```
 
-Sin `MONGO_VERSION`, el compose se niega a arrancar. Es a propósito (d-7985ee-398653).
+Sin `MONGO_VERSION` o sin `FORWARDED_ALLOW_IPS`, el compose se niega a arrancar. Es a propósito
+(d-7985ee-398653, d-7985ee-491c83). El panel y su proxy se detallan en
+[`desplegar-panel.md`](desplegar-panel.md).
 
 ## 4. `.env.yaml` (nuevas variables de S3)
 
@@ -69,6 +71,12 @@ Agregar, como en `.env.default`:
 
 - `OIDC_ALLOWED_GROUPS`: **obligatoria**. El grupo del IdP cuyos miembros usan la API (por
   ejemplo `modpack-admins`; créalo en authentik si no existe). Sin ella, la API no arranca.
+- `OIDC_OPERATOR_GROUPS`: **obligatoria**. Los grupos del IdP cuyos miembros **operan**: actualizar,
+  simular, hacer rollback, importar y asociar servidores (d-7985ee-edef1e). Crea el grupo en
+  authentik (por ejemplo `modpack-operators`); sus miembros también tienen que estar en
+  `OIDC_ALLOWED_GROUPS`. Vacía (`""`) significa que **nadie** opera: todos son editores. Quien ya
+  tenía sesión abierta tiene que **volver a entrar** después del despliegue: su sesión vieja no
+  trae grupos y cuenta como editor. Sin la variable, la API no arranca.
 - `OIDC_ALLOWED_EMAILS`: opcional. Solo vale con email verificado; authentik lo manda sin verificar
   por defecto.
 - `SESSION_HTTPS_ONLY`: `"false"` **solo** si se entra por HTTP sin TLS. Con `"true"` y HTTP, el

@@ -8,9 +8,13 @@ este archivo en el mismo cambio que lo termina. Los ids se acuñan con
 
 ## Dónde estamos
 
-Al cierre de la sesión de desarrollo del 2026-10-01 (detalle en
-`.claude/logs/agent-changelog.md`, s-7985ee-9b0d95 y las entradas de abajo). **Todo está en
-`main`; nada está desplegado.**
+Al cierre de la sesión del panel web del 2026-10-02 (detalle en
+`.claude/logs/agent-changelog.md`, s-7985ee-aeb6be, y las entradas de abajo). **El panel está en la
+rama `feat/panel-web`; lo demás está en `main`; nada está desplegado.**
+
+- **Panel web, hecho en código** (i-7985ee-50d411): páginas con Jinja2 y htmx, roles de editor y
+  operador por grupos del IdP, auditoría, defensa CSRF por origen con CSP estricta, y el latido
+  del worker en `/health/ready`. Se despliega con `docs/runbooks/desplegar-panel.md`.
 
 - **Fase 0, código hecho:**
   - dependencias fijas, volumen de Mongo e imagen que arranca, login con autorización;
@@ -28,13 +32,17 @@ Al cierre de la sesión de desarrollo del 2026-10-01 (detalle en
   - escaneo por hash (i-7985ee-43df2f, opción 1) y comparación con un build (i-7985ee-4364a3);
   - el manifiesto, solo en Mongo (i-7985ee-5c7506 a medias).
 - **Lo que bloquea desplegar:** seguir `docs/runbooks/migrar-mongo-a-volumen.md`. Hace falta
-  respaldo, `docker/.env` con `MONGO_VERSION`, `OIDC_ALLOWED_GROUPS` en `.env.yaml` y restaurar.
+  respaldo, `docker/.env` con `MONGO_VERSION` y `FORWARDED_ALLOW_IPS`, `OIDC_ALLOWED_GROUPS` y
+  `OIDC_OPERATOR_GROUPS` en `.env.yaml`, y restaurar.
   Sin eso el volumen nuevo arranca vacío y la API no arranca.
 - **Lo siguiente, todo del dueño, en orden:**
-  1. desplegar con el runbook;
+  0. agregar `OIDC_OPERATOR_GROUPS: ""` a `.env.default` (el gate de `audit` falla en
+     `env_template` hasta entonces) y crear el grupo de operadores en authentik;
+  1. desplegar con los runbooks (`migrar-mongo-a-volumen.md` y `desplegar-panel.md`);
   2. S7 operación: un usuario de servicio no admin, una clave `ptlc_` con `allowed_ips` y revocar
      la vieja (i-7985ee-63226e);
-  3. un login real con una cuenta fuera del grupo;
+  3. un login real con una cuenta fuera del grupo, otro de editor y otro de operador (con una
+     simulación), y las comprobaciones de `desplegar-panel.md`;
   4. los puntos de control de las fases 1 y 2, con `PTERODACTYL_WRITES` vacío: armar el pack de
      un servidor real, escanearlo y comparar. Con eso se decide si se suma packwiz y se abre la
      fase 3, que escribe en servidores.
@@ -50,10 +58,10 @@ Al cierre de la sesión de desarrollo del 2026-10-01 (detalle en
   3. el login real;
   4. los puntos de control de las fases 1 y 2;
   5. **la primera actualización real en el servidor de prueba**, con
-     `docs/runbooks/primera-actualizacion-real.md`.
+     `docs/runbooks/primera-actualizacion-real.md`;
+  6. decir qué versión de MongoDB corre en producción, para igualar `mongo:8.0` de CI.
 - **Pendiente de código:**
   - igualar `mongo:8.0` de CI con producción;
-  - el panel del dueño (i-7985ee-50d411), por definir;
   - packwiz, tras el punto de control de la fase 2.
 
 ## Modpacks y versiones
@@ -503,7 +511,9 @@ backup, staging, swap a `mods.old/`, arrancar, verificar, rollback A (devolver `
 - **Programador:** con `SCAN_EVERY_HOURS`, encola el escaneo de cada servidor cuyo último
   escaneo es más viejo que ese intervalo. Lo pide completo si el último completo tiene más de
   `SCAN_FULL_EVERY_DAYS`, por defecto 7. El índice por servidor evita duplicados entre procesos.
-- **Lo que falta:** los trabajos que escriben (fase 3, i-7985ee-495708).
+- **Trabajos que escriben:** hechos en la fase 3: `server_update` y `server_rollback`
+  (i-7985ee-495708), con la misma clave por servidor, así que un servidor no tiene dos a la vez.
+- **Lo que falta:** nada de lo planeado.
 Una colección `jobs` reclamada con `find_one_and_update`, con latidos, un checkpoint por paso y un
 índice único parcial de un trabajo activo por servidor. El worker y el scheduler corren en el
 `lifespan` (`research/2026-10-arquitectura.md` §1).
@@ -524,7 +534,9 @@ Una colección `jobs` reclamada con `find_one_and_update`, con latidos, un check
 - **Chequeo:** siete tests en `tests/test_notify.py`, más uno en `tests/test_builds.py`.
 - **Prueba de humo en la imagen**, con un webhook falso en la red de podman: el build nuevo llegó
   como `📦 Smoke pack: build 1 creado, 2 archivos.` y el token no aparece en los logs.
-- **Lo que falta:** avisos de las actualizaciones de la fase 3.
+- **Avisos de las actualizaciones:** hechos en la fase 3. `UpdateService` avisa un fallo, un éxito
+  y un rollback, y una simulación no avisa (`_notify` recibe `dry_run`).
+- **Lo que falta:** nada de lo planeado.
 Un protocolo `Notifier` y una outbox entregada con reintentos que respetan `retry_after`. Un aviso
 que falla nunca tumba una actualización (tarjeta `best-effort-side-channels`).
 
@@ -553,7 +565,7 @@ duplica usuarios.
   autenticado, sobre un índice. Ninguna caché en un modelo del que dependa un permiso.
 - **Chequeo:** un test con el fixture `mongo` que cambia un usuario y lo vuelve a leer por id.
 
-### Salud y logs estructurados — Hecha (2026-10-01), salvo el latido del worker en /health · i-7985ee-90f944
+### Salud y logs estructurados — Hecha (2026-10-02) · i-7985ee-90f944
 - **Logs:**
   - todo sale en JSON (`src/library/logging.py`), también las advertencias de Python y uvicorn;
   - `RequestIdMiddleware` acepta un `X-Request-ID` seguro o genera uno, lo devuelve y escribe una
@@ -568,14 +580,41 @@ duplica usuarios.
   - Cuatro tests en `tests/test_health.py`.
   - Probado con podman sobre la imagen construida: 200, y 503 con Mongo detenido; el healthcheck
     sigue al estado real y `/v1` sin sesión da 401.
-- **Lo que falta:** los logs JSON con `request_id`, y el latido del worker cuando exista uno
-  (fase 3).
+- **Latido del worker (2026-10-02):** `WorkerBeat` late en cada vuelta y mientras corre un
+  trabajo; `/health/ready` da 503 si el último latido tiene más de 120 s o la tarea terminó. Si el
+  proceso no corre worker (`JOBS_WORKER: "off"`) no lo exige. **Chequeo:** `tests/test_health.py` y
+  `tests/test_jobs.py`.
+- **Logs con `request_id` y `job_id`:** hechos. Cada línea de un request lleva `request_id`, y las
+  de un trabajo, `job_id` y `kind`.
+- **Lo que falta:** nada de lo planeado.
 `/health/live` y `/health/ready` (ping a Mongo y latido del worker), healthchecks en Compose y logs
 JSON con `request_id` y `job_id`.
 
-### Panel del dueño con Jinja2 y HTMX — Planeada · i-7985ee-50d411
-Mismo origen y misma sesión, sin CORS ni build de JS. starlette-admin es opcional, para navegar
-documentos (podría reemplazar mongo-express).
+### Panel del dueño con Jinja2 y HTMX — Hecha en código (2026-10-02), sin desplegar · i-7985ee-50d411
+- **En qué quedó:**
+  - Páginas en español con Jinja2 y htmx, en el mismo origen y con la misma sesión, sin CORS:
+    tablero, modpacks (crear, editar, armar un build), servidores (escanear, importar, vincular,
+    simular, actualizar y hacer rollback), trabajos con seguimiento y auditoría paginada
+    (`src/routers/web/`, `src/web/`).
+  - El CSS se compila con Tailwind y htmx sale de npm, en una etapa Node de la imagen
+    (d-7985ee-d948fc). Esto reemplaza el "sin build de JS" de la idea original; starlette-admin
+    quedó sin hacer.
+  - Dos roles por grupos del IdP, que se hacen cumplir en los servicios (d-7985ee-edef1e), y una
+    auditoría de cada cambio, escrita antes de encolar lo que toca un servidor real
+    (d-7985ee-b4719f).
+  - Defensa CSRF por origen y CSP estricta (d-7985ee-491c83).
+  - Una actualización real solo se ofrece desde una simulación terminada y se ata a su build; un
+    rollback se rechaza si es de una simulación o de una actualización ya superada.
+  - Un `/v1/login` o `/v1/logout` con un `redirect` de `//host` da 422 (era un redirect abierto).
+- **Chequeo:** `tests/test_web_security.py`, `tests/test_roles.py`, `tests/test_routes_roles.py`,
+  `tests/test_operator_actions.py`, `tests/test_audit_log.py`, `tests/test_web_*.py`, contra Mongo
+  real. Lo que **no** se comprobó: la imagen Docker (primera vez en CI), un login real de editor y
+  de operador, y Pterodactyl y Modrinth reales; el despliegue lo comprueba
+  `docs/runbooks/desplegar-panel.md`.
+- **Lo que falta:** desplegar, y la revisión visual del panel con un navegador real, que no se hizo
+  con herramientas (los tests miran el HTML, no el aspecto).
+- **Lo que choca:** una acción de operador que se revoca vale hasta que vence la sesión (12 h
+  como máximo; rotar `SESSION_SECRET` la corta).
 
 ## Seguridad y despliegue
 

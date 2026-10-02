@@ -57,6 +57,16 @@ Decididas, no preferencias. `docs/decisions.md` indexa cada una con lo que la ha
   `iss` + `sub`, nunca el email. `tests/test_auth.py` (d-7985ee-8befe2, d-7985ee-361ed0).
 - **Sin CORS salvo orígenes nombrados**, y la sesión `SameSite=lax`, `https_only`, de horas
   (`main.py`, d-7985ee-4e4aee).
+- **Los permisos de operador viven en los servicios.** Actualizar, hacer rollback, importar y
+  asociar un servidor exigen el rol de operador (`OIDC_OPERATOR_GROUPS`), y lo chequea el servicio
+  con `operator_only`, no la ruta: si no, una ruta nueva, de `/v1` o del panel, lo salta. Una
+  sesión sin `groups` es editor. *Tests* `tests/test_roles.py`, `tests/test_routes_roles.py`
+  (barrido de rutas), `tests/test_operator_actions.py` (d-7985ee-edef1e, d-7985ee-b4719f).
+- **Una petición insegura solo vale si viene del mismo origen, y toda respuesta lleva la CSP.**
+  `Sec-Fetch-Site` distinto de `same-origin` (o un `Origin` ajeno) da 403; sin `<script>` ni
+  `style=` inline en el panel. Detrás de un proxy hace falta `FORWARDED_ALLOW_IPS`: sin él el
+  esquema llega mal y el chequeo rechaza al propio panel. `tests/test_web_security.py`
+  (d-7985ee-491c83).
 - **Los datos de MongoDB viven en el volumen `mongodb-data`**: nunca `docker compose down -v`, y
   `MONGO_VERSION` nunca menor que la que escribió los datos (d-7985ee-398653). Cualquier cambio
   de despliegue que toque datos sigue un runbook de `docs/runbooks/`.

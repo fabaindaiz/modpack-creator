@@ -56,6 +56,7 @@ jobs:
       - name: The compose file is valid
         env:
           MONGO_VERSION: "8.0"
+          FORWARDED_ALLOW_IPS: 127.0.0.1
           MONGODB_PASSWORD: ci
           MONGOWEB_PASSWORD: ci
         run: |
@@ -63,6 +64,7 @@ jobs:
           docker compose -f docker/docker-compose.yaml config --quiet
       - name: The compose file refuses to run without MONGO_VERSION
         env:
+          FORWARDED_ALLOW_IPS: 127.0.0.1
           MONGODB_PASSWORD: ci
           MONGOWEB_PASSWORD: ci
         run: |
