@@ -308,3 +308,13 @@ def test_last_real_update_survives_sixty_newer_scans(mongo: MongoRunner) -> None
 
     found, failed_id, active_kind = mongo(scenario)
     assert found == failed_id and active_kind == "server_scan"
+
+
+def test_jobs_have_an_index_for_the_newest_job_of_a_key(mongo: MongoRunner) -> None:
+    """last_real_update filters by `key` and sorts by `created_at` descending: an index serves it
+    instead of scanning every job of the collection. Created at startup by init_beanie."""
+    async def scenario() -> Any:
+        info = await Job.get_pymongo_collection().index_information()
+        return [spec["key"] for spec in info.values()]
+
+    assert [("key", 1), ("created_at", -1)] in mongo(scenario)

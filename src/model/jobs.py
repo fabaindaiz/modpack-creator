@@ -40,4 +40,6 @@ class Job(Document):
             IndexModel([("status", ASCENDING), ("created_at", ASCENDING)]),
             # The panel's list of recent jobs.
             IndexModel([("created_at", DESCENDING)]),
+            # The newest job of a key: JobDatabase.last_real_update, which a rollback checks.
+            IndexModel([("key", ASCENDING), ("created_at", DESCENDING)]),
         ]
