@@ -48,8 +48,8 @@ def _comparison_ids(comparison: Comparison) -> list[str]:
 
 async def _rollback_candidate(jobService: JobService, server_id: str) -> Optional[Job]:
     """The failed update a rollback can still undo: the server's last update that wrote to it,
-    or, if a rollback came after it, the update that rollback names (R17: after a failed A, B is
-    still offered). The service checks it again."""
+    or, if a rollback came after it, the update that rollback names: after a failed A, B is
+    still offered (d-7985ee-5445a0). The service checks it again."""
     last_real = await jobService.last_real_update(server_id)
     if last_real is not None and last_real.kind == "server_rollback":
         try:

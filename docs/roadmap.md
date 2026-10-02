@@ -593,9 +593,11 @@ JSON con `request_id` y `job_id`.
 ### Panel del dueño con Jinja2 y HTMX — Hecha en código (2026-10-02), sin desplegar · i-7985ee-50d411
 - **En qué quedó:**
   - Páginas en español con Jinja2 y htmx, en el mismo origen y con la misma sesión, sin CORS:
-    tablero, modpacks (crear, editar, armar un build), servidores (escanear, importar, vincular,
-    simular, actualizar y hacer rollback), trabajos con seguimiento y auditoría paginada
-    (`src/routers/web/`, `src/web/`).
+    tablero, modpacks (crear, agregar y quitar proyectos, resolver, decidir qué va al servidor,
+    armar y recomendar builds, descargar el `.mrpack`, y los reemplazos globales), servidores
+    (escanear, importar, vincular, simular, actualizar y hacer rollback), trabajos con
+    seguimiento y auditoría paginada (`src/routers/web/`, `src/web/`). No hay página para editar
+    los datos de un modpack (nombre, versión, loader): eso sigue en `/v1`.
   - El CSS se compila con Tailwind y htmx sale de npm, en una etapa Node de la imagen
     (d-7985ee-d948fc). Esto reemplaza el "sin build de JS" de la idea original; starlette-admin
     quedó sin hacer.
@@ -604,15 +606,21 @@ JSON con `request_id` y `job_id`.
     (d-7985ee-b4719f).
   - Defensa CSRF por origen y CSP estricta (d-7985ee-491c83).
   - Una actualización real solo se ofrece desde una simulación terminada y se ata a su build; un
-    rollback se rechaza si es de una simulación o de una actualización ya superada.
+    rollback se rechaza si es de una simulación o de una actualización ya superada por otra que
+    escribió en el servidor. Un rollback no supera a la actualización que deshace: tras un A
+    fallido, el B sigue disponible.
   - Un `/v1/login` o `/v1/logout` con un `redirect` de `//host` da 422 (era un redirect abierto).
 - **Chequeo:** `tests/test_web_security.py`, `tests/test_roles.py`, `tests/test_routes_roles.py`,
   `tests/test_operator_actions.py`, `tests/test_audit_log.py`, `tests/test_web_*.py`, contra Mongo
-  real. Lo que **no** se comprobó: la imagen Docker (primera vez en CI), un login real de editor y
-  de operador, y Pterodactyl y Modrinth reales; el despliegue lo comprueba
-  `docs/runbooks/desplegar-panel.md`.
-- **Lo que falta:** desplegar, y la revisión visual del panel con un navegador real, que no se hizo
-  con herramientas (los tests miran el HTML, no el aspecto).
+  real. La revisión visual se hizo con un Chromium sin interfaz: 56 capturas (operador en claro y
+  oscuro a 360, 768 y 1280 px, y editor en claro a 1280, por 8 páginas); encontró 3 problemas,
+  corregidos en 23bfbae, y la segunda pasada dio 0. Lo que **no** se comprobó: la imagen Docker
+  (primera vez en CI), un login real de editor y de operador, y Pterodactyl y Modrinth reales; el
+  despliegue lo comprueba `docs/runbooks/desplegar-panel.md`.
+- **Lo que falta:**
+  - desplegar;
+  - el detalle de un modpack todavía no muestra los archivos locales, los canales ni los pins
+    (diseño del panel §3.2).
 - **Lo que choca:** una acción de operador que se revoca vale hasta que vence la sesión (12 h
   como máximo; rotar `SESSION_SECRET` la corta).
 

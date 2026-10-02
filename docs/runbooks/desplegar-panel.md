@@ -36,15 +36,22 @@ Antes de empezar, si el servidor aún corre la versión anterior a la fase 0, se
    - **no reescribir `Origin`**: el chequeo compara el `Origin` del navegador con
      `esquema://host` de la API, y si el proxy lo cambia, todo POST da 403;
    - no quitar `Sec-Fetch-Site` ni agregar su propia CSP: la API ya manda la suya.
-5. **Respaldo** de MongoDB, como en el paso 2 de `migrar-mongo-a-volumen.md`. El despliegue no toca
+5. **Los orígenes de `CORS_ALLOW_ORIGINS`, si hay alguno, solo leen** (d-7985ee-491c83). Pueden
+   seguir haciendo un GET con la cookie, pero todo POST, PUT, PATCH o DELETE desde otro origen da
+   403 en el chequeo de origen, también desde uno nombrado ahí. Un cliente en otro origen que
+   escribía en la API deja de poder hacerlo: tiene que servirse desde el mismo origen que la API.
+6. **Respaldo** de MongoDB, como en el paso 2 de `migrar-mongo-a-volumen.md`. El despliegue no toca
    ni borra documentos, pero es un cambio que sube a producción y el respaldo es barato.
 
 ## 2. Qué cambia en MongoDB
 
 Nada se migra ni se reescribe. Al arrancar, Beanie crea:
-- los índices nuevos de `Job` (`created_at` y `status` + `created_at`), que el panel usa para
-  listar los trabajos recientes;
+- dos índices nuevos de `Job`: `created_at` (descendente), con el que el panel lista los trabajos
+  recientes, y `key` + `created_at` (descendente), con el que un rollback busca la última
+  actualización del servidor. El de `status` + `created_at` ya existía;
 - la colección `AuditEvent` en la base `audit`, con sus índices.
+
+Crear un índice no toca ningún documento.
 
 Los trabajos viejos cargan sin `requested_by` (el campo es opcional). Crear un índice sobre una
 colección chica tarda un instante; en el primer arranque, `/health/ready` puede tardar unos
@@ -59,7 +66,7 @@ git pull
 docker ps --format '{{.Names}} {{.Status}}'   # modpack-api y modpack-mongodb en (healthy)
 ```
 
-La imagen se construyó por primera vez en CI al empujar: si `build.sh` falla en la etapa `assets`,
+La imagen se construye por primera vez en CI al empujar: si `build.sh` falla en la etapa `assets`,
 se ve aquí. Los usuarios que ya tenían sesión **tienen que volver a entrar**: su sesión no trae
 `groups` y cuenta como editor hasta entonces.
 

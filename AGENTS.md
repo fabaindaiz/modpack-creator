@@ -27,7 +27,8 @@ Decididas, no preferencias. `docs/decisions.md` indexa cada una con lo que la ha
 - **Python 3.12, uno solo**: la imagen, `.mypy.ini` y hatch dicen lo mismo. En 3.12 las
   anotaciones se evalúan al definir: un nombre sin importar en una firma rompe el arranque
   completo, y en 3.14 no se nota. *Audit* `python_versions` (d-7985ee-7bc399).
-- **Los routers solo inyectan servicios.** Un router nunca pide un `*Database` ni un `*API`.
+- **Los routers solo inyectan servicios**, los de `/v1` y los del panel (`src/routers/web/`).
+  Un router nunca pide un `*Database` ni un `*API`.
   `LAYERING_BASELINE` de `scripts/audit.py` está vacía desde el 2026-10-01 y no vuelve a crecer.
   *Audit* `layering` (d-7985ee-16ed28).
 - **Ningún argumento por defecto mutable.** Un `headers: dict = {}` compartido acumuló la
@@ -56,7 +57,8 @@ Decididas, no preferencias. `docs/decisions.md` indexa cada una con lo que la ha
   `OIDC_ALLOWED_GROUPS` o tiene un email verificado de `OIDC_ALLOWED_EMAILS`; la identidad es
   `iss` + `sub`, nunca el email. `tests/test_auth.py` (d-7985ee-8befe2, d-7985ee-361ed0).
 - **Sin CORS salvo orígenes nombrados**, y la sesión `SameSite=lax`, `https_only`, de horas
-  (`main.py`, d-7985ee-4e4aee).
+  (`main.py`, d-7985ee-4e4aee). Un origen de `CORS_ALLOW_ORIGINS` solo lee: toda escritura de
+  otro origen da 403 en el chequeo de mismo origen (d-7985ee-491c83).
 - **Los permisos de operador viven en los servicios.** Actualizar, hacer rollback, importar y
   asociar un servidor exigen el rol de operador (`OIDC_OPERATOR_GROUPS`), y lo chequea el servicio
   con `operator_only`, no la ruta: si no, una ruta nueva, de `/v1` o del panel, lo salta. Una
@@ -99,8 +101,9 @@ El entorno es hatch con Python 3.12 (`pyproject.toml`); las dependencias salen d
 fallar. Los tests de base corren contra un MongoDB real: en CI siempre, en local solo con
 `./scripts/test-mongo.sh` (d-7985ee-1a2f53). Ningún test abre una conexión sin
 `@pytest.mark.network`, y ninguno resuelve un nombre fuera de localhost (d-7985ee-1a20c1). Lo que el gate **no** cubre, y hay que decirlo en el
-reporte: la imagen Docker, los datos de producción, el login OIDC y cualquier llamada real a
-Modrinth o Pterodactyl. Skill `verify`.
+reporte: la imagen Docker, los datos de producción, el login OIDC, cualquier llamada real a
+Modrinth o Pterodactyl, y el aspecto del panel: los tests miran el HTML, no cómo se ve, así que
+la revisión visual (anchos de 360, 768 y 1280 px, claro y oscuro) es manual. Skill `verify`.
 
 ## Commits
 

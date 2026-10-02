@@ -437,7 +437,7 @@ def test_rollback_buttons_follow_the_steps_the_failed_update_reached() -> None:
 
 
 def test_after_a_failed_rollback_a_the_page_still_offers_b_for_the_same_update() -> None:
-    """R17: the newest real job is the failed rollback A; the page follows it back to its update."""
+    """The newest real job is the failed rollback A; the page follows it back to its update."""
     client, fakes = setup(OPERATOR)
     failed = job("server_update", "failed", False, {"server_id": str(SERVER_ID), "dry_run": False},
                  {"backup": {}}, "server stopped")

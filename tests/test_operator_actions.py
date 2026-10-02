@@ -242,7 +242,7 @@ async def rollback(server_id: str, update: Job, mode: str, created_at: datetime,
 
 
 def test_rollback_b_after_a_failed_rollback_a_of_the_same_update_is_accepted(mongo: MongoRunner) -> None:
-    """R17: a failed rollback A leaves the server stopped; B of the same update is the way out.
+    """A failed rollback A leaves the server stopped; B of the same update is the way out.
     A rollback of U does not supersede U."""
     async def scenario() -> tuple[str, bool, str, int]:
         audit = RecordingAudit()
@@ -257,7 +257,7 @@ def test_rollback_b_after_a_failed_rollback_a_of_the_same_update_is_accepted(mon
 
 @pytest.mark.parametrize("checkpoint", [{}, {"preflight": {}}, {"preflight": {}, "staging": {}}])
 def test_a_later_update_that_wrote_nothing_does_not_supersede(mongo: MongoRunner, checkpoint: dict[str, Any]) -> None:
-    """R17: a real update refused in preflight (or failed while staging) never touched mods/ nor
+    """A real update refused in preflight (or failed while staging) never touched mods/ nor
     made a backup: the earlier update that did write is still the one to roll back."""
     async def scenario() -> tuple[bool, int]:
         audit = RecordingAudit()

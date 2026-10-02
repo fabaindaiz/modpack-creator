@@ -9,8 +9,10 @@ está al final del archivo, para que nada entre este párrafo y la primera entra
 
 **Qué.**
 - **Panel web** (`src/routers/web/`, `src/web/`): Jinja2, htmx y Tailwind, en español, con modo
-  oscuro. Tablero, modpacks (crear, editar, armar builds), servidores (escanear, importar,
-  vincular, simular, actualizar, rollback), trabajos con seguimiento y auditoría paginada.
+  oscuro. Tablero, modpacks (crear, agregar y quitar proyectos, resolver, decidir qué va al
+  servidor, armar y recomendar builds, descargar el `.mrpack`, reemplazos globales; editar los
+  datos de un modpack sigue en `/v1`), servidores (escanear, importar, vincular, simular,
+  actualizar, rollback), trabajos con seguimiento y auditoría paginada.
 - **Roles** (d-7985ee-edef1e): editor y operador, derivados de los grupos del IdP
   (`OIDC_OPERATOR_GROUPS`) y hechos cumplir en los servicios con `operator_only`. Una sesión sin
   `groups` es editor.
@@ -49,9 +51,30 @@ sigue vacía. `AGENTS.md` suma dos invariantes (roles en los servicios, mismo or
   búsqueda del último trabajo miraba solo los 50 más recientes. El servicio lo rechaza.
 - El redirect abierto, ya existente, apareció al revisar el login. Un primer intento con
   *lookahead* en el patrón rompió el arranque: el motor de regex de pydantic no lo admite.
+- La revisión visual (un Chromium sin interfaz, 56 capturas: operador en claro y oscuro a 360,
+  768 y 1280 px, y editor en claro a 1280, por 8 páginas) encontró 3 problemas, corregidos en
+  23bfbae y con 0 en la segunda pasada: a 360 px los hijos de las grillas desbordaban la página;
+  el ítem activo de la navegación quedaba fuera de la pantalla; y un servidor cuyo modpack no
+  tiene builds mostraba el error del servicio en inglés.
+- La revisión final de la rama encontró, y se corrigió:
+  - el rechazo de rollbacks superados era demasiado ancho. Un rollback A fallido pasaba a
+    ser "lo último" y el B de la misma actualización se rechazaba: el servidor quedaba parado sin
+    salida. Y una actualización real rechazada en el preflight, que no escribió nada, dejaba sin
+    rollback a una anterior que sí escribió. Ahora solo supera una actualización real cuyo
+    checkpoint llegó a `backup` o `swap`; un rollback no supera a la que deshace, y el panel lo
+    sigue hasta ella. Un índice `key` + `created_at` sirve esa búsqueda;
+  - un `name` vacío del IdP daba 401 y un bucle de login en el panel. La identidad es `iss` +
+    `sub`; el nombre visible cae al email y luego al `sub`;
+  - un 4xx sin aviso (un 429 o 400 de Modrinth o Pterodactyl) no mostraba nada en el panel;
+    ahora sale el aviso genérico;
+  - el chequeo de mismo origen deja a los orígenes de `CORS_ALLOW_ORIGINS` sin poder escribir.
+    Se documentó (d-7985ee-491c83, `AGENTS.md`, el runbook): solo leen;
+  - ningún test fallaba si se borraba un `add_middleware` de `main.py`; ahora uno lo prueba
+    sobre `main.app`.
 
 **Qué quedó sin hacer.**
-- La revisión visual del panel con un navegador real (diseños en 360 y 1280 px).
+- El detalle de un modpack no muestra todavía los archivos locales, los canales ni los pins
+  (diseño del panel §3.2).
 - Una consulta de títulos de Modrinth por fragmento y la espera secuencial del tablero (menores).
 - Los índices por `target_id` y por acción en la auditoría (se escanea la colección; chica).
 - Desplegar, y las comprobaciones de `desplegar-panel.md`.

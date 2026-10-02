@@ -118,9 +118,9 @@ class UpdateService():
     async def enqueue_rollback(self, server_id: str, update_id: str, mode: str, actor: Actor) -> Job:
         """Queue rollback A (bring the old jars back) or B (restore the pre-update backup) of a
         failed update of this server (d-7985ee-5445a0). Only of the latest update that wrote to
-        it (R15, R17): a dry run never qualifies, and neither does an update that a later one which
-        wrote superseded. A rollback of the same update does not supersede it: after a failed A,
-        B is the way out. Every refusal comes before the event: it leaves no event and no job."""
+        it: a dry run never qualifies, and neither does an update superseded by a later one that
+        also wrote. A rollback of the same update does not supersede it: after a failed A, B is
+        the way out. Every refusal comes before the event: it leaves no event and no job."""
         if mode not in ("A", "B"):
             raise HTTPException(status_code=422, detail="mode must be A or B")
         update = await self.jobDB.get(update_id)
