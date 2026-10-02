@@ -5,9 +5,12 @@ from typing import Optional
 from src.database import ModpackDatabase, ModrinthDatabase, PterodactylDatabase
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.api.client.pterodactyl import PterodactylAPI
-from src.library.scan import Comparison, ListedFile, ScanFile, compare, drift_message, plan_scan
+from fastapi import HTTPException
+from src.library.jarmeta import ModMetadata, read_mod_metadata
+from src.library.scan import ClaimedFile, Comparison, ListedFile, LocalFile, ScanFile, compare, drift_message, plan_scan
+from src.model.modpack import ModpackBundle, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthVersion
-from src.model.pterodactyl import PterodactylFile, PterodactylServer, ServerScan
+from src.model.pterodactyl import ImportCandidate, ImportResult, ProjectCandidate, PterodactylFile, PterodactylServer, ServerScan
 from src.exceptions import *
 
 # A jar from a server is untrusted: it is hashed, never loaded, and not downloaded past this
@@ -179,4 +182,90 @@ class PterodactylService():
             raise HTTP_409_CONFLICT(f"Bundle '{bundle_id}' has no build to compare with")
         frozen = await self.modpackDB.build_get(bundle_id, number)
         scan = await self.scan_latest(server_id, directory)
-        return compare(scan.files, frozen.lock.entries)
+        return compare(scan.files, frozen.lock.entries, frozen.local_files, bundle.claimed_files)
+
+    # Importing a server (i-7985ee-17745b, d-7985ee-c8a15d): its jars that the bundle does not
+    # explain are brought into the bundle. Only reads the server.
+
+    async def _import_context(self, server_id: str) -> tuple[PterodactylServer, ModpackBundle, ServerScan]:
+        server = await self.pterodactylDB.server_get(server_id)
+        if server.bundle_id is None:
+            raise HTTP_409_CONFLICT(f"Server '{server_id}' is not linked to a bundle: link it before importing")
+        bundle = await self.modpackDB.bundle_get(server.bundle_id)
+        return server, bundle, await self.scan_latest(server_id)
+
+    async def import_server(self, server_id: str) -> ImportResult:
+        """
+        Bring into the server's bundle every jar of its latest scan that the bundle does not explain:
+        identified by hash, the project joins as the admin's; unknown, its metadata is read as data
+        and Modrinth is searched for candidates, which wait for the admin; without candidates, the
+        jar becomes a local file of the bundle. Running it again adds nothing new.
+        """
+        server, bundle, scan = await self._import_context(server_id)
+        in_bundle = {p.project_id for p in bundle.projects}
+        local = {f.sha512 for f in bundle.local_files}
+        claimed = {c.sha512 for c in bundle.claimed_files}
+        result = ImportResult(added=[], candidates=[], local=[], too_large=[])
+        for file in scan.files:
+            if file.status == "too_large":
+                result.too_large.append(file.path)
+            elif file.status == "identified" and file.project_id and file.project_id not in in_bundle:
+                in_bundle.add(file.project_id)
+                result.added.append(file.project_id)
+            elif file.status == "unknown" and file.sha512 and file.sha512 not in local | claimed:
+                data = await self.pterodactylAPI.server_files_download(server.identifier, file.path)
+                metadata = read_mod_metadata(data) if len(data) <= SCAN_MAX_BYTES else None
+                candidates = await self._candidates(metadata) if metadata else []
+                if candidates:
+                    result.candidates.append(ImportCandidate(path=file.path, sha512=file.sha512,
+                                                             metadata=metadata, candidates=candidates))
+                else:
+                    await self.modpackDB.bundle_local_file_add(str(bundle.id), _local(file))
+                    result.local.append(file.path)
+        if result.added:
+            await self._add_projects(str(bundle.id), result.added)
+        return result
+
+    async def _candidates(self, metadata: ModMetadata) -> list[ProjectCandidate]:
+        """Modrinth projects a jar's metadata may be: its mod id as a slug, then a search by name.
+        Never accepted here: the metadata named the wrong project in 1 of 9 real jars."""
+        found: dict[str, ProjectCandidate] = {}
+        try:
+            project = await self.modrinthAPI.project_get(metadata.mod_id)
+            if project.project_type.value == "mod":
+                found[project.project_id] = ProjectCandidate(project_id=project.project_id, slug=project.slug,
+                                                             title=project.title, via="slug")
+        except HTTPException:
+            pass
+        for hit in await self.modrinthAPI.search(metadata.name or metadata.mod_id, [["project_type:mod"]], limit=3):
+            found.setdefault(hit["project_id"], ProjectCandidate(project_id=hit["project_id"], slug=hit["slug"],
+                                                                 title=hit["title"], via="search"))
+        return list(found.values())
+
+    async def _add_projects(self, bundle_id: str, project_ids: list[str]) -> None:
+        projects = await self.modrinthDB.project_upsert_many(await self.modrinthAPI.project_get_many(project_ids))
+        await self.modpackDB.bundle_projects_add(
+            bundle_id, [PackProject(project_id=p.project_id, origin=ProjectOrigin.admin) for p in projects])
+
+    def _scanned(self, scan: ServerScan, path: str) -> ScanFile:
+        file = next((f for f in scan.files if f.path == path), None)
+        if file is None or file.sha512 is None:
+            raise HTTP_404_NOT_FOUND(f"The latest scan has no hashed file {path}")
+        return file
+
+    async def import_confirm(self, server_id: str, path: str, project_id: str) -> list[PackProject]:
+        """The admin confirms that a jar is a Modrinth project: the project joins the bundle as the
+        admin's, and the jar is claimed by it, to be replaced by the build's version."""
+        _, bundle, scan = await self._import_context(server_id)
+        file = self._scanned(scan, path)
+        await self._add_projects(str(bundle.id), [project_id])
+        await self.modpackDB.bundle_claim_add(str(bundle.id), ClaimedFile(sha512=file.sha512 or "", project_id=project_id))
+        return (await self.modpackDB.bundle_get(str(bundle.id))).projects
+
+    async def import_local(self, server_id: str, path: str) -> list[LocalFile]:
+        """The admin keeps a jar as a local file of the bundle, untouched by updates."""
+        _, bundle, scan = await self._import_context(server_id)
+        return await self.modpackDB.bundle_local_file_add(str(bundle.id), _local(self._scanned(scan, path)))
+
+def _local(file: ScanFile) -> LocalFile:
+    return LocalFile(filename=file.path.rsplit("/", 1)[-1], sha512=file.sha512 or "", sha1=file.sha1 or "", size=file.size)

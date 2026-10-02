@@ -246,3 +246,21 @@ def test_a_new_build_is_announced(mongo: MongoRunner) -> None:
 
     [message] = mongo(scenario)
     assert "Survival pack" in message and "build 1" in message
+
+
+def test_a_build_freezes_the_bundles_local_files_and_the_mrpack_leaves_them_out(mongo: MongoRunner) -> None:
+    from src.library.scan import LocalFile
+
+    async def scenario() -> tuple[list[str], list[str]]:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack)
+        await service.local_file_add(bundle_id, LocalFile(filename="private.jar", sha512="p" * 128, sha1="p" * 40, size=10))
+        build = await service.build_create(bundle_id)
+        _, data = await service.build_mrpack(bundle_id, build.number)
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            index = json.loads(archive.read("modrinth.index.json"))
+        return [f.filename for f in build.local_files], [f["path"] for f in index["files"]]
+
+    local, paths = mongo(scenario)
+    assert local == ["private.jar"]
+    assert not any("private" in p for p in paths)

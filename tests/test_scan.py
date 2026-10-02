@@ -105,3 +105,19 @@ def test_a_time_read_back_from_mongodb_is_the_same_key() -> None:
     from_panel = ListedFile(path="/mods/a.jar", size=1, modified_at=datetime(2026, 9, 1, 12, 0, 0, 123456, tzinfo=timezone.utc))
     from_mongo = ListedFile(path="/mods/a.jar", size=1, modified_at=datetime(2026, 9, 1, 12, 0, 0, 123000))
     assert from_panel.key() == from_mongo.key()
+
+
+# Archivos locales del bundle (d-7985ee-c8a15d): un jar que no está en Modrinth, registrado por su
+# sha512, explica ese archivo en el servidor.
+
+
+def test_a_local_file_of_the_build_explains_an_unknown_jar() -> None:
+    from src.library.scan import LocalFile
+
+    private = scanned("private.jar", status="unknown", project_id=None, version_id=None, sha512="p" * 128)
+    stranger = scanned("stranger.jar", status="unknown", project_id=None, version_id=None, sha512="s" * 128)
+    local = LocalFile(filename="private.jar", sha512="p" * 128, sha1="p" * 40, size=10)
+    result = compare([private, stranger], [], local_files=[local])
+    assert [f.path for f in result.local] == ["/mods/private.jar"]
+    assert [f.path for f in result.unknown] == ["/mods/stranger.jar"]
+    assert compare([private], [], local_files=[local]).in_sync

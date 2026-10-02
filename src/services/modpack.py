@@ -5,6 +5,7 @@ from src.database import ModpackDatabase, ModrinthDatabase
 from src.library.api.client.loaders import LoaderMetaAPI
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.mrpack import mrpack_index, write_mrpack
+from src.library.scan import LocalFile
 from src.services.jobs import NotificationSink
 from src.library.resolution import Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, resolve
 from src.model.modpack import ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, PackProject, ProjectOrigin
@@ -74,6 +75,10 @@ class ModpackService():
         projects = await self._modrinth_projects(refs)
         return await self.modpackDB.bundle_pack_replace(
             bundle_id, [PackProject(project_id=p.project_id, origin=ProjectOrigin.pack) for p in projects])
+
+    async def local_file_add(self, bundle_id: str, local: LocalFile) -> list[LocalFile]:
+        """Register a jar that is not on Modrinth as a local file of the bundle (d-7985ee-c8a15d)."""
+        return await self.modpackDB.bundle_local_file_add(bundle_id, local)
 
     async def project_remove(self, bundle_id: str, project_id: str) -> list[PackProject]:
         return await self.modpackDB.bundle_project_remove(bundle_id, project_id)
@@ -174,7 +179,7 @@ class ModpackService():
         number = (builds[0].number if builds else 0) + 1
         build = await self.modpackDB.build_insert(ModpackBuild(
             bundle_id=bundle.id, number=number, created_at=datetime.now(timezone.utc),  # type: ignore[arg-type]
-            loader_version=loader_version, request=request, lock=lock))
+            loader_version=loader_version, local_files=bundle.local_files, request=request, lock=lock))
         await self.modpackDB.bundle_latest_build(bundle_id, number)
         if self.notifier is not None:
             await self.notifier.notify(f"📦 {bundle.name}: build {number} creado, {len(lock.entries)} archivos.")

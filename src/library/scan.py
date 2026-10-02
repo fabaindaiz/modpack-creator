@@ -68,6 +68,22 @@ def plan_scan(listing: Iterable[ListedFile], previous: Iterable[ScanFile], full:
     return kept, to_hash, too_large
 
 
+class LocalFile(BaseModel):
+    """A jar of a bundle that is not on Modrinth (d-7985ee-c8a15d): known by its sha512, left
+    untouched on the server by an update, and never in an .mrpack (it has no allowed URL)."""
+    filename: str
+    sha512: str
+    sha1: str
+    size: int
+
+
+class ClaimedFile(BaseModel):
+    """A jar Modrinth does not know by hash that the admin confirmed as a project (an import
+    candidate): it is that project, at a version to be replaced by the build's."""
+    sha512: str
+    project_id: str
+
+
 class ExpectedEntry(BaseModel):
     """What a build says a project should be: from a lock entry."""
     project_id: str
@@ -82,13 +98,16 @@ class Comparison(BaseModel):
     missing: list[ExpectedEntry]
     extra: list[ScanFile]
     unknown: list[ScanFile]
+    # Files the build explains as its local files.
+    local: list[ScanFile] = []
 
     @property
     def in_sync(self) -> bool:
         return not (self.different_version or self.missing or self.extra or self.unknown)
 
 
-def compare(files: Iterable[ScanFile], lock_entries: Iterable[Any]) -> Comparison:
+def compare(files: Iterable[ScanFile], lock_entries: Iterable[Any],
+            local_files: Iterable[LocalFile] = (), claimed: Iterable[ClaimedFile] = ()) -> Comparison:
     """
     Compare what a server has with what a build puts on the server.
 
@@ -98,14 +117,23 @@ def compare(files: Iterable[ScanFile], lock_entries: Iterable[Any]) -> Compariso
 
     :param files: The files of a scan.
     :param lock_entries: The entries of a build's lock (LockEntry objects or mappings).
+    :param local_files: The build's local files: a file with one of their sha512 is explained.
+    :param claimed: Jars the admin confirmed as a project: compared as that project, at a version
+        that is never the build's.
     """
+    local = {f.sha512 for f in local_files}
+    claims = {c.sha512: c.project_id for c in claimed}
     expected = [ExpectedEntry.model_validate(e if isinstance(e, Mapping) else e.model_dump())
                 for e in lock_entries]
     by_project = {e.project_id: e for e in expected if e.server == "include"}
     seen: set[str] = set()
     result = Comparison(matching=[], different_version=[], missing=[], extra=[], unknown=[])
     for file in files:
-        if file.status != "identified" or file.project_id is None:
+        if file.status == "unknown" and file.sha512 in claims:
+            file = file.model_copy(update={"status": "identified", "project_id": claims[file.sha512]})
+        if file.sha512 is not None and file.sha512 in local:
+            result.local.append(file)
+        elif file.status != "identified" or file.project_id is None:
             result.unknown.append(file)
         elif file.project_id not in by_project or file.project_id in seen:
             result.extra.append(file)

@@ -3,6 +3,7 @@ from beanie.operators import In
 from beanie.odm.documents import FindMany, DeleteResult
 from typing import Iterable, Optional
 from pymongo.errors import DuplicateKeyError
+from src.library.scan import ClaimedFile, LocalFile
 from src.model.modpack import (
     ModpackBuild,
     ModpackBundle,
@@ -75,6 +76,19 @@ class ModpackDatabase():
                 {"_id": oid, "projects.project_id": {"$ne": project.project_id}},
                 {"$push": {"projects": project.model_dump(mode="json")}})
         return (await self.bundle_get(bundle_id)).projects
+
+    async def bundle_local_file_add(self, bundle_id: str, local: LocalFile) -> list[LocalFile]:
+        """Register a local file, unless the bundle has one with that sha512 (atomic)."""
+        await ModpackBundle.get_pymongo_collection().update_one(
+            {"_id": self._bundle_oid(bundle_id), "local_files.sha512": {"$ne": local.sha512}},
+            {"$push": {"local_files": local.model_dump()}})
+        return (await self.bundle_get(bundle_id)).local_files
+
+    async def bundle_claim_add(self, bundle_id: str, claim: ClaimedFile) -> None:
+        """Record that a jar is a project, unless the bundle already has a claim for it (atomic)."""
+        await ModpackBundle.get_pymongo_collection().update_one(
+            {"_id": self._bundle_oid(bundle_id), "claimed_files.sha512": {"$ne": claim.sha512}},
+            {"$push": {"claimed_files": claim.model_dump()}})
 
     async def bundle_project_remove(self, bundle_id: str, project_id: str) -> list[PackProject]:
         """Remove a project from a bundle; 404 if the bundle does not have it."""

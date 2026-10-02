@@ -5,6 +5,7 @@ from pymongo import ASCENDING, IndexModel
 from typing import Annotated, Optional
 from src.library.datatypes import CustomEnum
 from src.library.resolution import Lock, ResolveRequest
+from src.library.scan import ClaimedFile, LocalFile
 from src.model.utils import MinecraftLoaders
 
 class ProjectOrigin(CustomEnum):
@@ -56,6 +57,10 @@ class ModpackBundle(Document):
 
     # Changed only through ModpackService, with atomic updates: concurrent additions all stay.
     projects: list[PackProject] = Field(default_factory=list)
+    # Jars not on Modrinth, by sha512 (d-7985ee-c8a15d): kept on the server, never exported.
+    local_files: list[LocalFile] = Field(default_factory=list)
+    # Jars on servers the admin confirmed as a project of this bundle (import candidates).
+    claimed_files: list[ClaimedFile] = Field(default_factory=list)
 
     # What resolution reads (i-7985ee-7f735a). Defaults, so bundles stored before load as before.
     # Version channels allowed, most stable first.
@@ -81,6 +86,8 @@ class ModpackBuild(Document):
     created_at: datetime
     # The loader version frozen with the build; None if there was none to take (i-7985ee-7352b3).
     loader_version: Optional[str] = None
+    # The bundle's local files when the build was made.
+    local_files: list[LocalFile] = Field(default_factory=list)
     request: ResolveRequest
     lock: Lock
 
