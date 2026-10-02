@@ -1,3 +1,4 @@
+from src.services.audit import AuditService
 from src.services.health import HealthService
 from src.services.jobs import JobService, JobWorker
 from src.services.update import UpdateService
@@ -7,6 +8,7 @@ from src.services.pterodactyl import PterodactylService
 from src.services.users import UsersService
 
 __all__ = [
+    "AuditService",
     "HealthService",
     "JobService",
     "JobWorker",

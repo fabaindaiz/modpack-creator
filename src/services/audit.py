@@ -1,0 +1,49 @@
+from datetime import datetime
+from typing import Any, Callable, Optional
+from src.database.audit import AuditDatabase
+from src.library.logging import request_id
+from src.model.audit import AuditEvent, AuditTarget
+from src.model.users import Actor
+from src.services.jobs import utcnow
+
+SECRET_KEYS = ("token", "secret", "password", "authorization")
+MAX_LIMIT = 200
+
+def _check_details(details: Any) -> None:
+    """Refuse a key that looks like a secret, at any depth: the log is read by many people."""
+    if isinstance(details, dict):
+        for key, value in details.items():
+            if any(word in str(key).lower() for word in SECRET_KEYS):
+                raise ValueError(f"audit details must not hold '{key}'")
+            _check_details(value)
+    elif isinstance(details, (list, tuple)):
+        for item in details:
+            _check_details(item)
+
+class AuditService():
+    def __init__(self,
+            auditDB: AuditDatabase,
+            clock: Callable[[], datetime] = utcnow,
+            ) -> None:
+        self.auditDB = auditDB
+        self.clock = clock
+
+    async def record(self, actor: Actor, action: str, target: AuditTarget, details: Optional[dict[str, Any]] = None) -> AuditEvent:
+        """Write who did what to what. The request id comes from the log's context."""
+        details = dict(details or {})
+        _check_details(details)
+        return await self.auditDB.insert(AuditEvent(
+            at=self.clock(), actor=actor.ref(), action=action, target=target,
+            details=details, request_id=request_id()))
+
+    async def find(self, *,
+            actor_sub: Optional[str] = None,
+            action: Optional[str] = None,
+            target_id: Optional[str] = None,
+            before: Optional[datetime] = None,
+            limit: int = 50,
+            ) -> list[AuditEvent]:
+        """Events newest first; `limit` is held to 1..200."""
+        return await self.auditDB.find(
+            actor_sub=actor_sub, action=action, target_id=target_id, before=before,
+            limit=max(1, min(limit, MAX_LIMIT)))

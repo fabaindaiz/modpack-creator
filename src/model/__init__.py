@@ -1,6 +1,7 @@
 from beanie import init_beanie
 from pymongo import AsyncMongoClient
 from pymongo.asynchronous.collection import AsyncCollection
+from src.model.audit import AuditEvent
 from src.model.jobs import Job
 from src.model.modpack import ModpackBuild, ModpackBundle, ModpackReplacement
 from src.model.modrinth import ModrinthProject, ModrinthVersion
@@ -30,6 +31,7 @@ async def init_databases(client: AsyncMongoClient, prefix: str = "") -> None:
     await init_beanie(database=client[f"{prefix}pterodactyl"], document_models=[PterodactylInstance, PterodactylServer, ServerScan])
     await init_beanie(database=client[f"{prefix}userdata"], document_models=[UsersInternal])
     await init_beanie(database=client[f"{prefix}jobs"], document_models=[Job])
+    await init_beanie(database=client[f"{prefix}audit"], document_models=[AuditEvent])
 
 async def configure_beanie() -> None:
     client: AsyncMongoClient = AsyncMongoClient(host=MONGODB_URI)

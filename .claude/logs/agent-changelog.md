@@ -5,6 +5,14 @@ introducción. Los commits de este repositorio fueron `wip` sin cuerpo: el *por 
 no quedaba en ninguna parte, y una sesión no ve lo que otra aprendió. La referencia del formato
 está al final del archivo, para que nada entre este párrafo y la primera entrada capture texto.
 
+## 2026-10-02 · s-7985ee-83825d — Auditoría: modelo, base y servicio (tarea 4 del panel)
+
+**Qué.** `AuditEvent` (base `audit`), `AuditDatabase` y `AuditService.record/find`, cableados en el contenedor. Nada los llama todavía.
+
+**Por qué.** El panel necesita saber quién hizo qué; `find` usa solo igualdad (nunca `$regex`), acota `limit` a 1..200 y `record` rechaza claves de secretos en `details` (a cualquier profundidad, por subcadena).
+
+**Sin hacer / sin verificar.** Nadie llama aún a `record`. El audit falla solo por `OIDC_OPERATOR_GROUPS` ausente de `.env.default` (del dueño).
+
 ## 2026-10-01 · s-7985ee-2ab23b — Fase 3: importar servidores y actualizar con backup, verificación y rollback a pedido
 
 **Qué.**

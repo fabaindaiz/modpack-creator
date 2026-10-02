@@ -9,6 +9,7 @@ from src.library.api.client import (
     PterodactylAPI,
 )
 from src.database import (
+    AuditDatabase,
     HealthDatabase,
     JobDatabase,
     UsersDatabase,
@@ -20,6 +21,7 @@ from src.services.jobs import WorkerBeat
 from src.services.notify import Notifier
 from src.services.update import UpdateService
 from src.services import (
+    AuditService,
     HealthService,
     JobService,
     UsersService,
@@ -45,6 +47,7 @@ class Dependences(containers.DeclarativeContainer):
 
     healthDatabase = providers.Singleton(HealthDatabase)
     jobDatabase = providers.Singleton(JobDatabase)
+    auditDatabase = providers.Singleton(AuditDatabase)
     notifier = providers.Singleton(Notifier, jobDatabase)
     usersDatabase = providers.Singleton(UsersDatabase)
     modpackDatabase = providers.Singleton(ModpackDatabase)
@@ -57,6 +60,7 @@ class Dependences(containers.DeclarativeContainer):
     modrinthService = providers.Singleton(ModrinthService, modrinthAPI, modrinthDatabase)
     pterodactylService = providers.Singleton(PterodactylService, pterodactylAPI, pterodactylDatabase, modrinthAPI, modrinthDatabase, modpackDatabase)
     modpackService = providers.Singleton(ModpackService, modpackDatabase, modrinthDatabase, modrinthAPI, loaderAPI, notifier)
+    auditService = providers.Singleton(AuditService, auditDatabase)
     jobService = providers.Singleton(JobService, jobDatabase, pterodactylService, pterodactylDatabase, notifier)
     updateService = providers.Singleton(UpdateService, pterodactylAPI, pterodactylService, pterodactylDatabase, modpackDatabase, downloader, jobDatabase, notifier)
 
