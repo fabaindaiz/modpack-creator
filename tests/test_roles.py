@@ -1,4 +1,5 @@
 import asyncio
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -33,6 +34,37 @@ def test_empty_operator_groups_makes_nobody_operator() -> None:
 def test_session_without_user_is_401() -> None:
     with pytest.raises(HTTP_401_UNAUTHORIZED):
         actor_from_session(session_for(None), OPERATOR_GROUPS)
+
+
+def session_with(**changes: str) -> dict[str, object]:
+    """The editor's session with fields of the stored user changed (`iss`/`sub` in `provider`)."""
+    session = session_for(EDITOR)
+    user = json.loads(str(session["user"]))
+    for key, value in changes.items():
+        if key in ("iss", "sub"):
+            user["provider"][key] = value
+        else:
+            user[key] = value
+    session["user"] = json.dumps(user)
+    return session
+
+
+def test_empty_display_name_falls_back_to_the_email() -> None:
+    """The IdP's `name` can be empty: that person still gets in, shown by email."""
+    actor = actor_from_session(session_with(name=""), OPERATOR_GROUPS)
+    assert (actor.iss, actor.sub, actor.name) == (EDITOR.iss, EDITOR.sub, f"{EDITOR.sub}@idp.test")
+
+
+def test_empty_display_name_and_email_fall_back_to_the_subject() -> None:
+    actor = actor_from_session(session_with(name="", email=""), OPERATOR_GROUPS)
+    assert actor.name == EDITOR.sub
+
+
+@pytest.mark.parametrize("field", ["iss", "sub"])
+def test_empty_issuer_or_subject_is_401(field: str) -> None:
+    """The identity is `iss` + `sub`: without either there is nobody to attribute anything to."""
+    with pytest.raises(HTTP_401_UNAUTHORIZED):
+        actor_from_session(session_with(**{field: ""}), OPERATOR_GROUPS)
 
 
 RAN: list[int] = []

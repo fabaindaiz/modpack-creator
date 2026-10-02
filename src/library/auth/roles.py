@@ -38,18 +38,21 @@ def operator_only(fn: Callable[P, Coroutine[Any, Any, R]]) -> Callable[P, Corout
 
 
 def actor_from_session(session: Mapping[str, Any], operator_groups: frozenset[str]) -> Actor:
-    """Derive the Actor of a request from its session. Fails closed: no user is 401, and a
-    session without valid groups (written before groups were stored) is an editor."""
+    """Derive the Actor of a request from its session. Fails closed: no user, or no `iss` and
+    `sub` (the identity), is 401, and a session without valid groups (written before groups were
+    stored) is an editor. The display name is the IdP's `name`, which can be empty: then the
+    email, then the subject."""
     raw_user = session.get("user")
     if not raw_user:
         raise HTTP_401_UNAUTHORIZED("Not authenticated")
     try:
         user = json.loads(raw_user)
-        iss, sub, name = user["provider"]["iss"], user["provider"]["sub"], user["name"]
+        iss, sub = user["provider"]["iss"], user["provider"]["sub"]
     except (TypeError, ValueError, KeyError):
         raise HTTP_401_UNAUTHORIZED("Not authenticated")
-    if not all(isinstance(v, str) and v for v in (iss, sub, name)):
+    if not all(isinstance(v, str) and v for v in (iss, sub)):
         raise HTTP_401_UNAUTHORIZED("Not authenticated")
+    name = next((v for v in (user.get("name"), user.get("email")) if isinstance(v, str) and v), sub)
     raw_groups = session.get("groups")
     groups = frozenset(g for g in raw_groups if isinstance(g, str)) if isinstance(raw_groups, list) else frozenset()
     return Actor(
