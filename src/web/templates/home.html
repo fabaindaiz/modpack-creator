@@ -18,8 +18,8 @@
 {% block content %}
 {{ ui.page_header("Tablero", "Servidores, builds y trabajos recientes.") }}
 
-<div class="grid gap-6 xl:grid-cols-5">
-  <div class="space-y-6 xl:col-span-3">
+<div class="grid grid-cols-1 gap-6 xl:grid-cols-5">
+  <div class="min-w-0 space-y-6 xl:col-span-3">
     {% call ui.section("Servidores", id="servidores") %}
     {% call ui.table(["Servidor", "Modpack", "Estado", "Último escaneo"], empty="No hay servidores registrados.", caption="Servidores") %}
     {% for row in servers %}
@@ -75,7 +75,7 @@
     {% endcall %}
   </div>
 
-  <div class="xl:col-span-2">
+  <div class="min-w-0 xl:col-span-2">
     {% call ui.section("Últimos builds", id="builds") %}
     {% call ui.table(["Modpack", "Último", "Recomendado"], empty="No hay modpacks.", caption="Últimos builds") %}
     {% for bundle, build in builds %}

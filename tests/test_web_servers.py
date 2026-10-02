@@ -41,10 +41,10 @@ def server(name: str = EXACT_NAME, bundle_id: Optional[str] = str(BUNDLE_ID), uu
         bundle_id=bundle_id)
 
 
-def bundle() -> ModpackBundle:
+def bundle(latest_build: Optional[int] = 2, recommended_build: Optional[int] = 2) -> ModpackBundle:
     return ModpackBundle.model_construct(
         id=BUNDLE_ID, name="Pack Uno", description="", version="1.21.1", loader=MinecraftLoaders.fabric,
-        projects=[PackProject(project_id="P1", origin=ProjectOrigin.pack)], latest_build=2, recommended_build=2)
+        projects=[PackProject(project_id="P1", origin=ProjectOrigin.pack)], latest_build=latest_build, recommended_build=recommended_build)
 
 
 def scan_file(path: str, project_id: Optional[str] = None, status: str = "identified") -> ScanFile:
@@ -182,8 +182,11 @@ class FakeUpdate:
 
 
 class FakeModpack:
+    def __init__(self) -> None:
+        self.builds = True
+
     async def bundle_find(self) -> list[ModpackBundle]:
-        return [bundle()]
+        return [bundle() if self.builds else bundle(None, None)]
 
     async def bundle_get(self, bundle_id: str) -> ModpackBundle:
         return bundle()
@@ -286,6 +289,16 @@ def test_detail_without_scan_or_bundle_says_so() -> None:
     response = client.get(f"/servers/{SERVER_ID}")
     assert response.status_code == 200
     assert "Sin escaneo" in response.text and "Sin modpack" in response.text
+
+
+def test_detail_of_a_modpack_without_builds_explains_it_in_spanish() -> None:
+    client, fakes = setup()
+    fakes.modpack.builds = False
+    fakes.ptero.comparison = None  # the service would answer its English 409
+    response = client.get(f"/servers/{SERVER_ID}")
+    assert response.status_code == 200
+    assert "todavía no tiene builds" in response.text
+    assert "has no build to compare" not in response.text and 'id="compare"' not in response.text
 
 
 def test_detail_of_a_missing_server_is_a_404() -> None:

@@ -92,4 +92,16 @@
       dialog.close();
     }
   });
+
+  // On a narrow screen the section nav scrolls sideways: keep the current section in view.
+  var current = document.querySelector('nav[aria-label="Secciones"] [aria-current="page"]');
+  if (current) {
+    var strip = current.closest('nav');
+    if (strip) {
+      var over = current.getBoundingClientRect().right - strip.getBoundingClientRect().right;
+      if (over > 0) {
+        strip.scrollLeft += over + 8;
+      }
+    }
+  }
 })();

@@ -109,6 +109,8 @@ async def server_detail(
     comparison, compare_note = None, None
     if server.bundle_id is None:
         compare_note = "El servidor no tiene modpack: vincúlalo para compararlo con un build."
+    elif bundle is not None and bundle.latest_build is None and bundle.recommended_build is None:
+        compare_note = "Este modpack todavía no tiene builds: crea uno para comparar."
     elif scan is None:
         compare_note = "Todavía no hay escaneo para comparar."
     else:

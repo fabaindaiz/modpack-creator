@@ -5,7 +5,7 @@
 {% block content %}
 {{ ui.page_header("Auditoría", "Quién hizo qué, lo más reciente primero. Los filtros buscan el valor exacto.") }}
 
-<form method="get" action="/audit" class="grid gap-3 sm:grid-cols-4 sm:items-end">
+<form method="get" action="/audit" class="grid grid-cols-1 gap-3 sm:grid-cols-4 sm:items-end">
   {% for name, label in [("actor", "Persona (sub)"), ("action", "Acción"), ("target", "Id del objetivo")] %}
   <div>
     <label for="f-{{ name }}" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">{{ label }}</label>
