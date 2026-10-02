@@ -201,8 +201,8 @@ class JobService():
         return await self.jobDB.active_for(f"server:{server_id}")
 
     async def last_real_update(self, server_id: str) -> Optional[Job]:
-        """The server's newest update or rollback that is not a dry run: a rollback may only
-        undo this one."""
+        """The server's newest rollback, or update that wrote to it (R17): a rollback may only
+        undo this update, or the one this rollback names in `payload.update_id`."""
         return await self.jobDB.last_real_update(f"server:{server_id}")
 
     async def recent(self, limit: int = 10) -> list[Job]:

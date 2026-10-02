@@ -235,6 +235,61 @@ def test_rollback_of_a_superseded_update_is_refused_before_auditing(mongo: Mongo
     assert mongo(scenario) == ([409, 200], 4, 1)
 
 
+async def rollback(server_id: str, update: Job, mode: str, created_at: datetime, status: str = "failed") -> Job:
+    return await Job(kind="server_rollback", key=f"server:{server_id}",
+                     payload={"server_id": server_id, "update_id": str(update.id), "mode": mode}, status=status,
+                     active=False, created_at=created_at).insert()
+
+
+def test_rollback_b_after_a_failed_rollback_a_of_the_same_update_is_accepted(mongo: MongoRunner) -> None:
+    """R17: a failed rollback A leaves the server stopped; B of the same update is the way out.
+    A rollback of U does not supersede U."""
+    async def scenario() -> tuple[str, bool, str, int]:
+        audit = RecordingAudit()
+        s = await update_setup(audit=audit)
+        update = await failed_update(s.server_id, NOW)
+        await rollback(s.server_id, update, "A", NOW + timedelta(hours=1))
+        job = await s.update.enqueue_rollback(s.server_id, str(update.id), "B", actor=OPERATOR)
+        return job.kind, job.payload["update_id"] == str(update.id), job.payload["mode"], len(audit.events)
+
+    assert mongo(scenario) == ("server_rollback", True, "B", 1)
+
+
+@pytest.mark.parametrize("checkpoint", [{}, {"preflight": {}}, {"preflight": {}, "staging": {}}])
+def test_a_later_update_that_wrote_nothing_does_not_supersede(mongo: MongoRunner, checkpoint: dict[str, Any]) -> None:
+    """R17: a real update refused in preflight (or failed while staging) never touched mods/ nor
+    made a backup: the earlier update that did write is still the one to roll back."""
+    async def scenario() -> tuple[bool, int]:
+        audit = RecordingAudit()
+        s = await update_setup(audit=audit)
+        update = await failed_update(s.server_id, NOW)
+        await Job(kind="server_update", key=f"server:{s.server_id}",
+                  payload={"server_id": s.server_id, "dry_run": False}, status="failed", active=False,
+                  checkpoint=checkpoint, created_at=NOW + timedelta(hours=1)).insert()
+        job = await s.update.enqueue_rollback(s.server_id, str(update.id), "B", actor=OPERATOR)
+        return job.payload["update_id"] == str(update.id), len(audit.events)
+
+    assert mongo(scenario) == (True, 1)
+
+
+@pytest.mark.parametrize("checkpoint", [{"backup": {}}, {"backup": {}, "swap": {}}])
+def test_a_later_update_that_wrote_still_supersedes(mongo: MongoRunner, checkpoint: dict[str, Any]) -> None:
+    async def scenario() -> tuple[int, int, int]:
+        audit = RecordingAudit()
+        s = await update_setup(audit=audit)
+        update = await failed_update(s.server_id, NOW)
+        # A rollback of the earlier update in between does not change who supersedes whom.
+        await rollback(s.server_id, update, "A", NOW + timedelta(minutes=30))
+        await Job(kind="server_update", key=f"server:{s.server_id}",
+                  payload={"server_id": s.server_id, "dry_run": False}, status="done", active=False,
+                  checkpoint=checkpoint, created_at=NOW + timedelta(hours=1)).insert()
+        with pytest.raises(HTTPException) as refused:
+            await s.update.enqueue_rollback(s.server_id, str(update.id), "B", actor=OPERATOR)
+        return refused.value.status_code, await count_jobs(), len(audit.events)
+
+    assert mongo(scenario) == (409, 3, 0)
+
+
 def test_last_real_update_survives_sixty_newer_scans(mongo: MongoRunner) -> None:
     from src.services.jobs import JobService
 

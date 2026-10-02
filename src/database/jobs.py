@@ -36,9 +36,14 @@ class JobDatabase():
         return await Job.find_one(Job.key == key, Job.active == True)  # noqa: E712
 
     async def last_real_update(self, key: str) -> Optional[Job]:
-        """The newest update or rollback job of this key that is not a dry run (which writes nothing)."""
-        return await Job.find({"key": key, "kind": {"$in": ["server_update", "server_rollback"]},
-                               "payload.dry_run": {"$ne": True}}
+        """The newest rollback, or update that wrote to the server, of this key (R17). An update
+        wrote once its checkpoint holds `backup` or `swap`; a dry run checkpoints both without
+        writing, and an update refused in preflight or failed while staging never got there:
+        neither supersedes an earlier update. A rollback names the update it undoes in
+        `payload.update_id`: whoever reads it follows it back there."""
+        wrote = {"kind": "server_update", "payload.dry_run": {"$ne": True},
+                 "$or": [{"checkpoint.backup": {"$exists": True}}, {"checkpoint.swap": {"$exists": True}}]}
+        return await Job.find({"key": key, "$or": [{"kind": "server_rollback"}, wrote]}
                               ).sort([("created_at", SortDirection.DESCENDING), ("_id", SortDirection.DESCENDING)]).first_or_none()
 
     async def recent(self, limit: int) -> list[Job]:

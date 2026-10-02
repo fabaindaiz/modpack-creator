@@ -46,9 +46,18 @@ def _comparison_ids(comparison: Comparison) -> list[str]:
             + [e.project_id for e in comparison.missing]
             + [f.project_id for f in comparison.extra if f.project_id])
 
-def _rollback_candidate(last_real: Optional[Job]) -> Optional[Job]:
-    """The server's last real update or rollback, if it is a failed update: the one a rollback
-    can still undo."""
+async def _rollback_candidate(jobService: JobService, server_id: str) -> Optional[Job]:
+    """The failed update a rollback can still undo: the server's last update that wrote to it,
+    or, if a rollback came after it, the update that rollback names (R17: after a failed A, B is
+    still offered). The service checks it again."""
+    last_real = await jobService.last_real_update(server_id)
+    if last_real is not None and last_real.kind == "server_rollback":
+        try:
+            last_real = await jobService.get(str(last_real.payload.get("update_id")))
+        except HTTPException as error:
+            if error.status_code != 404:
+                raise
+            return None
     if last_real is not None and last_real.kind == "server_update" and last_real.status == "failed":
         return last_real
     return None
@@ -122,7 +131,7 @@ async def server_detail(
             compare_note = str(error.detail)
     titles = await _titles(modrinthService, _comparison_ids(comparison) if comparison else [])
     active = await jobService.active_for_server(server_id)
-    failed_update = _rollback_candidate(await jobService.last_real_update(server_id))
+    failed_update = await _rollback_candidate(jobService, server_id)
     build_number = (bundle.recommended_build or bundle.latest_build) if bundle else None
     return render(request, "servers/detail.html", actor, server=server, server_id=server_id, bundles=bundles,
                   bundle=bundle, scan=scan, comparison=comparison, compare_note=compare_note, titles=titles,

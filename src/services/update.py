@@ -117,7 +117,10 @@ class UpdateService():
     @operator_only
     async def enqueue_rollback(self, server_id: str, update_id: str, mode: str, actor: Actor) -> Job:
         """Queue rollback A (bring the old jars back) or B (restore the pre-update backup) of a
-        failed update of this server (d-7985ee-5445a0)."""
+        failed update of this server (d-7985ee-5445a0). Only of the latest update that wrote to
+        it (R15, R17): a dry run never qualifies, and neither does an update that a later one which
+        wrote superseded. A rollback of the same update does not supersede it: after a failed A,
+        B is the way out. Every refusal comes before the event: it leaves no event and no job."""
         if mode not in ("A", "B"):
             raise HTTPException(status_code=422, detail="mode must be A or B")
         update = await self.jobDB.get(update_id)
@@ -126,8 +129,11 @@ class UpdateService():
         if update.payload.get("dry_run", False):
             raise HTTP_409_CONFLICT(f"Job '{update_id}' was a dry run: it changed nothing to roll back")
         latest = await self.jobDB.last_real_update(f"server:{server_id}")
-        if latest is None or latest.id != update.id:
-            raise HTTP_409_CONFLICT(f"Job '{update_id}' is not the latest update of server '{server_id}': a later one superseded it")
+        latest_update = latest.payload.get("update_id") if latest and latest.kind == "server_rollback" else \
+            (str(latest.id) if latest else None)
+        if latest_update != str(update.id):
+            raise HTTP_409_CONFLICT(f"Job '{update_id}' is not the latest update of server '{server_id}': "
+                                    "a later update that wrote to the server superseded it")
         needed = "swap" if mode == "A" else "backup"
         if needed not in update.checkpoint:
             raise HTTP_409_CONFLICT(f"The update never reached its {needed} step: nothing to roll back with {mode}")

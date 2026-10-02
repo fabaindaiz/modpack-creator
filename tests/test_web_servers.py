@@ -148,7 +148,10 @@ class FakeJobs:
         return job("server_scan", requested_by=actor.ref())
 
     async def get(self, job_id: str) -> Job:
-        return self.jobs[0]
+        found = next((j for j in self.jobs if str(j.id) == job_id), None)
+        if found is None:
+            raise HTTP_404_NOT_FOUND(f"Job '{job_id}' not found")
+        return found
 
     async def recent(self, limit: int = 10) -> list[Job]:
         return self.jobs
@@ -431,6 +434,20 @@ def test_rollback_buttons_follow_the_steps_the_failed_update_reached() -> None:
     failed.checkpoint = {"backup": {}}
     text = client.get(f"/servers/{SERVER_ID}").text
     assert 'name="mode" value="A"' not in text and 'name="mode" value="B"' in text
+
+
+def test_after_a_failed_rollback_a_the_page_still_offers_b_for_the_same_update() -> None:
+    """R17: the newest real job is the failed rollback A; the page follows it back to its update."""
+    client, fakes = setup(OPERATOR)
+    failed = job("server_update", "failed", False, {"server_id": str(SERVER_ID), "dry_run": False},
+                 {"backup": {}}, "server stopped")
+    rollback_a = job("server_rollback", "failed", False,
+                     {"server_id": str(SERVER_ID), "update_id": str(failed.id), "mode": "A"}, error="rollback A: it went offline")
+    fakes.jobs.jobs = [rollback_a, failed]
+    fakes.jobs.last_real = rollback_a
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert f'name="update_id" value="{failed.id}"' in text
+    assert 'name="mode" value="B"' in text and 'name="mode" value="A"' not in text
 
 
 # Los focos de revisión.
