@@ -213,6 +213,17 @@ def test_static_app_js_is_served_without_eval() -> None:
     assert "text/html" in response.text and "notice-client-error" in response.text
 
 
+def test_app_js_shows_a_notice_for_every_other_client_error() -> None:
+    """A 429 or 400 passed through from Modrinth or Pterodactyl has no notice fragment: without a
+    notice the click would look like a no-op. A 401 with HX-Redirect is htmx's to follow."""
+    text = client(None).get("/static/app.js").text
+    handler = text[text.index("htmx:beforeSwap"):text.index("htmx:sendError")]
+    assert "status >= 400 && status < 500" in handler
+    assert "getResponseHeader('HX-Redirect')" in handler
+    other = handler[handler.index("status >= 400 && status < 500"):]
+    assert "shouldSwap = false" in other and "showTemplate('notice-client-error')" in other
+
+
 class FailingPterodactyl(FakePterodactyl):
     def __init__(self, error: Exception) -> None:
         super().__init__([], {})

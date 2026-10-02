@@ -62,7 +62,7 @@
   <template id="notice-server-error">
     {{ ui.notice("Error inesperado del servidor. Si se repite, avisa con este identificador: ", "error") }}
   </template>
-  {# Cloned by app.js when a 4xx answer is not an HTML notice (a JSON error, an unknown path). #}
+  {# Cloned by app.js when a 4xx answer is not an HTML notice (a JSON error, an unknown path, a 429 passed through). #}
   <template id="notice-client-error">
     {{ ui.notice("No se pudo completar la acción. Recarga la página y vuelve a intentarlo.", "error") }}
   </template>

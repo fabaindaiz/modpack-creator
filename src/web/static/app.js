@@ -47,6 +47,12 @@
     } else if (status >= 500) {
       evt.detail.shouldSwap = false;
       showTemplate('notice-server-error', evt.detail.xhr.getResponseHeader('X-Request-ID') || 'sin identificador');
+    } else if (status >= 400 && status < 500 && !evt.detail.xhr.getResponseHeader('HX-Redirect')) {
+      // Any other client error (a 429 or 400 passed through from Modrinth or Pterodactyl) has no
+      // notice fragment: say something, or the click looks like a no-op. A 401 with HX-Redirect
+      // is htmx's to follow (to the login).
+      evt.detail.shouldSwap = false;
+      showTemplate('notice-client-error');
     }
   });
 
