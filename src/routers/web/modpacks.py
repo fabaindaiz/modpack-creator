@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Optional
 from urllib.parse import urlsplit
@@ -5,11 +6,12 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from src.dependences import Dependences, ModpackService, ModrinthService
-from src.model.modpack import ModpackBundle, ModpackBundleCreate, ModpackBundlePatch, ProjectOrigin
+from src.model.modpack import ModpackBundle, ModpackBundleCreate, ProjectOrigin
 from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
 from src.web import WebRoute, get_web_actor, render
 
+logger = logging.getLogger("modpack.web")
 router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
 
 # A Modrinth id or slug: what a path or an attribute may carry unescaped.
@@ -145,6 +147,7 @@ async def modpack_search(
     try:
         raw = await modrinthService.search(text, bundle.version, str(bundle.loader.value), SEARCH_LIMIT)
     except Exception:
+        logger.warning("Modrinth search failed for bundle %s", bundle_id, exc_info=True)
         return render(request, "modpacks/_search.html", actor, bundle_id=bundle_id, hits=[], failed=True, searched=True)
     owned = {p.project_id for p in bundle.projects}
     hits = [hit for hit in (_hit(item, owned) for item in raw if isinstance(item, dict)) if hit is not None]
@@ -194,17 +197,14 @@ async def modpack_resolve(
 async def modpack_decide(
         bundle_id: str,
         request: Request,
-        project_id: Annotated[str, Form(min_length=1, max_length=200)],
+        project_id: Annotated[str, Form(min_length=1, max_length=200, pattern=MODRINTH_REF)],
         server: Annotated[Literal["yes", "no"], Form()],
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         ):
-    """Decide whether a mod goes on the server. The patch replaces the whole decisions map, so
-    the existing decisions are merged in: deciding one never drops another."""
-    bundle = await modpackService.bundle_get(bundle_id)
-    decisions = {**bundle.server_decisions, project_id: server == "yes"}
-    await modpackService.bundle_update(bundle_id, ModpackBundlePatch(server_decisions=decisions), actor)
+    """Decide whether a mod goes on the server: one key, written atomically by the service."""
+    await modpackService.decision_set(bundle_id, project_id, server == "yes", actor)
     return await _lock(request, actor, modpackService, modrinthService, bundle_id)
 
 @router.post("/modpacks/{bundle_id}/builds")

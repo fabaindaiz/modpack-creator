@@ -39,6 +39,11 @@ class HTTP_409_CONFLICT(HTTPException):
     def __init__(self, detail: Optional[str] = None):
         super().__init__(status.HTTP_409_CONFLICT, detail)
 
+class HTTP_422_UNPROCESSABLE_ENTITY(HTTPException):
+    """Used when a value is well formed as a request but not acceptable"""
+    def __init__(self, detail: Optional[str] = None):
+        super().__init__(status.HTTP_422_UNPROCESSABLE_CONTENT, detail)
+
 class HTTP_429_TOO_MANY_REQUESTS(HTTPException):
     """Used when an upstream API rate-limits us; carries how long it asked to wait, if it did"""
     def __init__(self, detail: Optional[str] = None, retry_after: Optional[float] = None):

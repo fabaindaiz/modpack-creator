@@ -18,6 +18,8 @@ from src.exceptions import *
 # Each round fetches what the lock needs; a dependency chain deeper than this is reported as an
 # incomplete lock instead of fetching forever.
 RESOLVE_ROUNDS = 32
+# What a Modrinth project id looks like; anything else is not a key to store.
+MODRINTH_ID = re.compile(r"[A-Za-z0-9_-]+")
 
 def candidate(version: ModrinthVersion) -> Candidate:
     return Candidate.from_modrinth({**version.model_dump(mode="json"), "id": version.version_id})
@@ -52,6 +54,16 @@ class ModpackService():
     async def bundle_update(self, bundle_id: str, patch: ModpackBundlePatch, actor: Actor) -> ModpackBundle:
         updated = await self.modpackDB.bundle_update(bundle_id=bundle_id, patch=patch)
         await self.audit.record(actor, "bundle.update", _bundle(bundle_id))
+        return updated
+
+    async def decision_set(self, bundle_id: str, project_id: str, server: bool, actor: Actor) -> ModpackBundle:
+        """Decide whether one mod goes on the server; only that decision changes, atomically.
+        422 for an id that is not a Modrinth project id: it would become a nested key."""
+        if not MODRINTH_ID.fullmatch(project_id):
+            raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{project_id}' is not a Modrinth project id")
+        updated = await self.modpackDB.bundle_decision_set(bundle_id, project_id, server)
+        await self.audit.record(actor, "bundle.decision", _bundle(bundle_id),
+                                {"project_id": project_id, "server": server})
         return updated
 
     # Content (i-7985ee-063a3a).

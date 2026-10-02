@@ -16,10 +16,11 @@ from fastapi.testclient import TestClient
 
 from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
 from src.library.resolution import Lock, LockEntry, Problem
-from src.model.modpack import ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, PackProject, ProjectOrigin
+from src.model.modpack import ModpackBuild, ModpackBundle, ModpackReplacement, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject
 from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
+from src.services.modpack import ModpackService
 from src.services.modrinth import ModrinthService
 from tests._actors import EDITOR, OPERATOR, session_for
 from tests._session import session_cookie
@@ -85,8 +86,8 @@ class FakeModpack:
     async def bundle_get(self, bundle_id: str) -> ModpackBundle:
         return self.bundle
 
-    async def bundle_update(self, bundle_id: str, patch: ModpackBundlePatch, actor: Actor) -> ModpackBundle:
-        self._record("bundle_update", bundle_id, patch, actor)
+    async def decision_set(self, bundle_id: str, project_id: str, server: bool, actor: Actor) -> ModpackBundle:
+        self._record("decision_set", bundle_id, project_id, server, actor)
         return self.bundle
 
     async def project_add(self, bundle_id: str, refs: list[str], origin: ProjectOrigin, actor: Actor) -> list[PackProject]:
@@ -353,14 +354,19 @@ def test_resolve_shows_problems() -> None:
     assert "no corre en 1.21.1" in response.text
 
 
-def test_decision_merges_with_the_existing_ones_and_passes_the_actor() -> None:
+def test_decision_is_one_key_with_the_actor() -> None:
     client, modpack, _ = setup()
     response = client.post(f"/modpacks/{BUNDLE_ID}/decisions", headers=HTMX, data={"project_id": "P2", "server": "no"})
     assert response.status_code == 200 and 'id="lock"' in response.text
-    _, bundle_id, patch, actor = call(modpack, "bundle_update")
-    assert bundle_id == str(BUNDLE_ID) and actor == EDITOR
-    assert patch.server_decisions == {"OLD": True, "P2": False}
-    assert patch.model_dump(exclude_unset=True) == {"server_decisions": {"OLD": True, "P2": False}}
+    assert call(modpack, "decision_set")[1:] == (str(BUNDLE_ID), "P2", False, EDITOR)
+
+
+def test_decision_with_a_dotted_id_is_refused() -> None:
+    client, modpack, _ = setup()
+    for bad in ("a.b", "$set", "a/b"):
+        response = client.post(f"/modpacks/{BUNDLE_ID}/decisions", headers=HTMX, data={"project_id": bad, "server": "no"})
+        assert response.status_code == 422
+    assert modpack.calls == []
 
 
 def test_decision_must_be_yes_or_no() -> None:
@@ -488,3 +494,52 @@ def test_projects_by_id_finds_them_by_their_modrinth_id(mongo: MongoRunner) -> N
         return {i: p.slug for i, p in found.items()}
 
     assert mongo(scenario) == {data["id"]: "sodium"}
+
+
+# Decisiones atómicas (base real).
+
+def _stored_bundle() -> ModpackBundle:
+    return ModpackBundle(name="pack", description="", version="1.21.1", loader=MinecraftLoaders.fabric,
+                         server_decisions={"OLD": True})
+
+
+@pytest.mark.network
+def test_concurrent_decisions_both_survive(mongo: MongoRunner) -> None:
+    from src.database import ModpackDatabase
+
+    async def scenario() -> dict[str, bool]:
+        database = ModpackDatabase()
+        created = await database.bundle_insert(_stored_bundle())
+        bundle_id = str(created.id)
+        await asyncio.gather(*(database.bundle_decision_set(bundle_id, f"P{i}", i % 2 == 0) for i in range(20)))
+        return (await database.bundle_get(bundle_id)).server_decisions
+
+    assert mongo(scenario) == {"OLD": True, **{f"P{i}": i % 2 == 0 for i in range(20)}}
+
+
+@pytest.mark.network
+def test_decision_set_records_the_event_and_refuses_bad_ids(mongo: MongoRunner) -> None:
+    from fastapi import HTTPException
+
+    from src.database import ModpackDatabase
+    from tests._actors import RecordingAudit
+
+    async def scenario() -> tuple[Any, Any, dict[str, bool], int]:
+        database, audit = ModpackDatabase(), RecordingAudit()
+        service = ModpackService(database, None, None, None, audit)  # type: ignore[arg-type]
+        created = await database.bundle_insert(_stored_bundle())
+        bundle_id = str(created.id)
+        await service.decision_set(bundle_id, "P1", False, actor=EDITOR)
+        for bad in ("a.b", "$x", ""):
+            with pytest.raises(HTTPException) as refused:
+                await service.decision_set(bundle_id, bad, True, actor=EDITOR)
+            assert refused.value.status_code == 422
+        with pytest.raises(HTTPException) as missing:
+            await service.decision_set(str(PydanticObjectId()), "P1", True, actor=EDITOR)
+        assert missing.value.status_code == 404
+        stored = (await database.bundle_get(bundle_id)).server_decisions
+        return audit.events[0][:3], audit.events[0][4], stored, len(audit.events)
+
+    (action, target, details), who, stored, count = mongo(scenario)
+    assert (action, target.kind, details, who, count) == ("bundle.decision", "bundle", {"project_id": "P1", "server": False}, EDITOR.ref(), 1)
+    assert stored == {"OLD": True, "P1": False}
