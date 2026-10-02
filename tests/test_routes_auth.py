@@ -66,3 +66,18 @@ def test_every_web_route_sends_a_request_without_a_session_to_the_login() -> Non
             if r.status_code != 303 or not r.headers["location"].startswith("/v1/login?redirect=")} == {}
     assert {k: r.status_code for k, r in htmx.items()
             if r.status_code != 401 or not r.headers.get("hx-redirect", "").startswith("/v1/login?redirect=")} == {}
+
+
+def test_login_and_logout_refuse_a_redirect_to_another_host() -> None:
+    """`//evil.example` es una URL relativa al protocolo: el navegador la sigue a otro host."""
+    client = TestClient(app(), follow_redirects=False)
+    for path in ("/v1/login", "/v1/login/callback", "/v1/logout"):
+        for bad in ("//evil.example", "/\\evil.example", "//"):
+            assert client.get(path, params={"redirect": bad}).status_code == 422, (path, bad)
+
+
+def test_logout_keeps_a_local_redirect() -> None:
+    client = TestClient(app(), follow_redirects=False)
+    for good in ("/", "/modpacks?x=1"):
+        answer = client.get("/v1/logout", params={"redirect": good})
+        assert answer.status_code == 307 and answer.headers["location"] == good
