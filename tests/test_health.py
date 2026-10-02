@@ -10,6 +10,7 @@ from dependency_injector import providers
 from fastapi.testclient import TestClient
 
 from src.database.health import HealthDatabase
+from src.services.jobs import WorkerBeat
 from tests.conftest import MongoRunner
 
 
@@ -55,3 +56,42 @@ def test_ready_answers_503_when_the_database_does_not() -> None:
 @pytest.mark.network
 def test_the_ping_reaches_a_real_mongodb(mongo: MongoRunner) -> None:
     assert mongo(HealthDatabase().ping) is True
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def test_beat_without_worker_is_healthy() -> None:
+    assert WorkerBeat(clock=FakeClock()).healthy() is True
+
+
+def test_beat_fresh_is_healthy() -> None:
+    clock = FakeClock()
+    beat = WorkerBeat(clock=clock)
+    beat.expect()
+    beat.beat()
+    clock.now = 120.0
+    assert beat.healthy() is True
+
+
+def test_beat_stale_is_unhealthy() -> None:
+    clock = FakeClock()
+    beat = WorkerBeat(clock=clock)
+    beat.expect()
+    beat.beat()
+    clock.now = 121.0
+    assert beat.healthy() is False
+
+
+def test_beat_after_stop_is_unhealthy() -> None:
+    clock = FakeClock()
+    beat = WorkerBeat(clock=clock)
+    beat.expect()
+    beat.beat()
+    beat.stop()
+    assert beat.healthy() is False

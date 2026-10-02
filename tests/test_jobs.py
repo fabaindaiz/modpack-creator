@@ -18,7 +18,7 @@ from fastapi import HTTPException
 
 from src.database.jobs import JobDatabase
 from src.model.jobs import Job
-from src.services.jobs import JobContext, JobWorker
+from src.services.jobs import JobContext, JobWorker, WorkerBeat
 from tests.conftest import MongoRunner
 
 pytestmark = pytest.mark.network
@@ -274,3 +274,36 @@ def test_the_scheduler_queues_what_is_due_and_a_full_scan_when_the_last_one_is_o
     # tiene 8 días (una restauración conserva fechas viejas; la caché no lo vería).
     assert queued == {"never": True, "stale": True}
     assert again == []
+
+
+@pytest.mark.network
+def test_worker_beats_while_a_long_step_runs(mongo: MongoRunner) -> None:
+    class CountingBeat(WorkerBeat):
+        calls = 0
+
+        def beat(self) -> None:
+            type(self).calls += 1
+            super().beat()
+
+    async def scenario() -> int:
+        release = asyncio.Event()
+
+        async def handler(job: Job, context: JobContext) -> None:
+            await release.wait()
+
+        jobs = JobDatabase()
+        await jobs.enqueue("demo", key=None, payload={})
+        beat = CountingBeat()
+        worker = JobWorker(jobs, {"demo": handler}, owner="w1", heartbeat_every=0.01, beat=beat)
+        task = asyncio.create_task(worker.run_once())
+        before = beat.calls
+        for _ in range(200):
+            if beat.calls - before >= 2:
+                break
+            await asyncio.sleep(0.01)
+        seen = beat.calls - before
+        release.set()
+        await task
+        return seen
+
+    assert mongo(scenario) >= 2

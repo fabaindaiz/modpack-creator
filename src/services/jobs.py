@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import socket
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Optional, Protocol, runtime_checkable
 from uuid import uuid4
@@ -58,17 +59,45 @@ class JobContext:
         self.job.checkpoint[name] = result
         return result
 
+class WorkerBeat:
+    """Whether this process's job worker is alive: it beats on every loop and while a job runs,
+    and /health/ready fails when the last beat is older than `max_age` or the task ended."""
+    def __init__(self, clock: Callable[[], float] = time.monotonic, max_age: float = 120.0) -> None:
+        self._clock = clock
+        self._max_age = max_age
+        self._expected = False
+        self._stopped = False
+        self._last = clock()
+
+    def expect(self) -> None:
+        """This process runs a worker."""
+        self._expected = True
+        self._last = self._clock()
+
+    def beat(self) -> None:
+        self._last = self._clock()
+
+    def stop(self) -> None:
+        """The worker task ended."""
+        self._stopped = True
+
+    def healthy(self) -> bool:
+        if not self._expected:
+            return True
+        return not self._stopped and self._clock() - self._last <= self._max_age
+
 class JobWorker:
     """Claims and runs jobs. Several workers, in one process or many, share the queue safely."""
     def __init__(self, jobs: JobDatabase, handlers: dict[str, Handler], owner: Optional[str] = None,
                  clock: Clock = utcnow, lease: timedelta = timedelta(seconds=60),
-                 heartbeat_every: float = 20.0) -> None:
+                 heartbeat_every: float = 20.0, beat: Optional[WorkerBeat] = None) -> None:
         self.jobs = jobs
         self.handlers = handlers
         self.owner = owner or f"{socket.gethostname()}-{os.getpid()}-{uuid4().hex[:8]}"
         self.clock = clock
         self.lease = lease
         self.heartbeat_every = heartbeat_every
+        self.beat = beat
 
     async def run_once(self) -> bool:
         """Run one job, if there is one to claim; whether there was."""
@@ -108,12 +137,16 @@ class JobWorker:
     async def _heartbeat(self, job: Job) -> None:
         while True:
             await asyncio.sleep(self.heartbeat_every)
+            if self.beat is not None:
+                self.beat.beat()
             if not await self.jobs.heartbeat(job.id, self.owner, self.clock(), self.lease):
                 return
 
     async def run_forever(self, stop: asyncio.Event, idle: float = 5.0) -> None:
         """Run jobs until `stop` is set, waiting `idle` seconds when the queue is empty."""
         while not stop.is_set():
+            if self.beat is not None:
+                self.beat.beat()
             try:
                 if await self.run_once():
                     continue
