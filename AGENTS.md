@@ -28,9 +28,8 @@ Decididas, no preferencias. `docs/decisions.md` indexa cada una con lo que la ha
   anotaciones se evalúan al definir: un nombre sin importar en una firma rompe el arranque
   completo, y en 3.14 no se nota. *Audit* `python_versions` (d-7985ee-7bc399).
 - **Los routers solo inyectan servicios.** Un router nunca pide un `*Database` ni un `*API`.
-  Las 14 inyecciones que hoy lo violan están en `LAYERING_BASELINE` de `scripts/audit.py`, que
-  solo se achica: al mover una al servicio, sácala de la lista en el mismo cambio. *Audit*
-  `layering` (d-7985ee-16ed28).
+  `LAYERING_BASELINE` de `scripts/audit.py` está vacía desde el 2026-10-01 y no vuelve a crecer.
+  *Audit* `layering` (d-7985ee-16ed28).
 - **Ningún argumento por defecto mutable.** Un `headers: dict = {}` compartido acumuló la
   cabecera `Authorization` de Pterodactyl y la mandó a otros hosts. Las funciones de
   `src/library/api/` devuelven un dict nuevo; nunca modifican el que reciben. *Audit*

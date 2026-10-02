@@ -49,6 +49,23 @@ bien escrita. Todas se leyeron en la fuente primaria el 2026-10-01.
 
   **Lo que confirma:** `src/library/api/client/discord.py` y `src/services/notify.py`.
 
+- **Pterodactyl para operar (código del panel, 2026-10-01).**
+  - **Backups:** `BackupController` crea con `{name, is_locked}` y **no reemplaza** un backup
+    viejo cuando el cupo está lleno (`InitiateBackupService` lanza `TooManyBackupsException`),
+    además de limitar la frecuencia con 429. `index` trae `meta.backup_count` (los no fallidos)
+    contra `feature_limits.backups` del servidor. `restore` exige el servidor sin estado y el
+    backup exitoso, y responde 204.
+  - **Archivos:** `FileController::rename` (PUT, `{root, files: [{from, to}]}`) y `create`
+    (POST, `{root, name}`) responden 204.
+  - **Estado:** `ResourceUtilizationController` cachea 20 s y da `current_state` y
+    `resources.uptime`.
+
+  **Lo que confirma:** `src/library/api/client/pterodactyl.py`, con `tests/test_api_contracts.py`
+  y `tests/test_update_http.py`.
+
+  **Lo que hacemos distinto, a propósito:** `FormData(quote_fields=False)` al subir a Wings. Por
+  defecto aiohttp codifica en porcentaje el nombre del archivo, y Wings lo guardaría así.
+
 - **[Pterodactyl panel — rutas del Client API](https://github.com/pterodactyl/panel/blob/develop/routes/api-client.php)**
   y sus requests (`SendCommandRequest`, `DeleteFileRequest`) — enviar un comando es
   `POST /api/client/servers/{server}/command` con `{"command": "..."}`; borrar archivos es

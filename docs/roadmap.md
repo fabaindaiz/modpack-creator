@@ -38,22 +38,23 @@ Al cierre de la sesión de desarrollo del 2026-10-01 (detalle en
   4. los puntos de control de las fases 1 y 2, con `PTERODACTYL_WRITES` vacío: armar el pack de
      un servidor real, escanearlo y comparar. Con eso se decide si se suma packwiz y se abre la
      fase 3, que escribe en servidores.
-- **Hecho después del primer cierre** (s-7985ee-bcd5de, s-7985ee-a7d531):
-  - la exportación `.mrpack`, verificada con descargas reales (i-7985ee-7352b3);
-  - logs JSON con `request_id` (i-7985ee-90f944);
-  - trabajos durables con su programador de escaneos (i-7985ee-0ec295);
-  - avisos por Discord (i-7985ee-34933b);
-  - cada servidor sabe qué bundle corre (i-7985ee-b0264e);
-  - esperar un 429 en las lecturas;
-  - sugerir Iris para un shader;
-  - borrar `Settings.collection` (i-7985ee-c1de10);
-  - `httpx2`.
-- **Pendiente de código, sin decisiones del dueño:** igualar `mongo:8.0` de CI con la versión de
-  producción, cuando se conozca. Lo demás espera al dueño:
-  - el panel del dueño (i-7985ee-50d411), que hay que definir;
-  - packwiz, que se decide en el punto de control de la fase 2;
-  - todo lo que escribe en servidores: la fase 3, el primer escaneo por `files/compress` y el
-    manifiesto en el servidor.
+- **Fase 3, en código, sin ejecutar en real:**
+  - importar un servidor (i-7985ee-17745b);
+  - actualizarlo con backup, verificación y rollback a pedido (i-7985ee-495708), con modo
+    simulación y probado de punta a punta con el cliente HTTP real contra un panel simulado.
+  Antes, después del primer cierre: `.mrpack`, logs JSON, trabajos, avisos por Discord,
+  servidor-bundle y `httpx2`.
+- **Lo siguiente, del dueño, en orden:**
+  1. desplegar (runbook de Mongo);
+  2. el usuario de servicio y la clave nueva;
+  3. el login real;
+  4. los puntos de control de las fases 1 y 2;
+  5. **la primera actualización real en el servidor de prueba**, con
+     `docs/runbooks/primera-actualizacion-real.md`.
+- **Pendiente de código:**
+  - igualar `mongo:8.0` de CI con producción;
+  - el panel del dueño (i-7985ee-50d411), por definir;
+  - packwiz, tras el punto de control de la fase 2.
 
 ## Modpacks y versiones
 
@@ -420,7 +421,60 @@ concurrente puede pisar el cuerpo de otro (por lectura, sin reproducir).
 
 ## Operación
 
-### Actualizar los mods de un servidor con backup, verificación y rollback — Planeada · i-7985ee-495708
+### Importar un servidor: sus jars ajenos al bundle — Hecha (2026-10-01) · i-7985ee-17745b
+- **En qué quedó** (d-7985ee-c8a15d): `POST /v1/server/{id}/import` recorre el último escaneo.
+  - Lo identificado por hash y ajeno al bundle entra como del admin.
+  - Lo desconocido se baja y su metadata se lee **como dato** (`src/library/jarmeta.py`: solo
+    los cuatro archivos de metadata, con tope de bytes aunque el zip declare otro tamaño).
+    Después se buscan candidatos en Modrinth, por id como slug y por nombre.
+  - Lo que no tiene candidatos queda como archivo local del bundle.
+  - `.../import/confirm` agrega el proyecto y reclama ese jar (la comparación lo trata como una
+    versión a reemplazar); `.../import/local` lo deja como local.
+  - Los archivos locales se congelan en el build y no entran al `.mrpack`.
+- **Chequeo:**
+  - `tests/test_import.py` (5) y `tests/test_jarmeta.py` (11), con jars plantados: bomba de
+    compresión, tamaño declarado falso, no-zip y rutas fuera de la lista;
+  - aceptar un candidato sin confirmar se vio fallar.
+- **Con datos reales:** se leyó bien la metadata de 6 jars reales (Fabric, Quilt, NeoForge y
+  Forge). La búsqueda real de candidatos encontró `ferrite-core` para el id `ferritecore`, y nada
+  para un mod privado. Para Sodium aparecen también Sodium Extra y Reese's: por eso se confirma.
+
+Antes de actualizar un servidor, todo jar de `mods/` tiene que estar explicado por el build
+(d-7985ee-c8a15d). La importación agrega al bundle lo identificado por hash, propone candidatos
+por metadata para que el admin confirme, y registra lo demás como archivos locales.
+
+### Actualizar los mods de un servidor con backup, verificación y rollback — Hecha en código (2026-10-01), sin ejecutar en real · i-7985ee-495708
+- **En qué quedó** (`src/services/update.py`), con las decisiones d-7985ee-c2adc8, d-7985ee-a13b33,
+  d-7985ee-5445a0 y d-7985ee-5cc6ee:
+  - `POST /v1/server/{id}/update` encola un trabajo sobre el build recomendado del bundle
+    asociado, o el indicado. **Es una simulación salvo `dry_run=false`**, y aun así pasa por la
+    puerta `PTERODACTYL_WRITES`.
+  - Los pasos, con checkpoint:
+    1. preflight sin escribir: escaneo, jars explicados, servidor libre y cupo de backups;
+    2. staging verificado antes de parar;
+    3. `save-all`, `stop` sondeando hasta offline, y `kill` si no para;
+    4. backup bloqueado, buscado antes por nombre;
+    5. jars viejos a `mods.old/<trabajo>/`;
+    6. arranque y 5 minutos estable;
+    7. backup desbloqueado y aviso.
+  - **Ante un fallo después del cambio**, el servidor queda parado y se avisa.
+    `POST /v1/server/{id}/rollback?update=…&mode=A|B` lo resuelve, solo a pedido. `JobFailed`
+    termina un trabajo sin reintentar.
+- **Cliente de Pterodactyl:** estado, recursos, backups (listar, crear, leer, bloquear,
+  restaurar), `files/rename` y `files/create-folder`, contrastados con el código del panel.
+  `ungated_writes` ahora mira las llamadas a `_request`, no la mención de un método.
+- **Chequeo:**
+  - 14 tests en `tests/test_update.py` contra un panel en memoria con estado (simulación sin
+    escrituras, camino feliz, cuatro abortos sin escribir, `kill`, caída y rollback A o B, y un
+    reintento que no duplica el backup);
+  - `tests/test_update_http.py` corre la actualización completa con el **cliente HTTP real**
+    contra ese panel servido en localhost, con las rutas de Wings;
+  - se vieron fallar dos errores plantados.
+- **Encontrado en el camino:** aiohttp codificaba en porcentaje el nombre de archivo del
+  multipart, y Wings lo guarda tal cual: todo jar con `+` (casi todos los de Modrinth) se habría
+  subido con otro nombre. Corregido (`quote_fields=False`) y fijado en el contrato.
+- **Lo que falta:** **la primera ejecución real**, en el servidor de prueba del dueño, siguiendo
+  `docs/runbooks/primera-actualizacion-real.md`. Borrar `mods.old/` y `mods.staging/` es a mano.
 El procedimiento de 8 pasos de `research/2026-10-operacion-pterodactyl.md`: preflight, parar,
 backup, staging, swap a `mods.old/`, arrancar, verificar, rollback A (devolver `mods.old`) o B
 (restaurar el backup).

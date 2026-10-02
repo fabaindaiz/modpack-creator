@@ -5,6 +5,66 @@ introducción. Los commits de este repositorio fueron `wip` sin cuerpo: el *por 
 no quedaba en ninguna parte, y una sesión no ve lo que otra aprendió. La referencia del formato
 está al final del archivo, para que nada entre este párrafo y la primera entrada capture texto.
 
+## 2026-10-01 · s-7985ee-2ab23b — Fase 3: importar servidores y actualizar con backup, verificación y rollback a pedido
+
+**Qué.**
+- **Las decisiones del dueño, preguntadas antes de escribir:**
+  - a pedido y sin aviso: `save-all` y parar (d-7985ee-c2adc8);
+  - la API baja, verifica y sube los jars (d-7985ee-a13b33);
+  - ningún rollback automático (d-7985ee-5445a0);
+  - 5 minutos estable, y abortar sin cupo de backups (d-7985ee-5cc6ee);
+  - los jars ajenos se cargan con una importación aparte (d-7985ee-c8a15d). La respuesta inicial
+    del dueño ("cargarlos en la plataforma") se precisó con tres preguntas más.
+- **i-7985ee-17745b, importar.**
+  - Archivos locales del bundle, congelados en el build y fuera del `.mrpack`.
+  - Lectura de metadata como dato (`src/library/jarmeta.py`).
+  - Candidatos por slug y búsqueda (`ModrinthAPI.search`).
+  - Confirmar reclama el jar; marcarlo lo deja como local.
+- **Cliente de Pterodactyl para operar:** estado, recursos, backups, rename y create-folder,
+  contrastados con el código del panel. `_write` admite PUT.
+- **i-7985ee-495708, actualizar.**
+  - `UpdateService` con simulación por defecto, pasos con checkpoint, `JobFailed` para no
+    reintentar, y rollback A o B solo a pedido.
+  - Runbook `docs/runbooks/primera-actualizacion-real.md`.
+- `AGENTS.md` ya no dice que hay 14 inyecciones en la baseline de capas.
+
+**Por qué.** El dueño pidió seguir con la fase siguiente y preguntarle lo necesario.
+
+**Qué salió mal en el camino.**
+- La regla `ungated_writes` daba un falso positivo con `_write(method=METHOD.PUT)`: era textual.
+  Ahora mira las llamadas a `_request`.
+- Una descarga mala creaba las carpetas de staging antes de verificar; ahora se crean después del
+  primer jar verificado.
+- Una lambda con argumentos por defecto no pasó mypy; se cambió por una función.
+- **Hallazgo de la prueba por HTTP:** aiohttp codificaba el nombre del archivo en el multipart
+  (`+` → `%2B`), y Wings lo guarda tal cual. Los contratos no lo veían porque solo comprobaban el
+  campo. Corregido y fijado.
+
+**Arquitectura.** ✅ Cumple: routers → `UpdateService` y `PterodactylService`. Toda escritura pasa
+por `_write`, y la simulación pasa por `Ops`.
+
+**Qué quedó sin hacer.**
+- La primera ejecución real.
+- La limpieza automática de `mods.old/` y `mods.staging/` (a mano, a propósito).
+- Avisar a los jugadores (el dueño eligió no hacerlo).
+
+**No verificado.**
+- **Pterodactyl y Wings reales**: tiempos de parada y backup, permisos del usuario de servicio, y
+  el comportamiento de `create-folder` con una carpeta que ya existe.
+- Discord real y el login OIDC.
+
+**Aprendizaje, propuesto al bundle:** un contrato que solo mira los campos no ve un valor
+codificado en el camino. Hay que comprobar el valor exacto que recibe el otro lado, con caracteres
+que un codificador toca.
+
+**Medido.**
+- Gate con Mongo: 233 pasan.
+- Errores plantados que se vieron fallar:
+  - en la actualización, el backup sin buscarlo por nombre y no verificar los 5 minutos
+    (4 tests);
+  - en la importación, aceptar candidatos sin confirmar.
+- **Con datos reales:** la metadata de 6 jars reales, y la búsqueda de candidatos contra Modrinth.
+
 ## 2026-10-01 · s-7985ee-a7d531 — Avisos por Discord, programador de escaneos, servidor-bundle y httpx2
 
 **Qué.**
