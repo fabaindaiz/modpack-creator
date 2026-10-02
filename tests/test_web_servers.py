@@ -140,6 +140,7 @@ class FakePterodactyl:
 class FakeJobs:
     def __init__(self) -> None:
         self.jobs: list[Job] = []
+        self.last_real: Optional[Job] = None
         self.calls: list[tuple[Any, ...]] = []
 
     async def enqueue_scan(self, server_id: str, actor: Actor, full: bool = False) -> Job:
@@ -151,6 +152,12 @@ class FakeJobs:
 
     async def recent(self, limit: int = 10) -> list[Job]:
         return self.jobs
+
+    async def active_for_server(self, server_id: str) -> Optional[Job]:
+        return next((j for j in self.jobs if j.active and j.key == f"server:{server_id}"), None)
+
+    async def last_real_update(self, server_id: str) -> Optional[Job]:
+        return self.last_real
 
 
 class FakeUpdate:
@@ -385,9 +392,9 @@ def test_preview_is_a_dry_run_and_returns_a_polling_row() -> None:
 
 def test_update_with_the_exact_name_queues_a_real_run() -> None:
     client, fakes = setup(OPERATOR)
-    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": EXACT_NAME})
+    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": EXACT_NAME, "build": "2"})
     assert response.status_code == 200
-    assert only(fakes.update.calls, "enqueue_update")[1:] == (str(SERVER_ID), OPERATOR, None, False)
+    assert only(fakes.update.calls, "enqueue_update")[1:] == (str(SERVER_ID), OPERATOR, 2, False)
 
 
 def test_rollback_carries_the_mode_and_actor() -> None:
@@ -404,7 +411,7 @@ def test_rollback_buttons_follow_the_steps_the_failed_update_reached() -> None:
     client, fakes = setup(OPERATOR)
     failed = job("server_update", "failed", False, {"server_id": str(SERVER_ID), "dry_run": False},
                  {"swap": {}, "backup": {}}, "server stopped")
-    fakes.jobs.jobs = [failed]
+    fakes.jobs.last_real = failed
     text = client.get(f"/servers/{SERVER_ID}").text
     assert f'name="update_id" value="{failed.id}"' in text
     assert 'name="mode" value="A"' in text and 'name="mode" value="B"' in text
@@ -418,7 +425,7 @@ def test_rollback_buttons_follow_the_steps_the_failed_update_reached() -> None:
 @pytest.mark.parametrize("typed", ["survival", "Surv", "Survival 2", "", "SURVIVAL", "Sur vival"])
 def test_update_requires_exact_name(typed: str) -> None:
     client, fakes = setup(OPERATOR)
-    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": typed})
+    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": typed, "build": "2"})
     assert response.status_code == 422 and "Escribe el nombre exacto del servidor" in response.text
     assert fakes.update.calls == []
 
@@ -426,23 +433,31 @@ def test_update_requires_exact_name(typed: str) -> None:
 def test_update_accepts_the_name_with_surrounding_whitespace() -> None:
     client, fakes = setup(OPERATOR)
     fakes.ptero.server = server("Survival")
-    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": "  Survival "})
+    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": "  Survival ", "build": "2"})
     assert response.status_code == 200
     assert only(fakes.update.calls, "enqueue_update")[-1] is False
 
 
 def test_update_without_the_field_is_the_same_422() -> None:
     client, fakes = setup(OPERATOR)
-    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX)
+    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"build": "2"})
     assert response.status_code == 422 and fakes.update.calls == []
+
+
+def test_update_without_a_build_is_a_notice_and_never_reaches_the_service() -> None:
+    client, fakes = setup(OPERATOR)
+    for data in ({"confirm": EXACT_NAME}, {"confirm": EXACT_NAME, "build": ""}, {"confirm": EXACT_NAME, "build": "x"}):
+        response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data=data)
+        assert response.status_code == 422 and "data-notice" in response.text
+    assert fakes.update.calls == []
 
 
 def test_second_real_update_shows_conflict_notice() -> None:
     client, fakes = setup(OPERATOR)
     fakes.update.errors = [None, HTTP_409_CONFLICT("There is already an active job for server:x")]
-    first = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": EXACT_NAME})
+    first = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": EXACT_NAME, "build": "2"})
     assert first.status_code == 200
-    second = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": EXACT_NAME})
+    second = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": EXACT_NAME, "build": "2"})
     assert second.status_code == 409
     assert "There is already an active job for server:x" in second.text and "data-notice" in second.text
 
@@ -450,62 +465,97 @@ def test_second_real_update_shows_conflict_notice() -> None:
 def test_editor_sees_operator_buttons_disabled() -> None:
     client, _ = setup(EDITOR)
     text = client.get(f"/servers/{SERVER_ID}").text
-    assert "requiere operador" in text
-    assert 'data-dialog-open="update-dialog"' in text and "disabled" in text
-    assert 'id="update-dialog"' not in text
+    assert "requiere operador" in text and "disabled" in text
     assert f'hx-post="/servers/{SERVER_ID}/update/preview"' not in text
     assert f'hx-post="/servers/{SERVER_ID}/import"' not in text
+    assert "update-dialog" not in text
 
 
-def test_operator_sees_the_operator_buttons_enabled() -> None:
+def test_operator_sees_preview_but_no_standalone_real_update() -> None:
     client, _ = setup(OPERATOR)
     text = client.get(f"/servers/{SERVER_ID}").text
     assert f'hx-post="/servers/{SERVER_ID}/update/preview"' in text and f'hx-post="/servers/{SERVER_ID}/import"' in text
-    assert 'id="update-dialog"' in text and 'name="confirm"' in text and "requiere operador" not in text
+    assert "update-dialog" not in text and 'name="confirm"' not in text and "requiere operador" not in text
+
+
+def finished_dry_run(build_number: int = 3, changes: bool = True) -> Job:
+    plan = {"build": build_number, "bundle": "Pack Uno", "remove": ["/mods/old.jar"] if changes else [],
+            "install": [{"project_id": "P2", "filename": "lithium-2.jar", "url": "u", "sha512": "x", "size": 1}] if changes else []}
+    return job("server_update", "done", False, {"server_id": str(SERVER_ID), "dry_run": True},
+               {"preflight": plan, "log": {"lines": ["stop server"]}})
+
+
+def row(job_: Job, actor: Optional[Actor] = OPERATOR, **context: Any) -> str:
+    from src.web import templates
+
+    return templates.get_template("activity/_job_row.html").render(job=job_, **({"actor": actor} if actor else {}), **context)
+
+
+def test_real_run_form_appears_only_in_a_finished_dry_run_for_an_operator() -> None:
+    html = row(finished_dry_run(3), server_name="Survival")
+    assert f'hx-post="/servers/{SERVER_ID}/update"' in html and 'name="build" value="3"' in html
+    assert 'name="confirm"' in html and "Ejecutar de verdad" in html and "<code" in html
+    # Sin cambios, con la simulación fallida o en curso, o sin ser de la simulación: no hay formulario.
+    assert 'name="confirm"' not in row(finished_dry_run(3, changes=False))
+    failed = job("server_update", "failed", False, {"server_id": "x", "dry_run": True}, error="no backup slot left")
+    assert 'name="confirm"' not in row(failed)
+    running = job("server_update", "running", True, {"server_id": "x", "dry_run": True})
+    assert 'name="confirm"' not in row(running)
+    real = job("server_update", "done", False, {"server_id": "x", "dry_run": False},
+               {"preflight": finished_dry_run().checkpoint["preflight"]})
+    assert 'name="confirm"' not in row(real)
+    # Un editor ve el botón deshabilitado, sin formulario.
+    editor_html = row(finished_dry_run(3), EDITOR)
+    assert 'name="confirm"' not in editor_html and "requiere operador" in editor_html and "hx-post" not in editor_html
 
 
 def test_an_editor_is_refused_before_anything_is_compared() -> None:
     client, fakes = setup(EDITOR)
-    from src.exceptions import HTTP_403_FORBIDDEN
+    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": EXACT_NAME, "build": "2"})
+    assert response.status_code == 403 and fakes.update.calls == []
 
-    async def refuse(*args: Any, **kwargs: Any) -> Job:
-        raise HTTP_403_FORBIDDEN("This action requires the operator role")
 
-    fakes.update.enqueue_update = refuse  # type: ignore[method-assign]
-    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": EXACT_NAME})
-    assert response.status_code == 403
+def test_detail_and_import_survive_a_failing_title_lookup() -> None:
+    client, fakes = setup(OPERATOR)
+
+    async def down(project_ids: list[str]) -> dict[str, ModrinthProject]:
+        raise RuntimeError("modrinth down")
+
+    import main
+
+    class Down(FakeModrinth):
+        projects_by_id = staticmethod(down)  # type: ignore[assignment]
+
+    main.container.modrinthService.override(providers.Object(Down()))
+    detail = client.get(f"/servers/{SERVER_ID}")
+    assert detail.status_code == 200 and "P3" in detail.text
+    imported = client.post(f"/servers/{SERVER_ID}/import", headers=HTMX)
+    assert imported.status_code == 200 and "C1" in imported.text
 
 
 # La fila de trabajo.
 
 def test_job_row_polls_while_active_and_stops_when_finished() -> None:
-    from src.web import templates
-
-    def render(j: Job) -> str:
-        return templates.get_template("activity/_job_row.html").render(job=j)
-
-    active = render(job("server_scan", "running", requested_by=ActorRef(iss="i", sub="s", name="Ana")))
+    active = row(job("server_scan", "running", requested_by=ActorRef(iss="i", sub="s", name="Ana")))
     assert f'hx-get="/jobs/' in active and 'hx-trigger="every 2s"' in active and 'hx-swap="outerHTML"' in active
     assert "Ana" in active and "En curso" in active
-    done = render(job("server_scan", "done", False))
+    done = row(job("server_scan", "done", False))
     assert "hx-trigger" not in done and "programado" in done and "Listo" in done
 
 
 def test_finished_dry_run_row_shows_the_plan_and_what_it_would_do() -> None:
-    from src.web import templates
-
     plan = {"build": 2, "bundle": "Pack Uno", "remove": ["/mods/old.jar"],
             "install": [{"project_id": "P2", "filename": "lithium-2.jar", "url": "u", "sha512": "x", "size": 1}]}
     finished = job("server_update", "done", False, {"server_id": "x", "dry_run": True},
                    {"preflight": plan, "log": {"lines": ["stop server", "<b>upload</b> mods"]}})
-    html = templates.get_template("activity/_job_row.html").render(job=finished)
+    html = row(finished)
     assert "lithium-2.jar" in html and "/mods/old.jar" in html and "stop server" in html
     assert "<b>upload</b>" not in html and "&lt;b&gt;upload" in html
     failed = job("server_update", "failed", False, {"server_id": "x", "dry_run": True}, error="no backup slot left")
-    assert "no backup slot left" in templates.get_template("activity/_job_row.html").render(job=failed)
+    assert "no backup slot left" in row(failed)
     empty = job("server_update", "done", False, {"server_id": "x", "dry_run": True},
                 {"preflight": {"build": 2, "bundle": "P", "remove": [], "install": []}})
-    assert "Nada que cambiar" in templates.get_template("activity/_job_row.html").render(job=empty)
+    assert "Nada que cambiar" in row(empty)
 
 
 def test_names_are_escaped() -> None:

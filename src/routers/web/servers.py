@@ -16,8 +16,6 @@ router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
 
 # A Modrinth id or slug: what an attribute may carry.
 MODRINTH_REF = r"^[A-Za-z0-9_\-]+$"
-# How many recent jobs the detail looks through for the server's active job and failed update.
-JOB_WINDOW = 50
 CONFIRM_MESSAGE = "Escribe el nombre exacto del servidor"
 
 def _back(request: Request, server_id: str) -> Response:
@@ -31,8 +29,14 @@ def _job_row(request: Request, actor: Actor, job: Job) -> Response:
     return render(request, "activity/_job_row.html", actor, job=job)
 
 async def _titles(modrinthService: ModrinthService, project_ids: list[str]) -> dict[str, str]:
-    """Project id → title, for what the catalog knows; an id it does not know shows as itself."""
-    found = await modrinthService.projects_by_id(sorted(set(project_ids)))
+    """Project id → title, for what the catalog knows; an id it does not know (or every id, when
+    Modrinth fails) shows as itself."""
+    try:
+        found = await modrinthService.projects_by_id(sorted(set(project_ids)))
+    except Exception:
+        # The page is about the server: titles are a nicety, and an import may already be applied.
+        logger.warning("Modrinth title lookup failed", exc_info=True)
+        found = {}
     return {project_id: found[project_id].title if project_id in found else project_id for project_id in project_ids}
 
 def _comparison_ids(comparison: Comparison) -> list[str]:
@@ -42,18 +46,11 @@ def _comparison_ids(comparison: Comparison) -> list[str]:
             + [e.project_id for e in comparison.missing]
             + [f.project_id for f in comparison.extra if f.project_id])
 
-def _of_server(job: Job, server_id: str) -> bool:
-    return job.payload.get("server_id") == server_id or job.key == f"server:{server_id}"
-
-def _rollback_candidate(jobs: list[Job], server_id: str) -> Optional[Job]:
+def _rollback_candidate(last_real: Optional[Job]) -> Optional[Job]:
     """The server's last real update or rollback, if it is a failed update: the one a rollback
-    can still undo. Jobs come newest first. A dry run changed nothing, so it never counts."""
-    for job in jobs:
-        if job.kind not in ("server_update", "server_rollback") or not _of_server(job, server_id):
-            continue
-        if job.payload.get("dry_run", False):
-            continue
-        return job if job.kind == "server_update" and job.status == "failed" else None
+    can still undo."""
+    if last_real is not None and last_real.kind == "server_update" and last_real.status == "failed":
+        return last_real
     return None
 
 @router.get("/servers")
@@ -122,9 +119,8 @@ async def server_detail(
                 raise
             compare_note = str(error.detail)
     titles = await _titles(modrinthService, _comparison_ids(comparison) if comparison else [])
-    jobs = [j for j in await jobService.recent(JOB_WINDOW) if _of_server(j, server_id)]
-    active = next((j for j in jobs if j.active), None)
-    failed_update = _rollback_candidate(jobs, server_id)
+    active = await jobService.active_for_server(server_id)
+    failed_update = _rollback_candidate(await jobService.last_real_update(server_id))
     build_number = (bundle.recommended_build or bundle.latest_build) if bundle else None
     return render(request, "servers/detail.html", actor, server=server, server_id=server_id, bundles=bundles,
                   bundle=bundle, scan=scan, comparison=comparison, compare_note=compare_note, titles=titles,
@@ -229,12 +225,14 @@ async def server_update_preview(
 async def server_update_run(
         server_id: str,
         request: Request,
+        build: Annotated[int, Form(ge=1)],
         confirm: Annotated[str, Form(max_length=200)] = "",
         actor: Actor = Depends(get_web_actor),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
         updateService: UpdateService = Depends(Provide[Dependences.updateService]),
         ):
-    """The real update, on a game server. The person must type the server's exact name: compared
+    """The real update, on a game server, of the build the person previewed (the dry run's, sent
+    back by its row): the recommended build may have changed since. The person must type the server's exact name: compared
     here, case-sensitive, nothing partial, and without calling the service when it differs. The
     service still enforces the operator role; an editor is refused before the name is compared,
     so the page does not tell them anything about it."""
@@ -243,7 +241,7 @@ async def server_update_run(
     server: PterodactylServer = await pterodactylService.server_get(server_id)
     if confirm.strip() != server.name:
         raise HTTP_422_UNPROCESSABLE_ENTITY(CONFIRM_MESSAGE)
-    job = await updateService.enqueue_update(server_id, actor, dry_run=False)
+    job = await updateService.enqueue_update(server_id, actor, build=build, dry_run=False)
     return _job_row(request, actor, job)
 
 @router.post("/servers/{server_id}/rollback")

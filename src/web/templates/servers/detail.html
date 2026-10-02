@@ -13,7 +13,7 @@
 {% endcall %}
 
 <div id="server-job" class="space-y-2" aria-live="polite">
-  {% if active_job %}{% set job = active_job %}{% include "activity/_job_row.html" %}{% endif %}
+  {% if active_job %}{% set job = active_job %}{% set server_name = server.name %}{% include "activity/_job_row.html" %}{% endif %}
 </div>
 
 <div class="grid gap-6 lg:grid-cols-3">
