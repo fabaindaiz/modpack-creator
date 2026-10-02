@@ -1,8 +1,8 @@
 import functools
 import inspect
 import json
-from collections.abc import Mapping
-from typing import Any, Callable
+from collections.abc import Callable, Coroutine, Mapping
+from typing import Any, ParamSpec, TypeVar
 
 from src.exceptions import HTTP_401_UNAUTHORIZED, HTTP_403_FORBIDDEN
 from src.model.users.actor import Actor
@@ -10,20 +10,25 @@ from src.model.users.actor import Actor
 # "Class.method" of every method decorated with `operator_only`.
 OPERATOR_METHODS: set[str] = set()
 
+P = ParamSpec("P")
+R = TypeVar("R")
 
-def operator_only(fn: Callable[..., Any]) -> Callable[..., Any]:
+
+def operator_only(fn: Callable[P, Coroutine[Any, Any, R]]) -> Callable[P, Coroutine[Any, Any, R]]:
     """Restrict an async method with an `actor: Actor` parameter to operators.
 
-    The check runs before the body awaits anything. A method without an `actor` parameter is a
-    programming error and fails when decorated, not when called.
+    The check runs before the body awaits anything. A method without an `actor` parameter, or
+    one that is not async, is a programming error and fails when decorated, not when called.
     """
+    if not inspect.iscoroutinefunction(fn):
+        raise TypeError(f"{fn.__qualname__} is operator_only but is not an async function")
     signature = inspect.signature(fn)
     if "actor" not in signature.parameters:
         raise TypeError(f"{fn.__qualname__} is operator_only but has no 'actor' parameter")
     OPERATOR_METHODS.add(fn.__qualname__)
 
     @functools.wraps(fn)
-    async def wrapper(*args: Any, **kwargs: Any) -> Any:
+    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         actor = signature.bind(*args, **kwargs).arguments.get("actor")
         if not isinstance(actor, Actor) or not actor.is_operator:
             raise HTTP_403_FORBIDDEN("This action requires the operator role")

@@ -70,6 +70,14 @@ def test_operator_only_needs_an_actor_parameter() -> None:
             return None
 
 
+def test_operator_only_needs_an_async_method() -> None:
+    # A sync method would return before the check could be awaited: refused when decorated.
+    with pytest.raises(TypeError):
+        @operator_only
+        def act(self, actor):
+            return None
+
+
 @pytest.mark.network
 def test_new_session_still_reads_as_user(mongo) -> None:
     from src.dependences import get_current_user
