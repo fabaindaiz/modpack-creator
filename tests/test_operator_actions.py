@@ -9,7 +9,7 @@ antes de encolarse.
   Mongo y leen el panel.
 - Un `Job` guardado antes de `requested_by` se sigue leyendo.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
@@ -131,7 +131,7 @@ def test_a_busy_server_is_refused_before_auditing(mongo: MongoRunner) -> None:
         s = await update_setup(audit=audit)
         await Job(kind="server_scan", key=f"server:{s.server_id}", payload={"server_id": s.server_id},
                   created_at=NOW).insert()
-        failed = await Job(kind="server_update", key=None, payload={"server_id": s.server_id},
+        failed = await Job(kind="server_update", key=f"server:{s.server_id}", payload={"server_id": s.server_id},
                            status="failed", active=False, checkpoint={"swap": {}}, created_at=NOW).insert()
         codes = []
         for call in (s.update.enqueue_update(s.server_id, actor=OPERATOR, dry_run=False),
@@ -195,3 +195,61 @@ def test_job_without_requested_by_still_loads(mongo: MongoRunner) -> None:
         return job.requested_by
 
     assert mongo(scenario) is None
+
+
+async def failed_update(server_id: str, created_at: datetime, dry_run: bool = False) -> Job:
+    return await Job(kind="server_update", key=f"server:{server_id}",
+                     payload={"server_id": server_id, "dry_run": dry_run}, status="failed", active=False,
+                     checkpoint={"swap": {}, "backup": {}}, created_at=created_at).insert()
+
+
+def test_rollback_of_a_dry_run_is_refused_before_auditing(mongo: MongoRunner) -> None:
+    """A dry run checkpoints `swap` and `backup` without touching the server: nothing to undo."""
+    async def scenario() -> tuple[int, int, int]:
+        audit = RecordingAudit()
+        s = await update_setup(audit=audit)
+        dry = await failed_update(s.server_id, NOW, dry_run=True)
+        with pytest.raises(HTTPException) as refused:
+            await s.update.enqueue_rollback(s.server_id, str(dry.id), "A", actor=OPERATOR)
+        return refused.value.status_code, await count_jobs(), len(audit.events)
+
+    assert mongo(scenario) == (409, 1, 0)
+
+
+def test_rollback_of_a_superseded_update_is_refused_before_auditing(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[list[int], int, int]:
+        audit = RecordingAudit()
+        s = await update_setup(audit=audit)
+        old = await failed_update(s.server_id, NOW)
+        newer = await failed_update(s.server_id, NOW + timedelta(hours=1))
+        # A later dry run does not supersede anything: it wrote nothing.
+        await failed_update(s.server_id, NOW + timedelta(hours=2), dry_run=True)
+        with pytest.raises(HTTPException) as refused:
+            await s.update.enqueue_rollback(s.server_id, str(old.id), "A", actor=OPERATOR)
+        codes = [refused.value.status_code]
+        job = await s.update.enqueue_rollback(s.server_id, str(newer.id), "A", actor=OPERATOR)
+        codes.append(200 if job.id else 0)
+        return codes, await count_jobs(), len(audit.events)
+
+    # Refused: no event. The latest real update does queue: one event, one more job (4 in all).
+    assert mongo(scenario) == ([409, 200], 4, 1)
+
+
+def test_last_real_update_survives_sixty_newer_scans(mongo: MongoRunner) -> None:
+    from src.services.jobs import JobService
+
+    async def scenario() -> tuple[Any, Any, Any]:
+        s = await update_setup()
+        failed = await failed_update(s.server_id, NOW)
+        for minute in range(60):
+            await Job(kind="server_scan", key=f"server:{s.server_id}", payload={"server_id": s.server_id},
+                      status="done", active=False, created_at=NOW + timedelta(minutes=minute + 1)).insert()
+        await failed_update(s.server_id, NOW + timedelta(days=1), dry_run=True)
+        service = JobService(JobDatabase(), None, None, RecordingAudit())  # type: ignore[arg-type]
+        found = await service.last_real_update(s.server_id)
+        await Job(kind="server_scan", key=f"server:{s.server_id}", payload={}, created_at=NOW).insert()
+        active = await service.active_for_server(s.server_id)
+        return found.id if found else None, failed.id, active.kind if active else None
+
+    found, failed_id, active_kind = mongo(scenario)
+    assert found == failed_id and active_kind == "server_scan"

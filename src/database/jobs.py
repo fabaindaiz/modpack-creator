@@ -35,6 +35,12 @@ class JobDatabase():
         """The active job holding this key, if any."""
         return await Job.find_one(Job.key == key, Job.active == True)  # noqa: E712
 
+    async def last_real_update(self, key: str) -> Optional[Job]:
+        """The newest update or rollback job of this key that is not a dry run (which writes nothing)."""
+        return await Job.find({"key": key, "kind": {"$in": ["server_update", "server_rollback"]},
+                               "payload.dry_run": {"$ne": True}}
+                              ).sort([("created_at", SortDirection.DESCENDING), ("_id", SortDirection.DESCENDING)]).first_or_none()
+
     async def recent(self, limit: int) -> list[Job]:
         """The newest jobs, whatever their status."""
         return await Job.find().sort(("created_at", SortDirection.DESCENDING)).limit(limit).to_list()

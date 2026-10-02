@@ -196,6 +196,15 @@ class JobService():
     async def get(self, job_id: str) -> Job:
         return await self.jobDB.get(job_id)
 
+    async def active_for_server(self, server_id: str) -> Optional[Job]:
+        """The server's active job, if any (scans, updates and rollbacks share its key)."""
+        return await self.jobDB.active_for(f"server:{server_id}")
+
+    async def last_real_update(self, server_id: str) -> Optional[Job]:
+        """The server's newest update or rollback that is not a dry run: a rollback may only
+        undo this one."""
+        return await self.jobDB.last_real_update(f"server:{server_id}")
+
     async def recent(self, limit: int = 10) -> list[Job]:
         """The newest jobs first, whatever their status."""
         return await self.jobDB.recent(limit)

@@ -123,6 +123,11 @@ class UpdateService():
         update = await self.jobDB.get(update_id)
         if update.kind != "server_update" or update.payload.get("server_id") != server_id or update.status != "failed":
             raise HTTP_409_CONFLICT(f"Job '{update_id}' is not a failed update of server '{server_id}'")
+        if update.payload.get("dry_run", False):
+            raise HTTP_409_CONFLICT(f"Job '{update_id}' was a dry run: it changed nothing to roll back")
+        latest = await self.jobDB.last_real_update(f"server:{server_id}")
+        if latest is None or latest.id != update.id:
+            raise HTTP_409_CONFLICT(f"Job '{update_id}' is not the latest update of server '{server_id}': a later one superseded it")
         needed = "swap" if mode == "A" else "backup"
         if needed not in update.checkpoint:
             raise HTTP_409_CONFLICT(f"The update never reached its {needed} step: nothing to roll back with {mode}")
