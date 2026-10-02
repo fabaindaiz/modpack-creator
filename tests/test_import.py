@@ -62,7 +62,7 @@ async def linked_server(files: dict[str, bytes]) -> tuple[Any, str, str]:
     panel.files = {name: (data, T0) for name, data in files.items()}
     service, server_id = await setup(panel, modrinth)
     await service.server_link_bundle(server_id, bundle_id, actor=OPERATOR)
-    await service.scan(server_id)
+    await service.scan(server_id, actor=None)
     return service, server_id, bundle_id
 
 

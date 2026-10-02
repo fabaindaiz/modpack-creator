@@ -11,6 +11,7 @@ from src.model.modpack import ModpackBundle, ModpackReplacement, ProjectOrigin
 from src.model.modrinth import ModrinthVersion
 from src.model.utils import MinecraftLoaders
 from src.services.modpack import ModpackService
+from tests._actors import EDITOR, RecordingAudit
 from tests._modrinth import IRIS, SHADER, SODIUM, RecordedModrinthAPI
 from tests.conftest import MongoRunner
 from tests.test_builds import FakeLoaders
@@ -20,10 +21,10 @@ pytestmark = pytest.mark.network
 
 async def bundle(api: RecordedModrinthAPI, *slugs: str, **fields: Any) -> tuple[ModpackService, str]:
     service = ModpackService(modpackDB=ModpackDatabase(), modrinthDB=ModrinthDatabase(), modrinthAPI=cast(Any, api),
-                             loaderAPI=cast(Any, FakeLoaders()))
+                             loaderAPI=cast(Any, FakeLoaders()), audit=RecordingAudit())
     created = await service.bundle_create(ModpackBundle(
-        name="pack", description="", version="26.3", loader=MinecraftLoaders.fabric, **fields))
-    await service.project_add(str(created.id), list(slugs), ProjectOrigin.pack)
+        name="pack", description="", version="26.3", loader=MinecraftLoaders.fabric, **fields), actor=EDITOR)
+    await service.project_add(str(created.id), list(slugs), ProjectOrigin.pack, actor=EDITOR)
     return service, str(created.id)
 
 

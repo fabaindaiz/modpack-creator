@@ -10,6 +10,9 @@ from src.database.jobs import JobDatabase
 from src.database.pterodactyl import PterodactylDatabase
 from src.exceptions import HTTP_409_CONFLICT
 from src.model.jobs import Job
+from src.model.audit import AuditTarget
+from src.model.users import Actor
+from src.services.audit import AuditSink
 from src.library.utils import utcnow
 from src.services.pterodactyl import PterodactylService
 
@@ -170,17 +173,25 @@ class JobService():
             jobDB: JobDatabase,
             pterodactylService: PterodactylService,
             pterodactylDB: PterodactylDatabase,
+            audit: AuditSink,
             notifier: Optional[NotificationSink] = None,
             ) -> None:
         self.jobDB = jobDB
         self.pterodactylService = pterodactylService
         self.pterodactylDB = pterodactylDB
+        self.audit = audit
         self.notifier = notifier
 
-    async def enqueue_scan(self, server_id: str, full: bool = False) -> Job:
-        """Queue a scan of a server; 409 if the server already has an active job."""
-        return await self.jobDB.enqueue("server_scan", key=f"server:{server_id}",
-                                        payload={"server_id": server_id, "full": full})
+    async def enqueue_scan(self, server_id: str, actor: Optional[Actor], full: bool = False) -> Job:
+        """Queue a scan of a server; 409 if the server already has an active job. `actor` is None
+        for the scheduler, which is not recorded."""
+        job = await self.jobDB.enqueue("server_scan", key=f"server:{server_id}",
+                                       payload={"server_id": server_id, "full": full},
+                                       requested_by=actor.ref() if actor is not None else None)
+        if actor is not None:
+            await self.audit.record(actor, "server.scan.queue", AuditTarget(kind="server", id=server_id),
+                                    {"full": full})
+        return job
 
     async def get(self, job_id: str) -> Job:
         return await self.jobDB.get(job_id)
@@ -203,7 +214,7 @@ class JobService():
             last_full = next((s for s in scans if s.full), None)
             full = last_full is None or _aware(last_full.scanned_at) <= now - full_every
             try:
-                queued.append(await self.enqueue_scan(server_id, full=full))
+                queued.append(await self.enqueue_scan(server_id, actor=None, full=full))
             except HTTP_409_CONFLICT:
                 continue
         return queued
@@ -231,7 +242,7 @@ class JobService():
         server_id = job.payload["server_id"]
 
         async def scan() -> dict[str, Any]:
-            result = await self.pterodactylService.scan(server_id, full=bool(job.payload.get("full")))
+            result = await self.pterodactylService.scan(server_id, actor=None, full=bool(job.payload.get("full")))
             return {"scan_id": str(result.id), "files": len(result.files)}
         await context.step("scan", scan)
 

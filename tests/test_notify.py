@@ -20,7 +20,7 @@ from src.library.api.client.discord import DiscordWebhookAPI
 from src.model.jobs import Job
 from src.services.jobs import JobWorker
 from src.services.notify import Notifier, drift_message
-from tests._actors import OPERATOR
+from tests._actors import EDITOR, OPERATOR, RecordingAudit
 from tests.conftest import MongoRunner
 
 pytestmark = pytest.mark.network
@@ -156,12 +156,12 @@ def test_a_server_drifting_from_its_build_is_announced_once_and_again_when_back(
         await servers.server_link_bundle(server_id, bundle_id, actor=OPERATOR)
         recorder = Recorder()
         jobs = JobService(jobDB=JobDatabase(), pterodactylService=servers, pterodactylDB=PterodactylDatabase(),
-                          notifier=cast(Any, recorder))
+                          audit=RecordingAudit(), notifier=cast(Any, recorder))
         worker = JobWorker(JobDatabase(), jobs.handlers(), owner="w1", clock=lambda: T0)
         for change in ("drift", "same", "fixed"):
             if change == "fixed":
                 del panel.files["handmade.jar"]
-            await jobs.enqueue_scan(server_id)
+            await jobs.enqueue_scan(server_id, actor=EDITOR)
             await worker.run_once()
         return recorder.sent
 

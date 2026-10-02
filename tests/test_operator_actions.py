@@ -134,10 +134,10 @@ def test_a_busy_server_is_refused_before_auditing(mongo: MongoRunner) -> None:
         failed = await Job(kind="server_update", key=None, payload={"server_id": s.server_id},
                            status="failed", active=False, checkpoint={"swap": {}}, created_at=NOW).insert()
         codes = []
-        for call in (lambda: s.update.enqueue_update(s.server_id, actor=OPERATOR, dry_run=False),
-                     lambda: s.update.enqueue_rollback(s.server_id, str(failed.id), "A", actor=OPERATOR)):
+        for call in (s.update.enqueue_update(s.server_id, actor=OPERATOR, dry_run=False),
+                     s.update.enqueue_rollback(s.server_id, str(failed.id), "A", actor=OPERATOR)):
             with pytest.raises(HTTPException) as refused:
-                await call()
+                await call
             codes.append(refused.value.status_code)
         assert refused.value.detail == f"There is already an active job for server:{s.server_id}"
         return codes, await count_jobs(), len(audit.events)

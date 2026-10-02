@@ -186,7 +186,7 @@ class UpdateService():
                 raise refuse("the server is not linked to a bundle")
             bundle = await self.modpackDB.bundle_get(server.bundle_id)
             build = await self.modpackDB.build_get(str(bundle.id), job.payload["build"])
-            scan = await self.servers.scan(str(server.id))
+            scan = await self.servers.scan(str(server.id), actor=None)
             comparison = compare(scan.files, build.lock.entries, build.local_files, bundle.claimed_files)
             in_bundle = {p.project_id for p in bundle.projects}
             foreign = [f.path for f in comparison.extra if f.project_id not in in_bundle]

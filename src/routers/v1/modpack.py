@@ -24,9 +24,9 @@ async def bundle_find(
 async def bundle_create(
         bundle: ModpackBundleCreate,
         modpack: ModpackService = Depends(Provide[Dependences.modpackService]),
-        current_user = Depends(get_current_user)
+        actor: Actor = Depends(get_current_actor)
         ):
-    response = await modpack.bundle_create(bundle=ModpackBundle(**bundle.model_dump()))
+    response = await modpack.bundle_create(bundle=ModpackBundle(**bundle.model_dump()), actor=actor)
     return response
 
 @router.get("/modpack/{id}")
@@ -45,9 +45,9 @@ async def bundle_update(
         id: str,
         bundle: ModpackBundlePatch,
         modpack: ModpackService = Depends(Provide[Dependences.modpackService]),
-        current_user = Depends(get_current_user)
+        actor: Actor = Depends(get_current_actor)
         ):
-    response = await modpack.bundle_update(bundle_id=id, patch=bundle)
+    response = await modpack.bundle_update(bundle_id=id, patch=bundle, actor=actor)
     return response
 
 @router.get("/modpack/{id}/project", response_model=list[PackProject])
@@ -66,10 +66,10 @@ async def project_add(
         refs: list[str],
         origin: ProjectOrigin = Query(ProjectOrigin.admin, description="pack: what the pack brings; admin: added by hand"),
         modpack: ModpackService = Depends(Provide[Dependences.modpackService]),
-        current_user = Depends(get_current_user)
+        actor: Actor = Depends(get_current_actor)
         ):
     """Add Modrinth projects, by slug or id. All or nothing: an unknown one refuses the request."""
-    return await modpack.project_add(bundle_id=id, refs=refs, origin=origin)
+    return await modpack.project_add(bundle_id=id, refs=refs, origin=origin, actor=actor)
 
 @router.put("/modpack/{id}/project", response_model=list[PackProject])
 @inject
@@ -77,10 +77,10 @@ async def pack_replace(
         id: str,
         refs: list[str],
         modpack: ModpackService = Depends(Provide[Dependences.modpackService]),
-        current_user = Depends(get_current_user)
+        actor: Actor = Depends(get_current_actor)
         ):
     """Replace what the pack brings; what the admin added stays."""
-    return await modpack.pack_replace(bundle_id=id, refs=refs)
+    return await modpack.pack_replace(bundle_id=id, refs=refs, actor=actor)
 
 @router.delete("/modpack/{id}/project/{project_id}", response_model=list[PackProject])
 @inject
@@ -88,19 +88,19 @@ async def project_remove(
         id: str,
         project_id: str,
         modpack: ModpackService = Depends(Provide[Dependences.modpackService]),
-        current_user = Depends(get_current_user)
+        actor: Actor = Depends(get_current_actor)
         ):
-    return await modpack.project_remove(bundle_id=id, project_id=project_id)
+    return await modpack.project_remove(bundle_id=id, project_id=project_id, actor=actor)
 
 @router.post("/modpack/{id}/build", response_model=ModpackBuild)
 @inject
 async def build_create(
         id: str,
         modpack: ModpackService = Depends(Provide[Dependences.modpackService]),
-        current_user = Depends(get_current_user)
+        actor: Actor = Depends(get_current_actor)
         ):
     """Resolve and freeze the next build. 409 if the lock has problems or undecided mods."""
-    return await modpack.build_create(bundle_id=id)
+    return await modpack.build_create(bundle_id=id, actor=actor)
 
 @router.get("/modpack/{id}/build", response_model=list[ModpackBuild])
 @inject
@@ -140,10 +140,10 @@ async def build_recommend(
         id: str,
         number: int,
         modpack: ModpackService = Depends(Provide[Dependences.modpackService]),
-        current_user = Depends(get_current_user)
+        actor: Actor = Depends(get_current_actor)
         ):
     """Point recommended at a build; going back is pointing at an older one."""
-    return await modpack.build_recommend(bundle_id=id, number=number)
+    return await modpack.build_recommend(bundle_id=id, number=number, actor=actor)
 
 @router.post("/modpack/{id}/resolve", response_model=Lock)
 @inject
@@ -173,15 +173,15 @@ async def replacement_set(
         project_id: str,
         replacement: Optional[str] = Query(None, description="The substitute project id; empty drops the dependency"),
         modpack: ModpackService = Depends(Provide[Dependences.modpackService]),
-        current_user = Depends(get_current_user)
+        actor: Actor = Depends(get_current_actor)
         ):
-    return await modpack.replacement_set(project_id=project_id, replacement=replacement)
+    return await modpack.replacement_set(project_id=project_id, replacement=replacement, actor=actor)
 
 @router.delete("/replacement/{project_id}")
 @inject
 async def replacement_delete(
         project_id: str,
         modpack: ModpackService = Depends(Provide[Dependences.modpackService]),
-        current_user = Depends(get_current_user)
+        actor: Actor = Depends(get_current_actor)
         ):
-    return await modpack.replacement_delete(project_id=project_id)
+    return await modpack.replacement_delete(project_id=project_id, actor=actor)

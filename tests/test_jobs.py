@@ -19,6 +19,7 @@ from fastapi import HTTPException
 from src.database.jobs import JobDatabase
 from src.model.jobs import Job
 from src.services.jobs import JobContext, JobWorker, WorkerBeat
+from tests._actors import EDITOR, RecordingAudit
 from tests.conftest import MongoRunner
 
 pytestmark = pytest.mark.network
@@ -194,7 +195,7 @@ class FakeScans:
     def __init__(self) -> None:
         self.scanned: list[tuple[str, bool]] = []
 
-    async def scan(self, server_id: str, full: bool = False) -> Any:
+    async def scan(self, server_id: str, actor: Any, full: bool = False) -> Any:
         self.scanned.append((server_id, full))
         return type("Scan", (), {"id": "scan-1", "files": [1, 2, 3]})()
 
@@ -209,10 +210,10 @@ def test_a_scan_job_runs_the_scan_and_is_exclusive_per_server(mongo: MongoRunner
 
     async def scenario() -> tuple[str, dict[str, Any], list[tuple[str, bool]], int]:
         scans = FakeScans()
-        service = JobService(jobDB=JobDatabase(), pterodactylService=cast(Any, scans), pterodactylDB=cast(Any, None))
-        job = await service.enqueue_scan("abc", full=True)
+        service = JobService(jobDB=JobDatabase(), pterodactylService=cast(Any, scans), pterodactylDB=cast(Any, None), audit=RecordingAudit())
+        job = await service.enqueue_scan("abc", actor=EDITOR, full=True)
         with pytest.raises(HTTPException) as refused:
-            await service.enqueue_scan("abc")
+            await service.enqueue_scan("abc", actor=EDITOR)
         await JobWorker(JobDatabase(), service.handlers(), owner="w1", clock=lambda: T0).run_once()
         stored = await service.get(str(job.id))
         return stored.status, stored.checkpoint, scans.scanned, refused.value.status_code
@@ -263,7 +264,7 @@ def test_the_scheduler_queues_what_is_due_and_a_full_scan_when_the_last_one_is_o
         await db.scan_insert(ServerScan(server_id=fresh.id, directory="/mods", scanned_at=T0 - timedelta(hours=1), full=True, files=[]))  # type: ignore[arg-type]
         await db.scan_insert(ServerScan(server_id=stale_full.id, directory="/mods", scanned_at=T0 - timedelta(days=8), full=True, files=[]))  # type: ignore[arg-type]
         await db.scan_insert(ServerScan(server_id=stale_full.id, directory="/mods", scanned_at=T0 - timedelta(hours=7), full=False, files=[]))  # type: ignore[arg-type]
-        service = JobService(jobDB=JobDatabase(), pterodactylService=cast(Any, None), pterodactylDB=db)
+        service = JobService(jobDB=JobDatabase(), pterodactylService=cast(Any, None), pterodactylDB=db, audit=RecordingAudit())
         first = await service.schedule_scans(T0, every=timedelta(hours=6), full_every=timedelta(days=7))
         again = await service.schedule_scans(T0, every=timedelta(hours=6), full_every=timedelta(days=7))
         names = {str(never.id): "never", str(stale_full.id): "stale"}

@@ -36,12 +36,12 @@ async def server_find(
 async def server_create(
         uuid: str,
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
-        current_user = Depends(get_current_user)
+        actor: Actor = Depends(get_current_actor)
         ):
     """
     Create a new Pterodactyl server.
     """
-    response = await pterodactylService.server_create(uuid=uuid)
+    response = await pterodactylService.server_create(uuid=uuid, actor=actor)
     return response
 
 @router.patch("/server")
@@ -49,12 +49,12 @@ async def server_create(
 async def server_update(
         server_id: str,
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
-        current_user = Depends(get_current_user)
+        actor: Actor = Depends(get_current_actor)
         ):
     """
     Update a Pterodactyl server.
     """
-    response = await pterodactylService.server_update(server_id=server_id)
+    response = await pterodactylService.server_update(server_id=server_id, actor=actor)
     return response
 
 @router.get("/server/{id}")
@@ -159,12 +159,12 @@ async def server_scan(
         directory: str = Query("/mods"),
         full: bool = Query(False, description="Hash every jar again, trusting no cached hash"),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
-        current_user = Depends(get_current_user)
+        actor: Actor = Depends(get_current_actor)
         ):
     """
     Scan a server: which jars it has and which Modrinth version each is. Only reads the server.
     """
-    return await pterodactylService.scan(id, directory=directory, full=full)
+    return await pterodactylService.scan(id, actor=actor, directory=directory, full=full)
 
 @router.post("/server/{id}/scan/job", response_model=Job, status_code=202)
 @inject
@@ -172,12 +172,12 @@ async def server_scan_job(
         id: str,
         full: bool = Query(False, description="Hash every jar again, trusting no cached hash"),
         jobs: JobService = Depends(Provide[Dependences.jobService]),
-        current_user = Depends(get_current_user)
+        actor: Actor = Depends(get_current_actor)
         ):
     """
     Queue a scan of the server, run by the job worker. 409 if the server already has an active job.
     """
-    return await jobs.enqueue_scan(id, full=full)
+    return await jobs.enqueue_scan(id, actor=actor, full=full)
 
 @router.get("/server/{id}/scan", response_model=ServerScan)
 @inject

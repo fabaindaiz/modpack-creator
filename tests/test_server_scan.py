@@ -22,7 +22,7 @@ from src.model.utils import MinecraftLoaders
 from src.services import pterodactyl as module
 from src.services.modpack import ModpackService
 from src.services.pterodactyl import PterodactylService
-from tests._actors import OPERATOR, RecordingAudit
+from tests._actors import EDITOR, OPERATOR, RecordingAudit
 from tests._modrinth import RecordedModrinthAPI, load
 from tests.conftest import MongoRunner
 from tests.test_builds import FakeLoaders
@@ -95,7 +95,7 @@ def test_a_scan_identifies_known_jars_and_reports_the_rest(mongo: MongoRunner) -
         panel.files = {"fabric-api.jar": (b"fabric api", T0), "handmade.jar": (b"by hand", T0),
                        "notes.txt": (b"not a jar", T0)}
         service, server_id = await setup(panel, HashModrinthAPI({sha1(b"fabric api"): FABRIC_API_VERSIONS[0]}))
-        scan = await service.scan(server_id)
+        scan = await service.scan(server_id, actor=EDITOR)
         stored = {v.version_id async for v in ModrinthVersion.find()}
         return {f.path: (f.status, f.version_id) for f in scan.files}, panel.calls, stored
 
@@ -118,7 +118,7 @@ def test_a_second_scan_downloads_only_what_changed(mongo: MongoRunner) -> None:
             if change:
                 panel.files[change] = (panel.files[change][0], T0 + timedelta(days=1))
             panel.calls.clear()
-            await service.scan(server_id, full=full)
+            await service.scan(server_id, actor=EDITOR, full=full)
             downloads.append([c for c in panel.calls if c.startswith("download")])
         return downloads
 
@@ -133,7 +133,7 @@ def test_a_jar_past_the_limit_is_reported_and_not_downloaded(mongo: MongoRunner,
         panel = FakePanel()
         panel.files = {"huge.jar": (b"too many bytes", T0)}
         service, server_id = await setup(panel, HashModrinthAPI({}))
-        scan = await service.scan(server_id)
+        scan = await service.scan(server_id, actor=EDITOR)
         return [f.status for f in scan.files], [c for c in panel.calls if c.startswith("download")]
 
     assert mongo(scenario) == (["too_large"], [])
@@ -144,9 +144,9 @@ def test_the_latest_scan_is_kept(mongo: MongoRunner) -> None:
         panel = FakePanel()
         panel.files = {"a.jar": (b"a", T0)}
         service, server_id = await setup(panel, HashModrinthAPI({}))
-        await service.scan(server_id)
+        await service.scan(server_id, actor=EDITOR)
         panel.files["b.jar"] = (b"b", T0)
-        await service.scan(server_id)
+        await service.scan(server_id, actor=EDITOR)
         return len((await service.scan_latest(server_id)).files), len(await service.scan_find(server_id))
 
     assert mongo(scenario) == (2, 2)
@@ -158,12 +158,12 @@ def test_the_latest_scan_is_kept(mongo: MongoRunner) -> None:
 async def build_with_fabric_api(modrinth: HashModrinthAPI) -> tuple[str, str]:
     """Un bundle con Fabric API (va en el servidor) y su build 1, recomendado."""
     service = ModpackService(modpackDB=ModpackDatabase(), modrinthDB=ModrinthDatabase(), modrinthAPI=cast(Any, modrinth),
-                             loaderAPI=cast(Any, FakeLoaders()))
+                             loaderAPI=cast(Any, FakeLoaders()), audit=RecordingAudit())
     bundle = await service.bundle_create(ModpackBundle(name="pack", description="", version="26.3",
-                                                       loader=MinecraftLoaders.fabric))
-    await service.project_add(str(bundle.id), ["fabric-api"], ProjectOrigin.pack)
-    build = await service.build_create(str(bundle.id))
-    await service.build_recommend(str(bundle.id), build.number)
+                                                       loader=MinecraftLoaders.fabric), actor=EDITOR)
+    await service.project_add(str(bundle.id), ["fabric-api"], ProjectOrigin.pack, actor=EDITOR)
+    build = await service.build_create(str(bundle.id), actor=EDITOR)
+    await service.build_recommend(str(bundle.id), build.number, actor=EDITOR)
     [entry] = build.lock.entries
     return str(bundle.id), entry.version_id
 
@@ -176,7 +176,7 @@ def test_a_server_on_the_recommended_build_is_in_sync(mongo: MongoRunner) -> Non
         panel = FakePanel()
         panel.files = {"fabric-api.jar": (b"fabric api", T0)}
         service, server_id = await setup(panel, modrinth)
-        await service.scan(server_id)
+        await service.scan(server_id, actor=EDITOR)
         result = await service.compare(server_id, bundle_id)
         return result.in_sync, [f.path for f in result.matching]
 
@@ -192,7 +192,7 @@ def test_a_server_with_an_older_version_and_a_jar_by_hand_is_not(mongo: MongoRun
         panel = FakePanel()
         panel.files = {"fabric-api.jar": (b"old fabric api", T0), "handmade.jar": (b"by hand", T0)}
         service, server_id = await setup(panel, modrinth)
-        await service.scan(server_id)
+        await service.scan(server_id, actor=EDITOR)
         result = await service.compare(server_id, bundle_id, build=1)
         return ([(f.version_id or "", e.version_id) for f, e in result.different_version],
                 [f.path for f in result.unknown], [e.project_id for e in result.missing])
@@ -207,8 +207,9 @@ def test_comparing_needs_a_scan_and_a_build(mongo: MongoRunner) -> None:
         modrinth = HashModrinthAPI({})
         service, server_id = await setup(FakePanel(), modrinth)
         bundle = await ModpackService(modpackDB=ModpackDatabase(), modrinthDB=ModrinthDatabase(),
-                                      modrinthAPI=cast(Any, modrinth), loaderAPI=cast(Any, FakeLoaders())).bundle_create(
-            ModpackBundle(name="empty", description="", version="26.3", loader=MinecraftLoaders.fabric))
+                                      modrinthAPI=cast(Any, modrinth), loaderAPI=cast(Any, FakeLoaders()),
+                                      audit=RecordingAudit()).bundle_create(
+            ModpackBundle(name="empty", description="", version="26.3", loader=MinecraftLoaders.fabric), actor=EDITOR)
         codes = []
         for call in (lambda: service.compare(server_id, str(bundle.id)), lambda: service.scan_latest(server_id)):
             with pytest.raises(HTTPException) as refused:
@@ -232,7 +233,7 @@ def test_a_version_whose_files_do_not_have_that_hash_does_not_identify_the_jar(m
         panel = FakePanel()
         panel.files = {"a.jar": (b"a", T0)}
         service, server_id = await setup(panel, WrongAnswerModrinthAPI({}))
-        return [f.status for f in (await service.scan(server_id)).files]
+        return [f.status for f in (await service.scan(server_id, actor=EDITOR)).files]
 
     assert mongo(scenario) == ["unknown"]
 
@@ -243,10 +244,10 @@ def test_an_unknown_jar_modrinth_learns_later_is_identified_without_downloading_
         panel.files = {"late.jar": (b"published later", T0)}
         modrinth = HashModrinthAPI({})
         service, server_id = await setup(panel, modrinth)
-        first = [str(f.status) for f in (await service.scan(server_id)).files]
+        first = [str(f.status) for f in (await service.scan(server_id, actor=EDITOR)).files]
         modrinth.known[sha1(b"published later")] = FABRIC_API_VERSIONS[0]
         panel.calls.clear()
-        second = [str(f.status) for f in (await service.scan(server_id)).files]
+        second = [str(f.status) for f in (await service.scan(server_id, actor=EDITOR)).files]
         return first, second, [c for c in panel.calls if c.startswith("download")]
 
     assert mongo(scenario) == (["unknown"], ["identified"], [])
@@ -264,7 +265,7 @@ def test_a_server_linked_to_a_bundle_compares_against_it_without_naming_it(mongo
         panel.files = {"fabric-api.jar": (b"fabric api", T0)}
         service, server_id = await setup(panel, modrinth)
         linked = await service.server_link_bundle(server_id, bundle_id, actor=OPERATOR)
-        await service.scan(server_id)
+        await service.scan(server_id, actor=EDITOR)
         return linked.bundle_id, (await service.compare(server_id)).in_sync
 
     bundle_id, in_sync = mongo(scenario)
@@ -297,7 +298,7 @@ def test_refreshing_a_server_from_the_panel_keeps_its_bundle(mongo: MongoRunner)
         bundle_id, _ = await build_with_fabric_api(modrinth)
         service, server_id = await setup(Panel(), modrinth)
         await service.server_link_bundle(server_id, bundle_id, actor=OPERATOR)
-        refreshed = await service.server_update(server_id)
+        refreshed = await service.server_update(server_id, actor=EDITOR)
         return refreshed.name, refreshed.bundle_id
 
     name, bundle_id = mongo(scenario)

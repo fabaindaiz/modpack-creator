@@ -21,6 +21,7 @@ from src.library.mrpack import validate_index
 from src.model.modpack import ModpackBundle, ModpackBundlePatch, ProjectOrigin
 from src.model.utils import MinecraftLoaders
 from src.services.modpack import ModpackService
+from tests._actors import EDITOR, RecordingAudit
 from tests._modrinth import FABRIC_API, IRIS, SODIUM, RecordedModrinthAPI
 from tests.conftest import MongoRunner
 
@@ -40,9 +41,9 @@ class FakeLoaders:
 
 async def empty_bundle(**fields: Any) -> tuple[ModpackService, str]:
     service = ModpackService(modpackDB=ModpackDatabase(), modrinthDB=ModrinthDatabase(),
-                             modrinthAPI=cast(Any, RecordedModrinthAPI()), loaderAPI=cast(Any, FakeLoaders()))
+                             modrinthAPI=cast(Any, RecordedModrinthAPI()), loaderAPI=cast(Any, FakeLoaders()), audit=RecordingAudit())
     created = await service.bundle_create(ModpackBundle(
-        name="pack", description="", version="26.3", loader=MinecraftLoaders.fabric, **fields))
+        name="pack", description="", version="26.3", loader=MinecraftLoaders.fabric, **fields), actor=EDITOR)
     return service, str(created.id)
 
 
@@ -56,7 +57,7 @@ def content(projects: list[Any]) -> dict[str, str]:
 def test_projects_are_added_by_slug_and_kept_by_modrinth_id(mongo: MongoRunner) -> None:
     async def scenario() -> dict[str, str]:
         service, bundle_id = await empty_bundle()
-        return content(await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack))
+        return content(await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR))
 
     assert mongo(scenario) == {IRIS: "pack"}
 
@@ -65,7 +66,7 @@ def test_a_project_modrinth_does_not_know_is_refused(mongo: MongoRunner) -> None
     async def scenario() -> int:
         service, bundle_id = await empty_bundle()
         with pytest.raises(HTTPException) as refused:
-            await service.project_add(bundle_id, ["iris", "no-such-mod"], ProjectOrigin.pack)
+            await service.project_add(bundle_id, ["iris", "no-such-mod"], ProjectOrigin.pack, actor=EDITOR)
         assert "no-such-mod" in str(refused.value.detail)
         return len(await service.project_find(bundle_id))
 
@@ -75,10 +76,10 @@ def test_a_project_modrinth_does_not_know_is_refused(mongo: MongoRunner) -> None
 def test_what_the_admin_added_survives_replacing_the_pack(mongo: MongoRunner) -> None:
     async def scenario() -> dict[str, str]:
         service, bundle_id = await empty_bundle()
-        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack)
-        await service.project_add(bundle_id, ["fabric-api"], ProjectOrigin.admin)
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        await service.project_add(bundle_id, ["fabric-api"], ProjectOrigin.admin, actor=EDITOR)
         # El pack nuevo trae Sodium y también Fabric API, que el admin ya tenía: sigue siendo suyo.
-        return content(await service.pack_replace(bundle_id, ["sodium", "fabric-api"]))
+        return content(await service.pack_replace(bundle_id, ["sodium", "fabric-api"], actor=EDITOR))
 
     assert mongo(scenario) == {FABRIC_API: "admin", SODIUM: "pack"}
 
@@ -86,8 +87,8 @@ def test_what_the_admin_added_survives_replacing_the_pack(mongo: MongoRunner) ->
 def test_concurrent_additions_are_all_kept(mongo: MongoRunner) -> None:
     async def scenario() -> dict[str, str]:
         service, bundle_id = await empty_bundle()
-        await asyncio.gather(service.project_add(bundle_id, ["iris"], ProjectOrigin.pack),
-                             service.project_add(bundle_id, ["fabric-api"], ProjectOrigin.admin))
+        await asyncio.gather(service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR),
+                             service.project_add(bundle_id, ["fabric-api"], ProjectOrigin.admin, actor=EDITOR))
         return content(await service.project_find(bundle_id))
 
     assert mongo(scenario) == {IRIS: "pack", FABRIC_API: "admin"}
@@ -96,8 +97,8 @@ def test_concurrent_additions_are_all_kept(mongo: MongoRunner) -> None:
 def test_removing_a_project(mongo: MongoRunner) -> None:
     async def scenario() -> dict[str, str]:
         service, bundle_id = await empty_bundle()
-        await service.project_add(bundle_id, ["iris", "fabric-api"], ProjectOrigin.pack)
-        return content(await service.project_remove(bundle_id, IRIS))
+        await service.project_add(bundle_id, ["iris", "fabric-api"], ProjectOrigin.pack, actor=EDITOR)
+        return content(await service.project_remove(bundle_id, IRIS, actor=EDITOR))
 
     assert mongo(scenario) == {FABRIC_API: "pack"}
 
@@ -105,8 +106,8 @@ def test_removing_a_project(mongo: MongoRunner) -> None:
 def test_the_lock_says_where_each_project_came_from(mongo: MongoRunner) -> None:
     async def scenario() -> dict[str, tuple[str | None, str]]:
         service, bundle_id = await empty_bundle()
-        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack)
-        await service.project_add(bundle_id, ["fabric-api"], ProjectOrigin.admin)
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        await service.project_add(bundle_id, ["fabric-api"], ProjectOrigin.admin, actor=EDITOR)
         lock = await service.resolve(bundle_id)
         return {e.project_id: (e.origin, e.reason) for e in lock.entries}
 
@@ -122,9 +123,9 @@ def test_the_lock_says_where_each_project_came_from(mongo: MongoRunner) -> None:
 def test_builds_are_numbered_and_latest_follows_the_newest(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[list[int], int | None, int | None]:
         service, bundle_id = await empty_bundle()
-        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack)
-        first = await service.build_create(bundle_id)
-        second = await service.build_create(bundle_id)
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        first = await service.build_create(bundle_id, actor=EDITOR)
+        second = await service.build_create(bundle_id, actor=EDITOR)
         stored = await service.bundle_get(bundle_id)
         return [first.number, second.number], stored.latest_build, stored.recommended_build
 
@@ -134,10 +135,10 @@ def test_builds_are_numbered_and_latest_follows_the_newest(mongo: MongoRunner) -
 def test_a_build_does_not_change_when_the_bundle_does(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[set[str], set[str]]:
         service, bundle_id = await empty_bundle()
-        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack)
-        await service.build_create(bundle_id)
-        await service.project_add(bundle_id, ["fabric-api"], ProjectOrigin.admin)
-        await service.build_create(bundle_id)
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        await service.build_create(bundle_id, actor=EDITOR)
+        await service.project_add(bundle_id, ["fabric-api"], ProjectOrigin.admin, actor=EDITOR)
+        await service.build_create(bundle_id, actor=EDITOR)
         first, second = await service.build_get(bundle_id, 1), await service.build_get(bundle_id, 2)
         return {e.project_id for e in first.lock.entries}, {e.project_id for e in second.lock.entries}
 
@@ -147,13 +148,13 @@ def test_a_build_does_not_change_when_the_bundle_does(mongo: MongoRunner) -> Non
 def test_recommending_a_build_moves_the_pointer_and_going_back_is_moving_it_again(mongo: MongoRunner) -> None:
     async def scenario() -> list[int | None]:
         service, bundle_id = await empty_bundle()
-        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack)
-        await service.build_create(bundle_id)
-        await service.build_create(bundle_id)
-        pointers = [(await service.build_recommend(bundle_id, 2)).recommended_build]
-        pointers.append((await service.build_recommend(bundle_id, 1)).recommended_build)
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        await service.build_create(bundle_id, actor=EDITOR)
+        await service.build_create(bundle_id, actor=EDITOR)
+        pointers = [(await service.build_recommend(bundle_id, 2, actor=EDITOR)).recommended_build]
+        pointers.append((await service.build_recommend(bundle_id, 1, actor=EDITOR)).recommended_build)
         with pytest.raises(HTTPException) as missing:
-            await service.build_recommend(bundle_id, 7)
+            await service.build_recommend(bundle_id, 7, actor=EDITOR)
         assert missing.value.status_code == 404
         return pointers
 
@@ -163,9 +164,9 @@ def test_recommending_a_build_moves_the_pointer_and_going_back_is_moving_it_agai
 def test_a_lock_with_problems_is_not_built(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[int, list[Any]]:
         service, bundle_id = await empty_bundle(pins={IRIS: "no-such-version"})
-        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack)
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
         with pytest.raises(HTTPException) as refused:
-            await service.build_create(bundle_id)
+            await service.build_create(bundle_id, actor=EDITOR)
         return refused.value.status_code, await service.build_find(bundle_id)
 
     assert mongo(scenario) == (409, [])
@@ -174,8 +175,8 @@ def test_a_lock_with_problems_is_not_built(mongo: MongoRunner) -> None:
 def test_two_builds_created_at_once_get_different_numbers(mongo: MongoRunner) -> None:
     async def scenario() -> list[int]:
         service, bundle_id = await empty_bundle()
-        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack)
-        results = await asyncio.gather(service.build_create(bundle_id), service.build_create(bundle_id),
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        results = await asyncio.gather(service.build_create(bundle_id, actor=EDITOR), service.build_create(bundle_id, actor=EDITOR),
                                        return_exceptions=True)
         return sorted(r.number for r in results if not isinstance(r, BaseException))
 
@@ -190,10 +191,10 @@ def test_two_builds_created_at_once_get_different_numbers(mongo: MongoRunner) ->
 def test_a_build_freezes_the_loader_version(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[str | None, str | None]:
         service, bundle_id = await empty_bundle()
-        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack)
-        first = await service.build_create(bundle_id)
-        await service.bundle_update(bundle_id, ModpackBundlePatch(loader_version="0.18.0"))
-        pinned = await service.build_create(bundle_id)
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        first = await service.build_create(bundle_id, actor=EDITOR)
+        await service.bundle_update(bundle_id, ModpackBundlePatch(loader_version="0.18.0"), actor=EDITOR)
+        pinned = await service.build_create(bundle_id, actor=EDITOR)
         return first.loader_version, pinned.loader_version
 
     assert mongo(scenario) == ("0.19.5", "0.18.0")
@@ -202,8 +203,8 @@ def test_a_build_freezes_the_loader_version(mongo: MongoRunner) -> None:
 def test_a_build_exports_as_a_valid_mrpack(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[str, dict[str, Any]]:
         service, bundle_id = await empty_bundle()
-        await service.project_add(bundle_id, ["iris", "fabric-api"], ProjectOrigin.pack)
-        await service.build_create(bundle_id)
+        await service.project_add(bundle_id, ["iris", "fabric-api"], ProjectOrigin.pack, actor=EDITOR)
+        await service.build_create(bundle_id, actor=EDITOR)
         filename, data = await service.build_mrpack(bundle_id, 1)
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             return filename, json.loads(archive.read("modrinth.index.json"))
@@ -221,8 +222,8 @@ def test_a_build_exports_as_a_valid_mrpack(mongo: MongoRunner) -> None:
 def test_a_build_without_a_loader_version_does_not_export(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[str | None, int]:
         service, bundle_id = await empty_bundle()
-        await service.bundle_update(bundle_id, ModpackBundlePatch(loader=MinecraftLoaders.neoforge))
-        build = await service.build_create(bundle_id)
+        await service.bundle_update(bundle_id, ModpackBundlePatch(loader=MinecraftLoaders.neoforge), actor=EDITOR)
+        build = await service.build_create(bundle_id, actor=EDITOR)
         with pytest.raises(HTTPException) as refused:
             await service.build_mrpack(bundle_id, build.number)
         return build.loader_version, refused.value.status_code
@@ -236,12 +237,12 @@ def test_a_new_build_is_announced(mongo: MongoRunner) -> None:
     async def scenario() -> list[str]:
         recorder = Recorder()
         service = ModpackService(modpackDB=ModpackDatabase(), modrinthDB=ModrinthDatabase(),
-                                 modrinthAPI=cast(Any, RecordedModrinthAPI()), loaderAPI=cast(Any, FakeLoaders()),
+                                 modrinthAPI=cast(Any, RecordedModrinthAPI()), loaderAPI=cast(Any, FakeLoaders()), audit=RecordingAudit(),
                                  notifier=cast(Any, recorder))
         bundle = await service.bundle_create(ModpackBundle(name="Survival pack", description="", version="26.3",
-                                                           loader=MinecraftLoaders.fabric))
-        await service.project_add(str(bundle.id), ["iris"], ProjectOrigin.pack)
-        await service.build_create(str(bundle.id))
+                                                           loader=MinecraftLoaders.fabric), actor=EDITOR)
+        await service.project_add(str(bundle.id), ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        await service.build_create(str(bundle.id), actor=EDITOR)
         return recorder.sent
 
     [message] = mongo(scenario)
@@ -253,9 +254,9 @@ def test_a_build_freezes_the_bundles_local_files_and_the_mrpack_leaves_them_out(
 
     async def scenario() -> tuple[list[str], list[str]]:
         service, bundle_id = await empty_bundle()
-        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack)
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
         await service.local_file_add(bundle_id, LocalFile(filename="private.jar", sha512="p" * 128, sha1="p" * 40, size=10))
-        build = await service.build_create(bundle_id)
+        build = await service.build_create(bundle_id, actor=EDITOR)
         _, data = await service.build_mrpack(bundle_id, build.number)
         with zipfile.ZipFile(io.BytesIO(data)) as archive:
             index = json.loads(archive.read("modrinth.index.json"))

@@ -10,6 +10,9 @@ from src.services.jobs import NotificationSink
 from src.library.resolution import Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, resolve
 from src.model.modpack import ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject, ModrinthVersion
+from src.model.audit import AuditTarget
+from src.model.users import Actor
+from src.services.audit import AuditSink
 from src.exceptions import *
 
 # Each round fetches what the lock needs; a dependency chain deeper than this is reported as an
@@ -25,32 +28,38 @@ class ModpackService():
             modrinthDB: ModrinthDatabase,
             modrinthAPI: ModrinthAPI,
             loaderAPI: LoaderMetaAPI,
+            audit: AuditSink,
             notifier: Optional[NotificationSink] = None,
             ) -> None:
         self.modpackDB = modpackDB
         self.modrinthDB = modrinthDB
         self.modrinthAPI = modrinthAPI
         self.loaderAPI = loaderAPI
+        self.audit = audit
         self.notifier = notifier
 
     async def bundle_find(self) -> list[ModpackBundle]:
         return await self.modpackDB.bundle_find().to_list()
 
-    async def bundle_create(self, bundle: ModpackBundle) -> ModpackBundle:
-        return await self.modpackDB.bundle_insert(bundle=bundle)
+    async def bundle_create(self, bundle: ModpackBundle, actor: Actor) -> ModpackBundle:
+        created = await self.modpackDB.bundle_insert(bundle=bundle)
+        await self.audit.record(actor, "bundle.create", _bundle(str(created.id)))
+        return created
 
     async def bundle_get(self, bundle_id: str) -> ModpackBundle:
         return await self.modpackDB.bundle_get(bundle_id=bundle_id)
 
-    async def bundle_update(self, bundle_id: str, patch: ModpackBundlePatch) -> ModpackBundle:
-        return await self.modpackDB.bundle_update(bundle_id=bundle_id, patch=patch)
+    async def bundle_update(self, bundle_id: str, patch: ModpackBundlePatch, actor: Actor) -> ModpackBundle:
+        updated = await self.modpackDB.bundle_update(bundle_id=bundle_id, patch=patch)
+        await self.audit.record(actor, "bundle.update", _bundle(bundle_id))
+        return updated
 
     # Content (i-7985ee-063a3a).
 
     async def project_find(self, bundle_id: str) -> list[PackProject]:
         return (await self.modpackDB.bundle_get(bundle_id)).projects
 
-    async def project_add(self, bundle_id: str, refs: list[str], origin: ProjectOrigin) -> list[PackProject]:
+    async def project_add(self, bundle_id: str, refs: list[str], origin: ProjectOrigin, actor: Actor) -> list[PackProject]:
         """
         Add Modrinth projects to a bundle, by slug or id, marked with their origin.
 
@@ -62,10 +71,13 @@ class ModpackService():
         """
         await self.modpackDB.bundle_get(bundle_id)
         projects = await self._modrinth_projects(refs)
-        return await self.modpackDB.bundle_projects_add(
+        added = await self.modpackDB.bundle_projects_add(
             bundle_id, [PackProject(project_id=p.project_id, origin=origin) for p in projects])
+        await self.audit.record(actor, "bundle.project.add", _bundle(bundle_id),
+                                {"refs": list(refs), "origin": origin.value})
+        return added
 
-    async def pack_replace(self, bundle_id: str, refs: list[str]) -> list[PackProject]:
+    async def pack_replace(self, bundle_id: str, refs: list[str], actor: Actor) -> list[PackProject]:
         """
         Replace what the pack brings with `refs`; what the admin added stays (d-7985ee-b15dd4).
 
@@ -73,15 +85,19 @@ class ModpackService():
         """
         await self.modpackDB.bundle_get(bundle_id)
         projects = await self._modrinth_projects(refs)
-        return await self.modpackDB.bundle_pack_replace(
+        replaced = await self.modpackDB.bundle_pack_replace(
             bundle_id, [PackProject(project_id=p.project_id, origin=ProjectOrigin.pack) for p in projects])
+        await self.audit.record(actor, "bundle.project.replace", _bundle(bundle_id), {"refs": list(refs)})
+        return replaced
 
     async def local_file_add(self, bundle_id: str, local: LocalFile) -> list[LocalFile]:
         """Register a jar that is not on Modrinth as a local file of the bundle (d-7985ee-c8a15d)."""
         return await self.modpackDB.bundle_local_file_add(bundle_id, local)
 
-    async def project_remove(self, bundle_id: str, project_id: str) -> list[PackProject]:
-        return await self.modpackDB.bundle_project_remove(bundle_id, project_id)
+    async def project_remove(self, bundle_id: str, project_id: str, actor: Actor) -> list[PackProject]:
+        remaining = await self.modpackDB.bundle_project_remove(bundle_id, project_id)
+        await self.audit.record(actor, "bundle.project.remove", _bundle(bundle_id), {"project_id": project_id})
+        return remaining
 
     async def _modrinth_projects(self, refs: list[str]) -> list[ModrinthProject]:
         """The Modrinth projects these slugs or ids name, stored in the catalog; 404 naming any
@@ -155,7 +171,7 @@ class ModpackService():
 
     # Builds (i-7985ee-098611).
 
-    async def build_create(self, bundle_id: str) -> ModpackBuild:
+    async def build_create(self, bundle_id: str, actor: Actor) -> ModpackBuild:
         """
         Resolve the bundle and freeze the lock as its next build; latest moves to it.
 
@@ -181,6 +197,7 @@ class ModpackService():
             bundle_id=bundle.id, number=number, created_at=datetime.now(timezone.utc),  # type: ignore[arg-type]
             loader_version=loader_version, local_files=bundle.local_files, request=request, lock=lock))
         await self.modpackDB.bundle_latest_build(bundle_id, number)
+        await self.audit.record(actor, "build.create", _bundle(bundle_id), {"number": number})
         if self.notifier is not None:
             await self.notifier.notify(f"📦 {bundle.name}: build {number} creado, {len(lock.entries)} archivos.")
         return build
@@ -214,20 +231,31 @@ class ModpackService():
         safe = re.sub(r"[^A-Za-z0-9._-]+", "-", bundle.name).strip("-") or "modpack"
         return f"{safe}-{number}.mrpack", data
 
-    async def build_recommend(self, bundle_id: str, number: int) -> ModpackBundle:
+    async def build_recommend(self, bundle_id: str, number: int, actor: Actor) -> ModpackBundle:
         """Point recommended at an existing build; going back is pointing at an older one."""
         await self.modpackDB.build_get(bundle_id, number)
-        return await self.modpackDB.bundle_recommend_build(bundle_id, number)
+        bundle = await self.modpackDB.bundle_recommend_build(bundle_id, number)
+        await self.audit.record(actor, "build.recommend", _bundle(bundle_id), {"number": number})
+        return bundle
 
     # Global replacement rules (d-7985ee-86fffa).
 
     async def replacement_find(self) -> list[ModpackReplacement]:
         return await self.modpackDB.replacement_find()
 
-    async def replacement_set(self, project_id: str, replacement: Optional[str]) -> ModpackReplacement:
-        return await self.modpackDB.replacement_set(ModpackReplacement(project_id=project_id, replacement=replacement))
+    async def replacement_set(self, project_id: str, replacement: Optional[str], actor: Actor) -> ModpackReplacement:
+        rule = await self.modpackDB.replacement_set(ModpackReplacement(project_id=project_id, replacement=replacement))
+        await self.audit.record(actor, "replacement.set", _replacement(project_id), {"replacement": replacement})
+        return rule
 
-    async def replacement_delete(self, project_id: str) -> bool:
+    async def replacement_delete(self, project_id: str, actor: Actor) -> bool:
         if not await self.modpackDB.replacement_delete(project_id):
             raise HTTP_404_NOT_FOUND(f"No replacement rule for project '{project_id}'")
+        await self.audit.record(actor, "replacement.delete", _replacement(project_id))
         return True
+
+def _bundle(bundle_id: str) -> AuditTarget:
+    return AuditTarget(kind="bundle", id=bundle_id)
+
+def _replacement(project_id: str) -> AuditTarget:
+    return AuditTarget(kind="replacement", id=project_id)

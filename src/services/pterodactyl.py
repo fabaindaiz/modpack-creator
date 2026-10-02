@@ -51,7 +51,7 @@ class PterodactylService():
     async def server_get(self, server_id: str) -> PterodactylServer:
         return await self.pterodactylDB.server_get(server_id)
 
-    async def server_create(self, uuid: str) -> PterodactylServer:
+    async def server_create(self, uuid: str, actor: Actor) -> PterodactylServer:
         """
         Create a new Pterodactyl server.
         
@@ -59,9 +59,11 @@ class PterodactylService():
         :return: The created PterodactylServer object.
         """
         server = await self.pterodactylAPI.server_get(uuid)
-        return await self.pterodactylDB.server_insert(server)
+        created = await self.pterodactylDB.server_insert(server)
+        await self.audit.record(actor, "server.create", _target(str(created.id)), {"uuid": uuid})
+        return created
     
-    async def server_update(self, server_id: str) -> PterodactylServer:
+    async def server_update(self, server_id: str, actor: Actor) -> PterodactylServer:
         """
         Update a Pterodactyl server.
         
@@ -72,7 +74,9 @@ class PterodactylService():
         server = await self.pterodactylAPI.server_get(document.uuid)
         # The panel does not know our fields: keep them.
         server.bundle_id = document.bundle_id
-        return await self.pterodactylDB.server_save(server, document.id)
+        saved = await self.pterodactylDB.server_save(server, document.id)
+        await self.audit.record(actor, "server.refresh", _target(server_id))
+        return saved
 
     @operator_only
     async def server_link_bundle(self, server_id: str, bundle_id: Optional[str], actor: Actor) -> PterodactylServer:
@@ -96,7 +100,8 @@ class PterodactylService():
 
     # What a server has (i-7985ee-43df2f, option 1). Only reads: listing and downloading.
 
-    async def scan(self, server_id: str, directory: str = SCAN_DIRECTORY, full: bool = False) -> ServerScan:
+    async def scan(self, server_id: str, actor: Optional[Actor], directory: str = SCAN_DIRECTORY,
+                   full: bool = False) -> ServerScan:
         """
         Scan a directory of a server: which jars it has, and which Modrinth version each one is.
 
@@ -104,6 +109,7 @@ class PterodactylService():
         time changed since the last scan, or all of them if `full`; identifies them by sha1
         against Modrinth. Writes nothing to the server.
 
+        :param actor: Who asked; None for the scheduler's and the worker's scans, which are not recorded.
         :return: The stored scan.
         """
         server = await self.pterodactylDB.server_get(server_id)
@@ -117,9 +123,12 @@ class PterodactylService():
         known = [f for f in kept if f.status == "identified"]
         identified = await self._identify([*hashed, *(f for f in kept if f.status == "unknown")])
         files = sorted([*known, *identified, *too_large], key=lambda f: f.path)
-        return await self.pterodactylDB.scan_insert(ServerScan(
+        stored = await self.pterodactylDB.scan_insert(ServerScan(
             server_id=server.id, directory=directory, scanned_at=datetime.now(timezone.utc),  # type: ignore[arg-type]
             full=full, files=files))
+        if actor is not None:
+            await self.audit.record(actor, "server.scan", _target(server_id), {"directory": directory, "full": full})
+        return stored
 
     async def _hash(self, identifier: str, files: list[ListedFile]) -> list[ScanFile]:
         """Download each file and hash its bytes. The bytes are hashed, never opened or loaded."""
