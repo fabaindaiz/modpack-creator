@@ -52,9 +52,10 @@ async def lifespan(app: FastAPI):
             await task
     await dependences.close_clients(container)
 
+DOCS_PATH = getenv("DOCS_PATH", "/docs")
 app = FastAPI(title="Modpack Creator API",
               version=getenv("VERSION", "1.0.0"),
-              docs_url=getenv("DOCS_PATH", "/docs"),
+              docs_url=DOCS_PATH,
               redoc_url=getenv_opt("REDOCS_PATH"),
               openapi_tags=tags_metadata,
               lifespan=lifespan)
@@ -81,6 +82,12 @@ app.add_middleware(
     https_only=strToBool(getenv("SESSION_HTTPS_ONLY", "true")),
     max_age=int(getenv("SESSION_MAX_AGE", "43200")),
     same_site="lax")
+
+# Unsafe requests must come from this origin, and responses carry a strict CSP (the API docs are
+# exempt: they load their assets from a CDN). Both sit inside RequestIdMiddleware.
+from src.library.web_security import SameOriginMiddleware, SecurityHeadersMiddleware
+app.add_middleware(SecurityHeadersMiddleware, exempt_prefixes=(DOCS_PATH, "/openapi.json"))
+app.add_middleware(SameOriginMiddleware)
 
 # Added last, so it runs first: every request, including the session's 401s, gets an id and a line.
 app.add_middleware(RequestIdMiddleware)
