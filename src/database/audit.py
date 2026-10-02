@@ -1,6 +1,6 @@
-from datetime import datetime, timezone
 from typing import Any, Optional
-from beanie import SortDirection
+from beanie import PydanticObjectId, SortDirection
+from src.exceptions import *
 from src.model.audit import AuditEvent
 
 class AuditDatabase():
@@ -12,10 +12,10 @@ class AuditDatabase():
             actor_sub: Optional[str],
             action: Optional[str],
             target_id: Optional[str],
-            before: Optional[datetime],
+            before_id: Optional[str],
             limit: int,
             ) -> list[AuditEvent]:
-        """Events newest first, filtered by exact values (equality only, never a pattern)."""
+        """Events newest first (then by id), filtered by exact values (equality only, never a pattern)."""
         query: dict[str, Any] = {}
         if actor_sub is not None:
             query["actor.sub"] = {"$eq": actor_sub}
@@ -23,7 +23,15 @@ class AuditDatabase():
             query["action"] = {"$eq": action}
         if target_id is not None:
             query["target.id"] = {"$eq": target_id}
-        if before is not None:
-            # MongoDB gives datetimes back without a zone; they are UTC.
-            query["at"] = {"$lt": before if before.tzinfo else before.replace(tzinfo=timezone.utc)}
-        return await AuditEvent.find(query).sort(("at", SortDirection.DESCENDING)).limit(limit).to_list()
+        clauses: list[dict[str, Any]] = [query] if query else []
+        if before_id is not None:
+            if not PydanticObjectId.is_valid(before_id):
+                raise HTTP_404_NOT_FOUND(f"Audit event '{before_id}' not found")
+            oid = PydanticObjectId(before_id)
+            cursor = await AuditEvent.get(oid)
+            if cursor is None:
+                raise HTTP_404_NOT_FOUND(f"Audit event '{before_id}' not found")
+            # The cursor is the last event shown: `at` alone ties within a millisecond.
+            clauses.append({"$or": [{"at": {"$lt": cursor.at}}, {"at": cursor.at, "_id": {"$lt": oid}}]})
+        return await AuditEvent.find({"$and": clauses} if clauses else {}) \
+            .sort(("at", SortDirection.DESCENDING), ("_id", SortDirection.DESCENDING)).limit(limit).to_list()

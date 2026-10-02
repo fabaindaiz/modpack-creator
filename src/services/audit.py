@@ -40,10 +40,10 @@ class AuditService():
             actor_sub: Optional[str] = None,
             action: Optional[str] = None,
             target_id: Optional[str] = None,
-            before: Optional[datetime] = None,
+            before_id: Optional[str] = None,
             limit: int = 50,
             ) -> list[AuditEvent]:
-        """Events newest first; `limit` is held to 1..200."""
+        """Events newest first; `before_id` is the id of the last event of the previous page; `limit` is held to 1..200."""
         return await self.auditDB.find(
-            actor_sub=actor_sub, action=action, target_id=target_id, before=before,
+            actor_sub=actor_sub, action=action, target_id=target_id, before_id=before_id,
             limit=max(1, min(limit, MAX_LIMIT)))
