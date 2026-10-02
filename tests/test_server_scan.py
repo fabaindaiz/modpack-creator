@@ -22,6 +22,7 @@ from src.model.utils import MinecraftLoaders
 from src.services import pterodactyl as module
 from src.services.modpack import ModpackService
 from src.services.pterodactyl import PterodactylService
+from tests._actors import OPERATOR, RecordingAudit
 from tests._modrinth import RecordedModrinthAPI, load
 from tests.conftest import MongoRunner
 from tests.test_builds import FakeLoaders
@@ -78,13 +79,13 @@ class HashModrinthAPI(RecordedModrinthAPI):
         return found
 
 
-async def setup(panel: FakePanel, modrinth: HashModrinthAPI) -> tuple[PterodactylService, str]:
+async def setup(panel: FakePanel, modrinth: HashModrinthAPI, audit: Any = None) -> tuple[PterodactylService, str]:
     server = await PterodactylDatabase().server_insert(PterodactylServer(
         identifier="1a2b3c4d", internal_id=1, uuid="1a2b3c4d-0000", name="Survival", node="n1",
         description="", status=None, is_suspended=False, is_installing=False, is_transferring=False))
     service = PterodactylService(pterodactylAPI=cast(Any, panel), PterodactylDB=PterodactylDatabase(),
                                  modrinthAPI=cast(Any, modrinth), modrinthDB=ModrinthDatabase(),
-                                 modpackDB=ModpackDatabase())
+                                 modpackDB=ModpackDatabase(), audit=audit or RecordingAudit())
     return service, str(server.id)
 
 
@@ -262,7 +263,7 @@ def test_a_server_linked_to_a_bundle_compares_against_it_without_naming_it(mongo
         panel = FakePanel()
         panel.files = {"fabric-api.jar": (b"fabric api", T0)}
         service, server_id = await setup(panel, modrinth)
-        linked = await service.server_link_bundle(server_id, bundle_id)
+        linked = await service.server_link_bundle(server_id, bundle_id, actor=OPERATOR)
         await service.scan(server_id)
         return linked.bundle_id, (await service.compare(server_id)).in_sync
 
@@ -274,7 +275,7 @@ def test_linking_needs_an_existing_bundle_and_comparing_needs_a_link(mongo: Mong
     async def scenario() -> list[int]:
         service, server_id = await setup(FakePanel(), HashModrinthAPI({}))
         codes = []
-        for call in (lambda: service.server_link_bundle(server_id, "000000000000000000000000"),
+        for call in (lambda: service.server_link_bundle(server_id, "000000000000000000000000", actor=OPERATOR),
                      lambda: service.compare(server_id)):
             with pytest.raises(HTTPException) as refused:
                 await call()
@@ -295,7 +296,7 @@ def test_refreshing_a_server_from_the_panel_keeps_its_bundle(mongo: MongoRunner)
         modrinth = HashModrinthAPI({})
         bundle_id, _ = await build_with_fabric_api(modrinth)
         service, server_id = await setup(Panel(), modrinth)
-        await service.server_link_bundle(server_id, bundle_id)
+        await service.server_link_bundle(server_id, bundle_id, actor=OPERATOR)
         refreshed = await service.server_update(server_id)
         return refreshed.name, refreshed.bundle_id
 

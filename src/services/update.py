@@ -29,6 +29,10 @@ from src.library.mrpack import ALLOWED_DOMAINS
 from src.library.scan import compare
 from src.model.jobs import Job
 from src.model.pterodactyl import PterodactylServer
+from src.library.auth.roles import operator_only
+from src.model.audit import AuditTarget
+from src.model.users import Actor
+from src.services.audit import AuditSink
 from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink
 from src.services.pterodactyl import PterodactylService
 
@@ -72,6 +76,7 @@ class UpdateService():
             modpackDB: ModpackDatabase,
             downloader: Downloader,
             jobDB: JobDatabase,
+            audit: AuditSink,
             notifier: Optional[NotificationSink] = None,
             timing: Optional[UpdateTiming] = None,
             ) -> None:
@@ -81,12 +86,16 @@ class UpdateService():
         self.modpackDB = modpackDB
         self.downloader = downloader
         self.jobDB = jobDB
+        self.audit = audit
         self.notifier = notifier
         self.timing = timing or UpdateTiming()
 
-    # Queuing.
+    # Queuing. Operators only, a dry run too (it reads the panel on behalf of a write); the
+    # request is recorded after it is validated and before the job exists: no job without its
+    # event, and a failed record queues nothing.
 
-    async def enqueue_update(self, server_id: str, build: Optional[int] = None, dry_run: bool = True) -> Job:
+    @operator_only
+    async def enqueue_update(self, server_id: str, actor: Actor, build: Optional[int] = None, dry_run: bool = True) -> Job:
         """Queue an update of a server to a build of its bundle (by default the recommended one, else
         the latest). A dry run unless dry_run is False. 409 if the server has no bundle or build,
         or already has an active job."""
@@ -98,10 +107,14 @@ class UpdateService():
         if number is None:
             raise HTTP_409_CONFLICT(f"Bundle '{bundle.id}' has no build")
         await self.modpackDB.build_get(str(bundle.id), number)
+        await self.audit.record(actor, "server.update", AuditTarget(kind="server", id=server_id),
+                                {"build": number, "dry_run": dry_run})
         return await self.jobDB.enqueue("server_update", key=f"server:{server_id}",
-                                        payload={"server_id": server_id, "build": number, "dry_run": dry_run})
+                                        payload={"server_id": server_id, "build": number, "dry_run": dry_run},
+                                        requested_by=actor.ref())
 
-    async def enqueue_rollback(self, server_id: str, update_id: str, mode: str) -> Job:
+    @operator_only
+    async def enqueue_rollback(self, server_id: str, update_id: str, mode: str, actor: Actor) -> Job:
         """Queue rollback A (bring the old jars back) or B (restore the pre-update backup) of a
         failed update of this server (d-7985ee-5445a0)."""
         if mode not in ("A", "B"):
@@ -112,8 +125,11 @@ class UpdateService():
         needed = "swap" if mode == "A" else "backup"
         if needed not in update.checkpoint:
             raise HTTP_409_CONFLICT(f"The update never reached its {needed} step: nothing to roll back with {mode}")
+        await self.audit.record(actor, "server.rollback", AuditTarget(kind="server", id=server_id),
+                                {"update_id": update_id, "mode": mode})
         return await self.jobDB.enqueue("server_rollback", key=f"server:{server_id}",
-                                        payload={"server_id": server_id, "update_id": update_id, "mode": mode})
+                                        payload={"server_id": server_id, "update_id": update_id, "mode": mode},
+                                        requested_by=actor.ref())
 
     def handlers(self) -> dict[str, Handler]:
         return {"server_update": self._update, "server_rollback": self._rollback}

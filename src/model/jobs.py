@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import Field
 from pymongo import ASCENDING, IndexModel
 from typing import Any, Optional
+from src.model.users.actor import ActorRef
 
 class Job(Document):
     """A durable job (i-7985ee-0ec295): claimed atomically by one worker at a time under a lease,
@@ -29,6 +30,8 @@ class Job(Document):
     # Not claimed before this time: a failed attempt waits before the next (JobDatabase.release).
     available_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
+    # Who asked for it; None for the worker's own jobs and for jobs stored before this field.
+    requested_by: Optional[ActorRef] = None
 
     class Settings:
         indexes = [

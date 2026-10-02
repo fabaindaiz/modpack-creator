@@ -21,6 +21,7 @@ from src.model.jobs import Job
 from src.services.jobs import JobWorker
 from src.services.pterodactyl import PterodactylService
 from src.services.update import UpdateService, UpdateTiming
+from tests._actors import OPERATOR, RecordingAudit
 from tests._panel import StatefulPanel, sha512
 from tests.conftest import MongoRunner
 from tests.test_update import NOW, FakeTime, setup
@@ -140,12 +141,13 @@ def test_an_update_runs_end_to_end_through_the_real_http_client(mongo: MongoRunn
             api.session_auth = TokenAuthorization(token="test-panel-key")
             servers = PterodactylService(pterodactylAPI=api, PterodactylDB=PterodactylDatabase(),
                                          modrinthAPI=s.update.servers.modrinthAPI, modrinthDB=s.update.servers.modrinthDB,
-                                         modpackDB=ModpackDatabase())
+                                         modpackDB=ModpackDatabase(), audit=RecordingAudit())
             time = FakeTime()
             update = UpdateService(pterodactylAPI=api, pterodactylService=servers, pterodactylDB=PterodactylDatabase(),
                                    modpackDB=ModpackDatabase(), downloader=s.downloader, jobDB=JobDatabase(),  # type: ignore[arg-type]
+                                   audit=RecordingAudit(),
                                    notifier=s.recorder, timing=UpdateTiming(save_wait=5, poll=10, sleep=time.sleep, clock=time.clock))  # type: ignore[arg-type]
-            job = await update.enqueue_update(s.server_id, dry_run=False)
+            job = await update.enqueue_update(s.server_id, actor=OPERATOR, dry_run=False)
             worker = JobWorker(JobDatabase(), update.handlers(), owner="w1", clock=lambda: NOW)
             while await worker.run_once():
                 pass

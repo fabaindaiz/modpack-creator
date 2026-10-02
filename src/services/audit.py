@@ -1,10 +1,10 @@
 from datetime import datetime
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Protocol, runtime_checkable
 from src.database.audit import AuditDatabase
 from src.library.logging import request_id
 from src.model.audit import AuditEvent, AuditTarget
 from src.model.users import Actor
-from src.services.jobs import utcnow
+from src.library.utils import utcnow
 
 SECRET_KEYS = ("token", "secret", "password", "authorization")
 MAX_LIMIT = 200
@@ -19,6 +19,12 @@ def _check_details(details: Any) -> None:
     elif isinstance(details, (list, tuple)):
         for item in details:
             _check_details(item)
+
+@runtime_checkable
+class AuditSink(Protocol):
+    """Where a service records what an actor asked for: AuditService, or a test double."""
+    async def record(self, actor: Actor, action: str, target: AuditTarget,
+                     details: Optional[dict[str, Any]] = None) -> Any: ...
 
 class AuditService():
     def __init__(self,

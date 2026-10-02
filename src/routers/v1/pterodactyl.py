@@ -84,23 +84,23 @@ async def server_link_bundle(
         id: str,
         bundle_id: Optional[str] = Query(None, description="The bundle this server runs; empty unlinks it"),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
-        current_user = Depends(get_current_user)
+        actor: Actor = Depends(get_current_actor)
         ):
     """Link the server to the bundle it runs: scans are compared with it by default."""
-    return await pterodactylService.server_link_bundle(id, bundle_id)
+    return await pterodactylService.server_link_bundle(id, bundle_id, actor=actor)
 
 @router.post("/server/{id}/import", response_model=ImportResult)
 @inject
 async def server_import(
         id: str,
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
-        current_user = Depends(get_current_user)
+        actor: Actor = Depends(get_current_actor)
         ):
     """
     Bring the jars of the server's latest scan that its bundle does not explain into the bundle:
     by hash as the admin's, by metadata as candidates to confirm, the rest as local files.
     """
-    return await pterodactylService.import_server(id)
+    return await pterodactylService.import_server(id, actor=actor)
 
 @router.post("/server/{id}/import/confirm", response_model=list[PackProject])
 @inject
@@ -109,10 +109,10 @@ async def server_import_confirm(
         path: str,
         project_id: str,
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
-        current_user = Depends(get_current_user)
+        actor: Actor = Depends(get_current_actor)
         ):
     """Confirm that a jar of the server is this Modrinth project."""
-    return await pterodactylService.import_confirm(id, path, project_id)
+    return await pterodactylService.import_confirm(id, path, project_id, actor=actor)
 
 @router.post("/server/{id}/import/local", response_model=list[LocalFile])
 @inject
@@ -120,10 +120,10 @@ async def server_import_local(
         id: str,
         path: str,
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
-        current_user = Depends(get_current_user)
+        actor: Actor = Depends(get_current_actor)
         ):
     """Keep a jar of the server as a local file of its bundle."""
-    return await pterodactylService.import_local(id, path)
+    return await pterodactylService.import_local(id, path, actor=actor)
 
 @router.post("/server/{id}/update", response_model=Job, status_code=202)
 @inject
@@ -132,13 +132,13 @@ async def server_update_build(
         build: Optional[int] = Query(None, description="Build number; by default the recommended, else the latest"),
         dry_run: bool = Query(True, description="Read and verify everything, write nothing; false to really update"),
         updates: UpdateService = Depends(Provide[Dependences.updateService]),
-        current_user = Depends(get_current_user)
+        actor: Actor = Depends(get_current_actor)
         ):
     """
     Queue an update of the server to a build of its bundle. A dry run unless dry_run=false, and
     even then nothing is written unless PTERODACTYL_WRITES is enabled. Follow it with GET /job/{id}.
     """
-    return await updates.enqueue_update(id, build=build, dry_run=dry_run)
+    return await updates.enqueue_update(id, actor=actor, build=build, dry_run=dry_run)
 
 @router.post("/server/{id}/rollback", response_model=Job, status_code=202)
 @inject
@@ -147,10 +147,10 @@ async def server_rollback(
         update: str = Query(..., description="The id of the failed update job"),
         mode: str = Query(..., description="A: bring the old jars back. B: restore the pre-update backup (loses what was played since)"),
         updates: UpdateService = Depends(Provide[Dependences.updateService]),
-        current_user = Depends(get_current_user)
+        actor: Actor = Depends(get_current_actor)
         ):
     """Queue rollback A or B of a failed update; never automatic."""
-    return await updates.enqueue_rollback(id, update, mode)
+    return await updates.enqueue_rollback(id, update, mode, actor=actor)
 
 @router.post("/server/{id}/scan", response_model=ServerScan)
 @inject

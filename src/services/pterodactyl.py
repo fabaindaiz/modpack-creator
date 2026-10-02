@@ -12,6 +12,10 @@ from src.model.modpack import ModpackBundle, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthVersion
 from src.model.pterodactyl import ImportCandidate, ImportResult, ProjectCandidate, PterodactylFile, PterodactylServer, ServerScan
 from src.exceptions import *
+from src.library.auth.roles import operator_only
+from src.model.audit import AuditTarget
+from src.model.users import Actor
+from src.services.audit import AuditSink
 
 # A jar from a server is untrusted: it is hashed, never loaded, and not downloaded past this
 # size (untrusted-package-is-parsed-never-loaded). The largest common mods are a few tens of MiB.
@@ -28,12 +32,14 @@ class PterodactylService():
             modrinthAPI: ModrinthAPI,
             modrinthDB: ModrinthDatabase,
             modpackDB: ModpackDatabase,
+            audit: AuditSink,
             ) -> None:
         self.pterodactylAPI = pterodactylAPI
         self.pterodactylDB = PterodactylDB
         self.modrinthAPI = modrinthAPI
         self.modrinthDB = modrinthDB
         self.modpackDB = modpackDB
+        self.audit = audit
 
     async def server_external(self) -> list[PterodactylServer]:
         """Every server the panel key can see, straight from the panel."""
@@ -68,11 +74,15 @@ class PterodactylService():
         server.bundle_id = document.bundle_id
         return await self.pterodactylDB.server_save(server, document.id)
 
-    async def server_link_bundle(self, server_id: str, bundle_id: Optional[str]) -> PterodactylServer:
-        """Link a server to the bundle it runs (404 if the bundle does not exist), or unlink it."""
+    @operator_only
+    async def server_link_bundle(self, server_id: str, bundle_id: Optional[str], actor: Actor) -> PterodactylServer:
+        """Link a server to the bundle it runs (404 if the bundle does not exist), or unlink it.
+        Operators only: the bundle decides what an update writes to the server."""
         if bundle_id is not None:
             await self.modpackDB.bundle_get(bundle_id)
-        return await self.pterodactylDB.server_set_bundle(server_id, bundle_id)
+        server = await self.pterodactylDB.server_set_bundle(server_id, bundle_id)
+        await self.audit.record(actor, "server.bundle", _target(server_id), {"bundle_id": bundle_id})
+        return server
     
     async def server_files(self, server_id: str, directory: str) -> list[PterodactylFile]:
         """
@@ -194,7 +204,8 @@ class PterodactylService():
         bundle = await self.modpackDB.bundle_get(server.bundle_id)
         return server, bundle, await self.scan_latest(server_id)
 
-    async def import_server(self, server_id: str) -> ImportResult:
+    @operator_only
+    async def import_server(self, server_id: str, actor: Actor) -> ImportResult:
         """
         Bring into the server's bundle every jar of its latest scan that the bundle does not explain:
         identified by hash, the project joins as the admin's; unknown, its metadata is read as data
@@ -224,6 +235,9 @@ class PterodactylService():
                     result.local.append(file.path)
         if result.added:
             await self._add_projects(str(bundle.id), result.added)
+        await self.audit.record(actor, "server.import", _target(server_id), {
+            "bundle_id": str(bundle.id), "added": result.added, "local": result.local,
+            "candidates": [c.path for c in result.candidates]})
         return result
 
     async def _candidates(self, metadata: ModMetadata) -> list[ProjectCandidate]:
@@ -253,19 +267,29 @@ class PterodactylService():
             raise HTTP_404_NOT_FOUND(f"The latest scan has no hashed file {path}")
         return file
 
-    async def import_confirm(self, server_id: str, path: str, project_id: str) -> list[PackProject]:
+    @operator_only
+    async def import_confirm(self, server_id: str, path: str, project_id: str, actor: Actor) -> list[PackProject]:
         """The admin confirms that a jar is a Modrinth project: the project joins the bundle as the
         admin's, and the jar is claimed by it, to be replaced by the build's version."""
         _, bundle, scan = await self._import_context(server_id)
         file = self._scanned(scan, path)
         await self._add_projects(str(bundle.id), [project_id])
         await self.modpackDB.bundle_claim_add(str(bundle.id), ClaimedFile(sha512=file.sha512 or "", project_id=project_id))
+        await self.audit.record(actor, "server.import.confirm", _target(server_id),
+                                {"bundle_id": str(bundle.id), "path": path, "project_id": project_id})
         return (await self.modpackDB.bundle_get(str(bundle.id))).projects
 
-    async def import_local(self, server_id: str, path: str) -> list[LocalFile]:
+    @operator_only
+    async def import_local(self, server_id: str, path: str, actor: Actor) -> list[LocalFile]:
         """The admin keeps a jar as a local file of the bundle, untouched by updates."""
         _, bundle, scan = await self._import_context(server_id)
-        return await self.modpackDB.bundle_local_file_add(str(bundle.id), _local(self._scanned(scan, path)))
+        files = await self.modpackDB.bundle_local_file_add(str(bundle.id), _local(self._scanned(scan, path)))
+        await self.audit.record(actor, "server.import.local", _target(server_id),
+                                {"bundle_id": str(bundle.id), "path": path})
+        return files
+
+def _target(server_id: str) -> AuditTarget:
+    return AuditTarget(kind="server", id=server_id)
 
 def _local(file: ScanFile) -> LocalFile:
     return LocalFile(filename=file.path.rsplit("/", 1)[-1], sha512=file.sha512 or "", sha1=file.sha1 or "", size=file.size)

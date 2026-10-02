@@ -10,14 +10,12 @@ from src.database.jobs import JobDatabase
 from src.database.pterodactyl import PterodactylDatabase
 from src.exceptions import HTTP_409_CONFLICT
 from src.model.jobs import Job
+from src.library.utils import utcnow
 from src.services.pterodactyl import PterodactylService
 
 Clock = Callable[[], datetime]
 Handler = Callable[[Job, "JobContext"], Awaitable[None]]
 logger = logging.getLogger("modpack.jobs")
-
-def utcnow() -> datetime:
-    return datetime.now(timezone.utc)
 
 def _aware(value: datetime) -> datetime:
     """MongoDB gives datetimes back without a zone; they are UTC."""

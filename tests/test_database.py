@@ -12,6 +12,7 @@ from src.model.pterodactyl import PterodactylServer
 from src.services.pterodactyl import PterodactylService
 from src.model.users import UsersInternal, UsersProviderAuthentik
 from src.services.modrinth import ModrinthService
+from tests._actors import RecordingAudit
 from tests.conftest import MongoRunner
 
 pytestmark = pytest.mark.network
@@ -207,7 +208,8 @@ def test_server_update_writes_what_the_panel_returns(mongo: MongoRunner) -> None
         stored = await database.server_insert(server(description="old"))
         service = PterodactylService(pterodactylAPI=cast(Any, FakePterodactylAPI(server(description="new"))),
                                      PterodactylDB=database, modrinthAPI=cast(Any, None),
-                                     modrinthDB=ModrinthDatabase(), modpackDB=cast(Any, None))
+                                     modrinthDB=ModrinthDatabase(), modpackDB=cast(Any, None),
+                                     audit=RecordingAudit())
         await service.server_update(str(stored.id))
         reread = await PterodactylServer.get(stored.id)
         assert reread is not None

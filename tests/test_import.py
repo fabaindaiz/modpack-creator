@@ -19,6 +19,7 @@ from fastapi import HTTPException
 
 from src.model.modpack import ModpackBundle
 from src.model.modrinth import ModrinthProject
+from tests._actors import OPERATOR
 from tests._modrinth import FABRIC_API, IRIS
 from tests.conftest import MongoRunner
 from tests.test_server_scan import T0, FakePanel, HashModrinthAPI, build_with_fabric_api, setup, sha1
@@ -60,7 +61,7 @@ async def linked_server(files: dict[str, bytes]) -> tuple[Any, str, str]:
     panel = FakePanel()
     panel.files = {name: (data, T0) for name, data in files.items()}
     service, server_id = await setup(panel, modrinth)
-    await service.server_link_bundle(server_id, bundle_id)
+    await service.server_link_bundle(server_id, bundle_id, actor=OPERATOR)
     await service.scan(server_id)
     return service, server_id, bundle_id
 
@@ -74,7 +75,7 @@ def test_importing_sorts_every_jar_the_bundle_does_not_explain(mongo: MongoRunne
             "privado.jar": fabric_jar("privado", "Mod Privado"),    # desconocido; no está en Modrinth
             "roto.jar": b"not a zip at all",                         # desconocido; ni metadata
         })
-        result = await service.import_server(server_id)
+        result = await service.import_server(server_id, actor=OPERATOR)
         bundle = await ModpackBundle.get(bundle_id)
         assert bundle is not None
         return (result.added, [(c.path, [x.project_id for x in c.candidates]) for c in result.candidates],
@@ -92,8 +93,8 @@ def test_importing_sorts_every_jar_the_bundle_does_not_explain(mongo: MongoRunne
 def test_importing_twice_adds_nothing_new(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[list[str], list[str], int]:
         service, server_id, bundle_id = await linked_server({"iris.jar": b"iris jar", "privado.jar": b"opaque"})
-        await service.import_server(server_id)
-        again = await service.import_server(server_id)
+        await service.import_server(server_id, actor=OPERATOR)
+        again = await service.import_server(server_id, actor=OPERATOR)
         bundle = await ModpackBundle.get(bundle_id)
         assert bundle is not None
         return again.added, again.local, len(bundle.local_files)
@@ -105,8 +106,8 @@ def test_a_confirmed_candidate_joins_the_bundle_and_claims_its_jar(mongo: MongoR
     async def scenario() -> tuple[dict[str, str], list[str], list[str]]:
         service, server_id, bundle_id = await linked_server({"fabric-api.jar": b"fabric api",
                                                              "lithium-dev.jar": fabric_jar("lithium", "Lithium")})
-        await service.import_server(server_id)
-        await service.import_confirm(server_id, "/mods/lithium-dev.jar", LITHIUM)
+        await service.import_server(server_id, actor=OPERATOR)
+        await service.import_confirm(server_id, "/mods/lithium-dev.jar", LITHIUM, actor=OPERATOR)
         bundle = await ModpackBundle.get(bundle_id)
         assert bundle is not None
         # Contra el build 1 (sin Lithium), el jar reclamado sobra en vez de ser desconocido.
@@ -123,8 +124,8 @@ def test_a_candidate_the_admin_rejects_becomes_a_local_file(mongo: MongoRunner) 
     async def scenario() -> tuple[list[str], bool]:
         service, server_id, bundle_id = await linked_server({"fabric-api.jar": b"fabric api",
                                                              "lithium-dev.jar": fabric_jar("lithium", "Lithium")})
-        await service.import_server(server_id)
-        await service.import_local(server_id, "/mods/lithium-dev.jar")
+        await service.import_server(server_id, actor=OPERATOR)
+        await service.import_local(server_id, "/mods/lithium-dev.jar", actor=OPERATOR)
         bundle = await ModpackBundle.get(bundle_id)
         assert bundle is not None
         return [f.filename for f in bundle.local_files], (await service.compare(server_id, build=1)).in_sync
@@ -138,9 +139,9 @@ def test_importing_needs_a_linked_server_and_a_scan(mongo: MongoRunner) -> None:
     async def scenario() -> list[int]:
         service, server_id = await setup(FakePanel(), SearchingModrinthAPI({}))
         codes = []
-        for call in (lambda: service.import_server(server_id),
-                     lambda: service.import_confirm(server_id, "/mods/x.jar", LITHIUM),
-                     lambda: service.import_local(server_id, "/mods/x.jar")):
+        for call in (lambda: service.import_server(server_id, actor=OPERATOR),
+                     lambda: service.import_confirm(server_id, "/mods/x.jar", LITHIUM, actor=OPERATOR),
+                     lambda: service.import_local(server_id, "/mods/x.jar", actor=OPERATOR)):
             with pytest.raises(HTTPException) as refused:
                 await call()
             codes.append(refused.value.status_code)

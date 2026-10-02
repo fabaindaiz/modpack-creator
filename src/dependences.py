@@ -58,11 +58,11 @@ class Dependences(containers.DeclarativeContainer):
     healthService = providers.Singleton(HealthService, healthDatabase, workerBeat)
     usersService = providers.Singleton(UsersService, usersDatabase)
     modrinthService = providers.Singleton(ModrinthService, modrinthAPI, modrinthDatabase)
-    pterodactylService = providers.Singleton(PterodactylService, pterodactylAPI, pterodactylDatabase, modrinthAPI, modrinthDatabase, modpackDatabase)
-    modpackService = providers.Singleton(ModpackService, modpackDatabase, modrinthDatabase, modrinthAPI, loaderAPI, notifier)
     auditService = providers.Singleton(AuditService, auditDatabase)
+    pterodactylService = providers.Singleton(PterodactylService, pterodactylAPI, pterodactylDatabase, modrinthAPI, modrinthDatabase, modpackDatabase, auditService)
+    modpackService = providers.Singleton(ModpackService, modpackDatabase, modrinthDatabase, modrinthAPI, loaderAPI, notifier)
     jobService = providers.Singleton(JobService, jobDatabase, pterodactylService, pterodactylDatabase, notifier)
-    updateService = providers.Singleton(UpdateService, pterodactylAPI, pterodactylService, pterodactylDatabase, modpackDatabase, downloader, jobDatabase, notifier)
+    updateService = providers.Singleton(UpdateService, pterodactylAPI, pterodactylService, pterodactylDatabase, modpackDatabase, downloader, jobDatabase, auditService, notifier)
 
 async def close_clients(container: Dependences) -> None:
     """Close the HTTP session each client keeps (i-7985ee-57034c); the lifespan calls it on shutdown."""

@@ -5,6 +5,7 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 from typing import Any, Optional
 from src.model.jobs import Job
+from src.model.users.actor import ActorRef
 from src.exceptions import *
 
 # After a failed attempt, the next one waits RETRY_BASE * 2**(attempts - 1), at most RETRY_MAX:
@@ -19,11 +20,12 @@ class JobDatabase():
     expired and was claimed by another can no longer heartbeat, checkpoint or finish it."""
 
     async def enqueue(self, kind: str, key: Optional[str], payload: dict[str, Any],
-                      max_attempts: int = 3, now: Optional[datetime] = None) -> Job:
+                      max_attempts: int = 3, now: Optional[datetime] = None,
+                      requested_by: Optional[ActorRef] = None) -> Job:
         """Queue a job; 409 if its key already has an active one."""
         # available_at stays unset: a new job waits for nothing; only a retry sets it.
         job = Job(kind=kind, key=key, payload=payload, max_attempts=max_attempts,
-                  created_at=now or datetime.now(timezone.utc))
+                  created_at=now or datetime.now(timezone.utc), requested_by=requested_by)
         try:
             return await Job.insert(job)
         except DuplicateKeyError as error:

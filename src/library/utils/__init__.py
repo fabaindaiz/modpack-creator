@@ -100,3 +100,6 @@ def name_from_url(url: str) -> str:
 
 def now() -> float:
     return datetime.now(tz=timezone.utc).timestamp()
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)

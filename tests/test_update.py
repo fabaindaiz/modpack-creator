@@ -25,6 +25,7 @@ from src.model.pterodactyl import PterodactylServer
 from src.services.jobs import JobWorker
 from src.services.pterodactyl import PterodactylService
 from src.services.update import UpdateService, UpdateTiming
+from tests._actors import OPERATOR, RecordingAudit
 from tests._modrinth import FABRIC_API
 from tests._panel import StatefulPanel, sha512
 from tests.conftest import MongoRunner
@@ -77,7 +78,7 @@ class Setup:
         return f"fabric-api {version_id}".encode()
 
     async def run(self, **enqueue: Any) -> Job:
-        job = await self.update.enqueue_update(self.server_id, **enqueue)
+        job = await self.update.enqueue_update(self.server_id, actor=OPERATOR, **enqueue)
         worker = JobWorker(JobDatabase(), self.update.handlers(), owner="w1", clock=lambda: NOW)
         while await worker.run_once():
             pass
@@ -86,7 +87,7 @@ class Setup:
         return stored
 
     async def rollback(self, update_job: Job, mode: str) -> Job:
-        job = await self.update.enqueue_rollback(self.server_id, str(update_job.id), mode)
+        job = await self.update.enqueue_rollback(self.server_id, str(update_job.id), mode, actor=OPERATOR)
         worker = JobWorker(JobDatabase(), self.update.handlers(), owner="w1", clock=lambda: NOW)
         while await worker.run_once():
             pass
@@ -95,7 +96,8 @@ class Setup:
         return stored
 
 
-async def setup(extra_files: dict[str, bytes] | None = None, installed: str = "older", **panel_options: Any) -> Setup:
+async def setup(extra_files: dict[str, bytes] | None = None, installed: str = "older", audit: Any = None,
+                **panel_options: Any) -> Setup:
     modrinth = HashModrinthAPI({})
     contents: dict[str, bytes] = {}
     for version in modrinth.versions:
@@ -112,15 +114,16 @@ async def setup(extra_files: dict[str, bytes] | None = None, installed: str = "o
     on_server = f"fabric-api {newest if installed == 'newest' else older}".encode()
     panel = StatefulPanel({"/mods/fabric-api-installed.jar": on_server, **(extra_files or {})}, **panel_options)
     servers = PterodactylService(pterodactylAPI=cast(Any, panel), PterodactylDB=PterodactylDatabase(),
-                                 modrinthAPI=cast(Any, modrinth), modrinthDB=ModrinthDatabase(), modpackDB=ModpackDatabase())
+                                 modrinthAPI=cast(Any, modrinth), modrinthDB=ModrinthDatabase(), modpackDB=ModpackDatabase(),
+                                 audit=RecordingAudit())
     server = await PterodactylDatabase().server_insert(PterodactylServer(
         identifier="1a2b", internal_id=1, uuid="1a2b-0", name="Survival", node="n1", description="", status=None,
         is_suspended=False, is_installing=False, is_transferring=False))
-    await servers.server_link_bundle(str(server.id), bundle_id)
+    await servers.server_link_bundle(str(server.id), bundle_id, actor=OPERATOR)
     recorder, downloader, time = Recorder(), FakeDownloader(contents), FakeTime()
     update = UpdateService(pterodactylAPI=cast(Any, panel), pterodactylService=servers, pterodactylDB=PterodactylDatabase(),
                            modpackDB=ModpackDatabase(), downloader=cast(Any, downloader), jobDB=JobDatabase(),
-                           notifier=cast(Any, recorder), timing=UpdateTiming(save_wait=5, poll=10, sleep=time.sleep, clock=time.clock))
+                           audit=audit or RecordingAudit(), notifier=cast(Any, recorder), timing=UpdateTiming(save_wait=5, poll=10, sleep=time.sleep, clock=time.clock))
     return Setup(panel, update, str(server.id), recorder, downloader, newest, older, contents)
 
 
@@ -260,7 +263,7 @@ def test_a_rollback_needs_a_failed_update_of_that_server(mongo: MongoRunner) -> 
         codes = []
         for update_id, mode in ((str(done.id), "A"), ("000000000000000000000000", "A"), (str(done.id), "C")):
             with pytest.raises(HTTPException) as refused:
-                await s.update.enqueue_rollback(s.server_id, update_id, mode)
+                await s.update.enqueue_rollback(s.server_id, update_id, mode, actor=OPERATOR)
             codes.append(refused.value.status_code)
         return codes
 
@@ -282,7 +285,7 @@ def test_a_retry_after_the_backup_does_not_make_a_second_one(mongo: MongoRunner)
             return await original(server_id, backup_id)
 
         s.panel.backup_get = dies_once  # type: ignore[method-assign]
-        job = await s.update.enqueue_update(s.server_id, dry_run=False)
+        job = await s.update.enqueue_update(s.server_id, actor=OPERATOR, dry_run=False)
         clock = {"now": NOW}
         worker = JobWorker(JobDatabase(), s.update.handlers(), owner="w1", clock=lambda: clock["now"])
         await worker.run_once()
