@@ -69,6 +69,7 @@ los dos, o una fila mal formada, hace fallar el test. El nombre del método no s
 | `ModpackService.bundle_create` | editor | Crea un bundle. |
 | `ModpackService.bundle_update` | editor | Cambia los datos de un bundle. |
 | `ModpackService.decision_set` | editor | Decide si un mod va en el servidor o solo en el cliente. |
+| `ModpackService.decisions_set` | editor | Decide varios mods a la vez, en una sola escritura atómica. |
 | `ModpackService.project_add` | editor | Agrega mods al bundle. |
 | `ModpackService.pack_replace` | editor | Reemplaza la lista de mods del bundle. |
 | `ModpackService.project_remove` | editor | Quita un mod del bundle. |

@@ -92,6 +92,13 @@ async def decision_set(audit: RecordingAudit, actor: Actor) -> str:
     return bundle_id
 
 
+async def decisions_set(audit: RecordingAudit, actor: Actor) -> str:
+    service = modpack(audit)
+    bundle_id = await bundle_of(service, audit)
+    await service.decisions_set(bundle_id, {"AANobbMI": True, "P2": False}, actor=actor)
+    return bundle_id
+
+
 async def project_add(audit: RecordingAudit, actor: Actor) -> str:
     service = modpack(audit)
     bundle_id = await bundle_of(service, audit)
@@ -172,6 +179,7 @@ TABLE: list[tuple[Case, str, str, dict[str, Any] | None]] = [
     (bundle_create, "bundle.create", "bundle", None),
     (bundle_update, "bundle.update", "bundle", None),
     (decision_set, "bundle.decision", "bundle", {"project_id": "AANobbMI", "server": True}),
+    (decisions_set, "bundle.decision", "bundle", {"decisions": {"AANobbMI": True, "P2": False}}),
     (project_add, "bundle.project.add", "bundle", {"refs": ["iris"], "origin": "admin"}),
     (pack_replace, "bundle.project.replace", "bundle", None),
     (project_remove, "bundle.project.remove", "bundle", None),

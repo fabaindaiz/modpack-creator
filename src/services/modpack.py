@@ -65,6 +65,18 @@ class ModpackService():
                                 {"project_id": project_id, "server": server})
         return updated
 
+    async def decisions_set(self, bundle_id: str, decisions: dict[str, bool], actor: Actor) -> ModpackBundle:
+        """Decide several mods at once, in one atomic write. 422 if there is none or any id is not a
+        Modrinth project id: every id is checked first, so nothing is written for a bad batch."""
+        if not decisions:
+            raise HTTP_422_UNPROCESSABLE_ENTITY("There is no decision to save")
+        for project_id in decisions:
+            if not MODRINTH_ID.fullmatch(project_id):
+                raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{project_id}' is not a Modrinth project id")
+        updated = await self.modpackDB.bundle_decisions_set(bundle_id, decisions)
+        await self.audit.record(actor, "bundle.decision", _bundle(bundle_id), {"decisions": decisions})
+        return updated
+
     # Content (i-7985ee-063a3a).
 
     async def project_find(self, bundle_id: str) -> list[PackProject]:

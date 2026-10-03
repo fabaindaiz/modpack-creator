@@ -90,6 +90,10 @@ class FakeModpack:
         self._record("decision_set", bundle_id, project_id, server, actor)
         return self.bundle
 
+    async def decisions_set(self, bundle_id: str, decisions: dict[str, bool], actor: Actor) -> ModpackBundle:
+        self._record("decisions_set", bundle_id, decisions, actor)
+        return self.bundle
+
     async def project_add(self, bundle_id: str, refs: list[str], origin: ProjectOrigin, actor: Actor) -> list[PackProject]:
         self._record("project_add", bundle_id, refs, origin, actor)
         return self.bundle.projects
@@ -442,6 +446,31 @@ def test_decision_must_be_yes_or_no() -> None:
     assert response.status_code == 422 and modpack.calls == []
 
 
+def test_lock_offers_one_form_with_every_undecided_mod() -> None:
+    client, modpack, _ = setup()
+    modpack.lock = lock(entry("P1"), entry("P2", "admin"), entry("P3", "admin"))
+    text = client.post(f"/modpacks/{BUNDLE_ID}/resolve", headers=HTMX).text
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/decisions/bulk"' in text
+    assert 'name="decision.P2"' in text and 'name="decision.P3"' in text and 'name="decision.P1"' not in text
+    assert "Guardar decisiones" in text
+
+
+def test_bulk_decisions_call_the_service_with_the_dict_and_skip_undecided() -> None:
+    client, modpack, _ = setup()
+    response = client.post(f"/modpacks/{BUNDLE_ID}/decisions/bulk", headers=HTMX,
+                           data={"decision.P2": "si", "decision.P3": "no", "decision.P4": ""})
+    assert response.status_code == 200 and 'id="lock"' in response.text
+    assert call(modpack, "decisions_set")[1:] == (str(BUNDLE_ID), {"P2": True, "P3": False}, EDITOR)
+
+
+def test_bulk_decisions_refuse_bad_values_ids_and_empty_forms() -> None:
+    client, modpack, _ = setup()
+    for data in ({"decision.P2": "yes"}, {"decision.P2": "si", "decision.a.b": "no"}, {"decision.$x": "si"}, {"other": "si"}, {}):
+        response = client.post(f"/modpacks/{BUNDLE_ID}/decisions/bulk", headers=HTMX, data=data)
+        assert response.status_code == 422, data
+    assert modpack.calls == []
+
+
 # Builds.
 
 def test_builds_list_marks_the_recommended_one() -> None:
@@ -610,3 +639,50 @@ def test_decision_set_records_the_event_and_refuses_bad_ids(mongo: MongoRunner) 
     (action, target, details), who, stored, count = mongo(scenario)
     assert (action, target.kind, details, who, count) == ("bundle.decision", "bundle", {"project_id": "P1", "server": False}, EDITOR.ref(), 1)
     assert stored == {"OLD": True, "P1": False}
+
+
+@pytest.mark.network
+def test_bulk_decisions_write_every_key_atomically(mongo: MongoRunner) -> None:
+    from src.database import ModpackDatabase
+
+    async def scenario() -> dict[str, bool]:
+        database = ModpackDatabase()
+        created = await database.bundle_insert(_stored_bundle())
+        bundle_id = str(created.id)
+        await database.bundle_decision_set(bundle_id, "KEPT", False)
+        updated = await database.bundle_decisions_set(bundle_id, {"P1": True, "P2": False, "OLD": False})
+        assert updated.server_decisions == (await database.bundle_get(bundle_id)).server_decisions
+        return updated.server_decisions
+
+    assert mongo(scenario) == {"OLD": False, "KEPT": False, "P1": True, "P2": False}
+
+
+@pytest.mark.network
+def test_bulk_with_one_bad_id_writes_nothing(mongo: MongoRunner) -> None:
+    from fastapi import HTTPException
+
+    from src.database import ModpackDatabase
+    from tests._actors import RecordingAudit
+
+    async def scenario() -> tuple[list[int], dict[str, bool], Any, int]:
+        database, audit = ModpackDatabase(), RecordingAudit()
+        service = ModpackService(database, None, None, None, audit)  # type: ignore[arg-type]
+        created = await database.bundle_insert(_stored_bundle())
+        bundle_id = str(created.id)
+        statuses = []
+        for bad in ({"P1": True, "a.b": False}, {"P1": True, "$x": False}, {"": True}, {}):
+            with pytest.raises(HTTPException) as refused:
+                await service.decisions_set(bundle_id, bad, actor=EDITOR)
+            statuses.append(refused.value.status_code)
+        with pytest.raises(HTTPException) as missing:
+            await service.decisions_set(str(PydanticObjectId()), {"P1": True}, actor=EDITOR)
+        statuses.append(missing.value.status_code)
+        assert len(audit.events) == 0
+        await service.decisions_set(bundle_id, {"P1": True, "P2": False}, actor=EDITOR)
+        stored = (await database.bundle_get(bundle_id)).server_decisions
+        return statuses, stored, audit.events[0][:3], len(audit.events)
+
+    statuses, stored, (action, target, details), count = mongo(scenario)
+    assert statuses == [422, 422, 422, 422, 404]
+    assert stored == {"OLD": True, "P1": True, "P2": False}
+    assert (action, target.kind, details, count) == ("bundle.decision", "bundle", {"decisions": {"P1": True, "P2": False}}, 1)

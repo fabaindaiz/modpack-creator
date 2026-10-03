@@ -63,6 +63,23 @@
       </li>
       {% endfor %}
     </ul>
+    <form hx-post="/modpacks/{{ bundle_id }}/decisions/bulk" hx-target="#lock" hx-swap="outerHTML" class="space-y-2 border-t border-amber-300 pt-2 dark:border-amber-500/40">
+      <h4 class="font-semibold">Decidir todos de una vez</h4>
+      <p class="text-xs">Los mods que dejes sin decidir no se guardan.</p>
+      <ul class="space-y-1">
+        {% for entry in lock.undecided %}
+        <li class="flex flex-wrap items-center gap-2">
+          <label for="bulk-{{ entry.project_id }}" class="min-w-0 flex-1 font-medium break-words">{{ titles.get(entry.project_id, entry.project_id) }}</label>
+          <select id="bulk-{{ entry.project_id }}" name="decision.{{ entry.project_id }}" class="rounded-md border-0 bg-white px-2 py-1 text-sm text-zinc-900 ring-1 ring-inset ring-amber-400 dark:bg-zinc-900 dark:text-zinc-100">
+            <option value="" selected>Sin decidir</option>
+            <option value="si">En el servidor</option>
+            <option value="no">Solo cliente</option>
+          </select>
+        </li>
+        {% endfor %}
+      </ul>
+      {{ ui.button("Guardar decisiones", type="submit") }}
+    </form>
   </div>
   {% endif %}
 

@@ -1,10 +1,12 @@
 import logging
+import re
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Optional
 from urllib.parse import urlsplit
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from src.exceptions import HTTP_422_UNPROCESSABLE_ENTITY
 from src.dependences import Dependences, ModpackService, ModrinthService
 from src.model.modpack import ModpackBundle, ModpackBundleCreate, ProjectOrigin
 from src.model.modrinth.project import ModrinthEnvironment
@@ -17,6 +19,8 @@ router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
 
 # A Modrinth id or slug: what a path or an attribute may carry unescaped.
 MODRINTH_REF = r"^[A-Za-z0-9_\-]+$"
+# The prefix of a bulk-decision field: `decision.<project id>`.
+DECISION_PREFIX = "decision."
 SEARCH_LIMIT = 10
 SEARCH_TEXT_MAX = 100
 # The only host the CSP lets an <img> load from besides ourselves (web_security.CSP).
@@ -248,6 +252,34 @@ async def modpack_decide(
         ):
     """Decide whether a mod goes on the server: one key, written atomically by the service."""
     await modpackService.decision_set(bundle_id, project_id, server == "yes", actor)
+    return await _lock(request, actor, modpackService, modrinthService, bundle_id)
+
+@router.post("/modpacks/{bundle_id}/decisions/bulk")
+@inject
+async def modpack_decide_bulk(
+        bundle_id: str,
+        request: Request,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
+        ):
+    """Save every decision of the form at once. Fields are `decision.<id>` = `si` | `no`; a mod left
+    undecided sends an empty value and is skipped. Any other value or id refuses the whole form."""
+    decisions: dict[str, bool] = {}
+    for field, value in (await request.form()).items():
+        if not field.startswith(DECISION_PREFIX):
+            continue
+        project_id = field[len(DECISION_PREFIX):]
+        if not re.fullmatch(MODRINTH_REF, project_id) or len(project_id) > 200:
+            raise HTTP_422_UNPROCESSABLE_ENTITY("Una decisión nombra un mod que no es un id de Modrinth")
+        if value == "":
+            continue
+        if value not in ("si", "no"):
+            raise HTTP_422_UNPROCESSABLE_ENTITY("Cada decisión es «sí» o «no»")
+        decisions[project_id] = value == "si"
+    if not decisions:
+        raise HTTP_422_UNPROCESSABLE_ENTITY("Elige al menos una decisión")
+    await modpackService.decisions_set(bundle_id, decisions, actor)
     return await _lock(request, actor, modpackService, modrinthService, bundle_id)
 
 @router.post("/modpacks/{bundle_id}/builds")

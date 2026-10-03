@@ -113,6 +113,19 @@ class ModpackDatabase():
             raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' not found")
         return await self.bundle_get(bundle_id)
 
+    async def bundle_decisions_set(self, bundle_id: str, decisions: dict[str, bool]) -> ModpackBundle:
+        """
+        Decide several mods in one update: every `server_decisions.<id>` key is set by a single
+        `update_one`, so either all land or none does, and decisions made before stay. Each id
+        must be a plain Modrinth id (the caller checks them): it becomes a key of a dotted path.
+        """
+        oid = self._bundle_oid(bundle_id)
+        result = await ModpackBundle.get_pymongo_collection().update_one(
+            {"_id": oid}, {"$set": {f"server_decisions.{project_id}": server for project_id, server in decisions.items()}})
+        if not result.matched_count:
+            raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' not found")
+        return await self.bundle_get(bundle_id)
+
     async def bundle_pack_replace(self, bundle_id: str, projects: list[PackProject]) -> list[PackProject]:
         """
         Replace what the pack brings, keeping what the admin added (d-7985ee-b15dd4).
