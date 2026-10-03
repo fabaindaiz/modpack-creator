@@ -3,10 +3,7 @@ from fastapi.responses import RedirectResponse
 from dependency_injector.wiring import Provide, inject
 from src.dependences import *
 from src.exceptions import *
-
-# A local path whose second character is never a slash: `//host` is protocol-relative and would
-# send the browser to another host. The regex engine has no lookahead, hence the explicit shape.
-LOCAL_PATH = r"^/([a-zA-Z0-9_\-\?\=\&][a-zA-Z0-9/_\-\?\=\&]*)?$"
+from src.library.auth.redirect import LOCAL_PATH
 
 router = APIRouter(
     tags=["auth"],

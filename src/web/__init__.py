@@ -4,7 +4,6 @@ Pages are server-rendered with Jinja2 and enhanced with htmx. Under the CSP (`we
 nothing inline runs: no `<script>` without `src`, no `style=`, no `hx-on`.
 """
 import hashlib
-import re
 from pathlib import Path
 from typing import Any, Callable, Coroutine, Optional
 from urllib.parse import quote, urlsplit
@@ -16,6 +15,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.routing import APIRoute
 from fastapi.templating import Jinja2Templates
 
+from src.library.auth.redirect import is_local_path
 from src.library.auth.roles import actor_from_session
 from src.model.users import Actor
 from src.services.users import OIDC_OPERATOR_GROUPS
@@ -25,8 +25,6 @@ TEMPLATES_DIR = WEB_DIR / "templates"
 STATIC_DIR = WEB_DIR / "static"
 DIST_DIR = STATIC_DIR / "dist"
 
-# What /v1/login accepts as `redirect` (src/routers/v1/auth.py): anything else goes back to "/".
-LOGIN_REDIRECT = re.compile(r"^/[a-zA-Z0-9/_\-\?\=\&]*$")
 # Errors a page shows as a notice: htmx swaps these into #notices (static/app.js).
 NOTICE_STATUSES = frozenset({403, 404, 409, 422})
 # What a request that fails validation is told. Never FastAPI's error list: it echoes the input.
@@ -88,9 +86,8 @@ class LoginRequired(Exception):
 
 
 def login_url(redirect: str) -> str:
-    # "//host" would be another site's address: it goes back to "/" too.
-    safe = LOGIN_REDIRECT.match(redirect) and not redirect.startswith("//")
-    return "/v1/login?redirect=" + quote(redirect if safe else "/", safe="/")
+    # The same rule as /v1/login (`is_local_path`): anything else goes back to "/".
+    return "/v1/login?redirect=" + quote(redirect if is_local_path(redirect) else "/", safe="/")
 
 
 async def login_required_handler(request: Request, exc: Exception) -> Response:

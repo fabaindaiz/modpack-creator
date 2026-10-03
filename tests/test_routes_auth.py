@@ -81,3 +81,27 @@ def test_logout_keeps_a_local_redirect() -> None:
     for good in ("/", "/modpacks?x=1"):
         answer = client.get("/v1/logout", params={"redirect": good})
         assert answer.status_code == 307 and answer.headers["location"] == good
+
+
+CASES = ["/", "/modpacks?x=1", "//h", "/\\h", "/%2F/h", "/x\n"]
+
+
+def test_login_url_and_v1_share_one_rule() -> None:
+    """El panel y /v1 deciden igual qué `redirect` es local (R11)."""
+    from urllib.parse import parse_qs, urlsplit
+
+    from src.library.auth.redirect import is_local_path
+    from src.web import login_url
+
+    client = TestClient(app(), follow_redirects=False)
+    for value in CASES:
+        accepted = client.get("/v1/logout", params={"redirect": value}).status_code != 422
+        sent = parse_qs(urlsplit(login_url(value)).query)["redirect"][0]
+        assert accepted == is_local_path(value), value
+        assert (sent == value) == accepted or (not accepted and sent == "/"), value
+
+
+def test_good_redirects_are_not_refused_by_v1_login() -> None:
+    client = TestClient(app(), follow_redirects=False, raise_server_exceptions=False)
+    for good in ("/", "/modpacks?x=1"):
+        assert client.get("/v1/login", params={"redirect": good}).status_code != 422, good
