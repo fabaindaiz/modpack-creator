@@ -414,8 +414,8 @@ def test_resolve_shows_the_lock_with_undecided_mods() -> None:
     assert response.status_code == 200 and 'id="lock"' in response.text
     assert call(modpack, "resolve")[1] == str(BUNDLE_ID)
     assert "Sodium" in response.text and "Lithium" in response.text
-    assert f'hx-post="/modpacks/{BUNDLE_ID}/decisions"' in response.text
-    assert 'name="project_id" value="P2"' in response.text and "¿Va en el servidor?" in response.text
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/decisions/bulk"' in response.text
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/decisions"' not in response.text
 
 
 def test_resolve_shows_problems() -> None:
@@ -453,6 +453,12 @@ def test_lock_offers_one_form_with_every_undecided_mod() -> None:
     assert f'hx-post="/modpacks/{BUNDLE_ID}/decisions/bulk"' in text
     assert 'name="decision.P2"' in text and 'name="decision.P3"' in text and 'name="decision.P1"' not in text
     assert "Guardar decisiones" in text
+    form = text[text.index(f'hx-post="/modpacks/{BUNDLE_ID}/decisions/bulk"'):]
+    form = form[:form.index("</form>")]
+    assert text.count("<form") == 1 and 'name="project_id"' not in text  # no per-mod forms
+    for undecided in ("P2", "P3"):  # once each, inside the bulk form
+        assert text.count(f'name="decision.{undecided}"') == form.count(f'name="decision.{undecided}"') == 1
+        assert text.count(f'id="bulk-{undecided}"') == 1
 
 
 def test_bulk_decisions_call_the_service_with_the_dict_and_skip_undecided() -> None:

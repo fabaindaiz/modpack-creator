@@ -46,26 +46,8 @@
   <div class="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-950/60 dark:text-amber-200">
     <h3 class="font-semibold">Mods por decidir ({{ lock.undecided | length }})</h3>
     <p>Modrinth no dice si estos mods van en el servidor. Hasta que lo decidas no se puede crear un build.</p>
-    <ul class="space-y-2">
-      {% for entry in lock.undecided %}
-      <li>
-        <form hx-post="/modpacks/{{ bundle_id }}/decisions" hx-target="#lock" hx-swap="outerHTML" class="flex flex-wrap items-center gap-2">
-          <input type="hidden" name="project_id" value="{{ entry.project_id }}">
-          <span class="min-w-0 flex-1 font-medium break-words">{{ titles.get(entry.project_id, entry.project_id) }}</span>
-          <label for="server-{{ entry.project_id }}" class="text-xs">¿Va en el servidor?</label>
-          <select id="server-{{ entry.project_id }}" name="server" required class="rounded-md border-0 bg-white px-2 py-1 text-sm text-zinc-900 ring-1 ring-inset ring-amber-400 dark:bg-zinc-900 dark:text-zinc-100">
-            <option value="" disabled selected>Elige…</option>
-            <option value="yes">sí</option>
-            <option value="no">no</option>
-          </select>
-          {{ ui.button("Decidir", type="submit", small=True) }}
-        </form>
-      </li>
-      {% endfor %}
-    </ul>
     <form hx-post="/modpacks/{{ bundle_id }}/decisions/bulk" hx-target="#lock" hx-swap="outerHTML" class="space-y-2 border-t border-amber-300 pt-2 dark:border-amber-500/40">
-      <h4 class="font-semibold">Decidir todos de una vez</h4>
-      <p class="text-xs">Los mods que dejes sin decidir no se guardan.</p>
+      <p class="text-xs">Los mods que dejes sin decidir no se guardan; puedes decidir uno solo o varios a la vez.</p>
       <ul class="space-y-1">
         {% for entry in lock.undecided %}
         <li class="flex flex-wrap items-center gap-2">
