@@ -18,6 +18,8 @@ router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
 MODRINTH_REF = r"^[A-Za-z0-9_\-]+$"
 CONFIRM_MESSAGE = "Escribe el nombre exacto del servidor"
 RELINKED_MESSAGE = "El servidor cambió de modpack; vuelve a cargar la página"
+STALE_B_MESSAGE = ("La reversión con A ya terminó; vuelve a cargar la página para confirmar B con el nombre "
+                   "del servidor.")
 
 def _back(request: Request, server_id: str) -> Response:
     """Go to the server's page: htmx cannot follow a redirect to a page, it is told where to go."""
@@ -263,13 +265,17 @@ async def server_rollback(
         ):
     """Undo a failed update: A brings the old jars back, B restores the backup. Operators only:
     an editor is refused before anything else. After a done A only B is left, and it loses what
-    was played since the backup: then the person must type the server's exact name, compared here
-    as for the real update, without calling the service when it differs (d-7985ee-5445a0). The
-    service checks every rule again."""
+    was played since the backup: then B needs the server's exact name, compared here as for the
+    real update, without calling the service when it differs (d-7985ee-5445a0). A request for B
+    with no name field at all comes from a page drawn before A finished: it is told to reload. A
+    request for A goes to the service, which says that only B is left. The service checks every
+    rule again."""
     if not actor.is_operator:
         raise HTTP_403_FORBIDDEN("This action requires the operator role")
     state = await jobService.rollback_state(server_id)
-    if state is not None and state.reverted_with_a is not None:
+    if mode == "B" and state is not None and state.reverted_with_a is not None:
+        if "confirm" not in await request.form():  # FastAPI reads an empty field as absent: ask the form
+            raise HTTP_422_UNPROCESSABLE_ENTITY(STALE_B_MESSAGE)
         server: PterodactylServer = await pterodactylService.server_get(server_id)
         if confirm.strip() != server.name:
             raise HTTP_422_UNPROCESSABLE_ENTITY(CONFIRM_MESSAGE)

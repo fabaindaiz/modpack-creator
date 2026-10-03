@@ -497,12 +497,12 @@ def test_after_done_b_no_rollback_offered() -> None:
     assert response.status_code == 409 and "ya se revirtió con B" in response.text
 
 
-@pytest.mark.parametrize("typed", [None, "", "survival", "Surv", "Survival 2", "SURVIVAL"])
-def test_b_after_a_requires_exact_name(typed: Optional[str]) -> None:
+@pytest.mark.parametrize("typed", ["", "survival", "Surv", "Survival 2", "SURVIVAL"])
+def test_b_after_a_requires_exact_name(typed: str) -> None:
     client, fakes = setup(OPERATOR)
     failed, done_a = reverted_with_a()
     fakes.jobs.state = RollbackState(update=failed, allowed=["B"], reverted_with_a=done_a)
-    data = {"update_id": str(failed.id), "mode": "B", **({"confirm": typed} if typed is not None else {})}
+    data = {"update_id": str(failed.id), "mode": "B", "confirm": typed}
     response = client.post(f"/servers/{SERVER_ID}/rollback", headers=HTMX, data=data)
     assert response.status_code == 422 and "Escribe el nombre exacto del servidor" in response.text
     assert fakes.update.calls == []
@@ -780,3 +780,44 @@ def test_an_update_for_another_bundle_is_refused_before_the_service(sent: dict[s
     assert response.status_code == 409
     assert "El servidor cambió de modpack; vuelve a cargar la página" in response.text
     assert fakes.update.calls == []
+
+
+# Errores del rollback que dicen qué pasó.
+
+def test_after_done_a_mode_a_gets_the_service_conflict_not_the_name_error() -> None:
+    client, fakes = setup(OPERATOR)
+    failed, done_a = reverted_with_a()
+    fakes.jobs.state = RollbackState(update=failed, allowed=["B"], reverted_with_a=done_a)
+    fakes.update.errors = [HTTP_409_CONFLICT("Ya se revirtió con A: solo queda B")]
+    response = client.post(f"/servers/{SERVER_ID}/rollback", headers=HTMX,
+                           data={"update_id": str(failed.id), "mode": "A"})
+    assert response.status_code == 409 and "solo queda B" in response.text
+    assert only(fakes.update.calls, "enqueue_rollback")[1:] == (str(SERVER_ID), str(failed.id), "A", OPERATOR)
+
+
+def test_a_stale_page_posting_b_after_a_is_told_to_reload() -> None:
+    client, fakes = setup(OPERATOR)
+    failed, done_a = reverted_with_a()
+    fakes.jobs.state = RollbackState(update=failed, allowed=["B"], reverted_with_a=done_a)
+    response = client.post(f"/servers/{SERVER_ID}/rollback", headers=HTMX,
+                           data={"update_id": str(failed.id), "mode": "B"})
+    assert response.status_code == 422
+    assert ("La reversión con A ya terminó; vuelve a cargar la página para confirmar B con el nombre del servidor."
+            in response.text)
+    assert fakes.update.calls == []
+
+
+# Un intento de rollback fallido se dice también antes de un A exitoso.
+
+@pytest.mark.parametrize("mode", ["A", "B"])
+def test_the_newest_failed_rollback_attempt_is_said(mode: str) -> None:
+    client, fakes = setup(OPERATOR)
+    failed = failed_real_update({"swap": {}, "backup": {}})
+    attempt = job("server_rollback", "failed", False, {"server_id": str(SERVER_ID), "update_id": str(failed.id), "mode": mode},
+                  error="panel said no")
+    fakes.jobs.state = RollbackState(update=failed, allowed=["A", "B"], last_failed=attempt)
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert f"El último intento de {mode} falló el" in text and "panel said no" in text
+    assert text.index(f"El último intento de {mode} falló") < text.index('name="mode" value="A"')
+    fakes.jobs.state = RollbackState(update=failed, allowed=["A", "B"])
+    assert "El último intento de" not in client.get(f"/servers/{SERVER_ID}").text

@@ -49,9 +49,11 @@ class Job(Document):
 
 class RollbackState(BaseModel):
     """What the panel can still offer to undo a failed update (d-7985ee-5445a0): the modes
-    allowed, the done rollback A, if one reverted it (then only B is left), and the newest B that
-    failed, so the page can say that an attempt already did not work."""
+    allowed, the done rollback A, if one reverted it (then only B is left), the newest B that
+    failed and the newest attempt of either mode that failed, so the page can say that an attempt
+    already did not work."""
     update: Job
     allowed: list[Literal["A", "B"]]
     reverted_with_a: Optional[Job] = None
     failed_b: Optional[Job] = None
+    last_failed: Optional[Job] = None

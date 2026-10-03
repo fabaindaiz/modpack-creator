@@ -346,10 +346,26 @@ def test_failed_rollback_does_not_close_the_update(mongo: MongoRunner, failed_mo
         job = await s.update.enqueue_rollback(s.server_id, str(update.id), requested, actor=OPERATOR)
         return (state.update.id == update.id if state else None, state.allowed if state else None,
                 state.reverted_with_a if state else "no state", job.payload["mode"], len(audit.events),
-                (state.failed_b is not None) if state else None)
+                (state.failed_b is not None) if state else None,
+                state.last_failed.payload["mode"] if state and state.last_failed else None)
 
-    # The panel says a B attempt failed (RollbackState.failed_b); a failed A is not that.
-    assert mongo(scenario) == (True, ["A", "B"], None, requested, 1, failed_mode == "B")
+    # The panel says a B attempt failed (RollbackState.failed_b); a failed A is not that. The newest
+    # failed attempt, A or B, is RollbackState.last_failed.
+    assert mongo(scenario) == (True, ["A", "B"], None, requested, 1, failed_mode == "B", failed_mode)
+
+
+def test_last_failed_is_the_newest_failed_attempt(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Any, ...]:
+        s = await update_setup()
+        update = await failed_update(s.server_id, NOW)
+        clean = await job_service().rollback_state(s.server_id)
+        await rollback(s.server_id, update, "B", NOW + timedelta(hours=1))
+        newest = await rollback(s.server_id, update, "A", NOW + timedelta(hours=2))
+        state = await job_service().rollback_state(s.server_id)
+        return (clean.last_failed if clean else "no state",
+                state.last_failed.id == newest.id if state and state.last_failed else None)
+
+    assert mongo(scenario) == (None, True)
 
 
 @pytest.mark.parametrize("status", ["failed", "done"])

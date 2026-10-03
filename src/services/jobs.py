@@ -231,8 +231,10 @@ class JobService():
             allowed.append("B")
         if not allowed:
             return None
-        failed_b = next((r for r in rollbacks if r.status == "failed" and r.payload.get("mode") == "B"), None)
-        return RollbackState(update=update, allowed=allowed, reverted_with_a=reverted_with_a, failed_b=failed_b)
+        failed = [r for r in rollbacks if r.status == "failed"]
+        failed_b = next((r for r in failed if r.payload.get("mode") == "B"), None)
+        return RollbackState(update=update, allowed=allowed, reverted_with_a=reverted_with_a, failed_b=failed_b,
+                             last_failed=failed[0] if failed else None)
 
     async def recent(self, limit: int = 10) -> list[Job]:
         """The newest jobs first, whatever their status."""

@@ -74,6 +74,10 @@
     </div>
     {% else %}
     <p class="text-xs text-zinc-600 dark:text-zinc-400">A devuelve los jars anteriores; B restaura el backup previo a la actualización.</p>
+    {% if rollback.last_failed %}
+    {% set attempt = rollback.last_failed %}
+    <p class="text-xs text-red-700 dark:text-red-300">El último intento de {{ attempt.payload.get("mode", "?") }} falló el {{ ui.when(attempt.finished_at or attempt.created_at) }}{% if attempt.error %}: {{ attempt.error }}{% endif %}</p>
+    {% endif %}
     <div class="flex flex-wrap gap-2">
       {% for mode, label in [("A", "Rollback A: devolver los jars"), ("B", "Rollback B: restaurar el backup")] %}
       {% if mode in rollback.allowed %}
