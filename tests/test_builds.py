@@ -255,7 +255,7 @@ def test_a_build_freezes_the_bundles_local_files_and_the_mrpack_leaves_them_out(
     async def scenario() -> tuple[list[str], list[str]]:
         service, bundle_id = await empty_bundle()
         await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
-        await service.local_file_add(bundle_id, LocalFile(filename="private.jar", sha512="p" * 128, sha1="p" * 40, size=10))
+        await service.modpackDB.bundle_local_file_add(bundle_id, LocalFile(filename="private.jar", sha512="p" * 128, sha1="p" * 40, size=10))
         build = await service.build_create(bundle_id, actor=EDITOR)
         _, data = await service.build_mrpack(bundle_id, build.number)
         with zipfile.ZipFile(io.BytesIO(data)) as archive:

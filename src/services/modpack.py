@@ -5,7 +5,6 @@ from src.database import ModpackDatabase, ModrinthDatabase
 from src.library.api.client.loaders import LoaderMetaAPI
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.mrpack import mrpack_index, write_mrpack
-from src.library.scan import LocalFile
 from src.services.jobs import NotificationSink
 from src.library.resolution import Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, resolve
 from src.model.modpack import ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, PackProject, ProjectOrigin
@@ -101,10 +100,6 @@ class ModpackService():
             bundle_id, [PackProject(project_id=p.project_id, origin=ProjectOrigin.pack) for p in projects])
         await self.audit.record(actor, "bundle.project.replace", _bundle(bundle_id), {"refs": list(refs)})
         return replaced
-
-    async def local_file_add(self, bundle_id: str, local: LocalFile) -> list[LocalFile]:
-        """Register a jar that is not on Modrinth as a local file of the bundle (d-7985ee-c8a15d)."""
-        return await self.modpackDB.bundle_local_file_add(bundle_id, local)
 
     async def project_remove(self, bundle_id: str, project_id: str, actor: Actor) -> list[PackProject]:
         remaining = await self.modpackDB.bundle_project_remove(bundle_id, project_id)

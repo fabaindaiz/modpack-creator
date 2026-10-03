@@ -14,6 +14,15 @@ módulo a los que llaman. A cada una se le manda un request con la sesión
 de un editor, y la respuesta tiene que ser 403. El 403 sale de `operator_only` antes de tocar la
 base o el panel: los tests no abren conexiones, así que una ruta que llegara a MongoDB daría un
 error y no un 403.
+
+La tabla también se exige desde el lado de los servicios: todo método que audita (llama a
+`<algo>.audit.record(`) tiene su fila, y toda fila audita o está en `NOT_AUDITED` con su razón. Así
+un método que escribe y no llega a ninguna ruta todavía, o que una ruta alcanza junto a otro ya
+clasificado, no se escapa.
+
+Límite conocido: el AST compara por nombre de atributo, no por tipo. Una ruta que llamara a un
+`.resolve()` ajeno (de otra clase) contaría como clasificada, y un método de servicio con el mismo
+nombre que otro de una clase distinta se confundiría con él (por eso la tabla no repite nombres).
 """
 import ast
 import inspect
@@ -44,6 +53,16 @@ ROW = re.compile(r"^\|\s*`(?P<method>[A-Za-z_]\w*\.[A-Za-z_]\w*)`\s*\|\s*(?P<rol
 # alguna es POST; cada una con su razón. Hoy ninguna lo es, y una nueva tiene que justificarse aquí.
 UNCLASSIFIED_WRITE_ROUTES: dict[tuple[str, str], str] = {}
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
+SERVICES = Path(__file__).resolve().parent.parent / "src" / "services"
+# Filas de la tabla cuyo método no llama a `audit.record`, cada una con su razón (verificada leyendo
+# el método). Un método que escribe algo que importa audita; estos solo tocan el catálogo local.
+NOT_AUDITED: dict[str, str] = {
+    "ModpackService.resolve": "calcula el lock y solo guarda en el catálogo de Modrinth lo que trae; no cambia ningún bundle",
+    "ModrinthService.project_create": "solo escribe un proyecto en el catálogo local, copiado de Modrinth",
+    "ModrinthService.project_create_many": "solo escribe proyectos en el catálogo local, copiados de Modrinth",
+    "ModrinthService.project_update": "solo refresca un proyecto del catálogo local desde Modrinth",
+    "ModrinthService.project_update_many": "solo refresca proyectos del catálogo local desde Modrinth",
+}
 
 
 def app() -> FastAPI:
@@ -217,6 +236,35 @@ def test_every_write_route_reaches_a_method_of_the_table() -> None:
             if not calls_any(endpoint, names) and key not in UNCLASSIFIED_WRITE_ROUTES:
                 unclassified.append(f"{verb} {context.path} ({key[0]}.{key[1]})")
     assert unclassified == [], "rutas que escriben y no llegan a ningún método de la tabla de roles de docs/decisions.md: " + ", ".join(unclassified)
+
+
+def service_methods() -> dict[str, bool]:
+    """Cada método de una clase de `src/services/*.py`, como `Clase.método`, y si su cuerpo llama a
+    `<algo>.audit.record(...)`."""
+    methods: dict[str, bool] = {}
+    for path in sorted(SERVICES.glob("*.py")):
+        for cls in (n for n in ast.parse(path.read_text()).body if isinstance(n, ast.ClassDef)):
+            for fn in (n for n in cls.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
+                methods[f"{cls.name}.{fn.name}"] = any(
+                    isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute) and c.func.attr == "record"
+                    and isinstance(c.func.value, ast.Attribute) and c.func.value.attr == "audit"
+                    for c in ast.walk(fn))
+    return methods
+
+
+def test_every_audited_service_method_is_in_the_table() -> None:
+    table = load_role_table()
+    missing = sorted(m for m, audits in service_methods().items() if audits and m not in table)
+    assert missing == [], "métodos de servicio que auditan y no tienen fila en la tabla de roles de docs/decisions.md: " + ", ".join(missing)
+
+
+def test_every_table_row_audits_or_is_allowlisted() -> None:
+    table = load_role_table()
+    methods = service_methods()
+    offenders = sorted(m for m in table if not methods.get(m, False) and m not in NOT_AUDITED)
+    assert offenders == [], "filas de la tabla cuyo método no llama a audit.record y no están en NOT_AUDITED: " + ", ".join(offenders)
+    stale = sorted(m for m in NOT_AUDITED if m not in table or methods.get(m, False))
+    assert stale == [], "entradas de NOT_AUDITED que ya no están en la tabla o que ahora auditan: " + ", ".join(stale)
 
 
 GOOD = f"{SECTION}\n\n| Método | Rol | Qué hace |\n|---|---|---|\n| `A.b` | editor | x |\n"
