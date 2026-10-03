@@ -15,8 +15,8 @@ acciones contra el panel (subir, borrar, apagar) ocurren sobre **servidores de j
 nada de eso se puede observar desde el entorno de desarrollo.
 
 - Entrada: `main.py`. Configuración: `.env.yaml` (plantilla en `.env.default`; nunca se versiona).
-- Capas: `src/routers/v1/` → `src/services/` → `src/database/` y `src/library/api/client/`
-  (Modrinth, Pterodactyl). Modelos en `src/model/`. Inyección de dependencias en `src/dependences.py`.
+- Capas: `src/routers/v1/` y `src/routers/web/` (el panel) → `src/services/` → `src/database/` y
+  `src/library/api/client/` (Modrinth, Pterodactyl). Modelos en `src/model/`. Inyección de dependencias en `src/dependences.py`.
 - Archivos ejemplares: `src/database/modpack.py` (una clase de base de datos),
   `src/services/modrinth.py` (un servicio), `src/library/api/client/modrinth.py` (un cliente).
 
@@ -69,6 +69,8 @@ Decididas, no preferencias. `docs/decisions.md` indexa cada una con lo que la ha
   `style=` inline en el panel. Detrás de un proxy hace falta `FORWARDED_ALLOW_IPS`: sin él el
   esquema llega mal y el chequeo rechaza al propio panel. `tests/test_web_security.py`
   (d-7985ee-491c83).
+- **Un permiso denegado no se esquiva**: ni redirección de shell, ni `sed`, ni otra herramienta. Se
+  avisa y se sigue con lo demás. `.claude/settings.json` (d-7985ee-794d11).
 - **Los datos de MongoDB viven en el volumen `mongodb-data`**: nunca `docker compose down -v`, y
   `MONGO_VERSION` nunca menor que la que escribió los datos (d-7985ee-398653). Cualquier cambio
   de despliegue que toque datos sigue un runbook de `docs/runbooks/`.

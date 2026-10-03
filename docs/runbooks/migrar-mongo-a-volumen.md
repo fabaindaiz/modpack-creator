@@ -12,8 +12,9 @@ sobreviven a `up`, pero no se reusan después de `down`),
 [volúmenes](https://docs.docker.com/engine/storage/volumes/),
 [mongodump](https://www.mongodb.com/docs/database-tools/mongodump/) y
 [mongorestore](https://www.mongodb.com/docs/database-tools/mongorestore/) (`--archive`),
-[actualizar a 9.0](https://www.mongodb.com/docs/manual/release-notes/9.0-upgrade-standalone/) (de a
-una versión mayor). Las líneas de comando combinan esas opciones; marcar cualquier diferencia en
+[subir a 8.0](https://www.mongodb.com/docs/manual/release-notes/8.0-upgrade-standalone/) y
+[a 7.0](https://www.mongodb.com/docs/manual/release-notes/7.0-upgrade-standalone/) (de a una versión
+mayor; consultadas el 2026-10-03). Las líneas de comando combinan esas opciones; marcar cualquier diferencia en
 `.claude/logs/agent-changelog.md`.
 
 ## 0. Antes: dónde están hoy los datos
@@ -36,8 +37,56 @@ docker exec modpack-mongodb mongosh --quiet -u mongoadmin -p "$MONGODB_PASSWORD"
 ```
 
 `MONGO_VERSION` será esa versión mayor y menor (por ejemplo `8.0`). **Nunca una menor**: MongoDB
-no admite bajar de versión. Subir se hace de a una versión mayor por vez, con
-`featureCompatibilityVersion`, y eso queda fuera de este runbook.
+no admite bajar de versión.
+
+**Todo corre en MongoDB 8.0** (d-7985ee-83eb5b; CI usa `mongo:8.0`). Si `db.version()` es menor que
+8.0, sube **antes** de seguir con este runbook, de una versión mayor a la siguiente. La
+documentación oficial (*Upgrade a Standalone to 8.0*) lo exige: "To upgrade an existing MongoDB
+deployment to 8.0, you must be running a 7.0-series release", con `featureCompatibilityVersion`
+(FCV) en `"7.0"`. La de 7.0 dice lo mismo para 6.0. Desde antes se sube de a una mayor: por
+ejemplo 6.0 → 7.0 → 8.0. Si ya es 8.0, sigue en el paso 2.
+
+En **cada salto** (el despliegue es un solo contenedor `mongo:${MONGO_VERSION}` sobre el volumen
+`mongodb-data`):
+
+1. **Respaldar** (paso 2 de este runbook, con otro nombre de archivo por salto).
+2. **Comprobar la FCV.** Tiene que ser la de la versión que corre, no la siguiente:
+   ```bash
+   docker exec modpack-mongodb mongosh --quiet -u mongoadmin -p "$MONGODB_PASSWORD" \
+     --authenticationDatabase admin --eval \
+     'db.adminCommand({ getParameter: 1, featureCompatibilityVersion: 1 })'
+   ```
+   Si es menor (por ejemplo `"6.0"` corriendo 7.0), fíjala primero con el comando del paso 4 de la
+   versión que corre. No sigas hasta que coincida.
+3. **Subir la versión.** En `docker/.env`, cambiar `MONGO_VERSION` a la mayor siguiente (por
+   ejemplo `7.0`) y recrear el contenedor sobre el mismo volumen con `./scripts/run.sh`
+   (`docker compose up -d`; **nunca** `down -v`). Esperar a que `docker ps --format '{{.Names}}
+   {{.Status}}'` diga `modpack-mongodb … (healthy)`, y confirmar con `db.version()`.
+4. **Fijar la FCV de esa versión**, que es lo que activa sus funciones nuevas:
+   ```bash
+   docker exec modpack-mongodb mongosh --quiet -u mongoadmin -p "$MONGODB_PASSWORD" \
+     --authenticationDatabase admin --eval \
+     'db.adminCommand({ setFeatureCompatibilityVersion: "7.0", confirm: true })'
+   ```
+   **Desde 7.0 el campo `confirm: true` es obligatorio** (la página de 7.0: "The
+   `confirm: true` field is required"); sin él el comando falla. Antes de 7.0 el comando se escribe
+   sin `confirm` (`{ setFeatureCompatibilityVersion: "6.0" }`, como lo cita la página de 7.0). Es
+   idempotente: se puede repetir si no terminó. Poner `"8.0"` en el último salto.
+5. Repetir hasta llegar a `MONGO_VERSION=8.0` con FCV `"8.0"`. La documentación recomienda esperar
+   un tiempo entre fijar la FCV y el salto siguiente (el *burn-in* de la página de 7.0, por si hiciera falta volver atrás); comprobar entre saltos
+   que el panel y los trabajos siguen funcionando.
+
+Fuentes por salto, consultadas el 2026-10-03: a 8.0, la página
+[*Upgrade a Standalone to 8.0*](https://www.mongodb.com/docs/manual/release-notes/8.0-upgrade-standalone/)
+(exige 7.0 con FCV `"7.0"`; `confirm: true`); a 7.0,
+[*Upgrade a Standalone to 7.0*](https://www.mongodb.com/docs/manual/release-notes/7.0-upgrade-standalone/)
+(exige 6.0 con FCV `"6.0"`; `confirm: true`). **Las páginas de 6.0 y 5.0 no se pudieron leer**: son
+versiones sin soporte y su documentación salió del manual vigente (las URL bajo `/manual/v6.0/` y
+`/v5.0/` dieron 404). Un servidor en 5.0 o menor, o la FCV de un salto previo a 7.0, se hace con la
+documentación de esa versión (`https://www.mongodb.com/docs/legacy/`) abierta, no con este texto:
+la regla general (una mayor por vez, FCV igual a la versión que corre antes de subir) es la misma,
+pero los detalles no están comprobados aquí. Un salto que falla no se arregla bajando
+`MONGO_VERSION`: se restaura el respaldo del paso 2 en un volumen nuevo.
 
 ## 2. Respaldo
 

@@ -16,6 +16,16 @@ servidores de un panel de Pterodactyl propio.
 2. Crea `docker/.env` con `MONGO_VERSION`, `MONGODB_PASSWORD`, `MONGOWEB_PASSWORD` y `FORWARDED_ALLOW_IPS` (ver el runbook).
 3. `./scripts/build.sh` y `./scripts/run.sh` levantan la API, MongoDB y mongo-express con Docker.
 
+### Con podman
+
+En un Mac (u otra máquina sin Docker) sirve podman: `docker` como enlace a `podman`
+(`ln -s "$(command -v podman)" /usr/local/bin/docker`, o la ruta de tu `PATH`) y su máquina
+iniciada (`podman machine init && podman machine start`, una vez). Con eso los scripts funcionan sin
+cambios: `./scripts/build.sh` construye la imagen (en un Mac con Apple Silicon sale arm64; la x64
+la construye CI), `./scripts/run.sh` levanta el compose (rechaza arrancar sin `MONGO_VERSION` ni
+`FORWARDED_ALLOW_IPS` en `docker/.env`), y `./scripts/test-mongo.sh` corre el gate con un MongoDB
+descartable, para que los tests de base no se salten.
+
 ## Desarrollar
 
 Requiere [hatch](https://hatch.pypa.io). El entorno usa Python 3.12 y las dependencias de

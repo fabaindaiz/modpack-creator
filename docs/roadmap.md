@@ -59,9 +59,10 @@ rama `feat/panel-web`; lo demás está en `main`; nada está desplegado.**
   4. los puntos de control de las fases 1 y 2;
   5. **la primera actualización real en el servidor de prueba**, con
      `docs/runbooks/primera-actualizacion-real.md`;
-  6. decir qué versión de MongoDB corre en producción, para igualar `mongo:8.0` de CI.
+  6. decir qué versión de MongoDB corre en producción y, si es menor que 8.0, subirla con el paso 1
+     de `migrar-mongo-a-volumen.md` (CI ya usa `mongo:8.0`).
 - **Pendiente de código:**
-  - igualar `mongo:8.0` de CI con producción;
+  - subir producción a MongoDB 8.0, si no lo está (d-7985ee-83eb5b);
   - packwiz, tras el punto de control de la fase 2.
 
 ## Modpacks y versiones
@@ -611,12 +612,21 @@ JSON con `request_id` y `job_id`.
     exitoso solo queda el B, escribiendo el nombre del servidor, y tras un B exitoso nada
     (d-7985ee-5445a0).
   - Un `/v1/login` o `/v1/logout` con un `redirect` de `//host` da 422 (era un redirect abierto).
+  - **Addendum del 2026-10-03** (repaso de decisiones con el dueño, plan
+    `docs/superpowers/plans/2026-10-03-panel-web-addendum.md`): se puede actualizar directo a un
+    build elegido o desde una simulación (d-7985ee-aca3e8); la tabla de roles de
+    `docs/decisions.md` la lee un barrido que clasifica toda ruta que escribe; la búsqueda de
+    Modrinth muestra autor, descargas y lado; la auditoría filtra por fechas; "Guardar decisiones"
+    en lote y atómico; `/jobs` como tabla con filtros y una página por trabajo; la revisión visual
+    como `scripts/visual-sweep.sh`; una sola regla de `redirect`; y MongoDB 8.0 en todos lados con
+    su camino de subida (d-7985ee-83eb5b).
 - **Chequeo:** `tests/test_web_security.py`, `tests/test_roles.py`, `tests/test_routes_roles.py`,
   `tests/test_operator_actions.py`, `tests/test_audit_log.py`, `tests/test_web_*.py`, contra Mongo
   real. La revisión visual se hizo con un Chromium sin interfaz: 56 capturas (operador en claro y
   oscuro a 360, 768 y 1280 px, y editor en claro a 1280, por 8 páginas); encontró 3 problemas,
-  corregidos en 23bfbae, y la segunda pasada dio 0. Lo que **no** se comprobó: la imagen Docker
-  (primera vez en CI), un login real de editor y de operador, y Pterodactyl y Modrinth reales; el
+  corregidos en 23bfbae, y la segunda pasada dio 0. La imagen arm64 se construyó con podman local
+  el 2026-10-03 (`main` importa, los assets están, el compose rechaza sin `MONGO_VERSION` o
+  `FORWARDED_ALLOW_IPS`). Lo que **no** se comprobó: la imagen x64 (CI), un login real de editor y de operador, y Pterodactyl y Modrinth reales; el
   despliegue lo comprueba `docs/runbooks/desplegar-panel.md`.
 - **Lo que falta:**
   - desplegar;

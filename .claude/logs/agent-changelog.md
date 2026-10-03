@@ -28,6 +28,26 @@ está al final del archivo, para que nada entre este párrafo y la primera entra
 - **Seguridad, de paso:** `/v1/login`, `/v1/login/callback` y `/v1/logout` aceptaban
   `redirect=//otro.host` (redirect abierto, protocolo relativo). Ahora dan 422.
 
+- **Addendum del 2026-10-03 (A1 a A11)**, tras repasar las decisiones con el dueño (2026-10-02 y
+  2026-10-03):
+  - A1 y A2: tras un rollback A exitoso solo queda el B, con aviso y el nombre del servidor
+    escrito; tras un B exitoso, nada; "Simular actualización" y "Actualizar…" vuelven como botones
+    independientes, con selector de build (R14, D1, R17);
+  - A3 a A5: la tabla de roles en `docs/decisions.md` y un barrido que falla ante una ruta que
+    escribe sin clasificar (R1, R8); un test prueba que mypy rechaza un método de operador sin
+    `actor` (R6); una sola regla `LOCAL_PATH` para el `redirect` (R11);
+  - A6 y A7: la búsqueda muestra autor, descargas y lado (R2); la auditoría filtra por fechas
+    en UTC (R5);
+  - A8 y A9: "Guardar decisiones" en lote y atómico (R12); `/jobs` como tabla con filtros y una
+    página por trabajo (R13, R16);
+  - A10: `scripts/visual-sweep.sh` (R10);
+  - A11 (docs): MongoDB 8.0 en todos lados y su camino de subida por saltos en
+    `migrar-mongo-a-volumen.md` (d-7985ee-83eb5b), la invariante de permisos denegados
+    (d-7985ee-794d11) y este registro.
+- **Documentos de la sesión:** [diseño](../../docs/superpowers/specs/2026-10-02-panel-web-design.md),
+  [plan del panel](../../docs/superpowers/plans/2026-10-02-panel-web.md) y
+  [plan del addendum](../../docs/superpowers/plans/2026-10-03-panel-web-addendum.md).
+
 **Por qué.** El dueño pidió un panel web para operar sin llamar a la API a mano, con dos niveles
 de permiso y un registro de quién hizo qué sobre servidores reales. Cada decisión se registró en
 `docs/decisions.md`; el roadmap cierra i-7985ee-50d411 y corrige tres entradas que habían quedado
@@ -71,6 +91,15 @@ sigue vacía. `AGENTS.md` suma dos invariantes (roles en los servicios, mismo or
     Se documentó (d-7985ee-491c83, `AGENTS.md`, el runbook): solo leen;
   - ningún test fallaba si se borraba un `add_middleware` de `main.py`; ahora uno lo prueba
     sobre `main.app`.
+- **En el addendum:**
+  - A6 rotuló `client_or_server` como "cliente y servidor", y Modrinth dice que funciona en uno
+    de los dos: lo encontró la revisión; ahora "cliente o servidor", y `client_only` con
+    `client_only_server_optional` como "cliente";
+  - A8 listaba cada mod sin decidir dos veces (un formulario por mod y el del lote, porque los
+    formularios no se anidan); ahora solo el del lote;
+  - la shell de un subagente se colgó esperando stdin; los comandos se corren sin bloquear en la entrada;
+  - la página de MongoDB 6.0 y la de 5.0 (versiones sin soporte) no se pudieron leer al escribir
+    el camino de subida; el runbook lo dice y remite a la documentación de esa versión.
 
 **Qué quedó sin hacer.**
 - El detalle de un modpack no muestra todavía los archivos locales, los canales ni los pins
@@ -80,15 +109,22 @@ sigue vacía. `AGENTS.md` suma dos invariantes (roles en los servicios, mismo or
 - Desplegar, y las comprobaciones de `desplegar-panel.md`.
 
 **No verificado.**
-- **La imagen Docker:** no hay Docker en esta máquina. La etapa `assets`, el import dentro de la
-  imagen y `docker compose config` corren por primera vez en el job `image` de CI (el YAML solo se
-  leyó y se cargó con un parser).
+- **La imagen Docker, en parte.** Ya hay podman local (`docker` es un enlace a podman 6.1.3).
+  Verificado el 2026-10-03: la imagen arm64 construye, `main` importa dentro de ella, los assets
+  están, `node` no está en la imagen final, y el compose valida y se niega a arrancar sin
+  `MONGO_VERSION` o `FORWARDED_ALLOW_IPS`. Sin verificar: la imagen x64 (la construye CI) y el
+  despliegue real.
 - **Un login real** de editor y de operador con authentik, y el claim `groups`.
 - **Pterodactyl y Modrinth reales:** nada de esto toca un servidor de juego; el flujo de
   actualización se probó con un panel simulado.
-- **La versión de MongoDB de CI** (`mongo:8.0`): espera la versión que corre en producción.
+- **La versión de MongoDB de CI** (`mongo:8.0`): ahora es la versión de todos lados (d-7985ee-83eb5b); falta saber si producción ya la tiene.
 - **`.env.default`:** `OIDC_OPERATOR_GROUPS: ""` lo agrega el dueño (el agente no lo lee ni lo
   edita); hasta entonces el audit `env_template` falla.
+- **Del addendum:** un login real con authentik de editor y de operador; Pterodactyl y Modrinth
+  reales; los datos de producción (y por tanto qué versión de MongoDB corre: los saltos del
+  runbook no se probaron); y el camino del Chromium incluido de la revisión visual
+  (`PLAYWRIGHT_CHROMIUM` apunta a uno ya instalado).
+- **Pendiente del dueño:** `OIDC_OPERATOR_GROUPS: ""` en `.env.default`.
 
 ## 2026-10-01 · s-7985ee-2ab23b — Fase 3: importar servidores y actualizar con backup, verificación y rollback a pedido
 
