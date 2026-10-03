@@ -270,18 +270,18 @@ def test_b_after_a_done_is_accepted_and_a_is_refused(mongo: MongoRunner) -> None
         reverted = await s.rollback(failed, "A")
         state = await job_service().rollback_state(s.server_id)
         events = len(audit.events)
-        refused = await refusal(s, failed, "A")
         jobs = await count_jobs()
-        unchanged = (len(audit.events) == events, jobs)
+        refused = await refusal(s, failed, "A")
+        unchanged = (len(audit.events) == events, await count_jobs() == jobs)
         b = await s.rollback(failed, "B")
         return (reverted.status, state.update.id == failed.id if state else None, state.allowed if state else None,
                 state.reverted_with_a.id == reverted.id if state and state.reverted_with_a else None,
                 refused, unchanged, b.status, b.payload["mode"], len(audit.events) == events + 1)
 
-    (a_status, same_update, allowed, reverted_with_a, refused, (no_event, _), b_status, b_mode,
+    (a_status, same_update, allowed, reverted_with_a, refused, (no_event, no_job), b_status, b_mode,
      one_more_event) = mongo(scenario)
     assert a_status == "done" and same_update and allowed == ["B"] and reverted_with_a
-    assert refused == (409, "Ya se revirtió con A: solo queda B") and no_event
+    assert refused == (409, "Ya se revirtió con A: solo queda B") and no_event and no_job
     assert (b_status, b_mode, one_more_event) == ("done", "B", True)
 
 
@@ -345,9 +345,11 @@ def test_failed_rollback_does_not_close_the_update(mongo: MongoRunner, failed_mo
         state = await job_service().rollback_state(s.server_id)
         job = await s.update.enqueue_rollback(s.server_id, str(update.id), requested, actor=OPERATOR)
         return (state.update.id == update.id if state else None, state.allowed if state else None,
-                state.reverted_with_a if state else "no state", job.payload["mode"], len(audit.events))
+                state.reverted_with_a if state else "no state", job.payload["mode"], len(audit.events),
+                (state.failed_b is not None) if state else None)
 
-    assert mongo(scenario) == (True, ["A", "B"], None, requested, 1)
+    # The panel says a B attempt failed (RollbackState.failed_b); a failed A is not that.
+    assert mongo(scenario) == (True, ["A", "B"], None, requested, 1, failed_mode == "B")
 
 
 @pytest.mark.parametrize("status", ["failed", "done"])
