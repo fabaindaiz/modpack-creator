@@ -184,3 +184,51 @@ def test_pages_redirect_to_the_login_without_a_session() -> None:
     client, *_ = setup(None)
     for path in ("/jobs", f"/jobs/{PydanticObjectId()}/row", "/audit"):
         assert client.get(path).status_code == 303
+
+
+def test_audit_dates_become_an_inclusive_utc_range() -> None:
+    client, _, audit, _ = setup()
+    audit.events = [event()]
+    response = client.get("/audit", params={"desde": "2026-10-01", "hasta": "2026-10-02"})
+    assert response.status_code == 200
+    call = audit.calls[-1]
+    assert call["since"] == datetime(2026, 10, 1, tzinfo=timezone.utc)
+    assert call["until"] == datetime(2026, 10, 3, tzinfo=timezone.utc)
+    assert 'name="desde"' in response.text and 'name="hasta"' in response.text
+    assert 'value="2026-10-01"' in response.text and 'value="2026-10-02"' in response.text
+    assert "(UTC)" in response.text
+
+
+def test_audit_without_dates_has_no_range() -> None:
+    client, _, audit, _ = setup()
+    client.get("/audit", params={"desde": "", "hasta": ""})
+    assert audit.calls[-1]["since"] is None and audit.calls[-1]["until"] is None
+
+
+def test_audit_same_day_range_is_valid() -> None:
+    client, _, audit, _ = setup()
+    assert client.get("/audit", params={"desde": "2026-10-01", "hasta": "2026-10-01"}).status_code == 200
+    assert audit.calls[-1]["until"] == datetime(2026, 10, 2, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize("params", [
+    {"desde": "2026-10-05", "hasta": "2026-10-01"},
+    {"desde": "mañana"},
+    {"hasta": "2026-13-45"},
+    {"desde": "2026-02-30"},
+    {"hasta": "9999-12-31"},
+])
+def test_audit_bad_dates_are_a_422_notice_never_a_500(params: dict[str, str]) -> None:
+    client, _, audit, _ = setup()
+    response = client.get("/audit", params=params)
+    assert response.status_code == 422
+    assert audit.calls == []
+    htmx = client.get("/audit", params=params, headers={"HX-Request": "true"})
+    assert htmx.status_code == 422
+
+
+def test_audit_older_link_keeps_the_dates() -> None:
+    client, _, audit, _ = setup()
+    audit.events = [event() for _ in range(50)]
+    text = client.get("/audit", params={"desde": "2026-10-01", "hasta": "2026-10-02"}).text
+    assert "desde=2026-10-01" in text and "hasta=2026-10-02" in text

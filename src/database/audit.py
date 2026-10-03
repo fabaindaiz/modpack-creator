@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any, Optional
 from beanie import PydanticObjectId, SortDirection
 from src.exceptions import *
@@ -14,6 +15,8 @@ class AuditDatabase():
             target_id: Optional[str],
             before_id: Optional[str],
             limit: int,
+            since: Optional[datetime] = None,
+            until: Optional[datetime] = None,
             ) -> list[AuditEvent]:
         """Events newest first (then by id), filtered by exact values (equality only, never a pattern)."""
         query: dict[str, Any] = {}
@@ -24,6 +27,14 @@ class AuditDatabase():
         if target_id is not None:
             query["target.id"] = {"$eq": target_id}
         clauses: list[dict[str, Any]] = [query] if query else []
+        if since is not None or until is not None:
+            # `since` inclusive, `until` exclusive; both aware UTC (naive would be read as local time by the driver).
+            window: dict[str, datetime] = {}
+            if since is not None:
+                window["$gte"] = since
+            if until is not None:
+                window["$lt"] = until
+            clauses.append({"at": window})
         if before_id is not None:
             if not PydanticObjectId.is_valid(before_id):
                 raise HTTP_404_NOT_FOUND(f"Audit event '{before_id}' not found")

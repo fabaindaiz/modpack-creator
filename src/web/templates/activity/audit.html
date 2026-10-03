@@ -5,7 +5,7 @@
 {% block content %}
 {{ ui.page_header("Auditoría", "Quién hizo qué, lo más reciente primero. Los filtros buscan el valor exacto.") }}
 
-<form method="get" action="/audit" class="grid grid-cols-1 gap-3 sm:grid-cols-4 sm:items-end">
+<form method="get" action="/audit" class="grid grid-cols-1 gap-3 sm:grid-cols-5 sm:items-end">
   {% for name, label in [("actor", "Persona (sub)"), ("action", "Acción"), ("target", "Id del objetivo")] %}
   <div>
     <label for="f-{{ name }}" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">{{ label }}</label>
@@ -13,7 +13,14 @@
       class="mt-1 block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 focus-visible:outline-2 focus-visible:outline-emerald-600 dark:bg-zinc-900 dark:ring-zinc-700">
   </div>
   {% endfor %}
-  <div class="flex gap-2">
+  {% for name, label in [("desde", "Desde (UTC)"), ("hasta", "Hasta (UTC)")] %}
+  <div>
+    <label for="f-{{ name }}" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">{{ label }}</label>
+    <input id="f-{{ name }}" name="{{ name }}" type="date" value="{{ filters[name] }}"
+      class="mt-1 block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 focus-visible:outline-2 focus-visible:outline-emerald-600 dark:bg-zinc-900 dark:ring-zinc-700">
+  </div>
+  {% endfor %}
+  <div class="flex gap-2 sm:col-span-5">
     {{ ui.button("Filtrar", type="submit") }}
     {{ ui.link_button("Limpiar", "/audit") }}
   </div>

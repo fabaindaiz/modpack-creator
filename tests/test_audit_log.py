@@ -157,3 +157,43 @@ def test_details_never_hold_unknown_secrets_keys(mongo: MongoRunner, key: str) -
 
     message, count = mongo(scenario)
     assert message and count == 0
+
+
+def test_find_filters_by_date_range_inclusive_since_exclusive_until(mongo: MongoRunner) -> None:
+    async def scenario() -> dict[str, list[str]]:
+        day = datetime(2026, 10, 2, tzinfo=timezone.utc)
+        times = [day - timedelta(milliseconds=1), day, day + timedelta(hours=23, minutes=59),
+                 day + timedelta(days=1)]
+        service = _service(times)
+        for i in range(4):
+            await service.record(OPERATOR, f"a{i}", AuditTarget(kind="server", id="s1"))
+        next_day = day + timedelta(days=1)
+        return {
+            "day": [e.action for e in await service.find(since=day, until=next_day)],
+            "since": [e.action for e in await service.find(since=day)],
+            "until": [e.action for e in await service.find(until=day)],
+            "and": [e.action for e in await service.find(since=day, until=next_day, action="a2")],
+            "and_none": [e.action for e in await service.find(since=day, until=next_day, action="a0")],
+        }
+
+    got = mongo(scenario)
+    assert got["day"] == ["a2", "a1"]
+    assert got["since"] == ["a3", "a2", "a1"]
+    assert got["until"] == ["a0"]
+    assert got["and"] == ["a2"]
+    assert got["and_none"] == []
+
+
+def test_find_pages_within_a_date_range(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[list[str], list[str]]:
+        service = _service([T0 + timedelta(minutes=i) for i in range(5)])
+        for i in range(5):
+            await service.record(OPERATOR, f"a{i}", AuditTarget(kind="server", id="s1"))
+        since, until = T0 + timedelta(minutes=1), T0 + timedelta(minutes=4)
+        first = await service.find(since=since, until=until, limit=2)
+        second = await service.find(since=since, until=until, limit=2, before_id=str(first[-1].id))
+        return [e.action for e in first], [e.action for e in second]
+
+    first, second = mongo(scenario)
+    assert first == ["a3", "a2"]
+    assert second == ["a1"]
