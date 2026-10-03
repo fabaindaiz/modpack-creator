@@ -150,16 +150,24 @@ En cada salto:
 4. **Parar mongod limpiamente**: `docker compose -f docker/docker-compose.yaml stop -t 120 mongodb`.
    La página de 5.0 exige confirmar que `mongod` se apagó limpio; `-t 120` le da tiempo antes del
    kill.
-5. **Cambiar la versión.** En `docker/.env`, `MONGO_VERSION` a la mayor siguiente; `./scripts/run.sh`
-   recrea el contenedor sobre el mismo volumen. Esperar a `modpack-mongodb … (healthy)` en
-   `docker ps` y confirmar con `db.version()`.
+5. **Cambiar la versión y levantar solo Mongo.** En `docker/.env`, `MONGO_VERSION` a la mayor
+   siguiente; desde la raíz del repositorio:
+   ```bash
+   docker compose -f docker/docker-compose.yaml up -d mongodb
+   ```
+   Es el mismo comando que `./scripts/run.sh` (misma raíz y mismo `-f`, así que Compose lee
+   `docker/.env`, el directorio del archivo compose), pero **sin** `./scripts/run.sh`: ese levanta
+   todo el compose y arrancaría la API parada antes de fijar la FCV. Recrea el contenedor de Mongo
+   sobre el mismo volumen. Esperar a `modpack-mongodb … (healthy)` en `docker ps` y confirmar con
+   `db.version()`.
 6. **Fijar la FCV de la versión nueva**, con el mismo `docker exec … mongosh --eval`:
    - 5.0 y 6.0, sin `confirm`: `db.adminCommand({ setFeatureCompatibilityVersion: "5.0" })`;
    - 7.0 y 8.0, **con** `confirm: true` (obligatorio desde 7.0):
      `db.adminCommand({ setFeatureCompatibilityVersion: "8.0", confirm: true })`.
 
    Las páginas de 5.0, 6.0 y 7.0 dicen que el comando es idempotente: si no termina, se repite.
-7. **Arrancar la API otra vez** (`./scripts/run.sh`) y comprobar el panel. Las páginas de upgrade
+7. **Arrancar la API otra vez** (`docker compose -f docker/docker-compose.yaml up -d api`, o
+   `./scripts/run.sh`) y comprobar el panel. Las páginas de upgrade
    recomiendan un período de prueba antes de fijar la FCV nueva (*burn-in*, por si hubiera que
    volver atrás); aquí el respaldo de cada salto es el camino de vuelta. Seguir con el siguiente
    salto.
