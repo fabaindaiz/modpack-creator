@@ -59,8 +59,8 @@ rama `feat/panel-web`; lo demás está en `main`; nada está desplegado.**
   4. los puntos de control de las fases 1 y 2;
   5. **la primera actualización real en el servidor de prueba**, con
      `docs/runbooks/primera-actualizacion-real.md`;
-  6. decir qué versión de MongoDB corre en producción y, si es menor que 8.0, subirla con el paso 1
-     de `migrar-mongo-a-volumen.md` (CI ya usa `mongo:8.0`).
+  6. decir qué versión de MongoDB corre en producción y, si es menor que 8.0, migrar primero a esa versión y subirla después, con
+     "Subir a MongoDB 8.0" de `migrar-mongo-a-volumen.md` (CI ya usa `mongo:8.0`).
 - **Pendiente de código:**
   - subir producción a MongoDB 8.0, si no lo está (d-7985ee-83eb5b);
   - packwiz, tras el punto de control de la fase 2.

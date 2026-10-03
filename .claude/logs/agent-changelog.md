@@ -98,8 +98,11 @@ sigue vacía. `AGENTS.md` suma dos invariantes (roles en los servicios, mismo or
   - A8 listaba cada mod sin decidir dos veces (un formulario por mod y el del lote, porque los
     formularios no se anidan); ahora solo el del lote;
   - la shell de un subagente se colgó esperando stdin; los comandos se corren sin bloquear en la entrada;
-  - la página de MongoDB 6.0 y la de 5.0 (versiones sin soporte) no se pudieron leer al escribir
-    el camino de subida; el runbook lo dice y remite a la documentación de esa versión.
+  - la primera versión del camino de subida de MongoDB estaba en el paso 1, antes de migrar, y habría
+    arrancado un `mongodb-data` vacío en un servidor viejo; no paraba `mongod` limpiamente (5.0 lo
+    exige); y dijo que las páginas de 5.0 y 6.0 no se podían leer, cuando sí lo son en su versión
+    `.md`. Ahora se migra primero a la versión actual y la subida es una sección aparte, con las
+    cuatro páginas (8.0, 7.0, 6.0, 5.0) citadas.
 
 **Qué quedó sin hacer.**
 - El detalle de un modpack no muestra todavía los archivos locales, los canales ni los pins
