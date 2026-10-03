@@ -40,9 +40,78 @@ docker exec modpack-mongodb mongosh --quiet -u mongoadmin -p "$MONGODB_PASSWORD"
 no admite bajar de versión.
 
 Todo el repositorio corre en MongoDB 8.0 (d-7985ee-83eb5b; CI usa `mongo:8.0`). Si `db.version()`
-es menor que 8.0, **no la subas todavía**: migra primero a `mongodb-data` **a esa misma versión**
-(pasos 2 a 8) y sube después, en [Subir a MongoDB 8.0](#subir-a-mongodb-80). Ahora el contenedor
-viejo sigue siendo el que tiene los datos, y el compose nuevo todavía no está desplegado.
+es menor que 8.0 pero al menos 5.0, **no la subas todavía**: migra primero a `mongodb-data` **a esa
+misma versión** (pasos 2 a 8) y sube después, en [Subir a MongoDB 8.0](#subir-a-mongodb-80). Ahora
+el contenedor viejo sigue siendo el que tiene los datos, y el compose nuevo todavía no está
+desplegado. Si el comando de arriba falla porque no encuentra `mongosh` (`executable file not
+found`), la versión es 4.4 o menor: sigue el bloque siguiente.
+
+### Si la versión es 4.4 o menor
+
+Con 4.4 o menos, el compose nuevo no sirve tal cual:
+
+- La API no conecta por debajo de 4.4: el PyMongo del repositorio (4.18.2) tiene
+  `pymongo.common.MIN_SUPPORTED_SERVER_VERSION = "4.4"` (comprobado en el entorno de hatch con
+  `hatch run python -c "import pymongo.common as c; print(c.MIN_SUPPORTED_SERVER_VERSION)"`).
+- La imagen `mongo:4.4` **no trae `mongosh`**, solo el shell viejo `mongo` (`/usr/bin/mongo`);
+  `mongo:5.0` trae los dos y desde `mongo:6.0` solo `mongosh`. El healthcheck del compose nuevo usa
+  `mongosh`: un `mongo:4.4` nunca queda `healthy` y la API (`depends_on: service_healthy`) nunca
+  arranca.
+
+Por eso, **con 4.4 o menos se sube hasta 5.0 en el contenedor viejo, antes de migrar**, y se migra
+después a 5.0 (pasos 2 a 8 con `MONGO_VERSION=5.0`); el resto de los saltos va en
+[Subir a MongoDB 8.0](#subir-a-mongodb-80), desde 5.0.
+
+Mientras la versión sea 4.4 o menor, cada `docker exec … mongosh` de este runbook se escribe con
+`mongo`, el resto igual (comprobado con `mongo:4.4`, 4.4.30). Para leer la versión:
+
+```bash
+docker exec modpack-mongodb mongo --quiet -u mongoadmin -p "$MONGODB_PASSWORD" \
+  --authenticationDatabase admin --eval 'db.version()'
+```
+
+y para la FCV:
+
+```bash
+docker exec modpack-mongodb mongo --quiet -u mongoadmin -p "$MONGODB_PASSWORD" \
+  --authenticationDatabase admin --eval 'db.adminCommand({ getParameter: 1, featureCompatibilityVersion: 1 })'
+```
+
+**Antes de pasar a 5.0, comprobar AVX** (en x86_64, lo que dice `uname -m`): MongoDB 5.0 y
+posteriores no corren en una CPU x86 sin AVX.
+
+```bash
+grep -m1 -o avx /proc/cpuinfo
+```
+
+Sin salida, 5.0 no va a arrancar en este servidor: **detente aquí**. Los datos quedan en 4.4, en el
+contenedor viejo, y hace falta planificar otro hardware antes de desplegar esta versión.
+
+Los saltos, uno por versión mayor (… → 4.2 → 4.4 → 5.0), con el compose **viejo** (todavía sin
+`git pull`) y sobre su volumen anónimo:
+
+1. Parar la API vieja: `docker compose -f docker/docker-compose.yaml stop api`.
+2. Respaldar con el comando del paso 2 (la imagen 4.4 trae `mongodump`), otro nombre de archivo por
+   salto.
+3. Comprobar la FCV con el comando de arriba: tiene que ser la de la versión que corre (`"4.4"`
+   corriendo 4.4). Si es menor, fijarla con el punto 6 para la versión que corre.
+4. Parar mongod limpiamente: `docker compose -f docker/docker-compose.yaml stop -t 120 mongodb`.
+5. En el `docker/docker-compose.yaml` viejo, cambiar el `image:` de `mongodb` (al principio,
+   `mongo:latest`) por la mayor siguiente (`image: mongo:5.0` desde 4.4) y levantar solo Mongo:
+   `docker compose -f docker/docker-compose.yaml up -d mongodb`. Compose recrea el contenedor
+   conservando sus volúmenes, también el anónimo (fuentes de arriba); confirmar con el comando del
+   paso 0 que `/data/db` sigue montado desde el mismo volumen. El compose viejo no tiene
+   healthcheck: esperar a que `db.version()` responda la versión nueva.
+6. Fijar la FCV de la versión nueva, sin `confirm` (con `mongo` hasta 4.4; en 5.0 sirve también
+   `mongosh`): `db.adminCommand({ setFeatureCompatibilityVersion: "5.0" })` al llegar a 5.0 (`"4.4"`
+   al llegar a 4.4).
+7. Arrancar la API vieja: `docker compose -f docker/docker-compose.yaml up -d api`.
+
+El cambio de `image:` es local, y `git pull` se niega a pisar un archivo con cambios locales: antes
+del paso 5, `git checkout -- docker/docker-compose.yaml` (el compose nuevo toma la versión de
+`MONGO_VERSION`, que entonces es `5.0`). Por debajo de 4.4, la
+página de upgrade de cada versión dice lo mismo (de a una mayor, con la FCV de la que corre); esos
+saltos no están comprobados aquí.
 
 ## 2. Respaldo
 
@@ -131,7 +200,9 @@ docker exec modpack-mongodb mongosh --quiet -u mongoadmin -p "$MONGODB_PASSWORD"
 
 **Solo si el paso 1 dio una versión menor que 8.0**, y solo cuando Mongo ya corre desde
 `mongodb-data` con el compose nuevo (pasos 2 a 8 terminados y verificados). Se sube de una versión
-mayor a la siguiente: 4.4 → 5.0 → 6.0 → 7.0 → 8.0. Salta los saltos que ya diste.
+mayor a la siguiente: 5.0 → 6.0 → 7.0 → 8.0. Salta los saltos que ya diste. Con 4.4 o menos, los
+saltos hasta 5.0 ya se dieron en el contenedor viejo ([el bloque del paso 1](#si-la-versión-es-44-o-menor)):
+desde 5.0 todas las imágenes traen `mongosh`, el que usan los comandos de aquí.
 
 En cada salto:
 
@@ -182,12 +253,10 @@ Fuentes por salto, consultadas el 2026-10-03:
   exige 6.0 con FCV `"6.0"`; `confirm: true`;
 - a 6.0: [*Upgrade a Standalone to 6.0*](https://www.mongodb.com/docs/v6.0/release-notes/6.0-upgrade-standalone.md)
   (archivada): exige 5.0 con FCV `"5.0"`; FCV `"6.0"` sin `confirm`;
-- a 5.0: [*Upgrade a Standalone to 5.0*](https://www.mongodb.com/docs/v5.0/release-notes/5.0-upgrade-standalone.md)
+- a 5.0 (en el contenedor viejo, [antes de migrar](#si-la-versión-es-44-o-menor)):
+  [*Upgrade a Standalone to 5.0*](https://www.mongodb.com/docs/v5.0/release-notes/5.0-upgrade-standalone.md)
   (archivada): exige 4.4 con FCV `"4.4"` y que `mongod` se haya apagado limpio; FCV `"5.0"` sin
   `confirm`.
-
-Antes de 4.4, esas páginas dicen lo mismo: subir de a una mayor hasta 4.4; sus pasos no están
-comprobados aquí.
 
 ## Volver atrás
 
