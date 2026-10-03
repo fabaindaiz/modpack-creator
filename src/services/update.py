@@ -231,7 +231,8 @@ class UpdateService():
             clashes = [e.file.filename for e in install if e.file and e.file.filename in staying]
             if clashes:
                 raise refuse(f"new jars would overwrite files that stay: {', '.join(clashes)}")
-            plan = {"build": build.number, "bundle": bundle.name, "remove": remove,
+            # bundle_id: the panel's real run from this plan is refused if the server was relinked since.
+            plan = {"build": build.number, "bundle": bundle.name, "bundle_id": str(bundle.id), "remove": remove,
                     "install": [{"project_id": e.project_id, "filename": e.file.filename, "url": e.file.url,
                                  "sha512": e.file.sha512, "size": e.file.size} for e in install if e.file]}
             if not install and not remove:

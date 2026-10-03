@@ -138,10 +138,14 @@ def test_a_dry_run_reads_and_verifies_everything_and_writes_nothing(mongo: Mongo
     async def scenario() -> tuple[Any, ...]:
         s = await setup()
         job = await s.run()  # simulación por defecto
-        return job.status, s.panel.writes, job.checkpoint["preflight"], job.checkpoint["log"]["lines"], s.downloader.fetched, s
+        linked = (await PterodactylDatabase().server_get(s.server_id)).bundle_id
+        return (job.status, s.panel.writes, job.checkpoint["preflight"], job.checkpoint["log"]["lines"],
+                s.downloader.fetched, s, linked)
 
-    status, writes, plan, log, fetched, s = mongo(scenario)
+    status, writes, plan, log, fetched, s, linked = mongo(scenario)
     assert status == "done" and writes == []
+    # The plan names the bundle it was made for: the panel's real run is tied to it.
+    assert linked and plan["bundle_id"] == linked
     assert [f["filename"] for f in plan["install"]] == [new_jar(s)] and plan["remove"] == ["/mods/fabric-api-installed.jar"]
     assert fetched and any("power stop" in line for line in log) and any("backup" in line for line in log)
 

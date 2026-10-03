@@ -33,6 +33,8 @@ BUNDLE_ID = PydanticObjectId()
 SAME_ORIGIN = {"Sec-Fetch-Site": "same-origin"}
 HTMX = {"HX-Request": "true", **SAME_ORIGIN}
 EXACT_NAME = "Survival"
+# The bundle the page was planned for: both update forms send it back.
+LINKED = {"bundle_id": str(BUNDLE_ID)}
 PENDING_ROLLBACK = "Hay una actualización fallida sin revertir"
 
 
@@ -418,7 +420,7 @@ def test_preview_is_a_dry_run_and_returns_a_polling_row() -> None:
 
 def test_update_with_the_exact_name_queues_a_real_run() -> None:
     client, fakes = setup(OPERATOR)
-    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": EXACT_NAME, "build": "2"})
+    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={**LINKED, "confirm": EXACT_NAME, "build": "2"})
     assert response.status_code == 200
     assert only(fakes.update.calls, "enqueue_update")[1:] == (str(SERVER_ID), OPERATOR, 2, False)
 
@@ -522,7 +524,7 @@ def test_an_editor_is_refused_a_rollback_before_the_name_is_compared() -> None:
 @pytest.mark.parametrize("typed", ["survival", "Surv", "Survival 2", "", "SURVIVAL", "Sur vival"])
 def test_update_requires_exact_name(typed: str) -> None:
     client, fakes = setup(OPERATOR)
-    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": typed, "build": "2"})
+    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={**LINKED, "confirm": typed, "build": "2"})
     assert response.status_code == 422 and "Escribe el nombre exacto del servidor" in response.text
     assert fakes.update.calls == []
 
@@ -530,14 +532,14 @@ def test_update_requires_exact_name(typed: str) -> None:
 def test_update_accepts_the_name_with_surrounding_whitespace() -> None:
     client, fakes = setup(OPERATOR)
     fakes.ptero.server = server("Survival")
-    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": "  Survival ", "build": "2"})
+    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={**LINKED, "confirm": "  Survival ", "build": "2"})
     assert response.status_code == 200
     assert only(fakes.update.calls, "enqueue_update")[-1] is False
 
 
 def test_update_without_the_field_is_the_same_422() -> None:
     client, fakes = setup(OPERATOR)
-    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"build": "2"})
+    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={**LINKED, "build": "2"})
     assert response.status_code == 422 and fakes.update.calls == []
 
 
@@ -552,9 +554,9 @@ def test_update_without_a_build_is_a_notice_and_never_reaches_the_service() -> N
 def test_second_real_update_shows_conflict_notice() -> None:
     client, fakes = setup(OPERATOR)
     fakes.update.errors = [None, HTTP_409_CONFLICT("There is already an active job for server:x")]
-    first = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": EXACT_NAME, "build": "2"})
+    first = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={**LINKED, "confirm": EXACT_NAME, "build": "2"})
     assert first.status_code == 200
-    second = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": EXACT_NAME, "build": "2"})
+    second = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={**LINKED, "confirm": EXACT_NAME, "build": "2"})
     assert second.status_code == 409
     assert "There is already an active job for server:x" in second.text and "data-notice" in second.text
 
@@ -592,7 +594,7 @@ def test_direct_update_dialog_lists_builds_with_recommended_selected() -> None:
 
 def test_direct_update_posts_the_selected_build() -> None:
     client, fakes = setup(OPERATOR)
-    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"build": "3", "confirm": EXACT_NAME})
+    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={**LINKED, "build": "3", "confirm": EXACT_NAME})
     assert response.status_code == 200
     assert only(fakes.update.calls, "enqueue_update")[1:] == (str(SERVER_ID), OPERATOR, 3, False)
 
@@ -619,7 +621,7 @@ def test_direct_update_is_disabled_for_an_editor() -> None:
 def test_stale_build_is_a_notice(error: Exception) -> None:
     client, fakes = setup(OPERATOR)
     fakes.update.errors = [error]
-    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"build": "9", "confirm": EXACT_NAME})
+    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={**LINKED, "build": "9", "confirm": EXACT_NAME})
     assert response.status_code == error.status_code and "data-notice" in response.text  # type: ignore[attr-defined]
     assert str(error.detail) in response.text  # type: ignore[attr-defined]
 
@@ -643,9 +645,12 @@ def test_after_done_a_a_failed_b_attempt_is_said() -> None:
     assert "intento de B falló" not in client.get(f"/servers/{SERVER_ID}").text
 
 
-def finished_dry_run(build_number: int = 3, changes: bool = True) -> Job:
-    plan = {"build": build_number, "bundle": "Pack Uno", "remove": ["/mods/old.jar"] if changes else [],
-            "install": [{"project_id": "P2", "filename": "lithium-2.jar", "url": "u", "sha512": "x", "size": 1}] if changes else []}
+def finished_dry_run(build_number: int = 3, changes: bool = True, bundle_id: Optional[str] = str(BUNDLE_ID)) -> Job:
+    plan: dict[str, Any] = {
+        "build": build_number, "bundle": "Pack Uno", "remove": ["/mods/old.jar"] if changes else [],
+        "install": [{"project_id": "P2", "filename": "lithium-2.jar", "url": "u", "sha512": "x", "size": 1}] if changes else []}
+    if bundle_id is not None:
+        plan["bundle_id"] = bundle_id
     return job("server_update", "done", False, {"server_id": str(SERVER_ID), "dry_run": True},
                {"preflight": plan, "log": {"lines": ["stop server"]}})
 
@@ -676,7 +681,7 @@ def test_real_run_form_appears_only_in_a_finished_dry_run_for_an_operator() -> N
 
 def test_an_editor_is_refused_before_anything_is_compared() -> None:
     client, fakes = setup(EDITOR)
-    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"confirm": EXACT_NAME, "build": "2"})
+    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={**LINKED, "confirm": EXACT_NAME, "build": "2"})
     assert response.status_code == 403 and fakes.update.calls == []
 
 
@@ -748,3 +753,30 @@ def test_dry_run_dialog_warns_when_a_rollback_is_pending() -> None:
     assert PENDING_ROLLBACK in html and html.index(PENDING_ROLLBACK) < html.index('name="confirm"')
     assert PENDING_ROLLBACK not in row(finished_dry_run(3), server_name="Survival", rollback=None)
     assert PENDING_ROLLBACK not in row(finished_dry_run(3), server_name="Survival")
+
+
+# El build va atado al modpack para el que se planeó.
+
+def test_both_update_forms_send_the_bundle_they_were_planned_for() -> None:
+    client, _ = setup(OPERATOR)
+    text = client.get(f"/servers/{SERVER_ID}").text
+    start = text.index('id="update-dialog-direct"')
+    assert text.index(f'name="bundle_id" value="{BUNDLE_ID}"', start) > start
+    html = row(finished_dry_run(3, bundle_id="0123456789abcdef01234567"), server_name="Survival")
+    assert 'name="bundle_id" value="0123456789abcdef01234567"' in html
+
+
+def test_a_dry_run_without_its_bundle_does_not_offer_the_real_run() -> None:
+    """A dry run from before the plan carried its bundle cannot be tied to one: simulate again."""
+    html = row(finished_dry_run(3, bundle_id=None), server_name="Survival")
+    assert 'name="confirm"' not in html and "vuelve a simular" in html
+
+
+@pytest.mark.parametrize("sent", [{"bundle_id": "0123456789abcdef01234567"}, {"bundle_id": ""}, {}])
+def test_an_update_for_another_bundle_is_refused_before_the_service(sent: dict[str, str]) -> None:
+    client, fakes = setup(OPERATOR)
+    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX,
+                           data={**sent, "build": "2", "confirm": EXACT_NAME})
+    assert response.status_code == 409
+    assert "El servidor cambió de modpack; vuelve a cargar la página" in response.text
+    assert fakes.update.calls == []

@@ -1,7 +1,7 @@
 {#
   Updating a game server, two independent ways (d-7985ee-aca3e8): a dry run (reads, writes nothing),
   whose result also offers the real run for its build (_dry_run.html), or the direct update with a
-  build chosen here. Both fix the build number, warn when a real update would
+  build chosen here. Both fix the build number and its bundle, warn when a real update would
   discard a pending rollback (R17), and ask for the server's exact name. The route repeats the
   checks and the service the role; here the buttons only mirror it. Needs `server_id`, `server`,
   `bundle`, `builds` (newest first) and `rollback` (JobService.rollback_state): after a done
@@ -27,6 +27,7 @@
         {"hx-post": "/servers/" ~ server_id ~ "/update", "hx-target": "#server-job", "hx-swap": "innerHTML"}) %}
     <p>Esto apaga el servidor de juego, hace un backup, cambia los jars y lo vuelve a arrancar. Los jugadores serán desconectados.</p>
     {{ ui.discards_rollback(rollback) }}
+    <input type="hidden" name="bundle_id" value="{{ bundle.id }}">
     {% set chosen = bundle.recommended_build or bundle.latest_build %}
     <label for="{{ direct }}-build" class="block font-medium">Build a instalar</label>
     <select id="{{ direct }}-build" name="build" class="block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 dark:bg-zinc-900 dark:ring-zinc-700">

@@ -14,10 +14,11 @@ from src.model.users import Actor
 from src.model.users.actor import ActorRef
 from tests._actors import EDITOR, OPERATOR, session_for
 from tests._session import session_cookie
-from tests.test_web_servers import FakePterodactyl, PENDING_ROLLBACK, SERVER_ID, failed_real_update, job as make_job
+from tests.test_web_servers import BUNDLE_ID, FakePterodactyl, PENDING_ROLLBACK, SERVER_ID, failed_real_update, job as make_job
 
 T0 = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
-PLAN = {"preflight": {"build": 3, "bundle": "Pack Uno", "install": [{"filename": "a.jar"}], "remove": []}}
+PLAN = {"preflight": {"build": 3, "bundle": "Pack Uno", "bundle_id": str(BUNDLE_ID), "install": [{"filename": "a.jar"}],
+                      "remove": []}}
 
 
 def finished_dry_run() -> Job:

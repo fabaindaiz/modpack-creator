@@ -4,7 +4,7 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from src.dependences import Dependences, JobService, ModpackService, ModrinthService, PterodactylService, UpdateService
-from src.exceptions import HTTP_403_FORBIDDEN, HTTP_422_UNPROCESSABLE_ENTITY
+from src.exceptions import HTTP_403_FORBIDDEN, HTTP_409_CONFLICT, HTTP_422_UNPROCESSABLE_ENTITY
 from src.library.scan import Comparison
 from src.model.jobs import Job
 from src.model.pterodactyl import PterodactylServer
@@ -17,6 +17,7 @@ router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
 # A Modrinth id or slug: what an attribute may carry.
 MODRINTH_REF = r"^[A-Za-z0-9_\-]+$"
 CONFIRM_MESSAGE = "Escribe el nombre exacto del servidor"
+RELINKED_MESSAGE = "El servidor cambió de modpack; vuelve a cargar la página"
 
 def _back(request: Request, server_id: str) -> Response:
     """Go to the server's page: htmx cannot follow a redirect to a page, it is told where to go."""
@@ -224,18 +225,24 @@ async def server_update_run(
         request: Request,
         build: Annotated[int, Form(ge=1)],
         confirm: Annotated[str, Form(max_length=200)] = "",
+        bundle_id: Annotated[str, Form(max_length=24)] = "",
         actor: Actor = Depends(get_web_actor),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
         updateService: UpdateService = Depends(Provide[Dependences.updateService]),
         ):
-    """The real update, on a game server, of the build the person previewed (the dry run's, sent
-    back by its row): the recommended build may have changed since. The person must type the server's exact name: compared
+    """The real update, on a game server, to a fixed build, reached two ways (d-7985ee-aca3e8):
+    the direct dialog of the server's page, with the build chosen there, or the result of a
+    finished dry run, with the build it simulated (the recommended one may have changed since).
+    Both send the bundle they were planned for: if the server was linked to another one since, it
+    is a 409 before the service is called. The person must type the server's exact name: compared
     here, case-sensitive, nothing partial, and without calling the service when it differs. The
-    service still enforces the operator role; an editor is refused before the name is compared,
+    service still enforces the operator role; an editor is refused before anything is compared,
     so the page does not tell them anything about it."""
     if not actor.is_operator:
         raise HTTP_403_FORBIDDEN("This action requires the operator role")
     server: PterodactylServer = await pterodactylService.server_get(server_id)
+    if not bundle_id or bundle_id != server.bundle_id:
+        raise HTTP_409_CONFLICT(RELINKED_MESSAGE)
     if confirm.strip() != server.name:
         raise HTTP_422_UNPROCESSABLE_ENTITY(CONFIRM_MESSAGE)
     job = await updateService.enqueue_update(server_id, actor, build=build, dry_run=False)
