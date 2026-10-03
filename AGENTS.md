@@ -103,7 +103,9 @@ fallar. Los tests de base corren contra un MongoDB real: en CI siempre, en local
 `@pytest.mark.network`, y ninguno resuelve un nombre fuera de localhost (d-7985ee-1a20c1). Lo que el gate **no** cubre, y hay que decirlo en el
 reporte: la imagen Docker, los datos de producción, el login OIDC, cualquier llamada real a
 Modrinth o Pterodactyl, y el aspecto del panel: los tests miran el HTML, no cómo se ve, así que
-la revisión visual (anchos de 360, 768 y 1280 px, claro y oscuro) es manual. Skill `verify`.
+la revisión visual (anchos de 360, 768 y 1280 px, claro y oscuro) es manual:
+`./scripts/visual-sweep.sh [salida]` (no va en el gate; requiere Docker y Chromium, ver el README,
+"Revisión visual"). Skill `verify`.
 
 ## Commits
 

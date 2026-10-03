@@ -39,5 +39,21 @@ npm run dev      # lo mismo, y recompila app.css al cambiar las plantillas
 La imagen Docker lo construye ella misma en una etapa de Node: no hace falta correr nada antes de
 `./scripts/build.sh`.
 
+## Revisión visual
+
+`./scripts/visual-sweep.sh [salida]` captura el panel a 360, 768 y 1280 px, en claro y oscuro, como
+operador (y a 1280 px en claro como editor), con datos de demo sobre un MongoDB descartable. Imprime
+las páginas con status distinto de 200, desborde horizontal o errores de consola, y sale con un
+código distinto de 0 si hay alguna. Las capturas quedan en `salida` (por defecto un directorio
+temporal que imprime). Se corre a mano: no va en CI ni en `hatch run gate`.
+
+```bash
+hatch run visual:playwright install chromium   # solo la primera vez
+./scripts/visual-sweep.sh
+```
+
+Requiere Docker, Node y hatch. La app corre desde un directorio temporal con configuración falsa:
+`.env.yaml` no se carga. Con `PLAYWRIGHT_CHROMIUM=<ruta>` usa un Chromium que ya tengas.
+
 Las reglas del repositorio, para personas y agentes, están en [`AGENTS.md`](AGENTS.md); las
 decisiones, en [`docs/decisions.md`](docs/decisions.md).

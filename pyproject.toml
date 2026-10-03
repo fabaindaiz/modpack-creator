@@ -42,6 +42,13 @@ tests = "pytest {args}"
 # escribe en el árbol ni sale a la red.
 gate = ["bundle", "audit", "typecheck", "tests"]
 
+# La revisión visual del panel (scripts/visual-sweep.sh): a mano, fuera del gate y de
+# requirements.txt, así que ni CI ni la imagen descargan un navegador.
+[tool.hatch.envs.visual]
+dependencies = [
+  "playwright==1.63.0",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
