@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
@@ -31,16 +31,22 @@ async def _server_names(pterodactylService: PterodactylService) -> dict[str, str
     """Server id to name, for the tables."""
     return {str(server.id): server.name for server in await pterodactylService.server_find()}
 
-async def _server_context(job: Job, pterodactylService: PterodactylService) -> dict[str, str]:
+async def _server_context(job: Job, pterodactylService: PterodactylService,
+                          jobService: Optional[JobService] = None) -> dict[str, Any]:
     """A job about a server carries the server's name (for the real run's confirmation hint); a
-    server that is gone just shows no hint."""
+    server that is gone just shows no hint. With `jobService`, a finished dry run also carries the
+    server's pending rollback, if any: its real run discards it (R17) and the dialog says so."""
+    context: dict[str, Any] = {}
     server_id = job.payload.get("server_id")
     if isinstance(server_id, str):
         try:
-            return {"server_name": (await pterodactylService.server_get(server_id)).name}
+            context["server_name"] = (await pterodactylService.server_get(server_id)).name
         except HTTPException:
             pass
-    return {}
+        if jobService is not None and job.kind == "server_update" and job.status == "done" \
+                and job.payload.get("dry_run", False):
+            context["rollback"] = await jobService.rollback_state(server_id)
+    return context
 
 @router.get("/jobs")
 @inject
@@ -75,7 +81,7 @@ async def job_page(
     """One job in full: the shared detail, with its plan and, for an operator, the real run."""
     job = await jobService.get(job_id)
     return render(request, "activity/job.html", actor, job=job, nav_active="jobs",
-                  **await _server_context(job, pterodactylService))
+                  **await _server_context(job, pterodactylService, jobService))
 
 @router.get("/jobs/{job_id}/row")
 @inject
@@ -88,7 +94,8 @@ async def job_row(
         ):
     """One job's detail: what an active detail polls."""
     job = await jobService.get(job_id)
-    return render(request, "activity/_job_row.html", actor, job=job, **await _server_context(job, pterodactylService))
+    return render(request, "activity/_job_row.html", actor, job=job,
+                  **await _server_context(job, pterodactylService, jobService))
 
 @router.get("/jobs/{job_id}/tr")
 @inject
@@ -102,7 +109,7 @@ async def job_tr(
     """One job's table row: what an active row of the table polls."""
     job = await jobService.get(job_id)
     context = await _server_context(job, pterodactylService)
-    names = {job.payload["server_id"]: context["server_name"]} if context else {}
+    names = {job.payload["server_id"]: context["server_name"]} if "server_name" in context else {}
     return render(request, "activity/_job_tr.html", actor, job=job, server_names=names)
 
 @router.get("/audit")

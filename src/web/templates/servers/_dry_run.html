@@ -1,6 +1,8 @@
 {# What a dry-run update would do, from the finished job's checkpoint: the plan and the writes it would send. Needs `job`.
-  An operator gets the real run here and nowhere else: bound to this plan's build (hidden `build`),
-  confirmed by typing the server's name (`server_name`, when the page knows it). #}
+  An operator also gets the real run of this plan (the other path is the direct dialog of
+  servers/_update.html, d-7985ee-aca3e8): bound to its build (hidden `build`), warning when it
+  would discard a pending rollback (`rollback`, JobService.rollback_state, when the page knows it),
+  and confirmed by typing the server's name (`server_name`, when the page knows it). #}
 {% import "_macros.html" as ui %}
 {% set plan = job.checkpoint.get("preflight") %}
 {% set lines = job.checkpoint.get("log", {}).get("lines", []) %}
@@ -40,6 +42,7 @@
   {% call ui.confirm_dialog(dialog, "Ejecutar la actualización al build " ~ plan.build, "Actualizar servidor", "danger",
       {"hx-post": "/servers/" ~ job.payload.server_id ~ "/update", "hx-target": "closest [data-job]", "hx-swap": "outerHTML"}) %}
   <p>Esto apaga el servidor de juego, hace un backup, cambia los jars y lo vuelve a arrancar. Los jugadores serán desconectados.</p>
+  {{ ui.discards_rollback(rollback if rollback is defined else None) }}
   <input type="hidden" name="build" value="{{ plan.build }}">
   <label for="{{ dialog }}-confirm" class="block font-medium">Escribe el nombre exacto del servidor para confirmar{% if server_name is defined %}: <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{{ server_name }}</code>{% endif %}</label>
   <input id="{{ dialog }}-confirm" name="confirm" type="text" required autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200"

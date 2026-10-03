@@ -33,6 +33,7 @@ BUNDLE_ID = PydanticObjectId()
 SAME_ORIGIN = {"Sec-Fetch-Site": "same-origin"}
 HTMX = {"HX-Request": "true", **SAME_ORIGIN}
 EXACT_NAME = "Survival"
+PENDING_ROLLBACK = "Hay una actualización fallida sin revertir"
 
 
 def server(name: str = EXACT_NAME, bundle_id: Optional[str] = str(BUNDLE_ID), uuid: str = "uuid-1",
@@ -727,3 +728,23 @@ def test_names_are_escaped() -> None:
     fakes.ptero.server = server('<script>alert(1)</script>')
     text = client.get(f"/servers/{SERVER_ID}").text
     assert "<script>alert" not in text and "&lt;script&gt;" in text
+
+
+# Una actualización real descarta el rollback pendiente (R17): los dos diálogos lo dicen.
+
+def test_direct_update_dialog_warns_when_a_rollback_is_pending() -> None:
+    client, fakes = setup(OPERATOR)
+    assert PENDING_ROLLBACK not in client.get(f"/servers/{SERVER_ID}").text
+    fakes.jobs.state = RollbackState(update=failed_real_update({"swap": {}, "backup": {}}), allowed=["A", "B"])
+    text = client.get(f"/servers/{SERVER_ID}").text
+    start = text.index('id="update-dialog-direct"')
+    assert start < text.index(PENDING_ROLLBACK, start) < text.index('name="confirm"', start)
+    assert "el backup se restaura a mano en Pterodactyl" in text
+
+
+def test_dry_run_dialog_warns_when_a_rollback_is_pending() -> None:
+    state = RollbackState(update=failed_real_update({"backup": {}}), allowed=["B"])
+    html = row(finished_dry_run(3), server_name="Survival", rollback=state)
+    assert PENDING_ROLLBACK in html and html.index(PENDING_ROLLBACK) < html.index('name="confirm"')
+    assert PENDING_ROLLBACK not in row(finished_dry_run(3), server_name="Survival", rollback=None)
+    assert PENDING_ROLLBACK not in row(finished_dry_run(3), server_name="Survival")

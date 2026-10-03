@@ -118,6 +118,14 @@
 </dialog>
 {% endmacro %}
 
+{# Inside a real update's dialog: a pending rollback (JobService.rollback_state) stops being
+   offered once a later real update runs (R17 of d-7985ee-5445a0), so the dialog says it first. #}
+{% macro discards_rollback(rollback) %}
+{% if rollback %}
+<p role="alert" class="rounded-md border px-3 py-2 font-medium {{ NOTICE_TONES['error'] }}">Hay una actualización fallida sin revertir: si sigues, el rollback A/B deja de ofrecerse y el backup se restaura a mano en Pterodactyl.</p>
+{% endif %}
+{% endmacro %}
+
 {# A page heading with optional actions on the right (call block). #}
 {% macro page_header(title, subtitle=None) %}
 <div class="flex flex-wrap items-end justify-between gap-3">

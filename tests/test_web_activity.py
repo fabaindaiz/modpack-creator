@@ -9,12 +9,12 @@ from fastapi.testclient import TestClient
 
 from src.exceptions import HTTP_404_NOT_FOUND
 from src.model.audit import AuditEvent, AuditTarget
-from src.model.jobs import Job
+from src.model.jobs import Job, RollbackState
 from src.model.users import Actor
 from src.model.users.actor import ActorRef
 from tests._actors import EDITOR, OPERATOR, session_for
 from tests._session import session_cookie
-from tests.test_web_servers import FakePterodactyl, SERVER_ID, job as make_job
+from tests.test_web_servers import FakePterodactyl, PENDING_ROLLBACK, SERVER_ID, failed_real_update, job as make_job
 
 T0 = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 PLAN = {"preflight": {"build": 3, "bundle": "Pack Uno", "install": [{"filename": "a.jar"}], "remove": []}}
@@ -36,6 +36,12 @@ class FakeJobs:
     def __init__(self) -> None:
         self.jobs: list[Job] = []
         self.calls: list[dict[str, Any]] = []
+        self.state: Optional[RollbackState] = None
+        self.asked_state: list[str] = []
+
+    async def rollback_state(self, server_id: str) -> Optional[RollbackState]:
+        self.asked_state.append(server_id)
+        return self.state
 
     async def find(self, **kwargs: Any) -> list[Job]:
         self.calls.append(kwargs)
@@ -326,3 +332,16 @@ def test_audit_older_link_keeps_the_dates() -> None:
     audit.events = [event() for _ in range(50)]
     text = client.get("/audit", params={"desde": "2026-10-01", "hasta": "2026-10-02"}).text
     assert "desde=2026-10-01" in text and "hasta=2026-10-02" in text
+
+
+@pytest.mark.parametrize("path", ["", "/row"])
+def test_the_real_run_from_a_job_warns_when_a_rollback_is_pending(path: str) -> None:
+    """R17: a real update discards the pending rollback; the dialog says so before confirming."""
+    client, jobs, *_ = setup(OPERATOR)
+    jobs.jobs = [finished_dry_run()]
+    text = client.get(f"/jobs/{jobs.jobs[0].id}{path}").text
+    assert "Ejecutar de verdad" in text and PENDING_ROLLBACK not in text
+    jobs.state = RollbackState(update=failed_real_update({"backup": {}}), allowed=["B"])
+    text = client.get(f"/jobs/{jobs.jobs[0].id}{path}").text
+    assert PENDING_ROLLBACK in text and text.index(PENDING_ROLLBACK) < text.index('name="confirm"')
+    assert jobs.asked_state[-1] == str(SERVER_ID)
