@@ -43,7 +43,15 @@ está al final del archivo, para que nada entre este párrafo y la primera entra
   - A10: `scripts/visual-sweep.sh` (R10);
   - A11 (docs): MongoDB 8.0 en todos lados y su camino de subida por saltos en
     `migrar-mongo-a-volumen.md` (d-7985ee-83eb5b), la invariante de permisos denegados
-    (d-7985ee-794d11) y este registro.
+    (d-7985ee-794d11) y este registro;
+  - la ronda de la revisión final: los dos diálogos de actualización real avisan cuando hay un
+    rollback pendiente que se va a perder (R17); los dos caminos mandan el modpack para el que se
+    planearon y la ruta da 409 si el servidor cambió de modpack (la simulación guarda `bundle_id`
+    en su plan); tras un A exitoso, pedir A da el 409 del servicio y una página vieja que pide B
+    sin el campo del nombre recibe "vuelve a cargar la página"; el bloque de rollback dice cuándo
+    y por qué falló el último intento (A o B, `RollbackState.last_failed`); el runbook de MongoDB
+    tiene un camino para 4.4 o menos; y la tabla de roles, el roadmap y `AGENTS.md` dicen lo que
+    hace el código.
 - **Documentos de la sesión:** [diseño](../../docs/superpowers/specs/2026-10-02-panel-web-design.md),
   [plan del panel](../../docs/superpowers/plans/2026-10-02-panel-web.md) y
   [plan del addendum](../../docs/superpowers/plans/2026-10-03-panel-web-addendum.md).
@@ -66,7 +74,8 @@ sigue vacía. `AGENTS.md` suma dos invariantes (roles en los servicios, mismo or
 - Las decisiones sobre qué va al servidor se guardaban leyendo y reescribiendo el documento, y
   una decisión concurrente se perdía; ahora es un `$set` atómico por proyecto.
 - Una actualización real no estaba atada a la simulación: podía instalar un build no previsualizado.
-  Ahora solo se ofrece desde una simulación terminada y lleva su build.
+  Ahora lleva el build fijado al confirmar (desde el addendum, d-7985ee-aca3e8, por dos caminos:
+  directo o desde una simulación terminada), y el modpack para el que se planeó.
 - Un rollback se aceptaba sobre una simulación o sobre una actualización ya superada, y la
   búsqueda del último trabajo miraba solo los 50 más recientes. El servicio lo rechaza.
 - El redirect abierto, ya existente, apareció al revisar el login. Un primer intento con
@@ -102,7 +111,15 @@ sigue vacía. `AGENTS.md` suma dos invariantes (roles en los servicios, mismo or
     arrancado un `mongodb-data` vacío en un servidor viejo; no paraba `mongod` limpiamente (5.0 lo
     exige); y dijo que las páginas de 5.0 y 6.0 no se podían leer, cuando sí lo son en su versión
     `.md`. Ahora se migra primero a la versión actual y la subida es una sección aparte, con las
-    cuatro páginas (8.0, 7.0, 6.0, 5.0) citadas.
+    cuatro páginas (8.0, 7.0, 6.0, 5.0) citadas;
+  - ese camino seguía roto con una base en 4.4 o menos, y nadie lo vio hasta la revisión final: el
+    PyMongo del repositorio (4.18.2) no conecta por debajo de 4.4, `mongo:4.4` no trae `mongosh`
+    y el healthcheck del compose lo usa, así que la API nunca habría arrancado. Ahora, con 4.4 o
+    menos, se sube a 5.0 en el contenedor viejo antes de migrar, con los comandos del shell `mongo`
+    y comprobando AVX primero;
+  - R17 (una actualización real posterior deja sin rollback a la fallida) se aplicaba en silencio:
+    el operador podía perder el rollback A/B sin que ningún diálogo se lo dijera. Ahora los dos
+    diálogos lo avisan antes de confirmar.
 
 **Qué quedó sin hacer.**
 - El detalle de un modpack no muestra todavía los archivos locales, los canales ni los pins
@@ -127,6 +144,10 @@ sigue vacía. `AGENTS.md` suma dos invariantes (roles en los servicios, mismo or
   reales; los datos de producción (y por tanto qué versión de MongoDB corre: los saltos del
   runbook no se probaron); y el camino del Chromium incluido de la revisión visual
   (`PLAYWRIGHT_CHROMIUM` apunta a uno ya instalado).
+- **De la ronda final:** el aviso de rollback pendiente no aparece en la revisión visual (63
+  capturas, 0 problemas), que no abre diálogos; solo lo prueban los tests de HTML. El camino de
+  4.4 se ensayó con podman en arm64 (4.4.30 → 5.0.33 sobre el mismo volumen, FCV `"5.0"`, datos
+  intactos): el chequeo de AVX en x86, el compose viejo real y los saltos por debajo de 4.4 no.
 - **Pendiente del dueño:** `OIDC_OPERATOR_GROUPS: ""` en `.env.default`.
 
 ## 2026-10-01 · s-7985ee-2ab23b — Fase 3: importar servidores y actualizar con backup, verificación y rollback a pedido
