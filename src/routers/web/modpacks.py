@@ -48,33 +48,29 @@ def _icon(url: Any) -> Optional[str]:
 # What each Modrinth environment value means for the player, as the sides it runs on (openapi v2.7.0,
 # EnvironmentEnum). An "optional" side still names the side the project is for; "singleplayer_only" runs
 # in the client. `client_or_server*` work on either, so the project supports both. `unknown` is absent.
-_CLIENT, _SERVER = "client", "server"
-_ENVIRONMENT_SIDES: dict[str, frozenset[str]] = {
-    ModrinthEnvironment.client_and_server.value: frozenset({_CLIENT, _SERVER}),
-    ModrinthEnvironment.client_only.value: frozenset({_CLIENT}),
-    ModrinthEnvironment.client_only_server_optional.value: frozenset({_CLIENT}),
-    ModrinthEnvironment.singleplayer_only.value: frozenset({_CLIENT}),
-    ModrinthEnvironment.server_only.value: frozenset({_SERVER}),
-    ModrinthEnvironment.server_only_client_optional.value: frozenset({_SERVER}),
-    ModrinthEnvironment.dedicated_server_only.value: frozenset({_SERVER}),
-    ModrinthEnvironment.client_or_server.value: frozenset({_CLIENT, _SERVER}),
-    ModrinthEnvironment.client_or_server_prefers_both.value: frozenset({_CLIENT, _SERVER}),
+_ENVIRONMENT_LABELS: dict[str, str] = {
+    ModrinthEnvironment.client_and_server.value: "cliente y servidor",  # must be installed on both
+    ModrinthEnvironment.client_or_server.value: "cliente o servidor",  # works on either side alone
+    ModrinthEnvironment.client_or_server_prefers_both.value: "cliente o servidor",
+    ModrinthEnvironment.client_only.value: "cliente",
+    ModrinthEnvironment.client_only_server_optional.value: "cliente",
+    ModrinthEnvironment.server_only.value: "servidor",
+    ModrinthEnvironment.server_only_client_optional.value: "servidor",
+    ModrinthEnvironment.dedicated_server_only.value: "servidor",
+    ModrinthEnvironment.singleplayer_only.value: "un jugador",  # does not work in multiplayer
 }
+ENVIRONMENT_VARIES = "varía según la versión"
 
 def environment_label(environment: Any) -> Optional[str]:
-    """"cliente", "servidor" or "cliente y servidor" from a search hit's environment list. An empty
-    list, a value we do not know or anything not a list gives None: absence is never "both"."""
+    """The label of a search hit's environment list (aggregated over the project's versions). Unknown
+    values are ignored; one label stays, different labels are "varía según la versión", and none known
+    (empty, only unknown, not a list) is None: absence is never "both"."""
     if not isinstance(environment, list):
         return None
-    sides: set[str] = set()
-    for value in environment:
-        if isinstance(value, str):
-            sides |= _ENVIRONMENT_SIDES.get(value, frozenset())
-    if sides == {_CLIENT, _SERVER}:
-        return "cliente y servidor"
-    if sides:
-        return "cliente" if _CLIENT in sides else "servidor"
-    return None
+    labels = {_ENVIRONMENT_LABELS[v] for v in environment if isinstance(v, str) and v in _ENVIRONMENT_LABELS}
+    if not labels:
+        return None
+    return labels.pop() if len(labels) == 1 else ENVIRONMENT_VARIES
 
 def abbreviate_downloads(count: int) -> str:
     """1234 → "1,2 k", 34000 → "34 k", 1234567 → "1,2 M"; under 1000 as is. Truncates, never rounds up."""
@@ -87,15 +83,18 @@ def abbreviate_downloads(count: int) -> str:
     whole, tenth = divmod(tenths, 10)
     return f"{whole} {unit}" if tenth == 0 else f"{whole},{tenth} {unit}"
 
+def _int(value: Any) -> int:
+    """The value if it is an integer (a bool is not), else 0."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
 def _hit(raw: dict[str, Any], owned: set[str]) -> Optional[SearchHit]:
     project_id = raw.get("project_id")
     if not isinstance(project_id, str):
         return None
-    downloads = raw.get("downloads")
     return SearchHit(
         project_id=project_id, title=str(raw.get("title") or raw.get("slug") or project_id),
-        description=str(raw.get("description") or ""), author=raw["author"] if isinstance(raw.get("author"), str) else "",
-        project_type=str(raw.get("project_type") or ""), downloads=abbreviate_downloads(downloads if isinstance(downloads, int) and not isinstance(downloads, bool) else 0),
+        description=str(raw.get("description") or ""), author=str(raw.get("author") or ""),
+        project_type=str(raw.get("project_type") or ""), downloads=abbreviate_downloads(_int(raw.get("downloads"))),
         side=environment_label(raw.get("environment")), icon=_icon(raw.get("icon_url")), added=project_id in owned)
 
 async def _titles(modrinthService: ModrinthService, project_ids: list[str]) -> dict[str, str]:

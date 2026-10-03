@@ -305,6 +305,14 @@ def test_hit_shows_author_downloads_and_environment() -> None:
     assert "@coderbot" in text and "1,2 k descargas" in text and ">cliente<" in text
 
 
+def test_every_environment_value_has_a_label_or_is_unknown() -> None:
+    from src.model.modrinth.project import ModrinthEnvironment
+    from src.routers.web.modpacks import environment_label
+
+    for value in ModrinthEnvironment:
+        assert (environment_label([value.value]) is None) == (value is ModrinthEnvironment.unknown), value
+
+
 def test_hit_without_environment_shows_no_side() -> None:
     client, _, modrinth = setup()
     for environment in ([], ["unknown"], ["something_new"], "client_only", None, [5]):
@@ -337,14 +345,18 @@ def test_downloads_are_abbreviated(count: int, shown: str) -> None:
     (["client_and_server"], "cliente y servidor"),
     (["client_only"], "cliente"),
     (["client_only_server_optional"], "cliente"),
-    (["singleplayer_only"], "cliente"),
+    (["singleplayer_only"], "un jugador"),
     (["server_only"], "servidor"),
     (["server_only_client_optional"], "servidor"),
     (["dedicated_server_only"], "servidor"),
-    (["client_or_server"], "cliente y servidor"),
-    (["client_or_server_prefers_both"], "cliente y servidor"),
-    (["client_only", "server_only"], "cliente y servidor"),
+    (["client_or_server"], "cliente o servidor"),
+    (["client_or_server_prefers_both"], "cliente o servidor"),
+    (["client_only", "client_only_server_optional"], "cliente"),
+    (["client_or_server", "client_or_server_prefers_both"], "cliente o servidor"),
+    (["client_only", "server_only"], "varía según la versión"),
+    (["client_and_server", "client_or_server"], "varía según la versión"),
     (["client_only", "unknown"], "cliente"),
+    (["nope", "server_only", 7], "servidor"),
     (["unknown"], None), ([], None), (["nope"], None), ([None, 3], None), (None, None), ("client_only", None),
 ])
 def test_environment_labels(environment: Any, label: Optional[str]) -> None:
