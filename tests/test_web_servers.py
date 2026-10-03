@@ -7,6 +7,8 @@ coincide no llega nunca al servicio.
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+import re
+
 import pytest
 from beanie import PydanticObjectId
 from dependency_injector import providers
@@ -16,7 +18,7 @@ from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
 from src.library.jarmeta import ModMetadata
 from src.library.scan import Comparison, ExpectedEntry, ScanFile
 from src.model.jobs import Job, RollbackState
-from src.model.modpack import ModpackBundle, PackProject, ProjectOrigin
+from src.model.modpack import ModpackBuild, ModpackBundle, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject
 from src.model.pterodactyl import ImportCandidate, ImportResult, ProjectCandidate, PterodactylServer, ServerScan
 from src.model.users import Actor
@@ -187,12 +189,19 @@ class FakeUpdate:
 class FakeModpack:
     def __init__(self) -> None:
         self.builds = True
+        self.recommended: Optional[int] = 2
 
     async def bundle_find(self) -> list[ModpackBundle]:
-        return [bundle() if self.builds else bundle(None, None)]
+        return [bundle(5, self.recommended) if self.builds else bundle(None, None)]
 
     async def bundle_get(self, bundle_id: str) -> ModpackBundle:
         return bundle()
+
+    async def build_find(self, bundle_id: str) -> list[ModpackBuild]:
+        """Newest first, as ModpackDatabase.build_find gives them."""
+        if not self.builds:
+            return []
+        return [ModpackBuild.model_construct(bundle_id=BUNDLE_ID, number=n, created_at=T0) for n in (5, 4, 3)]
 
 
 class FakeModrinth:
@@ -435,7 +444,7 @@ def test_rollback_buttons_follow_the_state() -> None:
     text = client.get(f"/servers/{SERVER_ID}").text
     assert f'name="update_id" value="{failed.id}"' in text
     assert 'name="mode" value="A"' in text and 'name="mode" value="B"' in text
-    assert "rollback-dialog" not in text and 'name="confirm"' not in text
+    assert "rollback-dialog" not in text and text.count('name="confirm"') == 1  # the direct update's
     fakes.jobs.state = RollbackState(update=failed, allowed=["B"])
     text = client.get(f"/servers/{SERVER_ID}").text
     assert 'name="mode" value="A"' not in text and 'name="mode" value="B"' in text
@@ -558,11 +567,79 @@ def test_editor_sees_operator_buttons_disabled() -> None:
     assert "update-dialog" not in text
 
 
-def test_operator_sees_preview_but_no_standalone_real_update() -> None:
+def test_operator_sees_both_update_buttons() -> None:
     client, _ = setup(OPERATOR)
     text = client.get(f"/servers/{SERVER_ID}").text
     assert f'hx-post="/servers/{SERVER_ID}/update/preview"' in text and f'hx-post="/servers/{SERVER_ID}/import"' in text
-    assert "update-dialog" not in text and 'name="confirm"' not in text and "requiere operador" not in text
+    assert "Simular actualización" in text and "Actualizar…" in text and "requiere operador" not in text
+
+
+def test_direct_update_dialog_lists_builds_with_recommended_selected() -> None:
+    client, fakes = setup(OPERATOR)
+    fakes.modpack.recommended = 4
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert f'hx-post="/servers/{SERVER_ID}/update"' in text and "Actualizar Survival" in text
+    assert text.index("Build 5 (último)") < text.index("Build 4 (recomendado)") < text.index("Build 3")
+    assert re.search(r'<option value="4" selected>\s*Build 4 \(recomendado\)', text)
+    assert len(re.findall(r'<option value="\d+" selected>', text)) == 1 and "Actualizar al build elegido" in text
+    assert 'name="build"' in text and 'name="confirm"' in text and "<code" in text
+    # Sin recomendado, el último.
+    fakes.modpack.recommended = None
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert re.search(r'<option value="5" selected>\s*Build 5 \(último\)', text)
+
+
+def test_direct_update_posts_the_selected_build() -> None:
+    client, fakes = setup(OPERATOR)
+    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"build": "3", "confirm": EXACT_NAME})
+    assert response.status_code == 200
+    assert only(fakes.update.calls, "enqueue_update")[1:] == (str(SERVER_ID), OPERATOR, 3, False)
+
+
+def test_direct_update_disabled_without_builds() -> None:
+    client, fakes = setup(OPERATOR)
+    fakes.modpack.builds = False
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert "update-dialog" not in text and f'hx-post="/servers/{SERVER_ID}/update"' not in text
+    assert "Actualizar…" in text and "sin builds" in text
+    fakes.modpack.builds = True
+    fakes.ptero.server = server(bundle_id=None)
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert f'hx-post="/servers/{SERVER_ID}/update"' not in text and "sin modpack" in text
+
+
+def test_direct_update_is_disabled_for_an_editor() -> None:
+    client, _ = setup(EDITOR)
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert "Actualizar…" in text and "requiere operador" in text and "update-dialog" not in text
+
+
+@pytest.mark.parametrize("error", [HTTP_404_NOT_FOUND("Build 9 not found"), HTTP_409_CONFLICT("El servidor no tiene modpack")])
+def test_stale_build_is_a_notice(error: Exception) -> None:
+    client, fakes = setup(OPERATOR)
+    fakes.update.errors = [error]
+    response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX, data={"build": "9", "confirm": EXACT_NAME})
+    assert response.status_code == error.status_code and "data-notice" in response.text  # type: ignore[attr-defined]
+    assert str(error.detail) in response.text  # type: ignore[attr-defined]
+
+
+def test_preview_result_still_offers_real_run_with_simulated_build() -> None:
+    html = row(finished_dry_run(3), server_name="Survival")
+    assert f'hx-post="/servers/{SERVER_ID}/update"' in html and 'name="build" value="3"' in html
+    assert "Ejecutar de verdad" in html and 'name="confirm"' in html and "<select" not in html
+
+
+def test_after_done_a_a_failed_b_attempt_is_said() -> None:
+    client, fakes = setup(OPERATOR)
+    failed, done_a = reverted_with_a()
+    failed_b = job("server_rollback", "failed", False, {"server_id": str(SERVER_ID), "update_id": str(failed.id), "mode": "B"},
+                   error="backup not found")
+    fakes.jobs.state = RollbackState(update=failed, allowed=["B"], reverted_with_a=done_a, failed_b=failed_b)
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert "El último intento de B falló el" in text and "backup not found" in text
+    assert text.index("El último intento de B falló") < text.index('name="mode" value="B"')
+    fakes.jobs.state = RollbackState(update=failed, allowed=["B"], reverted_with_a=done_a)
+    assert "intento de B falló" not in client.get(f"/servers/{SERVER_ID}").text
 
 
 def finished_dry_run(build_number: int = 3, changes: bool = True) -> Job:

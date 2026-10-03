@@ -1,21 +1,46 @@
 {#
-  Updating a game server: a dry run first (reads, writes nothing); its result offers the real run (_dry_run.html), which
-  asks for the server's exact name. The route repeats the check and the service the role; here the
-  buttons only mirror it. Needs `server_id`, `server` and `rollback` (JobService.rollback_state):
+  Updating a game server, two independent ways (d-7985ee-R14): a dry run (reads, writes nothing),
+  whose result also offers the real run for its build (_dry_run.html), or the direct update with a
+  build chosen here. Both fix the build number and ask for the server's exact name. The route
+  repeats the check and the service the role; here the buttons only mirror it. Needs `server_id`,
+  `server`, `bundle`, `builds` (newest first) and `rollback` (JobService.rollback_state):
   after a done rollback A only B is left, confirmed by typing the server's name (d-7985ee-5445a0).
 #}
 {% import "_macros.html" as ui %}
 {% set reason = None if actor.is_operator else "requiere operador" %}
 <div class="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-  <p class="text-zinc-600 dark:text-zinc-400">Primero simula: muestra qué jars cambiarían y qué escribiría en el servidor, sin tocarlo. La actualización real solo se ofrece desde el resultado de una simulación.</p>
+  <p class="text-zinc-600 dark:text-zinc-400">Simular muestra qué jars cambiarían y qué escribiría en el servidor, sin tocarlo. Actualizar lo cambia de verdad, al build que elijas, sin simular antes.</p>
   <div class="flex flex-wrap gap-2">
     {% if actor.is_operator %}
     {{ ui.button("Simular actualización", kind="secondary", attrs={"hx-post": "/servers/" ~ server_id ~ "/update/preview", "hx-target": "#server-job", "hx-swap": "innerHTML"}) }}
     {% else %}
     {{ ui.button("Simular actualización", kind="secondary", disabled_reason=reason) }}
     {% endif %}
+    {% set direct_reason = reason or (None if bundle and builds else ("el servidor está sin modpack" if not bundle else "el modpack está sin builds")) %}
+    {% if direct_reason %}
+    {{ ui.button("Actualizar…", kind="danger", disabled_reason=direct_reason) }}
+    {% else %}
+    {% set direct = "update-dialog-direct" %}
+    {{ ui.button("Actualizar…", kind="danger", attrs={"data-dialog-open": direct}) }}
+    {% call ui.confirm_dialog(direct, "Actualizar " ~ server.name, "Actualizar al build elegido", "danger",
+        {"hx-post": "/servers/" ~ server_id ~ "/update", "hx-target": "#server-job", "hx-swap": "innerHTML"}) %}
+    <p>Esto apaga el servidor de juego, hace un backup, cambia los jars y lo vuelve a arrancar. Los jugadores serán desconectados.</p>
+    {% set chosen = bundle.recommended_build or bundle.latest_build %}
+    <label for="{{ direct }}-build" class="block font-medium">Build a instalar</label>
+    <select id="{{ direct }}-build" name="build" class="block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 dark:bg-zinc-900 dark:ring-zinc-700">
+      {% for b in builds %}
+      <option value="{{ b.number }}"{% if b.number == chosen %} selected{% endif %}>
+        Build {{ b.number }}{% if b.number == bundle.recommended_build %} (recomendado){% elif b.number == bundle.latest_build %} (último){% endif %}
+      </option>
+      {% endfor %}
+    </select>
+    <label for="{{ direct }}-confirm" class="block font-medium">Escribe el nombre exacto del servidor para confirmar: <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{{ server.name }}</code></label>
+    <input id="{{ direct }}-confirm" name="confirm" type="text" required autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200"
+      class="block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 focus-visible:outline-2 focus-visible:outline-red-600 dark:bg-zinc-900 dark:ring-zinc-700">
+    {% endcall %}
+    {% endif %}
   </div>
-  <p class="text-xs text-zinc-500 dark:text-zinc-400">Cuando la simulación termine sin errores y haya cambios, su resultado ofrece ejecutarla de verdad, con ese mismo build.</p>
+  <p class="text-xs text-zinc-500 dark:text-zinc-400">Cuando una simulación termine sin errores y haya cambios, su resultado también ofrece ejecutarla de verdad, con ese mismo build.</p>
 
   {% if rollback %}
   {% set update = rollback.update %}
@@ -24,6 +49,9 @@
     {% if rollback.reverted_with_a %}
     {% set reverted = rollback.reverted_with_a %}
     <p class="text-xs text-zinc-600 dark:text-zinc-400">Revertido con A el {{ ui.when(reverted.finished_at or reverted.created_at) }}. Restaurar el backup previo pierde lo jugado desde entonces.</p>
+    {% if rollback.failed_b %}
+    <p class="text-xs text-red-700 dark:text-red-300">El último intento de B falló el {{ ui.when(rollback.failed_b.finished_at or rollback.failed_b.created_at) }}{% if rollback.failed_b.error %}: {{ rollback.failed_b.error }}{% endif %}</p>
+    {% endif %}
     <div class="flex flex-wrap gap-2">
       {% if actor.is_operator %}
       {% set dialog = "rollback-dialog-" ~ update.id %}

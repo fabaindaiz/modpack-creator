@@ -117,9 +117,11 @@ async def server_detail(
     active = await jobService.active_for_server(server_id)
     rollback = await jobService.rollback_state(server_id)
     build_number = (bundle.recommended_build or bundle.latest_build) if bundle else None
+    builds = sorted(await modpackService.build_find(str(bundle.id)), key=lambda b: b.number, reverse=True) \
+        if bundle is not None else []
     return render(request, "servers/detail.html", actor, server=server, server_id=server_id, bundles=bundles,
                   bundle=bundle, scan=scan, comparison=comparison, compare_note=compare_note, titles=titles,
-                  active_job=active, rollback=rollback, build_number=build_number, nav_active="servers")
+                  active_job=active, rollback=rollback, build_number=build_number, builds=builds, nav_active="servers")
 
 @router.post("/servers/{server_id}/refresh")
 @inject
