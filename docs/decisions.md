@@ -64,7 +64,7 @@ los dos, o una fila mal formada, hace fallar el test. El nombre del método no s
 | `UpdateService.enqueue_update` | operador | Encola una actualización (o su simulación) de un servidor a un build. |
 | `UpdateService.enqueue_rollback` | operador | Encola el rollback de una actualización, en modo A o B. |
 | `PterodactylService.server_link_bundle` | operador | Asocia un servidor a un bundle, o lo desasocia. |
-| `PterodactylService.import_server` | operador | Lee los mods de un servidor y propone cómo importarlos. |
+| `PterodactylService.import_server` | operador | Lee los mods de un servidor y agrega al bundle los identificados por hash; los ubicados por metadata quedan como candidatos y los que no se ubican, como archivos locales del bundle (d-7985ee-c8a15d). |
 | `PterodactylService.import_confirm` | operador | Confirma un mod importado y lo agrega al bundle del servidor. |
 | `PterodactylService.import_local` | operador | Registra un archivo local del servidor como parte del bundle. |
 | `ModpackService.bundle_create` | editor | Crea un bundle. |
@@ -74,7 +74,7 @@ los dos, o una fila mal formada, hace fallar el test. El nombre del método no s
 | `ModpackService.project_add` | editor | Agrega mods al bundle. |
 | `ModpackService.pack_replace` | editor | Reemplaza la lista de mods del bundle. |
 | `ModpackService.project_remove` | editor | Quita un mod del bundle. |
-| `ModpackService.resolve` | editor | Resuelve las versiones del bundle y escribe el lock (no toca ningún servidor). |
+| `ModpackService.resolve` | editor | Calcula el lock del bundle sin guardarlo (lo congela `build_create`); solo guarda en el catálogo lo que trajo de Modrinth. No toca ningún servidor. |
 | `ModpackService.build_create` | editor | Crea un build del bundle. |
 | `ModpackService.build_recommend` | editor | Marca un build como el recomendado. |
 | `ModpackService.replacement_set` | editor | Fija el reemplazo de un mod. |

@@ -28,7 +28,8 @@ class AuditDatabase():
             query["target.id"] = {"$eq": target_id}
         clauses: list[dict[str, Any]] = [query] if query else []
         if since is not None or until is not None:
-            # `since` inclusive, `until` exclusive; both aware UTC (naive would be read as local time by the driver).
+            # `since` inclusive, `until` exclusive; both aware UTC. PyMongo stores and compares a naive
+            # datetime as if it were UTC, so a naive local time would shift the window silently.
             window: dict[str, datetime] = {}
             if since is not None:
                 window["$gte"] = since

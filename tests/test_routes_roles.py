@@ -20,9 +20,15 @@ La tabla también se exige desde el lado de los servicios: todo método que audi
 un método que escribe y no llega a ninguna ruta todavía, o que una ruta alcanza junto a otro ya
 clasificado, no se escapa.
 
-Límite conocido: el AST compara por nombre de atributo, no por tipo. Una ruta que llamara a un
-`.resolve()` ajeno (de otra clase) contaría como clasificada, y un método de servicio con el mismo
-nombre que otro de una clase distinta se confundiría con él (por eso la tabla no repite nombres).
+Límites conocidos:
+- El AST compara por nombre de atributo, no por tipo. Una ruta que llamara a un `.resolve()` ajeno
+  (de otra clase) contaría como clasificada, y un método de servicio con el mismo nombre que otro
+  de una clase distinta se confundiría con él (por eso la tabla no repite nombres).
+- Las rutas GET (y HEAD, OPTIONS) no se clasifican: solo se barren POST, PUT, PATCH y DELETE. Una
+  GET que escribiera pasaría sin fila; que ninguna escriba lo cuida la revisión, no este test.
+- Que un método audita se detecta solo con la forma literal `<x>.audit.record(` en su propio
+  cuerpo: un `audit.record(` sobre una variable local, un alias o un helper que audite por él no
+  cuentan, y ese método tendría que ir en `NOT_AUDITED` o auditar directamente.
 """
 import ast
 import inspect

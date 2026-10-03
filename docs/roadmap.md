@@ -606,8 +606,10 @@ JSON con `request_id` y `job_id`.
     auditoría de cada cambio, escrita antes de encolar lo que toca un servidor real
     (d-7985ee-b4719f).
   - Defensa CSRF por origen y CSP estricta (d-7985ee-491c83).
-  - Una actualización real solo se ofrece desde una simulación terminada y se ata a su build; un
-    rollback se rechaza si es de una simulación o de una actualización ya superada por cualquier
+  - Una actualización real se ofrece por dos caminos (d-7985ee-aca3e8): directo, con un build
+    elegido, o desde una simulación terminada, con su build; los dos fijan el build y el modpack
+    para el que se planeó (si el servidor cambió de modpack, 409), y avisan cuando la actualización
+    descarta un rollback pendiente (R17). Un rollback se rechaza si es de una simulación o de una actualización ya superada por cualquier
     otra real, haya escrito o no. Un rollback fallido no cierra la actualización; tras un A
     exitoso solo queda el B, escribiendo el nombre del servidor, y tras un B exitoso nada
     (d-7985ee-5445a0).
