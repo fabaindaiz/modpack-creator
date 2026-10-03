@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
 from src.library.jarmeta import ModMetadata
 from src.library.scan import Comparison, ExpectedEntry, ScanFile
-from src.model.jobs import Job
+from src.model.jobs import Job, RollbackState
 from src.model.modpack import ModpackBundle, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject
 from src.model.pterodactyl import ImportCandidate, ImportResult, ProjectCandidate, PterodactylServer, ServerScan
@@ -140,7 +140,7 @@ class FakePterodactyl:
 class FakeJobs:
     def __init__(self) -> None:
         self.jobs: list[Job] = []
-        self.last_real: Optional[Job] = None
+        self.state: Optional[RollbackState] = None
         self.calls: list[tuple[Any, ...]] = []
 
     async def enqueue_scan(self, server_id: str, actor: Actor, full: bool = False) -> Job:
@@ -159,8 +159,8 @@ class FakeJobs:
     async def active_for_server(self, server_id: str) -> Optional[Job]:
         return next((j for j in self.jobs if j.active and j.key == f"server:{server_id}"), None)
 
-    async def last_real_update(self, server_id: str) -> Optional[Job]:
-        return self.last_real
+    async def rollback_state(self, server_id: str) -> Optional[RollbackState]:
+        return self.state
 
 
 class FakeUpdate:
@@ -423,31 +423,88 @@ def test_rollback_carries_the_mode_and_actor() -> None:
                        data={"update_id": update_id, "mode": "C"}).status_code == 422
 
 
-def test_rollback_buttons_follow_the_steps_the_failed_update_reached() -> None:
+def failed_real_update(checkpoint: dict[str, Any]) -> Job:
+    return job("server_update", "failed", False, {"server_id": str(SERVER_ID), "dry_run": False},
+               checkpoint, "server stopped")
+
+
+def test_rollback_buttons_follow_the_state() -> None:
     client, fakes = setup(OPERATOR)
-    failed = job("server_update", "failed", False, {"server_id": str(SERVER_ID), "dry_run": False},
-                 {"swap": {}, "backup": {}}, "server stopped")
-    fakes.jobs.last_real = failed
+    failed = failed_real_update({"swap": {}, "backup": {}})
+    fakes.jobs.state = RollbackState(update=failed, allowed=["A", "B"])
     text = client.get(f"/servers/{SERVER_ID}").text
     assert f'name="update_id" value="{failed.id}"' in text
     assert 'name="mode" value="A"' in text and 'name="mode" value="B"' in text
-    failed.checkpoint = {"backup": {}}
+    assert "rollback-dialog" not in text and 'name="confirm"' not in text
+    fakes.jobs.state = RollbackState(update=failed, allowed=["B"])
     text = client.get(f"/servers/{SERVER_ID}").text
     assert 'name="mode" value="A"' not in text and 'name="mode" value="B"' in text
 
 
-def test_after_a_failed_rollback_a_the_page_still_offers_b_for_the_same_update() -> None:
-    """The newest real job is the failed rollback A; the page follows it back to its update."""
+def reverted_with_a() -> tuple[Job, Job]:
+    failed = failed_real_update({"swap": {}, "backup": {}})
+    done_a = job("server_rollback", "done", False, {"server_id": str(SERVER_ID), "update_id": str(failed.id), "mode": "A"})
+    return failed, done_a
+
+
+def test_after_done_a_only_b_with_name_confirmation() -> None:
     client, fakes = setup(OPERATOR)
-    failed = job("server_update", "failed", False, {"server_id": str(SERVER_ID), "dry_run": False},
-                 {"backup": {}}, "server stopped")
-    rollback_a = job("server_rollback", "failed", False,
-                     {"server_id": str(SERVER_ID), "update_id": str(failed.id), "mode": "A"}, error="rollback A: it went offline")
-    fakes.jobs.jobs = [rollback_a, failed]
-    fakes.jobs.last_real = rollback_a
+    failed, done_a = reverted_with_a()
+    fakes.jobs.state = RollbackState(update=failed, allowed=["B"], reverted_with_a=done_a)
     text = client.get(f"/servers/{SERVER_ID}").text
-    assert f'name="update_id" value="{failed.id}"' in text
+    assert "Revertido con A el" in text and "pierde lo jugado desde entonces" in text
     assert 'name="mode" value="B"' in text and 'name="mode" value="A"' not in text
+    assert f'name="update_id" value="{failed.id}"' in text
+    assert "rollback-dialog" in text and 'name="confirm"' in text and "<code" in text
+    assert f'hx-post="/servers/{SERVER_ID}/rollback"' in text and "hx-confirm" not in text
+    response = client.post(f"/servers/{SERVER_ID}/rollback", headers=HTMX,
+                           data={"update_id": str(failed.id), "mode": "B", "confirm": f" {EXACT_NAME} "})
+    assert response.status_code == 200
+    assert only(fakes.update.calls, "enqueue_rollback")[1:] == (str(SERVER_ID), str(failed.id), "B", OPERATOR)
+
+
+def test_after_done_a_an_editor_sees_b_disabled_without_the_dialog() -> None:
+    client, fakes = setup(EDITOR)
+    failed, done_a = reverted_with_a()
+    fakes.jobs.state = RollbackState(update=failed, allowed=["B"], reverted_with_a=done_a)
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert "Revertido con A el" in text and "requiere operador" in text
+    assert "rollback-dialog" not in text and f'hx-post="/servers/{SERVER_ID}/rollback"' not in text
+
+
+def test_after_done_b_no_rollback_offered() -> None:
+    """JobService.rollback_state is None after a done B (tests/test_operator_actions.py): the page
+    offers nothing, and a request without a name goes to the service, which refuses it."""
+    client, fakes = setup(OPERATOR)
+    fakes.jobs.state = None
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert 'name="mode"' not in text and "rollback-dialog" not in text and "La última actualización falló" not in text
+    fakes.update.errors = [HTTP_409_CONFLICT("La actualización ya se revirtió con B")]
+    response = client.post(f"/servers/{SERVER_ID}/rollback", headers=HTMX,
+                           data={"update_id": str(PydanticObjectId()), "mode": "A"})
+    assert response.status_code == 409 and "ya se revirtió con B" in response.text
+
+
+@pytest.mark.parametrize("typed", [None, "", "survival", "Surv", "Survival 2", "SURVIVAL"])
+def test_b_after_a_requires_exact_name(typed: Optional[str]) -> None:
+    client, fakes = setup(OPERATOR)
+    failed, done_a = reverted_with_a()
+    fakes.jobs.state = RollbackState(update=failed, allowed=["B"], reverted_with_a=done_a)
+    data = {"update_id": str(failed.id), "mode": "B", **({"confirm": typed} if typed is not None else {})}
+    response = client.post(f"/servers/{SERVER_ID}/rollback", headers=HTMX, data=data)
+    assert response.status_code == 422 and "Escribe el nombre exacto del servidor" in response.text
+    assert fakes.update.calls == []
+
+
+def test_an_editor_is_refused_a_rollback_before_the_name_is_compared() -> None:
+    client, fakes = setup(EDITOR)
+    failed, done_a = reverted_with_a()
+    fakes.jobs.state = RollbackState(update=failed, allowed=["B"], reverted_with_a=done_a)
+    for confirm in ("", EXACT_NAME):
+        response = client.post(f"/servers/{SERVER_ID}/rollback", headers=HTMX,
+                               data={"update_id": str(failed.id), "mode": "B", "confirm": confirm})
+        assert response.status_code == 403
+    assert fakes.update.calls == []
 
 
 # Los focos de revisión.

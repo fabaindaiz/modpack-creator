@@ -1,7 +1,8 @@
 {#
   Updating a game server: a dry run first (reads, writes nothing); its result offers the real run (_dry_run.html), which
   asks for the server's exact name. The route repeats the check and the service the role; here the
-  buttons only mirror it. Needs `server_id`, `failed_update`.
+  buttons only mirror it. Needs `server_id`, `server` and `rollback` (JobService.rollback_state):
+  after a done rollback A only B is left, confirmed by typing the server's name (d-7985ee-5445a0).
 #}
 {% import "_macros.html" as ui %}
 {% set reason = None if actor.is_operator else "requiere operador" %}
@@ -16,21 +17,44 @@
   </div>
   <p class="text-xs text-zinc-500 dark:text-zinc-400">Cuando la simulación termine sin errores y haya cambios, su resultado ofrece ejecutarla de verdad, con ese mismo build.</p>
 
-  {% if failed_update %}
+  {% if rollback %}
+  {% set update = rollback.update %}
   <div class="space-y-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-    <p class="font-medium text-red-700 dark:text-red-300">La última actualización falló{% if failed_update.error %}: {{ failed_update.error }}{% endif %}</p>
+    <p class="font-medium text-red-700 dark:text-red-300">La última actualización falló{% if update.error %}: {{ update.error }}{% endif %}</p>
+    {% if rollback.reverted_with_a %}
+    {% set reverted = rollback.reverted_with_a %}
+    <p class="text-xs text-zinc-600 dark:text-zinc-400">Revertido con A el {{ ui.when(reverted.finished_at or reverted.created_at) }}. Restaurar el backup previo pierde lo jugado desde entonces.</p>
+    <div class="flex flex-wrap gap-2">
+      {% if actor.is_operator %}
+      {% set dialog = "rollback-dialog-" ~ update.id %}
+      {{ ui.button("Rollback B: restaurar el backup…", kind="danger", small=True, attrs={"data-dialog-open": dialog}) }}
+      {% call ui.confirm_dialog(dialog, "Restaurar el backup previo a la actualización", "Restaurar backup", "danger",
+          {"hx-post": "/servers/" ~ server_id ~ "/rollback", "hx-target": "#server-job", "hx-swap": "innerHTML"}) %}
+      <p>Esto apaga el servidor de juego y restaura el backup hecho antes de la actualización. Se pierde todo lo jugado desde ese backup, también lo jugado después del rollback A. Los jugadores serán desconectados.</p>
+      <input type="hidden" name="update_id" value="{{ update.id }}">
+      <input type="hidden" name="mode" value="B">
+      <label for="{{ dialog }}-confirm" class="block font-medium">Escribe el nombre exacto del servidor para confirmar: <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{{ server.name }}</code></label>
+      <input id="{{ dialog }}-confirm" name="confirm" type="text" required autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200"
+        class="block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 focus-visible:outline-2 focus-visible:outline-red-600 dark:bg-zinc-900 dark:ring-zinc-700">
+      {% endcall %}
+      {% else %}
+      {{ ui.button("Rollback B: restaurar el backup…", kind="danger", small=True, disabled_reason=reason) }}
+      {% endif %}
+    </div>
+    {% else %}
     <p class="text-xs text-zinc-600 dark:text-zinc-400">A devuelve los jars anteriores; B restaura el backup previo a la actualización.</p>
     <div class="flex flex-wrap gap-2">
-      {% for mode, step, label in [("A", "swap", "Rollback A: devolver los jars"), ("B", "backup", "Rollback B: restaurar el backup")] %}
-      {% if step in failed_update.checkpoint %}
+      {% for mode, label in [("A", "Rollback A: devolver los jars"), ("B", "Rollback B: restaurar el backup")] %}
+      {% if mode in rollback.allowed %}
       <form{% if actor.is_operator %} hx-post="/servers/{{ server_id }}/rollback" hx-target="#server-job" hx-swap="innerHTML" hx-confirm="¿Hacer el {{ label | lower }}?"{% endif %}>
-        <input type="hidden" name="update_id" value="{{ failed_update.id }}">
+        <input type="hidden" name="update_id" value="{{ update.id }}">
         <input type="hidden" name="mode" value="{{ mode }}">
         {{ ui.button(label, kind="danger", type="submit", small=True, disabled_reason=reason) }}
       </form>
       {% endif %}
       {% endfor %}
     </div>
+    {% endif %}
   </div>
   {% endif %}
 </div>

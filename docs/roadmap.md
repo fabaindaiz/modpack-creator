@@ -606,9 +606,10 @@ JSON con `request_id` y `job_id`.
     (d-7985ee-b4719f).
   - Defensa CSRF por origen y CSP estricta (d-7985ee-491c83).
   - Una actualización real solo se ofrece desde una simulación terminada y se ata a su build; un
-    rollback se rechaza si es de una simulación o de una actualización ya superada por otra que
-    escribió en el servidor. Un rollback no supera a la actualización que deshace: tras un A
-    fallido, el B sigue disponible.
+    rollback se rechaza si es de una simulación o de una actualización ya superada por cualquier
+    otra real, haya escrito o no. Un rollback fallido no cierra la actualización; tras un A
+    exitoso solo queda el B, escribiendo el nombre del servidor, y tras un B exitoso nada
+    (d-7985ee-5445a0).
   - Un `/v1/login` o `/v1/logout` con un `redirect` de `//host` da 422 (era un redirect abierto).
 - **Chequeo:** `tests/test_web_security.py`, `tests/test_roles.py`, `tests/test_routes_roles.py`,
   `tests/test_operator_actions.py`, `tests/test_audit_log.py`, `tests/test_web_*.py`, contra Mongo

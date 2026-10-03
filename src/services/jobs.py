@@ -4,12 +4,12 @@ import os
 import socket
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, Awaitable, Callable, Optional, Protocol, runtime_checkable
+from typing import Any, Awaitable, Callable, Literal, Optional, Protocol, runtime_checkable
 from uuid import uuid4
 from src.database.jobs import JobDatabase
 from src.database.pterodactyl import PterodactylDatabase
-from src.exceptions import HTTP_409_CONFLICT
-from src.model.jobs import Job
+from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
+from src.model.jobs import Job, RollbackState
 from src.model.audit import AuditTarget
 from src.model.users import Actor
 from src.services.audit import AuditSink
@@ -23,6 +23,11 @@ logger = logging.getLogger("modpack.jobs")
 def _aware(value: datetime) -> datetime:
     """MongoDB gives datetimes back without a zone; they are UTC."""
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+def done_rollback(rollbacks: list[Job], mode: str) -> Optional[Job]:
+    """The newest rollback of this mode that ended done: a failed one closes nothing (D1 of
+    d-7985ee-5445a0). UpdateService.enqueue_rollback and JobService.rollback_state share it."""
+    return next((r for r in rollbacks if r.status == "done" and r.payload.get("mode") == mode), None)
 
 class RetryLater(Exception):
     """A handler asks for its job to be retried after `wait` (a 429's Retry-After, say)."""
@@ -200,11 +205,33 @@ class JobService():
         """The server's active job, if any (scans, updates and rollbacks share its key)."""
         return await self.jobDB.active_for(f"server:{server_id}")
 
-    async def last_real_update(self, server_id: str) -> Optional[Job]:
-        """The server's newest rollback, or update that wrote to it (d-7985ee-5445a0): a
-        rollback may only undo this update, or the one this rollback names in
-        `payload.update_id`."""
-        return await self.jobDB.last_real_update(f"server:{server_id}")
+    async def rollback_state(self, server_id: str) -> Optional[RollbackState]:
+        """What the panel offers to undo the server's last real update, if it failed
+        (d-7985ee-5445a0): None when there is nothing to offer. The newest rollback or real update
+        of the server decides: a rollback points back to the update it undoes, and any later real
+        update supersedes it (R17). After a done B nothing is left; after a done A only B. A
+        failed rollback closes nothing. UpdateService.enqueue_rollback checks it all again."""
+        update = await self.jobDB.last_real_update(f"server:{server_id}")
+        if update is not None and update.kind == "server_rollback":
+            try:
+                update = await self.jobDB.get(str(update.payload.get("update_id")))
+            except HTTP_404_NOT_FOUND:
+                return None
+        if update is None or update.kind != "server_update" or update.status != "failed" \
+                or update.payload.get("server_id") != server_id or update.payload.get("dry_run", False):
+            return None
+        rollbacks = await self.jobDB.rollbacks_of(str(update.id))
+        if done_rollback(rollbacks, "B") is not None:
+            return None
+        reverted_with_a = done_rollback(rollbacks, "A")
+        allowed: list[Literal["A", "B"]] = []
+        if "swap" in update.checkpoint and reverted_with_a is None:
+            allowed.append("A")
+        if "backup" in update.checkpoint:
+            allowed.append("B")
+        if not allowed:
+            return None
+        return RollbackState(update=update, allowed=allowed, reverted_with_a=reverted_with_a)
 
     async def recent(self, limit: int = 10) -> list[Job]:
         """The newest jobs first, whatever their status."""

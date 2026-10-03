@@ -1,8 +1,8 @@
 from beanie import Document
 from datetime import datetime
-from pydantic import Field
+from pydantic import BaseModel, Field
 from pymongo import ASCENDING, DESCENDING, IndexModel
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from src.model.users.actor import ActorRef
 
 class Job(Document):
@@ -42,4 +42,14 @@ class Job(Document):
             IndexModel([("created_at", DESCENDING)]),
             # The newest job of a key: JobDatabase.last_real_update, which a rollback checks.
             IndexModel([("key", ASCENDING), ("created_at", DESCENDING)]),
+            # The rollbacks of one update: JobDatabase.rollbacks_of. Partial: only rollbacks carry it.
+            IndexModel([("payload.update_id", ASCENDING), ("created_at", DESCENDING)], name="rollbacks_of_an_update",
+                       partialFilterExpression={"kind": "server_rollback"}),
         ]
+
+class RollbackState(BaseModel):
+    """What the panel can still offer to undo a failed update (d-7985ee-5445a0): the modes
+    allowed, and the done rollback A, if one reverted it (then only B is left)."""
+    update: Job
+    allowed: list[Literal["A", "B"]]
+    reverted_with_a: Optional[Job] = None

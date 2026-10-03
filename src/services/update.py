@@ -5,7 +5,8 @@ The procedure of research/2026-10-operacion-pterodactyl.md, with the owner's dec
 - the API downloads each new jar, checks its sha512 against the build and uploads it to a staging
   folder while the server still runs (d-7985ee-a13b33);
 - five minutes stable count as success; without a backup slot nothing starts (d-7985ee-5cc6ee);
-- on failure the server is stopped and a person chooses rollback A or B (d-7985ee-5445a0);
+- on failure the server is stopped and a person chooses rollback A or B; after a done A only B
+  is left, after a done B nothing (d-7985ee-5445a0);
 - a jar the build does not explain stops the update: import first (d-7985ee-c8a15d).
 
 Every step is a job step with a checkpoint, so a retry continues where it stopped; a step that
@@ -33,7 +34,7 @@ from src.library.auth.roles import operator_only
 from src.model.audit import AuditTarget
 from src.model.users import Actor
 from src.services.audit import AuditSink
-from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink
+from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink, done_rollback
 from src.services.pterodactyl import PterodactylService
 
 import hashlib
@@ -117,10 +118,18 @@ class UpdateService():
     @operator_only
     async def enqueue_rollback(self, server_id: str, update_id: str, mode: str, actor: Actor) -> Job:
         """Queue rollback A (bring the old jars back) or B (restore the pre-update backup) of a
-        failed update of this server (d-7985ee-5445a0). Only of the latest update that wrote to
-        it: a dry run never qualifies, and neither does an update superseded by a later one that
-        also wrote. A rollback of the same update does not supersede it: after a failed A, B is
-        the way out. Every refusal comes before the event: it leaves no event and no job."""
+        failed update of this server (d-7985ee-5445a0). Refused, in this order:
+        1. it is not a failed update of this server;
+        2. it was a dry run: it changed nothing;
+        3. a later real update superseded it, even one refused in preflight that wrote nothing
+           (R17): from then on the server is restored by hand in Pterodactyl;
+        4. a rollback B of it ended done: nothing is left to undo;
+        5. a rollback A of it ended done and A is asked again: only B is left (the panel asks for
+           the server's name for it, since it loses what was played since the backup);
+        6. it never reached the step the mode needs (`swap` for A, `backup` for B);
+        7. the server is busy.
+        A failed rollback closes nothing: after it, A and B are both still there. Every refusal
+        comes before the event: it leaves no event and no job."""
         if mode not in ("A", "B"):
             raise HTTPException(status_code=422, detail="mode must be A or B")
         update = await self.jobDB.get(update_id)
@@ -133,11 +142,18 @@ class UpdateService():
             (str(latest.id) if latest else None)
         if latest_update != str(update.id):
             raise HTTP_409_CONFLICT(f"Job '{update_id}' is not the latest update of server '{server_id}': "
-                                    "a later update that wrote to the server superseded it")
+                                    "a later real update superseded it")
+        rollbacks = await self.jobDB.rollbacks_of(str(update.id))
+        if done_rollback(rollbacks, "B") is not None:
+            raise HTTP_409_CONFLICT("La actualización ya se revirtió con B")
+        if mode == "A" and done_rollback(rollbacks, "A") is not None:
+            raise HTTP_409_CONFLICT("Ya se revirtió con A: solo queda B")
         needed = "swap" if mode == "A" else "backup"
         if needed not in update.checkpoint:
             raise HTTP_409_CONFLICT(f"The update never reached its {needed} step: nothing to roll back with {mode}")
         await self._refuse_if_busy(server_id)
+        # The id as stored, not as typed: rollbacks_of and last_real_update match it exactly.
+        update_id = str(update.id)
         await self.audit.record(actor, "server.rollback", AuditTarget(kind="server", id=server_id),
                                 {"update_id": update_id, "mode": mode})
         return await self.jobDB.enqueue("server_rollback", key=f"server:{server_id}",

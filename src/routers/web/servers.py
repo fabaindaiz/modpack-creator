@@ -1,5 +1,5 @@
 import logging
-from typing import Annotated, Any, Literal, Optional
+from typing import Annotated, Any, Literal
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -45,22 +45,6 @@ def _comparison_ids(comparison: Comparison) -> list[str]:
             + [e.project_id for _, e in comparison.different_version]
             + [e.project_id for e in comparison.missing]
             + [f.project_id for f in comparison.extra if f.project_id])
-
-async def _rollback_candidate(jobService: JobService, server_id: str) -> Optional[Job]:
-    """The failed update a rollback can still undo: the server's last update that wrote to it,
-    or, if a rollback came after it, the update that rollback names: after a failed A, B is
-    still offered (d-7985ee-5445a0). The service checks it again."""
-    last_real = await jobService.last_real_update(server_id)
-    if last_real is not None and last_real.kind == "server_rollback":
-        try:
-            last_real = await jobService.get(str(last_real.payload.get("update_id")))
-        except HTTPException as error:
-            if error.status_code != 404:
-                raise
-            return None
-    if last_real is not None and last_real.kind == "server_update" and last_real.status == "failed":
-        return last_real
-    return None
 
 @router.get("/servers")
 @inject
@@ -131,11 +115,11 @@ async def server_detail(
             compare_note = str(error.detail)
     titles = await _titles(modrinthService, _comparison_ids(comparison) if comparison else [])
     active = await jobService.active_for_server(server_id)
-    failed_update = await _rollback_candidate(jobService, server_id)
+    rollback = await jobService.rollback_state(server_id)
     build_number = (bundle.recommended_build or bundle.latest_build) if bundle else None
     return render(request, "servers/detail.html", actor, server=server, server_id=server_id, bundles=bundles,
                   bundle=bundle, scan=scan, comparison=comparison, compare_note=compare_note, titles=titles,
-                  active_job=active, failed_update=failed_update, build_number=build_number, nav_active="servers")
+                  active_job=active, rollback=rollback, build_number=build_number, nav_active="servers")
 
 @router.post("/servers/{server_id}/refresh")
 @inject
@@ -262,9 +246,23 @@ async def server_rollback(
         request: Request,
         update_id: Annotated[str, Form(min_length=1, max_length=64)],
         mode: Annotated[Literal["A", "B"], Form()],
+        confirm: Annotated[str, Form(max_length=200)] = "",
         actor: Actor = Depends(get_web_actor),
+        pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
+        jobService: JobService = Depends(Provide[Dependences.jobService]),
         updateService: UpdateService = Depends(Provide[Dependences.updateService]),
         ):
-    """Undo a failed update: A brings the old jars back, B restores the backup. Operators only."""
+    """Undo a failed update: A brings the old jars back, B restores the backup. Operators only:
+    an editor is refused before anything else. After a done A only B is left, and it loses what
+    was played since the backup: then the person must type the server's exact name, compared here
+    as for the real update, without calling the service when it differs (d-7985ee-5445a0). The
+    service checks every rule again."""
+    if not actor.is_operator:
+        raise HTTP_403_FORBIDDEN("This action requires the operator role")
+    state = await jobService.rollback_state(server_id)
+    if state is not None and state.reverted_with_a is not None:
+        server: PterodactylServer = await pterodactylService.server_get(server_id)
+        if confirm.strip() != server.name:
+            raise HTTP_422_UNPROCESSABLE_ENTITY(CONFIRM_MESSAGE)
     job = await updateService.enqueue_rollback(server_id, update_id, mode, actor)
     return _job_row(request, actor, job)
