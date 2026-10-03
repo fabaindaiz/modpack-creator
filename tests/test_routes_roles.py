@@ -1,9 +1,11 @@
 """Ninguna ruta que llame a un método de operador atiende a un editor, en /v1 ni en el panel.
 
-Qué exige operador lo dice la especificación (`docs/superpowers/specs/2026-10-02-panel-web-design.md`
-§2), y está escrito aquí, no derivado del registro de `operator_only`: un método que pierde el
-decorador sale del registro, y un barrido que leyera el registro lo perdería también. El registro
-se compara con la lista, así que quitar o agregar un `@operator_only` en `src/` hace fallar el test.
+Qué exige operador lo dice la tabla `## Acciones y roles` de `docs/decisions.md`, no el registro de
+`operator_only`: un método que pierde el decorador sale del registro, y un barrido que leyera el
+registro lo perdería también. El registro se compara con las filas de operador, así que quitar o
+agregar un `@operator_only` en `src/` hace fallar el test. Además, toda ruta que escribe (POST, PUT,
+PATCH, DELETE) tiene que llegar a un método de la tabla: un método nuevo que escribe, o una ruta
+nueva, no pasa sin su fila.
 
 Las rutas se descubren, no se listan: se recorren las rutas reales de la app (también las del
 panel y las que no están en el esquema) y, por AST, se eligen las funciones que llaman a un
@@ -15,11 +17,13 @@ error y no un 403.
 """
 import ast
 import inspect
+import re
 import sys
 import textwrap
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
-from typing import Annotated, Any
+from pathlib import Path
+from typing import Annotated, Any, Literal
 
 from fastapi import FastAPI
 from fastapi.dependencies.models import Dependant
@@ -32,15 +36,13 @@ from tests._actors import EDITOR, session_for
 from tests._session import session_cookie
 
 SECRET = "test-session-secret"
-# La especificación, §2 "Qué exige operador".
-EXPECTED_OPERATOR_METHODS = {
-    "UpdateService.enqueue_update",
-    "UpdateService.enqueue_rollback",
-    "PterodactylService.server_link_bundle",
-    "PterodactylService.import_server",
-    "PterodactylService.import_confirm",
-    "PterodactylService.import_local",
-}
+ROLES = ("operador", "editor")
+DECISIONS = Path(__file__).resolve().parent.parent / "docs" / "decisions.md"
+SECTION = "## Acciones y roles"
+ROW = re.compile(r"^\|\s*`(?P<method>[A-Za-z_]\w*\.[A-Za-z_]\w*)`\s*\|\s*(?P<role>[^|]*?)\s*\|\s*(?P<what>[^|]+?)\s*\|\s*$")
+# Rutas que escriben y no llaman a un método de servicio de la tabla. Solo autenticación, y solo si
+# alguna es POST; cada una con su razón. Hoy ninguna lo es, y una nueva tiene que justificarse aquí.
+UNCLASSIFIED_WRITE_ROUTES: dict[tuple[str, str], str] = {}
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 
 
@@ -54,6 +56,49 @@ def app() -> FastAPI:
     include_routers_v1(application)
     include_routers_web(application)
     return application
+
+
+def load_role_table(text: str | None = None) -> dict[str, Literal["operador", "editor"]]:
+    """La tabla `## Acciones y roles` de `docs/decisions.md`: método -> rol. Falla nombrando el
+    problema si falta la sección, si una fila está mal formada, tiene un rol desconocido o repite
+    un método, o si no hay ninguna fila."""
+    lines = (DECISIONS.read_text() if text is None else text).splitlines()
+    if SECTION not in lines:
+        raise AssertionError(f"docs/decisions.md no tiene la sección {SECTION!r}")
+    body = []
+    for line in lines[lines.index(SECTION) + 1:]:
+        if line.startswith("## "):
+            break
+        body.append(line)
+    table: dict[str, Literal["operador", "editor"]] = {}
+    header = False
+    for line in body:
+        if not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if cells == ["Método", "Rol", "Qué hace"]:
+            header = True
+            continue
+        if not header or set(line.replace("|", "").strip()) <= {"-", ":", " "}:
+            continue
+        match = ROW.match(line)
+        if not match:
+            raise AssertionError(f"fila mal formada en la tabla de roles: {line!r}")
+        method, role = match["method"], match["role"]
+        if role not in ROLES:
+            raise AssertionError(f"rol desconocido {role!r} en la fila de {method}: use uno de {ROLES}")
+        if method in table:
+            raise AssertionError(f"{method} aparece dos veces en la tabla de roles")
+        table[method] = role  # type: ignore[assignment]
+    if not header:
+        raise AssertionError(f"la sección {SECTION!r} no tiene el encabezado '| Método | Rol | Qué hace |'")
+    if not table:
+        raise AssertionError("la tabla de roles está vacía")
+    return table
+
+
+def operator_methods(table: Mapping[str, str]) -> set[str]:
+    return {m for m, role in table.items() if role == "operador"}
 
 
 def registered_in_src() -> set[str]:
@@ -143,13 +188,60 @@ def operator_routes(application: FastAPI, methods: set[str]) -> list[OperatorRou
     return routes
 
 
-def test_the_operator_methods_are_the_ones_the_spec_lists() -> None:
-    assert registered_in_src() == EXPECTED_OPERATOR_METHODS
+def test_the_operator_rows_of_the_table_are_the_registered_operator_methods() -> None:
+    assert operator_methods(load_role_table()) == registered_in_src()
+
+
+def test_every_row_of_the_table_names_a_service_method_once() -> None:
+    import main  # noqa: F401
+    table = load_role_table()
+    names = [m.rsplit(".", 1)[1] for m in table]
+    assert len(names) == len(set(names)), "dos filas con el mismo nombre de método: el barrido las confundiría"
+    for qualname in table:
+        class_name, method = qualname.split(".")
+        classes = [getattr(module, class_name, None) for name, module in list(sys.modules.items()) if name.startswith("src.services.")]
+        assert any(inspect.isclass(c) and callable(getattr(c, method, None)) for c in classes), f"{qualname} no existe en src/services"
+
+
+def test_every_write_route_reaches_a_method_of_the_table() -> None:
+    table = load_role_table()
+    names = {m.rsplit(".", 1)[1] for m in table}
+    unclassified = []
+    for context in iter_route_contexts(app().routes):
+        if not isinstance(context.original_route, APIRoute):
+            continue
+        endpoint, verbs = context.endpoint, context.methods
+        assert endpoint is not None and verbs is not None
+        for verb in sorted(verbs & UNSAFE):
+            key = (endpoint.__module__, endpoint.__name__)
+            if not calls_any(endpoint, names) and key not in UNCLASSIFIED_WRITE_ROUTES:
+                unclassified.append(f"{verb} {context.path} ({key[0]}.{key[1]})")
+    assert unclassified == [], "rutas que escriben y no llegan a ningún método de la tabla de roles de docs/decisions.md: " + ", ".join(unclassified)
+
+
+GOOD = f"{SECTION}\n\n| Método | Rol | Qué hace |\n|---|---|---|\n| `A.b` | editor | x |\n"
+
+
+def test_a_badly_written_table_fails_naming_the_problem() -> None:
+    import pytest
+
+    assert load_role_table(GOOD) == {"A.b": "editor"}
+    cases = {
+        "no tiene la sección": "# nada\n",
+        "rol desconocido 'operadorr'": GOOD + "| `A.c` | operadorr | y |\n",
+        "fila mal formada": GOOD + "| A.c | editor | y |\n",
+        "dos veces": GOOD + "| `A.b` | operador | y |\n",
+        "está vacía": f"{SECTION}\n\n| Método | Rol | Qué hace |\n|---|---|---|\n",
+        "no tiene el encabezado": f"{SECTION}\n\ntexto\n",
+    }
+    for message, text in cases.items():
+        with pytest.raises(AssertionError, match=message):
+            load_role_table(text)
 
 
 def test_no_operator_route_lets_an_editor_through() -> None:
     application = app()
-    names = {qualname.rsplit(".", 1)[-1] for qualname in EXPECTED_OPERATOR_METHODS}
+    names = {qualname.rsplit(".", 1)[-1] for qualname in operator_methods(load_role_table())}
     routes = operator_routes(application, names)
     # Cada método de operador tiene al menos una ruta que lo llama: si una ruta deja de
     # encontrarse (otro nombre, otra forma de llamarlo), el barrido no la pierde en silencio.

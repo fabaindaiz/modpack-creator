@@ -44,9 +44,47 @@ Una decisión se toma **una vez**: si se reabre sin un hecho nuevo, la respuesta
 | d-7985ee-5739fc | Toda escritura a Pterodactyl pasa por `PterodactylAPI._write`, y un interruptor de proceso (`PTERODACTYL_WRITES`, apagado por defecto) la rechaza antes de enviar nada | tarjeta `one-write-gate-makes-read-only-real`: importar y escanear servidores reales en solo lectura tiene que ser una garantía, no una costumbre (punto de control de la fase 2) | `scripts/audit.py` `ungated_writes`; `tests/test_write_gate.py` |
 | d-7985ee-536c67 | Los trabajos largos van en una cola propia en MongoDB con leases (`Job`), no en APScheduler, arq ni Taskiq | `research/2026-10-arquitectura.md` §1: APScheduler 3 no admite varias réplicas, el 4 es alfa, arq está en mantenimiento, Taskiq necesita otro proceso; la cola propia es durable y no suma servicios | `src/database/jobs.py`; `tests/test_jobs.py` (reclamo atómico, dueño, índice por clave) |
 | d-7985ee-de1061 | Los avisos se entregan como trabajos de la cola, al menos una vez: un aviso duplicado es aceptable, uno perdido o uno que rompe la operación que avisa no | tarjetas `best-effort-side-channels` y `retry-over-irreversible-effect` (*Not when*: el efecto es barato de duplicar); el envío es un paso con checkpoint, así que solo se duplica si el proceso muere entre enviar y anotar | `src/services/notify.py`; `tests/test_notify.py` |
-| d-7985ee-edef1e | Hay dos roles, derivados de los grupos del IdP en cada request y nunca guardados: **editor** (quien pasa `authorize`) y **operador** (además, un grupo suyo está en `OIDC_OPERATOR_GROUPS`, obligatoria; vacía = nadie opera). Actualizar, simular, hacer rollback, importar y asociar un servidor a un bundle exigen operador, y el chequeo vive en los servicios | un chequeo en la ruta no alcanza a `/v1`, al panel ni a una ruta futura; la simulación lee el panel en nombre de una escritura. Una sesión sin `groups` (anterior al cambio) cuenta como editor: falla cerrada. Sacar a alguien del grupo vale cuando vence su sesión (12 h como máximo; rotar `SESSION_SECRET` la corta). Diseño del panel §2 | `operator_only` en `src/library/auth/roles.py`; `tests/test_roles.py`, `tests/test_routes_roles.py` (barrido de rutas de `/v1` y del panel contra `OPERATOR_METHODS`), `tests/test_operator_actions.py` |
+| d-7985ee-edef1e | Hay dos roles, derivados de los grupos del IdP en cada request y nunca guardados: **editor** (quien pasa `authorize`) y **operador** (además, un grupo suyo está en `OIDC_OPERATOR_GROUPS`, obligatoria; vacía = nadie opera). Actualizar, simular, hacer rollback, importar y asociar un servidor a un bundle exigen operador, y el chequeo vive en los servicios | un chequeo en la ruta no alcanza a `/v1`, al panel ni a una ruta futura; la simulación lee el panel en nombre de una escritura. Una sesión sin `groups` (anterior al cambio) cuenta como editor: falla cerrada. Sacar a alguien del grupo vale cuando vence su sesión (12 h como máximo; rotar `SESSION_SECRET` la corta). Diseño del panel §2 | `operator_only` en `src/library/auth/roles.py`; `tests/test_roles.py`, `tests/test_routes_roles.py` (barrido de rutas de `/v1` y del panel contra la tabla de `## Acciones y roles`, cuyas filas de operador son `OPERATOR_METHODS`; toda ruta que escribe llega a una fila), `tests/test_operator_actions.py` |
 | d-7985ee-b4719f | Una actualización o un rollback escribe su evento de auditoría **antes** de encolarse; si esa escritura falla, no hay trabajo. Lo que solo toca Mongo lo escribe después de tener éxito, y una petición rechazada no deja evento. Con el servidor ocupado, un chequeo previo rechaza antes del evento; solo una carrera entre dos peticiones lo pasa, y entonces queda un evento sin trabajo: el índice único de `Job` sigue impidiendo el segundo trabajo | lo que queda tras una caída tiene que ser un evento sin trabajo, nunca un trabajo sin autor, sobre servidores de juego reales (tarjeta `order-writes-by-failure-residue`) | `AuditService`; `tests/test_operator_actions.py` (el evento antes del trabajo, auditoría caída sin trabajo, rechazo sin evento), `tests/test_editor_audit.py`, `tests/test_audit_log.py` |
 | d-7985ee-491c83 | La defensa contra CSRF es por Fetch Metadata y origen: una petición insegura (POST, PUT, PATCH, DELETE) con `Sec-Fetch-Site` distinto de `same-origin` se rechaza con 403 (`same-site` tampoco pasa), y sin él se compara `Origin` con el esquema y el `Host` propios; sin ninguno de los dos no es de un navegador y pasa. Toda respuesta lleva una CSP estricta (`default-src 'self'`, sin `unsafe-inline`), salvo `/docs` y `/openapi.json`, que cargan de un CDN. Por eso los orígenes de `CORS_ALLOW_ORIGINS` (d-7985ee-4e4aee) **solo leen**: pueden hacer un GET con la cookie, pero toda escritura desde otro origen da 403, también desde uno nombrado ahí; no se los exime del chequeo | la cookie `SameSite=lax` no basta (d-7985ee-4e4aee); OWASP exige verificar el origen, y `same-site` confiaría en los subdominios. La CSP prohíbe `<script>` y `style=` inline, y htmx corre sin `eval`. Detrás de un proxy exige `FORWARDED_ALLOW_IPS` y que el proxy reenvíe `Host` y `X-Forwarded-Proto` sin reescribir `Origin` | `src/library/web_security.py`; `tests/test_web_security.py`; `docs/runbooks/desplegar-panel.md` (la comprobación con `curl`) |
+
+## Acciones y roles
+
+Cada método de servicio que escribe, con el rol que lo puede llamar: **operador** (exige
+`operator_only`) o **editor** (cualquier usuario autorizado). `tests/test_routes_roles.py` lee esta
+tabla: las filas de operador tienen que ser exactamente `OPERATOR_METHODS`, y toda ruta que escribe
+(POST, PUT, PATCH, DELETE), de `/v1` o del panel, tiene que llegar a un método de la tabla, por AST y
+siguiendo las funciones del mismo módulo. Un método nuevo que escribe agrega su fila en el mismo
+commit, con `` `Clase.método` ``, el rol (`operador` o `editor`) y qué hace; un rol que no sea uno de
+los dos, o una fila mal formada, hace fallar el test. El nombre del método no se repite entre clases.
+
+| Método | Rol | Qué hace |
+|---|---|---|
+| `UpdateService.enqueue_update` | operador | Encola una actualización (o su simulación) de un servidor a un build. |
+| `UpdateService.enqueue_rollback` | operador | Encola el rollback de una actualización, en modo A o B. |
+| `PterodactylService.server_link_bundle` | operador | Asocia un servidor a un bundle, o lo desasocia. |
+| `PterodactylService.import_server` | operador | Lee los mods de un servidor y propone cómo importarlos. |
+| `PterodactylService.import_confirm` | operador | Confirma un mod importado y lo agrega al bundle del servidor. |
+| `PterodactylService.import_local` | operador | Registra un archivo local del servidor como parte del bundle. |
+| `ModpackService.bundle_create` | editor | Crea un bundle. |
+| `ModpackService.bundle_update` | editor | Cambia los datos de un bundle. |
+| `ModpackService.decision_set` | editor | Decide si un mod va en el servidor o solo en el cliente. |
+| `ModpackService.project_add` | editor | Agrega mods al bundle. |
+| `ModpackService.pack_replace` | editor | Reemplaza la lista de mods del bundle. |
+| `ModpackService.project_remove` | editor | Quita un mod del bundle. |
+| `ModpackService.resolve` | editor | Resuelve las versiones del bundle y escribe el lock (no toca ningún servidor). |
+| `ModpackService.build_create` | editor | Crea un build del bundle. |
+| `ModpackService.build_recommend` | editor | Marca un build como el recomendado. |
+| `ModpackService.replacement_set` | editor | Fija el reemplazo de un mod. |
+| `ModpackService.replacement_delete` | editor | Borra el reemplazo de un mod. |
+| `ModrinthService.project_create` | editor | Trae un mod de Modrinth al catálogo local. |
+| `ModrinthService.project_create_many` | editor | Trae varios mods de Modrinth al catálogo local. |
+| `ModrinthService.project_update` | editor | Refresca un mod del catálogo desde Modrinth. |
+| `ModrinthService.project_update_many` | editor | Refresca varios mods del catálogo desde Modrinth. |
+| `PterodactylService.server_create` | editor | Registra un servidor del panel en la base (no escribe en el panel). |
+| `PterodactylService.server_update` | editor | Refresca los datos de un servidor desde el panel (solo lee el panel). |
+| `PterodactylService.scan` | editor | Escanea los archivos de un servidor y guarda el resultado (solo lee el panel). |
+| `JobService.enqueue_scan` | editor | Encola un escaneo de un servidor. |
 
 ## Producto
 
