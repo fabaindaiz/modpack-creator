@@ -27,6 +27,20 @@
   "info": "border-sky-300 bg-sky-50 text-sky-900 dark:border-sky-500/40 dark:bg-sky-950/60 dark:text-sky-200",
 } %}
 
+{# How a job's status and kind read in Spanish (the badge tone for the status). #}
+{% set JOB_STATUS = {
+  "queued": ("En cola", "info"),
+  "running": ("En curso", "info"),
+  "done": ("Listo", "accent"),
+  "failed": ("Falló", "danger"),
+} %}
+{% set JOB_KIND = {
+  "server_scan": "Escaneo",
+  "server_update": "Actualización",
+  "server_rollback": "Rollback",
+  "notify": "Aviso",
+} %}
+
 {# A button. `disabled_reason` disables it and says why (e.g. "Requiere operador"). #}
 {% macro button(label, kind="primary", type="button", attrs={}, disabled_reason=None, small=False) %}
 <button type="{{ type }}"

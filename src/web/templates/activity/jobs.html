@@ -5,11 +5,47 @@
 {% block content %}
 {{ ui.page_header("Trabajos", "Lo último que el panel y el worker han hecho o están haciendo, con quién lo pidió.") }}
 
-<div class="space-y-2" id="trabajos">
-  {% for job in jobs %}
-  {% include "activity/_job_row.html" %}
-  {% else %}
-  <p class="text-sm text-zinc-500 dark:text-zinc-400">Todavía no hay trabajos.</p>
-  {% endfor %}
-</div>
+<form method="get" action="/jobs" class="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end">
+  {% set SELECT_CLASS = "mt-1 block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 focus-visible:outline-2 focus-visible:outline-emerald-600 dark:bg-zinc-900 dark:ring-zinc-700" %}
+  <div>
+    <label for="f-servidor" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Servidor</label>
+    <select id="f-servidor" name="servidor" class="{{ SELECT_CLASS }}">
+      <option value="">Todos</option>
+      {% for id, name in server_names.items() %}
+      <option value="{{ id }}"{% if filters.servidor == id %} selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="f-tipo" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Tipo</label>
+    <select id="f-tipo" name="tipo" class="{{ SELECT_CLASS }}">
+      <option value="">Todos</option>
+      {% for value, name in ui.JOB_KIND.items() %}
+      <option value="{{ value }}"{% if filters.tipo == value %} selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="f-estado" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Estado</label>
+    <select id="f-estado" name="estado" class="{{ SELECT_CLASS }}">
+      <option value="">Todos</option>
+      {% for value, (name, _) in ui.JOB_STATUS.items() %}
+      <option value="{{ value }}"{% if filters.estado == value %} selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="flex gap-2 sm:col-span-3">
+    {{ ui.button("Filtrar", type="submit") }}
+    {{ ui.link_button("Limpiar", "/jobs") }}
+  </div>
+</form>
+
+{% include "activity/_jobs_table.html" %}
+
+{% if older %}
+<p>
+  <a href="/jobs?{{ older }}{% for name, value in filters.items() if value %}&amp;{{ name }}={{ value | urlencode }}{% endfor %}"
+    class="text-sm font-medium text-emerald-700 hover:underline dark:text-emerald-300">Ver anteriores</a>
+</p>
+{% endif %}
 {% endblock %}

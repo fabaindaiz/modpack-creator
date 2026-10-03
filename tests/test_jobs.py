@@ -308,3 +308,38 @@ def test_worker_beats_while_a_long_step_runs(mongo: MongoRunner) -> None:
         return seen
 
     assert mongo(scenario) >= 2
+
+
+def test_find_filters_by_exact_server_kind_and_status_and_pages_by_id(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Any, ...]:
+        db = JobDatabase()
+        a = await db.enqueue("server_scan", key="server:s1", payload={}, now=T0)
+        await Job.get_pymongo_collection().update_one({"_id": a.id}, {"$set": {"active": False}})
+        for minutes, (kind, key, status) in enumerate([
+                ("server_scan", "server:s1", "done"), ("server_update", "server:s1", "failed"),
+                ("server_scan", "server:s2", "done"), ("notify", None, "done")], start=1):
+            job = await db.enqueue(kind, key=key, payload={}, now=T0 + timedelta(minutes=minutes))
+            await Job.get_pymongo_collection().update_one(
+                {"_id": job.id}, {"$set": {"status": status, "active": False}})
+        literal = await db.enqueue("server_scan", key="server:.*", payload={}, now=T0 + timedelta(minutes=9))
+        everything = await db.find(server_id=None, kind=None, status=None, before_id=None, limit=100)
+        s1 = await db.find(server_id="s1", kind=None, status=None, before_id=None, limit=100)
+        both = await db.find(server_id="s1", kind="server_scan", status="done", before_id=None, limit=100)
+        by_status = await db.find(server_id=None, kind=None, status="failed", before_id=None, limit=100)
+        pattern = await db.find(server_id=".*", kind=None, status=None, before_id=None, limit=100)
+        kind_pattern = await db.find(server_id=None, kind="server_.*", status=None, before_id=None, limit=100)
+        page1 = await db.find(server_id=None, kind=None, status=None, before_id=None, limit=2)
+        page2 = await db.find(server_id=None, kind=None, status=None, before_id=str(page1[-1].id), limit=2)
+        clamped = await db.find(server_id=None, kind=None, status=None, before_id=None, limit=0)
+        try:
+            await db.find(server_id=None, kind=None, status=None, before_id="zzz", limit=5)
+            bad = 0
+        except HTTPException as error:
+            bad = error.status_code
+        return (len(everything), [j.kind for j in s1], len(both), len(by_status), [j.id for j in pattern] == [literal.id],
+                len(kind_pattern), [j.id for j in page1 + page2], [j.id for j in everything], len(clamped), bad)
+
+    total, s1_kinds, both, failed, literal_only, kind_pattern, paged, ordered, clamped, bad = mongo(scenario)
+    assert total == 6 and s1_kinds == ["server_update", "server_scan", "server_scan"]
+    assert both == 1 and failed == 1 and literal_only and kind_pattern == 0
+    assert paged == ordered[:4] and clamped == 1 and bad == 404

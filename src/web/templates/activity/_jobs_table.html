@@ -1,0 +1,10 @@
+{#
+  The jobs as an aligned table, one `_job_tr.html` per job. Needs `jobs` and `server_names`
+  (server id to name).
+#}
+{% import "_macros.html" as ui %}
+{% call ui.table(["Tipo", "Servidor", "Estado", "Paso", "Pedido por", "Creado"], empty="Todavía no hay trabajos.", caption="Trabajos") %}
+{% for job in jobs %}
+{% include "activity/_job_tr.html" %}
+{% endfor %}
+{% endcall %}

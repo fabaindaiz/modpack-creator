@@ -53,4 +53,5 @@ async def home(
     servers = [await _server_row(pterodactylService, server, bundle_names)
                for server in await pterodactylService.server_find()]
     jobs = await jobService.recent(RECENT_JOBS)
-    return render(request, "home.html", actor, servers=servers, builds=builds, jobs=jobs)
+    return render(request, "home.html", actor, servers=servers, builds=builds, jobs=jobs,
+                  server_names={str(row.server.id): row.server.name for row in servers})

@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from src.exceptions import HTTP_422_UNPROCESSABLE_ENTITY
 from src.dependences import AuditService, Dependences, JobService, PterodactylService
+from src.model.jobs import Job
 from src.model.users import Actor
 from src.web import WebRoute, get_web_actor, render
 
@@ -26,16 +27,55 @@ def _day(value: Optional[str], label: str) -> Optional[datetime]:
     except ValueError:
         raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{label}' no es una fecha válida (AAAA-MM-DD)")
 
+async def _server_names(pterodactylService: PterodactylService) -> dict[str, str]:
+    """Server id to name, for the tables."""
+    return {str(server.id): server.name for server in await pterodactylService.server_find()}
+
+async def _server_context(job: Job, pterodactylService: PterodactylService) -> dict[str, str]:
+    """A job about a server carries the server's name (for the real run's confirmation hint); a
+    server that is gone just shows no hint."""
+    server_id = job.payload.get("server_id")
+    if isinstance(server_id, str):
+        try:
+            return {"server_name": (await pterodactylService.server_get(server_id)).name}
+        except HTTPException:
+            pass
+    return {}
+
 @router.get("/jobs")
 @inject
 async def job_list(
         request: Request,
+        servidor: FilterValue = None,
+        tipo: FilterValue = None,
+        estado: FilterValue = None,
+        before: FilterValue = None,
         actor: Actor = Depends(get_web_actor),
         jobService: JobService = Depends(Provide[Dependences.jobService]),
+        pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
         ):
-    """The most recent jobs, newest first, with who asked for each."""
-    jobs = await jobService.recent(limit=JOBS_SHOWN)
-    return render(request, "activity/jobs.html", actor, jobs=jobs, nav_active="jobs")
+    """Jobs newest first, 50 per page, filtered by exact values; `before` is the id of the last
+    job shown."""
+    jobs = await jobService.find(server_id=servidor or None, kind=tipo or None, status=estado or None,
+                                 before_id=before or None, limit=JOBS_SHOWN)
+    older = f"before={jobs[-1].id}" if len(jobs) >= JOBS_SHOWN else None
+    filters = {"servidor": servidor or "", "tipo": tipo or "", "estado": estado or ""}
+    return render(request, "activity/jobs.html", actor, jobs=jobs, filters=filters, older=older,
+                  server_names=await _server_names(pterodactylService), nav_active="jobs")
+
+@router.get("/jobs/{job_id}")
+@inject
+async def job_page(
+        job_id: str,
+        request: Request,
+        actor: Actor = Depends(get_web_actor),
+        jobService: JobService = Depends(Provide[Dependences.jobService]),
+        pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
+        ):
+    """One job in full: the shared detail, with its plan and, for an operator, the real run."""
+    job = await jobService.get(job_id)
+    return render(request, "activity/job.html", actor, job=job, nav_active="jobs",
+                  **await _server_context(job, pterodactylService))
 
 @router.get("/jobs/{job_id}/row")
 @inject
@@ -46,17 +86,24 @@ async def job_row(
         jobService: JobService = Depends(Provide[Dependences.jobService]),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
         ):
-    """One job's row: what an active row polls. A job about a server carries the server's name
-    (for the real run's confirmation hint); a server that is gone just shows no hint."""
+    """One job's detail: what an active detail polls."""
     job = await jobService.get(job_id)
-    context = {}
-    server_id = job.payload.get("server_id")
-    if isinstance(server_id, str):
-        try:
-            context["server_name"] = (await pterodactylService.server_get(server_id)).name
-        except HTTPException:
-            pass
-    return render(request, "activity/_job_row.html", actor, job=job, **context)
+    return render(request, "activity/_job_row.html", actor, job=job, **await _server_context(job, pterodactylService))
+
+@router.get("/jobs/{job_id}/tr")
+@inject
+async def job_tr(
+        job_id: str,
+        request: Request,
+        actor: Actor = Depends(get_web_actor),
+        jobService: JobService = Depends(Provide[Dependences.jobService]),
+        pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
+        ):
+    """One job's table row: what an active row of the table polls."""
+    job = await jobService.get(job_id)
+    context = await _server_context(job, pterodactylService)
+    names = {job.payload["server_id"]: context["server_name"]} if context else {}
+    return render(request, "activity/_job_tr.html", actor, job=job, server_names=names)
 
 @router.get("/audit")
 @inject

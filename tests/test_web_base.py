@@ -147,7 +147,9 @@ def test_home_shows_bundle_drift_builds_and_jobs() -> None:
     assert "Pack Uno" in text  # the server's bundle and the bundle's builds
     assert "Desviado" in text and "sobra mods/x.jar" in text
     assert "Sin escaneo" in text  # the server without a scan
-    assert "server_scan" in text and "running" in text
+    assert "Escaneo" in text and "En curso" in text
+    assert f'href="/jobs/{fakes[2].jobs[0].id}"' in text and 'href="/jobs"' in text
+    assert f'hx-get="/jobs/{fakes[2].jobs[0].id}/tr"' in text
     assert fakes[2].limits == [10]
 
 

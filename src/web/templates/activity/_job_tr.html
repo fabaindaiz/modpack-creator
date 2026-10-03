@@ -1,0 +1,27 @@
+{#
+  One job as a table row, linking to its page. While the job is active the row polls
+  /jobs/{id}/tr and replaces itself; a finished row does not poll. Needs `job` and `server_names`
+  (server id to name).
+#}
+{% import "_macros.html" as ui %}
+{% set label, tone = ui.JOB_STATUS.get(job.status, (job.status, "neutral")) %}
+{% set dry_run = job.kind == "server_update" and job.payload.get("dry_run", False) %}
+{% set server_id = job.payload.get("server_id") or (job.key[7:] if job.key and job.key.startswith("server:") else None) %}
+<tr id="job-tr-{{ job.id }}" data-job="{{ job.id }}"
+  {%- if job.active %} hx-get="/jobs/{{ job.id }}/tr" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+  <td class="whitespace-nowrap">
+    <a href="/jobs/{{ job.id }}" class="font-medium text-zinc-900 hover:text-emerald-700 hover:underline dark:text-zinc-100 dark:hover:text-emerald-300">{{ ui.JOB_KIND.get(job.kind, job.kind) }}{% if dry_run %} (simulación){% endif %}</a>
+  </td>
+  <td class="break-words">
+    {% if server_id %}
+    <a href="/servers/{{ server_id }}" class="hover:underline">{{ server_names.get(server_id, "Servidor desconocido") }}</a>
+    {% else %}<span class="text-zinc-400 dark:text-zinc-500">—</span>{% endif %}
+  </td>
+  <td>
+    {{ ui.badge(label, tone, title=job.status) }}
+    {% if job.status == "failed" and job.error %}<div class="mt-1 max-w-xs text-xs break-words text-red-700 dark:text-red-300">{{ job.error }}</div>{% endif %}
+  </td>
+  <td class="font-mono text-xs">{{ job.step or "—" }}</td>
+  <td class="break-words">{{ job.requested_by.name if job.requested_by else "programado" }}</td>
+  <td>{{ ui.when(job.created_at) }}</td>
+</tr>

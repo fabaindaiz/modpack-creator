@@ -8,13 +8,6 @@
   "unknown": ("Sin comparar", "neutral"),
   "none": ("Sin escaneo", "neutral"),
 } %}
-{% set JOB_STATUS = {
-  "queued": ("En cola", "info"),
-  "running": ("En curso", "info"),
-  "done": ("Listo", "accent"),
-  "failed": ("Falló", "danger"),
-} %}
-
 {% block content %}
 {{ ui.page_header("Tablero", "Servidores, builds y trabajos recientes.") }}
 
@@ -55,23 +48,8 @@
     {% endcall %}
 
     {% call ui.section("Trabajos recientes", id="trabajos") %}
-    {% call ui.table(["Trabajo", "Estado", "Paso", "Creado"], empty="Todavía no hay trabajos.", caption="Trabajos recientes") %}
-    {% for job in jobs %}
-    {% set label, tone = JOB_STATUS.get(job.status, (job.status, "neutral")) %}
-    <tr>
-      <td>
-        <span class="font-mono text-xs">{{ job.kind }}</span>
-        {% if job.key %}<div class="text-xs break-all text-zinc-500 dark:text-zinc-400">{{ job.key }}</div>{% endif %}
-      </td>
-      <td>
-        {{ ui.badge(label, tone, title=job.status) }}
-        {% if job.status == "failed" and job.error %}<div class="mt-1 max-w-xs text-xs break-words text-red-700 dark:text-red-300">{{ job.error }}</div>{% endif %}
-      </td>
-      <td class="font-mono text-xs">{{ job.step or "—" }}</td>
-      <td>{{ ui.when(job.created_at) }}</td>
-    </tr>
-    {% endfor %}
-    {% endcall %}
+    {% include "activity/_jobs_table.html" %}
+    <p class="mt-2"><a href="/jobs" class="text-sm font-medium text-emerald-700 hover:underline dark:text-emerald-300">Ver todos los trabajos</a></p>
     {% endcall %}
   </div>
 

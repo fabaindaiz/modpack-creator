@@ -53,6 +53,31 @@ class JobDatabase():
         """The newest jobs, whatever their status."""
         return await Job.find().sort(("created_at", SortDirection.DESCENDING)).limit(limit).to_list()
 
+    async def find(self, *,
+            server_id: Optional[str],
+            kind: Optional[str],
+            status: Optional[str],
+            before_id: Optional[str],
+            limit: int,
+            ) -> list[Job]:
+        """Jobs newest first (then by id), filtered by exact values (equality only, never a
+        pattern); `before_id` is the last job of the previous page; `limit` is kept within 1..200."""
+        query: dict[str, Any] = {}
+        if server_id is not None:
+            query["key"] = {"$eq": f"server:{server_id}"}
+        if kind is not None:
+            query["kind"] = {"$eq": kind}
+        if status is not None:
+            query["status"] = {"$eq": status}
+        clauses: list[dict[str, Any]] = [query] if query else []
+        if before_id is not None:
+            cursor = await self.get(before_id)  # 404 when it is not an id or not a job
+            clauses.append({"$or": [{"created_at": {"$lt": cursor.created_at}},
+                                    {"created_at": cursor.created_at, "_id": {"$lt": cursor.id}}]})
+        return await Job.find({"$and": clauses} if clauses else {}) \
+            .sort(("created_at", SortDirection.DESCENDING), ("_id", SortDirection.DESCENDING)) \
+            .limit(max(1, min(limit, 200))).to_list()
+
     async def get(self, job_id: str) -> Job:
         job = await Job.get(job_id) if PydanticObjectId.is_valid(job_id) else None
         if job is None:

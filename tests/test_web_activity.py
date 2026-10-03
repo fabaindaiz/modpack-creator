@@ -35,10 +35,10 @@ def event(name: str = "Ana", action: str = "server.scan", details: Optional[dict
 class FakeJobs:
     def __init__(self) -> None:
         self.jobs: list[Job] = []
-        self.limits: list[int] = []
+        self.calls: list[dict[str, Any]] = []
 
-    async def recent(self, limit: int = 10) -> list[Job]:
-        self.limits.append(limit)
+    async def find(self, **kwargs: Any) -> list[Job]:
+        self.calls.append(kwargs)
         return self.jobs
 
     async def get(self, job_id: str) -> Job:
@@ -142,7 +142,100 @@ def test_jobs_page_lists_recent_jobs_with_who_asked() -> None:
     jobs.jobs = [make_job(requested_by=ActorRef(iss="i", sub="s", name="Ana")), make_job(requested_by=None)]
     response = client.get("/jobs")
     assert response.status_code == 200 and "Ana" in response.text and "programado" in response.text
-    assert jobs.limits == [50]
+    assert jobs.calls == [{"server_id": None, "kind": None, "status": None, "before_id": None, "limit": 50}]
+
+
+def test_jobs_table_links_each_row_to_its_page_and_names_the_server() -> None:
+    client, jobs, _, ptero = setup()
+    jobs.jobs = [make_job(requested_by=ActorRef(iss="i", sub="s", name="Ana"))]
+    text = client.get("/jobs").text
+    assert f'href="/jobs/{jobs.jobs[0].id}"' in text
+    assert f'href="/servers/{SERVER_ID}"' in text and ptero.server.name in text
+    for header in ("Tipo", "Servidor", "Estado", "Paso", "Pedido por", "Creado"):
+        assert header in text
+
+
+def test_jobs_table_refreshes_only_the_active_rows() -> None:
+    client, jobs, *_ = setup()
+    jobs.jobs = [make_job(status="running", active=True)]
+    text = client.get("/jobs").text
+    assert f'hx-get="/jobs/{jobs.jobs[0].id}/tr"' in text and 'hx-trigger="every 2s"' in text
+    assert 'hx-swap="outerHTML"' in text
+    jobs.jobs = [make_job(status="done", active=False)]
+    text = client.get("/jobs").text
+    assert "every 2s" not in text and '/tr"' not in text
+
+
+def test_jobs_filters_pass_through_as_exact_values() -> None:
+    client, jobs, *_ = setup()
+    client.get("/jobs", params={"servidor": ".*", "tipo": "server_*", "estado": "done", "before": "abc"})
+    assert jobs.calls[-1] == {"server_id": ".*", "kind": "server_*", "status": "done", "before_id": "abc", "limit": 50}
+    client.get("/jobs", params={"servidor": "", "tipo": "", "estado": ""})
+    assert jobs.calls[-1]["server_id"] is None and jobs.calls[-1]["kind"] is None and jobs.calls[-1]["status"] is None
+
+
+def test_jobs_filter_form_has_selects_with_the_known_values() -> None:
+    client, jobs, _, ptero = setup()
+    text = client.get("/jobs", params={"estado": "failed", "servidor": str(SERVER_ID)}).text
+    for name in ("servidor", "tipo", "estado"):
+        assert f'<select id="f-{name}" name="{name}"' in text
+    for value in ("server_scan", "server_update", "server_rollback", "notify", "queued", "running", "done", "failed"):
+        assert f'value="{value}"' in text
+    assert f'value="{SERVER_ID}" selected' in text and 'value="failed" selected' in text
+
+
+def test_jobs_paginate_keeping_the_filters() -> None:
+    client, jobs, *_ = setup()
+    jobs.jobs = [make_job() for _ in range(50)]
+    text = client.get("/jobs", params={"estado": "done"}).text
+    assert f"before={jobs.jobs[-1].id}" in text and "estado=done" in text and "anteriores" in text
+    jobs.jobs = [make_job()]
+    assert "anteriores" not in client.get("/jobs").text
+
+
+def test_jobs_unknown_before_is_a_not_found_notice() -> None:
+    client, jobs, *_ = setup()
+
+    async def bad(**kwargs: Any) -> list[Job]:
+        raise HTTP_404_NOT_FOUND("bad cursor")
+
+    jobs.find = bad  # type: ignore[method-assign]
+    assert client.get("/jobs", params={"before": "zzz"}).status_code == 404
+
+
+def test_job_tr_fragment_polls_while_active_and_stops_when_done() -> None:
+    client, jobs, *_ = setup()
+    jobs.jobs = [make_job(status="running", active=True)]
+    response = client.get(f"/jobs/{jobs.jobs[0].id}/tr")
+    assert response.status_code == 200 and "every 2s" in response.text and response.text.lstrip().startswith("<tr")
+    jobs.jobs = [make_job(status="done", active=False)]
+    assert "every 2s" not in client.get(f"/jobs/{jobs.jobs[0].id}/tr").text
+
+
+def test_job_page_shows_the_detail_with_the_plan_and_the_real_run_for_an_operator() -> None:
+    client, jobs, _, ptero = setup(OPERATOR)
+    jobs.jobs = [finished_dry_run()]
+    response = client.get(f"/jobs/{jobs.jobs[0].id}")
+    assert response.status_code == 200 and "a.jar" in response.text
+    assert f'hx-post="/servers/{SERVER_ID}/update"' in response.text and ptero.server.name in response.text
+
+
+def test_job_page_gives_an_editor_a_disabled_button() -> None:
+    client, jobs, *_ = setup(EDITOR)
+    jobs.jobs = [finished_dry_run()]
+    text = client.get(f"/jobs/{jobs.jobs[0].id}").text
+    assert "/update" not in text and "requiere operador" in text
+
+
+def test_job_page_polls_while_active() -> None:
+    client, jobs, *_ = setup()
+    jobs.jobs = [make_job(status="running", active=True)]
+    assert f'hx-get="/jobs/{jobs.jobs[0].id}/row"' in client.get(f"/jobs/{jobs.jobs[0].id}").text
+
+
+def test_unknown_job_page_is_a_not_found_notice() -> None:
+    client, *_ = setup()
+    assert client.get(f"/jobs/{PydanticObjectId()}").status_code == 404
 
 
 def test_audit_filters_pass_through_as_exact_values() -> None:
@@ -182,7 +275,8 @@ def test_audit_details_are_escaped() -> None:
 
 def test_pages_redirect_to_the_login_without_a_session() -> None:
     client, *_ = setup(None)
-    for path in ("/jobs", f"/jobs/{PydanticObjectId()}/row", "/audit"):
+    for path in ("/jobs", f"/jobs/{PydanticObjectId()}", f"/jobs/{PydanticObjectId()}/row",
+                 f"/jobs/{PydanticObjectId()}/tr", "/audit"):
         assert client.get(path).status_code == 303
 
 
