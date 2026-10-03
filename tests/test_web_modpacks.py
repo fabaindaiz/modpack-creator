@@ -298,6 +298,61 @@ def test_search_survives_a_modrinth_5xx() -> None:
     assert response.status_code == 200 and "Modrinth no respondió" in response.text
 
 
+def test_hit_shows_author_downloads_and_environment() -> None:
+    client, _, modrinth = setup()
+    modrinth.hits[0]["environment"] = ["client_only"]
+    text = client.get(f"/modpacks/{BUNDLE_ID}/search", params={"q": "iris"}, headers=HTMX).text
+    assert "@coderbot" in text and "1,2 k descargas" in text and ">cliente<" in text
+
+
+def test_hit_without_environment_shows_no_side() -> None:
+    client, _, modrinth = setup()
+    for environment in ([], ["unknown"], ["something_new"], "client_only", None, [5]):
+        modrinth.hits[0]["environment"] = environment
+        text = client.get(f"/modpacks/{BUNDLE_ID}/search", params={"q": "iris"}, headers=HTMX).text
+        assert "Iris" in text and "cliente" not in text and "servidor" not in text, environment
+    del modrinth.hits[0]["environment"]
+    text = client.get(f"/modpacks/{BUNDLE_ID}/search", params={"q": "iris"}, headers=HTMX).text
+    assert "Iris" in text and "cliente" not in text and "servidor" not in text
+
+
+def test_hit_tolerates_badly_typed_author_and_downloads() -> None:
+    client, _, modrinth = setup()
+    modrinth.hits[0].update(author=None, downloads="many", environment=["server_only"])
+    text = client.get(f"/modpacks/{BUNDLE_ID}/search", params={"q": "iris"}, headers=HTMX).text
+    assert "Iris" in text and ">servidor<" in text and "0 descargas" in text and "@" not in text
+
+
+@pytest.mark.parametrize("count, shown", [
+    (0, "0"), (999, "999"), (1000, "1 k"), (1234, "1,2 k"), (34000, "34 k"), (34999, "34 k"),
+    (999999, "999 k"), (1000000, "1 M"), (1234567, "1,2 M"), (34000000, "34 M"), (-5, "0"),
+])
+def test_downloads_are_abbreviated(count: int, shown: str) -> None:
+    from src.routers.web.modpacks import abbreviate_downloads
+
+    assert abbreviate_downloads(count) == shown
+
+
+@pytest.mark.parametrize("environment, label", [
+    (["client_and_server"], "cliente y servidor"),
+    (["client_only"], "cliente"),
+    (["client_only_server_optional"], "cliente"),
+    (["singleplayer_only"], "cliente"),
+    (["server_only"], "servidor"),
+    (["server_only_client_optional"], "servidor"),
+    (["dedicated_server_only"], "servidor"),
+    (["client_or_server"], "cliente y servidor"),
+    (["client_or_server_prefers_both"], "cliente y servidor"),
+    (["client_only", "server_only"], "cliente y servidor"),
+    (["client_only", "unknown"], "cliente"),
+    (["unknown"], None), ([], None), (["nope"], None), ([None, 3], None), (None, None), ("client_only", None),
+])
+def test_environment_labels(environment: Any, label: Optional[str]) -> None:
+    from src.routers.web.modpacks import environment_label
+
+    assert environment_label(environment) == label
+
+
 def test_only_modrinth_cdn_icons_are_images() -> None:
     client, _, modrinth = setup()
     modrinth.hits = [

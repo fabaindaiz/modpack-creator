@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from src.dependences import Dependences, ModpackService, ModrinthService
 from src.model.modpack import ModpackBundle, ModpackBundleCreate, ProjectOrigin
+from src.model.modrinth.project import ModrinthEnvironment
 from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
 from src.web import WebRoute, get_web_actor, render
@@ -30,7 +31,8 @@ class SearchHit:
     description: str
     author: str
     project_type: str
-    downloads: int
+    downloads: str
+    side: Optional[str]
     icon: Optional[str]
     added: bool
 
@@ -43,6 +45,48 @@ def _icon(url: Any) -> Optional[str]:
         return url
     return None
 
+# What each Modrinth environment value means for the player, as the sides it runs on (openapi v2.7.0,
+# EnvironmentEnum). An "optional" side still names the side the project is for; "singleplayer_only" runs
+# in the client. `client_or_server*` work on either, so the project supports both. `unknown` is absent.
+_CLIENT, _SERVER = "client", "server"
+_ENVIRONMENT_SIDES: dict[str, frozenset[str]] = {
+    ModrinthEnvironment.client_and_server.value: frozenset({_CLIENT, _SERVER}),
+    ModrinthEnvironment.client_only.value: frozenset({_CLIENT}),
+    ModrinthEnvironment.client_only_server_optional.value: frozenset({_CLIENT}),
+    ModrinthEnvironment.singleplayer_only.value: frozenset({_CLIENT}),
+    ModrinthEnvironment.server_only.value: frozenset({_SERVER}),
+    ModrinthEnvironment.server_only_client_optional.value: frozenset({_SERVER}),
+    ModrinthEnvironment.dedicated_server_only.value: frozenset({_SERVER}),
+    ModrinthEnvironment.client_or_server.value: frozenset({_CLIENT, _SERVER}),
+    ModrinthEnvironment.client_or_server_prefers_both.value: frozenset({_CLIENT, _SERVER}),
+}
+
+def environment_label(environment: Any) -> Optional[str]:
+    """"cliente", "servidor" or "cliente y servidor" from a search hit's environment list. An empty
+    list, a value we do not know or anything not a list gives None: absence is never "both"."""
+    if not isinstance(environment, list):
+        return None
+    sides: set[str] = set()
+    for value in environment:
+        if isinstance(value, str):
+            sides |= _ENVIRONMENT_SIDES.get(value, frozenset())
+    if sides == {_CLIENT, _SERVER}:
+        return "cliente y servidor"
+    if sides:
+        return "cliente" if _CLIENT in sides else "servidor"
+    return None
+
+def abbreviate_downloads(count: int) -> str:
+    """1234 → "1,2 k", 34000 → "34 k", 1234567 → "1,2 M"; under 1000 as is. Truncates, never rounds up."""
+    if count < 1000:
+        return str(max(count, 0))
+    unit, divisor = ("k", 1000) if count < 1_000_000 else ("M", 1_000_000)
+    tenths = count * 10 // divisor
+    if tenths >= 100:
+        return f"{tenths // 10} {unit}"
+    whole, tenth = divmod(tenths, 10)
+    return f"{whole} {unit}" if tenth == 0 else f"{whole},{tenth} {unit}"
+
 def _hit(raw: dict[str, Any], owned: set[str]) -> Optional[SearchHit]:
     project_id = raw.get("project_id")
     if not isinstance(project_id, str):
@@ -50,9 +94,9 @@ def _hit(raw: dict[str, Any], owned: set[str]) -> Optional[SearchHit]:
     downloads = raw.get("downloads")
     return SearchHit(
         project_id=project_id, title=str(raw.get("title") or raw.get("slug") or project_id),
-        description=str(raw.get("description") or ""), author=str(raw.get("author") or ""),
-        project_type=str(raw.get("project_type") or ""), downloads=downloads if isinstance(downloads, int) else 0,
-        icon=_icon(raw.get("icon_url")), added=project_id in owned)
+        description=str(raw.get("description") or ""), author=raw["author"] if isinstance(raw.get("author"), str) else "",
+        project_type=str(raw.get("project_type") or ""), downloads=abbreviate_downloads(downloads if isinstance(downloads, int) and not isinstance(downloads, bool) else 0),
+        side=environment_label(raw.get("environment")), icon=_icon(raw.get("icon_url")), added=project_id in owned)
 
 async def _titles(modrinthService: ModrinthService, project_ids: list[str]) -> dict[str, str]:
     """Project id → title, for what the catalog knows; an id it does not know shows as itself."""

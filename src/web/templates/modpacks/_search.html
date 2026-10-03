@@ -17,9 +17,10 @@
       <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
         <span class="font-medium break-words">{{ hit.title }}</span>
         {% if hit.project_type %}{{ ui.badge(hit.project_type) }}{% endif %}
+        {% if hit.side %}{{ ui.badge(hit.side) }}{% endif %}
       </div>
       {% if hit.description %}<p class="line-clamp-2 text-sm break-words text-zinc-600 dark:text-zinc-400">{{ hit.description }}</p>{% endif %}
-      <p class="text-xs text-zinc-500 dark:text-zinc-400">{% if hit.author %}@{{ hit.author }} · {% endif %}{{ "{:,}".format(hit.downloads) }} descargas</p>
+      <p class="text-xs text-zinc-500 dark:text-zinc-400">{% if hit.author %}@{{ hit.author }} · {% endif %}{{ hit.downloads }} descargas</p>
     </div>
     <div class="shrink-0">
       {% if hit.added %}
