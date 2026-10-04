@@ -2,6 +2,7 @@ import asyncio
 import logging
 import re
 from datetime import datetime, timezone
+from dataclasses import dataclass
 from typing import Optional
 from pydantic import BaseModel
 from src.database import ModpackDatabase, ModrinthDatabase, PterodactylDatabase
@@ -11,11 +12,12 @@ from src.library.changes import ChangeSet, diff_entries
 from src.library.mrpack import mrpack_index, write_mrpack
 from src.services.jobs import NotificationSink
 from src.library.resolution import Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, request_digest, resolve
-from src.model.modpack import AvailableUpdate, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, ProjectOrigin
+from src.model.modpack import AvailableUpdate, UpdateCheck, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject, ModrinthVersion
 from src.model.audit import AuditTarget
 from src.model.users import Actor
 from src.services.audit import AuditSink
+from src.services.modrinth import FILL_DEADLINE, fill_catalog
 from src.services.pterodactyl import SCAN_DIRECTORY
 from src.exceptions import *
 
@@ -51,6 +53,52 @@ class ChangePreview(BaseModel):
     numbers: dict[str, str] = {}
 
 
+@dataclass(frozen=True)
+class ModRow:
+    """One mod of a pack's list, with what its card shows (spec §1). Fields from the catalog fall
+    back to empty when Modrinth does not have the project; the support flags are then None."""
+    project_id: str
+    title: str
+    icon_url: Optional[str]
+    description: str
+    downloads: int
+    categories: list[str]
+    loaders: list[str]
+    game_versions: list[str]
+    # Whether the project runs on the pack's loader and Minecraft version; None if unknown.
+    supports_loader: Optional[bool]
+    supports_version: Optional[bool]
+    # "admin" or "pack"; None for a dependency.
+    origin: Optional[str]
+    # Titles of the projects that asked for it (the id when the catalog lacks one).
+    required_by: list[str]
+    # The entry's `server` ("include", "exclude", "admin"); None without a saved resolution.
+    side: Optional[str]
+    # version_number in the latest build, and the newer one the last check found (never for a pin).
+    build_version: Optional[str]
+    newer_version: Optional[str]
+    pinned: bool
+    source_url: Optional[str] = None
+    issues_url: Optional[str] = None
+
+
+@dataclass
+class ModList:
+    rows: list[ModRow]
+    resolution: Optional[ModpackResolution]
+    stale: bool
+    # Rows still without an icon after filling the catalog.
+    icons_missing: int
+
+
+@dataclass
+class VersionOption:
+    version_id: str
+    version_number: str
+    channel: str
+    published: datetime
+
+
 class ModpackService():
     def __init__(self,
             modpackDB: ModpackDatabase,
@@ -61,9 +109,11 @@ class ModpackService():
             notifier: Optional[NotificationSink] = None,
             pterodactylDB: Optional[PterodactylDatabase] = None,
             changelog_deadline: float = CHANGELOG_DEADLINE,
+            icon_deadline: float = FILL_DEADLINE,
             ) -> None:
         self.pterodactylDB = pterodactylDB or PterodactylDatabase()
         self.changelog_deadline = changelog_deadline
+        self.icon_deadline = icon_deadline
         self.modpackDB = modpackDB
         self.modrinthDB = modrinthDB
         self.modrinthAPI = modrinthAPI
@@ -203,6 +253,76 @@ class ModpackService():
         if missing:
             raise HTTP_404_NOT_FOUND(f"Modrinth has no project {', '.join(missing)}")
         return await self.modrinthDB.project_upsert_many(found)
+
+    async def mod_list(self, bundle_id: str, check: Optional[UpdateCheck]) -> ModList:
+        """
+        The pack's mods as one list: its projects in order, then the dependencies of the latest
+        saved resolution by title, each with its card data. Without a resolution, only the pack's
+        projects. The catalog is filled first for the missing icons (best effort, `icon_deadline`):
+        a Modrinth that is down gives the list without them, never an error. Writes the catalog.
+
+        :param check: The latest update check, for the newer versions; None shows none.
+        """
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        saved = await self.resolution(bundle_id)
+        resolution, stale = saved if saved else (None, False)
+        entries = {e.project_id: e for e in resolution.lock.entries} if resolution else {}
+        in_build: dict[str, str] = {}
+        if bundle.latest_build is not None:
+            build = await self.modpackDB.build_get(bundle_id, bundle.latest_build)
+            in_build = {e.project_id: e.version_number for e in build.lock.entries}
+        pack = {p.project_id: p.origin.value for p in bundle.projects}
+        dependencies = [i for i in entries if i not in pack]
+        requesters = {r for e in entries.values() for r in e.requested_by}
+        catalog = await fill_catalog(self.modrinthDB, self.modrinthAPI, [*pack, *dependencies, *sorted(requesters)],
+                                     self.icon_deadline)
+        newer = {u.project_id: u.to_version for u in check.updates if not u.pinned} if check else {}
+        target = Target(game_version=bundle.version, loader=str(bundle.loader.value), channels=frozenset(bundle.channels))
+
+        def row(project_id: str, origin: Optional[str]) -> ModRow:
+            found, entry = catalog.get(project_id), entries.get(project_id)
+            pinned = project_id in bundle.pins
+            supports_loader = supports_version = None
+            if found is not None:
+                kind = entry.project_type if entry else found.project_type.value
+                supports_loader = bool(target.loaders(kind) & set(found.loaders))
+                supports_version = bundle.version in found.game_versions
+            return ModRow(
+                project_id=project_id, title=found.title if found else project_id,
+                icon_url=found.icon_url if found else None, description=found.description if found else "",
+                downloads=found.downloads if found else 0, categories=list(found.categories) if found else [],
+                loaders=list(found.loaders) if found else [], game_versions=list(found.game_versions) if found else [],
+                supports_loader=supports_loader, supports_version=supports_version, origin=origin,
+                required_by=[catalog[r].title if r in catalog else r for r in (entry.requested_by if entry else [])],
+                side=entry.server if entry else None, build_version=in_build.get(project_id),
+                newer_version=None if pinned else newer.get(project_id), pinned=pinned,
+                source_url=found.source_url if found else None, issues_url=found.issues_url if found else None)
+
+        rows = [row(i, origin) for i, origin in pack.items()]
+        rows += sorted((row(i, None) for i in dependencies), key=lambda r: r.title)
+        return ModList(rows=rows, resolution=resolution, stale=stale,
+                       icons_missing=sum(1 for r in rows if r.icon_url is None))
+
+    async def project_versions(self, bundle_id: str, project_id: str) -> list[VersionOption]:
+        """
+        The versions of one project the admin can pin it to: those for the pack's Minecraft version
+        and the loaders its resolution accepts for the project's type, in the channels the pack
+        allows, newest first. Asked of Modrinth and stored in the catalog. 422 for an id that is
+        not a Modrinth id.
+        """
+        if not MODRINTH_ID.fullmatch(project_id):
+            raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{project_id}' no es un id de Modrinth")
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        stored = await self.modrinthDB.project_find_by_modrinth_id([project_id])
+        kind = stored[0].project_type.value if stored else "mod"
+        target = Target(game_version=bundle.version, loader=str(bundle.loader.value), channels=frozenset(bundle.channels))
+        found = list(await self.modrinthAPI.project_versions(project_id, sorted(target.loaders(kind)), [bundle.version]))
+        if found:
+            await self.modrinthDB.version_upsert_many(found)
+        allowed = [v for v in found if v.version_type.value in bundle.channels and v.status.value == "listed"]
+        allowed.sort(key=lambda v: v.date_published, reverse=True)
+        return [VersionOption(version_id=v.version_id, version_number=v.version_number,
+                              channel=v.version_type.value, published=v.date_published) for v in allowed]
 
     # Resolution (i-7985ee-7f735a).
 

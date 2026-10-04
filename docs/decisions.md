@@ -77,12 +77,15 @@ los dos, o una fila mal formada, hace fallar el test. El nombre del método no s
 | `ModpackService.pack_replace` | editor | Reemplaza la lista de mods del bundle. |
 | `ModpackService.project_remove` | editor | Quita un mod del bundle. |
 | `ModpackService.resolve` | editor | Calcula el lock del bundle y guarda la última resolución para mostrarla (nunca es entrada de un build); guarda en el catálogo lo que trajo de Modrinth. No toca ningún servidor. |
+| `ModpackService.mod_list` | editor | Arma la lista de mods del bundle; guarda en el catálogo los proyectos (íconos) que trajo de Modrinth en una llamada por lotes. No toca ningún servidor. |
+| `ModpackService.project_versions` | editor | Lista las versiones que un mod puede fijar; guarda en el catálogo las versiones que trajo de Modrinth. |
 | `ModpackService.build_create` | editor | Crea un build del bundle. |
 | `ModpackService.build_recommend` | editor | Marca un build como el recomendado. |
 | `ModpackService.replacement_set` | editor | Fija el reemplazo de un mod. |
 | `ModpackService.replacement_delete` | editor | Borra el reemplazo de un mod. |
 | `ModrinthService.project_create` | editor | Trae un mod de Modrinth al catálogo local. |
 | `ModrinthService.project_create_many` | editor | Trae varios mods de Modrinth al catálogo local. |
+| `ModrinthService.projects_filled` | editor | Devuelve proyectos del catálogo; guarda en él los que faltaban o no tenían ícono, traídos de Modrinth en una llamada por lotes. |
 | `ModrinthService.project_update` | editor | Refresca un mod del catálogo desde Modrinth. |
 | `ModrinthService.project_update_many` | editor | Refresca varios mods del catálogo desde Modrinth. |
 | `PterodactylService.server_create` | editor | Registra un servidor del panel en la base (no escribe en el panel). |

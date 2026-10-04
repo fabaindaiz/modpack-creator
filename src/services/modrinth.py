@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import Any, Iterable, Optional, Sequence
 from src.library.resolution import LOADER_ACCEPTS, TYPE_LOADERS
 from src.library.api.client.modrinth import ModrinthAPI
@@ -9,6 +10,32 @@ from src.exceptions import *
 
 # The project types a pack takes (resolution's SUPPORTED_TYPES), as Modrinth's search names them.
 SEARCH_TYPES = ("mod", "shader", "resourcepack", "datapack")
+# How long filling the catalog for a page waits for Modrinth: a page must not wait for it.
+FILL_DEADLINE = 5.0
+
+logger = logging.getLogger("modrinth.catalog")
+
+
+async def fill_catalog(modrinthDB: ModrinthDatabase, modrinthAPI: ModrinthAPI, project_ids: list[str],
+                       deadline: float) -> dict[str, ModrinthProject]:
+    """
+    The catalog's projects by Modrinth project id, after fetching in one batch call the ones it
+    lacks or that have no icon. Best effort: if Modrinth fails or does not answer within `deadline`
+    seconds, that is logged and what the catalog had is returned.
+    """
+    wanted = list(dict.fromkeys(project_ids))
+    stored = {p.project_id: p for p in await modrinthDB.project_find_by_modrinth_id(wanted)}
+    missing = [i for i in wanted if i not in stored or not stored[i].icon_url]
+    if missing:
+        async def fetch() -> list[ModrinthProject]:
+            return await modrinthDB.project_upsert_many(await modrinthAPI.project_get_many(missing))
+        try:
+            for project in await asyncio.wait_for(fetch(), deadline):
+                stored[project.project_id] = project
+        except Exception:
+            logger.warning("catalog fill of %d projects failed or ran out of time", len(missing), exc_info=True)
+    return stored
+
 
 class ModrinthService():
     def __init__(self,
@@ -41,6 +68,11 @@ class ModrinthService():
         """The catalog's projects by their Modrinth project id; what is not stored is absent."""
         found = await self.modrinthDB.project_find_by_modrinth_id(project_ids)
         return {project.project_id: project for project in found}
+
+    async def projects_filled(self, project_ids: list[str], deadline: float = FILL_DEADLINE) -> dict[str, ModrinthProject]:
+        """The catalog's projects by Modrinth project id, fetching first (in one call, best effort,
+        within `deadline` seconds) the ones it lacks or that have no icon; see `fill_catalog`."""
+        return await fill_catalog(self.modrinthDB, self.modrinthAPI, project_ids, deadline)
 
     async def project_get(self, project_id: str) -> ModrinthProject:
         return await self.modrinthDB.project_get(project_id)

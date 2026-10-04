@@ -1,0 +1,279 @@
+"""La lista de mods de un modpack y las versiones que se pueden fijar (spec §1, Ficha de mod): una
+fila por proyecto del pack y por dependencia resuelta, con los datos de la ficha. El catálogo y los
+bundles son de MongoDB real; Modrinth es un doble que anota sus llamadas."""
+import asyncio
+from datetime import datetime, timezone
+from typing import Any, Optional, Sequence, cast
+
+import pytest
+
+from src.database.modpack import ModpackDatabase
+from src.database.modrinth import ModrinthDatabase
+from src.library.resolution import Lock, LockEntry, ResolveRequest, Target
+from src.model.modpack import (AvailableUpdate, ModpackBuild, ModpackBundle, ModpackResolution, PackProject,
+                               ProjectOrigin, UpdateCheck)
+from src.model.modrinth import ModrinthProject, ModrinthVersion
+from src.model.utils import MinecraftLoaders
+from src.services.modpack import ModpackService
+from tests._actors import RecordingAudit
+from tests.conftest import MongoRunner
+from tests.test_builds import FakeLoaders
+
+pytestmark = pytest.mark.network
+
+NOW = datetime(2026, 10, 4, tzinfo=timezone.utc)
+
+
+def project(project_id: str, title: str, icon: Optional[str] = "https://cdn.modrinth.com/x.png", loaders: Sequence[str] = ("fabric",),
+            game_versions: Sequence[str] = ("1.21.1",), project_type: str = "mod") -> ModrinthProject:
+    return ModrinthProject.parse(
+        id=project_id, slug=title.lower(), team="t", title=title, description=f"About {title}", body="",
+        project_type=project_type, status="approved", downloads=7, followers=1, categories=["optimization"],
+        additional_categories=[], versions=[], game_versions=list(game_versions), loaders=list(loaders),
+        issues_url="https://example.org/issues", source_url=None, wiki_url=None, icon_url=icon,
+        published="2020-01-01T00:00:00Z", updated="2020-01-01T00:00:00Z")
+
+
+def version(version_id: str, project_id: str, number: str, day: int, kind: str = "release",
+            loaders: Sequence[str] = ("fabric",), game_versions: Sequence[str] = ("1.21.1",)) -> ModrinthVersion:
+    return ModrinthVersion.parse(
+        id=version_id, project_id=project_id, author_id="a", name=number, version_number=number,
+        version_type=kind, status="listed", downloads=1, game_versions=list(game_versions), loaders=list(loaders),
+        featured=False, date_published=f"2026-09-{day:02d}T00:00:00Z", dependencies=[], files=[], changelog=None)
+
+
+class FakeModrinth:
+    """Anota cada llamada; `fail` la hace lanzar, `delay` la hace tardar."""
+
+    def __init__(self, projects: Sequence[ModrinthProject] = (), versions: Sequence[ModrinthVersion] = (),
+                 fail: bool = False, delay: float = 0.0) -> None:
+        self.projects = {p.project_id: p for p in projects}
+        self.versions = list(versions)
+        self.fail = fail
+        self.delay = delay
+        self.calls: list[tuple[str, Any]] = []
+
+    async def project_get_many(self, slugs: list[str]) -> list[ModrinthProject]:
+        self.calls.append(("project_get_many", list(slugs)))
+        await asyncio.sleep(self.delay)
+        if self.fail:
+            raise RuntimeError("Modrinth is down")
+        return [self.projects[s] for s in slugs if s in self.projects]
+
+    async def project_versions(self, slug: str, loaders: Sequence[str] = (), game_versions: Sequence[str] = (),
+                               featured: Optional[bool] = None) -> list[ModrinthVersion]:
+        self.calls.append(("project_versions", (slug, tuple(loaders), tuple(game_versions))))
+        return [v for v in self.versions if v.project_id == slug and set(loaders) & set(v.loaders)
+                and set(game_versions) & set(v.game_versions)]
+
+
+def entry(project_id: str, number: str, origin: Optional[str] = "pack", requested_by: Sequence[str] = (),
+          server: str = "include", project_type: str = "mod") -> LockEntry:
+    return LockEntry(project_id=project_id, origin=origin, project_type=project_type, version_id=f"v-{project_id}-{number}",
+                     version_number=number, file=None, environment=None, server=cast(Any, server), reason="r",
+                     requested_by=list(requested_by))
+
+
+def lock(*entries: LockEntry) -> Lock:
+    return Lock(entries=list(entries), problems=[], suggestions=[], needs_projects=set(), needs_types=set(),
+                needs_versions=set())
+
+
+class Scenario:
+    def __init__(self, api: FakeModrinth, icon_deadline: float = 5.0) -> None:
+        self.api = api
+        self.modpackDB = ModpackDatabase()
+        self.modrinthDB = ModrinthDatabase()
+        self.service = ModpackService(modpackDB=self.modpackDB, modrinthDB=self.modrinthDB, modrinthAPI=cast(Any, api),
+                                      loaderAPI=cast(Any, FakeLoaders()), audit=RecordingAudit(), icon_deadline=icon_deadline)
+
+    async def bundle(self, projects: Sequence[tuple[str, ProjectOrigin]], pins: Optional[dict[str, str]] = None,
+                     channels: Sequence[str] = ("release",)) -> str:
+        created = await self.modpackDB.bundle_insert(ModpackBundle(
+            name="pack", description="", version="1.21.1", loader=MinecraftLoaders.fabric, channels=list(channels),
+            pins=pins or {}, projects=[PackProject(project_id=i, origin=o) for i, o in projects]))
+        return str(created.id)
+
+    async def resolved(self, bundle_id: str, *entries: LockEntry) -> None:
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        await self.modpackDB.resolution_save(ModpackResolution(
+            bundle_id=bundle.id, resolved_at=NOW, request_digest="d", lock=lock(*entries)))  # type: ignore[arg-type]
+
+    async def built(self, bundle_id: str, *entries: LockEntry) -> None:
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        request = ResolveRequest(target=Target(game_version="1.21.1", loader="fabric", channels=frozenset({"release"})),
+                                 projects=[])
+        await self.modpackDB.build_insert(ModpackBuild(bundle_id=bundle.id, number=1, created_at=NOW,  # type: ignore[arg-type]
+                                                       request=request, lock=lock(*entries)))
+        await self.modpackDB.bundle_latest_build(bundle_id, 1)
+
+
+def test_rows_join_pack_projects_and_resolved_dependencies(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        s = Scenario(FakeModrinth())
+        await s.modrinthDB.project_upsert_many([project("P1", "Sodium"), project("P9", "Lithium")])
+        bundle_id = await s.bundle([("P1", ProjectOrigin.admin)])
+        await s.resolved(bundle_id, entry("P1", "1", origin="admin"), entry("P9", "2", origin=None, requested_by=["P1"]))
+        listed = await s.service.mod_list(bundle_id, check=None)
+        return [(r.project_id, r.origin, r.required_by, r.side) for r in listed.rows], listed.stale, listed.resolution is not None
+
+    rows, stale, has_resolution = mongo(scenario)
+    assert rows == [("P1", "admin", [], "include"), ("P9", None, ["Sodium"], "include")]  # titles, never ids
+    assert stale is True and has_resolution  # the saved digest is not the bundle's
+
+
+def test_without_a_resolution_the_rows_are_the_pack_projects(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        s = Scenario(FakeModrinth())
+        await s.modrinthDB.project_upsert_many([project("P1", "Sodium"), project("P2", "Iris")])
+        bundle_id = await s.bundle([("P2", ProjectOrigin.pack), ("P1", ProjectOrigin.admin)])
+        await s.built(bundle_id, entry("P1", "0.8.13"))
+        listed = await s.service.mod_list(bundle_id, check=None)
+        return [(r.project_id, r.side, r.build_version, r.title) for r in listed.rows], listed.resolution
+
+    rows, resolution = mongo(scenario)
+    assert rows == [("P2", None, None, "Iris"), ("P1", None, "0.8.13", "Sodium")]  # the pack's order
+    assert resolution is None
+
+
+def test_dependencies_come_after_the_pack_by_title(mongo: MongoRunner) -> None:
+    async def scenario() -> list[str]:
+        s = Scenario(FakeModrinth())
+        await s.modrinthDB.project_upsert_many([project("P1", "Sodium"), project("D1", "Zeta"), project("D2", "Alpha")])
+        bundle_id = await s.bundle([("P1", ProjectOrigin.pack)])
+        await s.resolved(bundle_id, entry("D1", "1", origin=None), entry("P1", "1"), entry("D2", "1", origin=None))
+        return [r.project_id for r in (await s.service.mod_list(bundle_id, check=None)).rows]
+
+    assert mongo(scenario) == ["P1", "D2", "D1"]
+
+
+def test_build_version_and_newer_version_from_the_check(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        s = Scenario(FakeModrinth())
+        await s.modrinthDB.project_upsert_many([project("P1", "Sodium"), project("P2", "Iris")])
+        bundle_id = await s.bundle([("P1", ProjectOrigin.pack), ("P2", ProjectOrigin.pack)])
+        await s.built(bundle_id, entry("P1", "0.8.13"), entry("P2", "1.0"))
+        check = UpdateCheck(bundle_id=(await s.modpackDB.bundle_get(bundle_id)).id, build_number=1, checked_at=NOW,  # type: ignore[arg-type]
+                            updates=[AvailableUpdate(project_id="P1", from_version="0.8.13", to_version="0.8.14")])
+        rows = {r.project_id: r for r in (await s.service.mod_list(bundle_id, check=check)).rows}
+        return [(r.build_version, r.newer_version, r.pinned) for r in rows.values()]
+
+    assert mongo(scenario) == [("0.8.13", "0.8.14", False), ("1.0", None, False)]
+
+
+def test_pinned_rows_never_show_a_newer_version(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        s = Scenario(FakeModrinth())
+        await s.modrinthDB.project_upsert_many([project("P1", "Sodium"), project("P2", "Iris")])
+        bundle_id = await s.bundle([("P1", ProjectOrigin.pack), ("P2", ProjectOrigin.pack)], pins={"P1": "v-P1-0.8.13"})
+        await s.built(bundle_id, entry("P1", "0.8.13"), entry("P2", "1.0"))
+        check = UpdateCheck(bundle_id=(await s.modpackDB.bundle_get(bundle_id)).id, build_number=1, checked_at=NOW,  # type: ignore[arg-type]
+                            updates=[AvailableUpdate(project_id="P1", from_version="0.8.13", to_version="0.8.14"),
+                                     AvailableUpdate(project_id="P2", from_version="1.0", to_version="1.1", pinned=True)])
+        return [(r.project_id, r.pinned, r.newer_version) for r in (await s.service.mod_list(bundle_id, check=check)).rows]
+
+    assert mongo(scenario) == [("P1", True, None), ("P2", False, None)]
+
+
+def test_missing_icons_are_filled_in_one_batch_call(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        api = FakeModrinth([project("P1", "Sodium"), project("P2", "Iris")])
+        s = Scenario(api)
+        await s.modrinthDB.project_upsert_many([project("P1", "Sodium", icon=None), project("P3", "Lithium")])
+        bundle_id = await s.bundle([("P1", ProjectOrigin.pack), ("P2", ProjectOrigin.pack), ("P3", ProjectOrigin.pack)])
+        listed = await s.service.mod_list(bundle_id, check=None)
+        return api.calls, [(r.project_id, r.icon_url) for r in listed.rows], listed.icons_missing
+
+    calls, icons, missing = mongo(scenario)
+    assert calls == [("project_get_many", ["P1", "P2"])]
+    assert icons == [("P1", "https://cdn.modrinth.com/x.png"), ("P2", "https://cdn.modrinth.com/x.png"),
+                     ("P3", "https://cdn.modrinth.com/x.png")]
+    assert missing == 0
+
+
+@pytest.mark.parametrize("api", [FakeModrinth(fail=True), FakeModrinth(delay=30.0)], ids=["fails", "too slow"])
+def test_modrinth_down_still_lists_without_icons(mongo: MongoRunner, api: FakeModrinth) -> None:
+    async def scenario() -> Any:
+        s = Scenario(api, icon_deadline=0.05)
+        await s.modrinthDB.project_upsert_many([project("P1", "Sodium", icon=None)])
+        bundle_id = await s.bundle([("P1", ProjectOrigin.pack), ("P2", ProjectOrigin.pack)])
+        started = asyncio.get_running_loop().time()
+        listed = await s.service.mod_list(bundle_id, check=None)
+        took = asyncio.get_running_loop().time() - started
+        return took, [(r.project_id, r.title, r.icon_url) for r in listed.rows], listed.icons_missing
+
+    took, rows, missing = mongo(scenario)
+    assert took < 1.0
+    assert rows == [("P1", "Sodium", None), ("P2", "P2", None)]  # P2 is not in the catalog: shown by its id
+    assert missing == 2
+
+
+def test_support_flags_follow_the_pack(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        s = Scenario(FakeModrinth())
+        await s.modrinthDB.project_upsert_many([
+            project("P1", "Quilty", loaders=["quilt"], game_versions=["1.21.1"]),
+            project("P2", "Fabricy", loaders=["fabric"], game_versions=["1.20.1"]),
+            project("P3", "Shady", loaders=["iris"], game_versions=["1.21.1"], project_type="shader")])
+        bundle_id = await s.bundle([(i, ProjectOrigin.pack) for i in ("P1", "P2", "P3")])
+        rows = (await s.service.mod_list(bundle_id, check=None)).rows
+        return [(r.supports_loader, r.supports_version) for r in rows]
+
+    assert mongo(scenario) == [(False, True), (True, False), (True, True)]
+
+
+def test_support_flags_are_unknown_without_the_project(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        s = Scenario(FakeModrinth(fail=True))
+        bundle_id = await s.bundle([("P1", ProjectOrigin.pack)])
+        row = (await s.service.mod_list(bundle_id, check=None)).rows[0]
+        return row.supports_loader, row.supports_version
+
+    assert mongo(scenario) == (None, None)
+
+
+def test_versions_for_the_pack_newest_first(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        api = FakeModrinth(versions=[
+            version("a", "P1", "0.8.13", 1), version("b", "P1", "0.8.14", 5), version("c", "P1", "0.9.0-beta", 9, kind="beta"),
+            version("d", "P1", "0.7.0", 1, loaders=["quilt"]), version("e", "P1", "0.6.0", 1, game_versions=["1.20.1"]),
+            version("f", "P2", "9", 1)])
+        s = Scenario(api)
+        await s.modrinthDB.project_upsert_many([project("P1", "Sodium")])
+        bundle_id = await s.bundle([("P1", ProjectOrigin.pack)])
+        only_release = [(o.version_number, o.channel) for o in await s.service.project_versions(bundle_id, "P1")]
+        stored = {v.version_id async for v in ModrinthVersion.find()}
+        bundle_beta = await s.bundle([("P1", ProjectOrigin.pack)], channels=("release", "beta"))
+        with_beta = [o.version_number for o in await s.service.project_versions(bundle_beta, "P1")]
+        return only_release, stored, with_beta, api.calls[0]
+
+    only_release, stored, with_beta, call = mongo(scenario)
+    assert only_release == [("0.8.14", "release"), ("0.8.13", "release")]  # fabric and 1.21.1 only, by date desc
+    assert with_beta == ["0.9.0-beta", "0.8.14", "0.8.13"]  # every channel the pack allows
+    assert {"a", "b", "c"} <= stored  # what was fetched stays in the catalog
+    assert call == ("project_versions", ("P1", ("fabric",), ("1.21.1",)))
+
+
+def test_versions_of_a_shader_use_its_own_loaders(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        api = FakeModrinth(versions=[version("s", "S1", "1.0", 1, loaders=["iris"])])
+        s = Scenario(api)
+        await s.modrinthDB.project_upsert_many([project("S1", "Shady", loaders=["iris"], project_type="shader")])
+        bundle_id = await s.bundle([("S1", ProjectOrigin.pack)])
+        return [o.version_number for o in await s.service.project_versions(bundle_id, "S1")], api.calls[0][1][1]
+
+    numbers, asked = mongo(scenario)
+    assert numbers == ["1.0"] and asked == ("canvas", "iris", "optifine", "vanilla")
+
+
+def test_projects_filled_returns_the_catalog_and_fills_what_is_missing(mongo: MongoRunner) -> None:
+    from src.services.modrinth import ModrinthService
+
+    async def scenario() -> Any:
+        api = FakeModrinth([project("P2", "Iris")])
+        db = ModrinthDatabase()
+        await db.project_upsert_many([project("P1", "Sodium")])
+        filled = await ModrinthService(modrinthAPI=cast(Any, api), modrinthDB=db).projects_filled(["P1", "P2", "P3"])
+        return sorted(filled), api.calls
+
+    assert mongo(scenario) == (["P1", "P2"], [("project_get_many", ["P2", "P3"])])

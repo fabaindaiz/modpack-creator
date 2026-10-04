@@ -64,6 +64,9 @@ SERVICES = Path(__file__).resolve().parent.parent / "src" / "services"
 # el método). Un método que escribe algo que importa audita; estos solo tocan el catálogo local.
 NOT_AUDITED: dict[str, str] = {
     "ModpackService.resolve": "calcula el lock y solo guarda en el catálogo de Modrinth lo que trae; no cambia ningún bundle",
+    "ModpackService.mod_list": "es una lectura que solo guarda en el catálogo los proyectos (íconos) que trae de Modrinth",
+    "ModpackService.project_versions": "es una lectura que solo guarda en el catálogo las versiones que trae de Modrinth",
+    "ModrinthService.projects_filled": "es una lectura que solo guarda en el catálogo los proyectos que trae de Modrinth",
     "ModrinthService.project_create": "solo escribe un proyecto en el catálogo local, copiado de Modrinth",
     "ModrinthService.project_create_many": "solo escribe proyectos en el catálogo local, copiados de Modrinth",
     "ModrinthService.project_update": "solo refresca un proyecto del catálogo local desde Modrinth",
