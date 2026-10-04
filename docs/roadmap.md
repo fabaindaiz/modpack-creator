@@ -704,7 +704,9 @@ JSON con `request_id` y `job_id`.
   ahora corre un Modrinth local con el sodium grabado de `tests/fixtures/modrinth/` y comprueba en
   un navegador lo que el HTML no dice: la ficha abierta con su selector de versiones (con Modrinth
   caído, el aviso con "Reintentar"), el diálogo de decisiones que sigue abierto al enviarlo sin
-  decidir, el aviso de error dentro de `[data-form-notice]` y el de éxito que se va solo.
+  decidir, el aviso de error dentro de `[data-form-notice]`, el de éxito que se va solo, y la
+  recarga de `#server-main` al terminar un trabajo sin un error de consola (la CSP rechazaba el
+  `style` que htmx copiaba al asentar; `attributesToSettle` ya no lo incluye).
 - **Lo que falta (ronda 2, fuera de alcance de la ronda 1):**
   - el tablero "necesita atención";
   - móvil: navegación compacta y tablas como tarjetas;
@@ -714,6 +716,29 @@ JSON con `request_id` y `job_id`.
   - enlazar URLs en changelogs (F29);
   - repetir el recorrido con Modrinth real y medir de nuevo la tarea de F36 en la instancia local;
   - desplegar.
+- **Pendientes menores que dejó la revisión de la ronda 1** (cada uno visto, ninguno bloquea):
+  - un proyecto sin ícono en Modrinth (o que Modrinth no conoce) se vuelve a pedir en cada vista de
+    la lista de mods; con Modrinth colgado cada vista espera los 5 s. Pide una marca "consultado, sin
+    ícono" con su vigencia, y eso es una enmienda a la spec;
+  - el diálogo de decisiones del build no es modal (`open`, sin fondo, sin atrapar el foco ni cerrar
+    con Escape): abrirlo con `showModal` desde `app.js` al llegar;
+  - los botones de envío de un formulario (no los `ui.button` con `hx-post`) no muestran estado
+    ocupado ni se deshabilitan: un doble envío es posible;
+  - `sanitize_detail` solo quita la consulta de las URLs: un `Bearer x` o un `token=` sueltos, fuera
+    de una URL, pasarían al detalle plegable;
+  - `_store_drift` solo atrapa `HTTPException`;
+  - después de una actualización real rechazada o fallida a medias, el último escaneo queda sin drift
+    y el tablero dice "Sin comparar" hasta el próximo escaneo;
+  - los resultados de la búsqueda siguen abiertos después de agregar un mod;
+  - tras una actualización real, el siguiente escaneo programado manda a Discord un "✅ coincide"
+    además del "✅ actualizado";
+  - ruido "Unclosed" de aiohttp en `test_http_client` y `test_rate_limit` (anterior a la ronda);
+  - `project_versions` pide los loaders de "mod" para un shader o un resourcepack que el catálogo
+    no conoce;
+  - carrera en `bundle_for_server`: si vincular falla después de crear, queda un pack sin vincular
+    (auditado) y un error genérico, y reintentar crea un segundo pack;
+  - un servidor con nombre de más de 120 caracteres rellena el campo del pack nuevo por encima de su
+    `maxlength`, y enviarlo da un 422 sin explicación.
 - **Lo que choca:** el barrido no ve Modrinth ni Pterodactyl reales ni el login OIDC; la ficha pide
   las versiones de un mod a Modrinth al abrirse (una llamada por ficha, solo al abrirla).
 

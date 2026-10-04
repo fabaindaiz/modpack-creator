@@ -62,9 +62,12 @@ UNCLASSIFIED_WRITE_ROUTES: dict[tuple[str, str], str] = {}
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 SERVICES = Path(__file__).resolve().parent.parent / "src" / "services"
 # Filas de la tabla cuyo método no llama a `audit.record`, cada una con su razón (verificada leyendo
-# el método). Un método que escribe algo que importa audita; estos solo tocan el catálogo local.
+# el método). Un método que escribe algo que importa audita; estos solo tocan el catálogo local o
+# una copia derivada que se recalcula (la última resolución).
 NOT_AUDITED: dict[str, str] = {
-    "ModpackService.resolve": "calcula el lock y solo guarda en el catálogo de Modrinth lo que trae; no cambia ningún bundle",
+    "ModpackService.resolve": ("calcula el lock, guarda en el catálogo de Modrinth lo que trae y guarda la última "
+                               "resolución (ModpackResolution, una copia derivada que solo se muestra); no cambia "
+                               "ningún bundle"),
     "ModpackService.mod_list": "es una lectura que solo guarda en el catálogo los proyectos (íconos) que trae de Modrinth",
     "ModpackService.project_versions": "es una lectura que solo guarda en el catálogo las versiones que trae de Modrinth",
     "ModrinthService.projects_filled": "es una lectura que solo guarda en el catálogo los proyectos que trae de Modrinth",
