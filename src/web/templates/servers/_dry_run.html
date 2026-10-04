@@ -4,7 +4,8 @@
   `bundle_id`; a plan from before it carried its bundle asks to simulate again), warning when it
   would discard a pending rollback (`rollback`, JobService.rollback_state, when the page knows it),
   and confirmed by typing the server's name (`server_name`, when the page knows it). Under the plan,
-  what it changes, loaded after the page from /jobs/{id}/preview (it may wait for Modrinth). #}
+  what it changes, loaded after the page from /jobs/{id}/preview (it may wait for Modrinth); the
+  jar lists, which repeat it, folded under that (F33). #}
 {% import "_macros.html" as ui %}
 {% set plan = job.checkpoint.get("preflight") %}
 {% set lines = job.checkpoint.get("log", {}).get("lines", []) %}
@@ -14,23 +15,26 @@
   <p class="text-zinc-600 dark:text-zinc-400">Nada que cambiar: el servidor ya coincide con el build {{ plan.build }} de {{ plan.bundle }}.</p>
   {% else %}
   <p class="text-zinc-700 dark:text-zinc-300">Pasaría al build {{ plan.build }} de {{ plan.bundle }}.</p>
-  <div class="grid gap-3 sm:grid-cols-2">
-    <div>
-      <h3 class="text-xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">Se instalan ({{ plan.install | length }})</h3>
-      <ul class="mt-1 space-y-0.5 font-mono text-xs break-all">
-        {% for item in plan.install %}<li>{{ item.filename }}</li>{% else %}<li class="text-zinc-400">—</li>{% endfor %}
-      </ul>
-    </div>
-    <div>
-      <h3 class="text-xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">Se quitan ({{ plan.remove | length }})</h3>
-      <ul class="mt-1 space-y-0.5 font-mono text-xs break-all">
-        {% for path in plan.remove %}<li>{{ path }}</li>{% else %}<li class="text-zinc-400">—</li>{% endfor %}
-      </ul>
-    </div>
-  </div>
   <div id="preview-{{ job.id }}" class="space-y-2" aria-live="polite" hx-get="/jobs/{{ job.id }}/preview" hx-trigger="load" hx-target="this" hx-swap="innerHTML">
     <p class="text-sm text-zinc-500 dark:text-zinc-400">Cargando cambios…</p>
   </div>
+  <details>
+    <summary class="cursor-pointer text-xs text-zinc-600 dark:text-zinc-400">Jars que cambian ({{ plan.install | length }} se instalan, {{ plan.remove | length }} se quitan)</summary>
+    <div class="mt-1 grid gap-3 sm:grid-cols-2">
+      <div>
+        <h3 class="text-xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">Se instalan ({{ plan.install | length }})</h3>
+        <ul class="mt-1 space-y-0.5 font-mono text-xs break-all">
+          {% for item in plan.install %}<li>{{ item.filename }}</li>{% else %}<li class="text-zinc-400">—</li>{% endfor %}
+        </ul>
+      </div>
+      <div>
+        <h3 class="text-xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">Se quitan ({{ plan.remove | length }})</h3>
+        <ul class="mt-1 space-y-0.5 font-mono text-xs break-all">
+          {% for path in plan.remove %}<li>{{ path }}</li>{% else %}<li class="text-zinc-400">—</li>{% endfor %}
+        </ul>
+      </div>
+    </div>
+  </details>
   {% endif %}
   {% if lines %}
   <details>

@@ -13,6 +13,8 @@ from src.web import WebRoute, get_web_actor, render
 router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
 
 JOBS_SHOWN = 50
+# The event a finished job's row sends: #server-main and #updates-main reload on it.
+JOB_FINISHED = "job-finished"
 AUDIT_PAGE = 50
 # A filter or a cursor: kept short, and passed to the service as the exact value.
 FilterValue = Annotated[Optional[str], Query(max_length=200)]
@@ -95,10 +97,15 @@ async def job_row(
         jobService: JobService = Depends(Provide[Dependences.jobService]),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
         ):
-    """One job's detail: what an active detail polls."""
+    """One job's detail: what an active detail polls. A finished one also tells the page
+    (`HX-Trigger: job-finished`), so its sections reload (F19): only once, since a finished row
+    does not poll again, and never for an active one, which would reload the page every 2 s."""
     job = await jobService.get(job_id)
-    return render(request, "activity/_job_row.html", actor, job=job,
-                  **await _server_context(job, pterodactylService, jobService))
+    response = render(request, "activity/_job_row.html", actor, job=job,
+                      **await _server_context(job, pterodactylService, jobService))
+    if not job.active:
+        response.headers["HX-Trigger"] = JOB_FINISHED
+    return response
 
 @router.get("/jobs/{job_id}/preview")
 @inject

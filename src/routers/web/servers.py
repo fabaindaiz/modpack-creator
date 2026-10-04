@@ -36,10 +36,10 @@ def _job_row(request: Request, actor: Actor, job: Job) -> Response:
     return render(request, "activity/_job_row.html", actor, job=job)
 
 async def _titles(modrinthService: ModrinthService, project_ids: list[str]) -> dict[str, str]:
-    """Project id → title, for what the catalog knows; an id it does not know (or every id, when
-    Modrinth fails) shows as itself."""
+    """Project id → title, from the catalog, filled first from Modrinth for what it lacks (one
+    batch, within its deadline); an id still unknown (or every id, when that fails) shows as itself."""
     try:
-        found = await modrinthService.projects_by_id(sorted(set(project_ids)))
+        found = await modrinthService.projects_filled(sorted(set(project_ids)))
     except Exception:
         # The page is about the server: titles are a nicety, and an import may already be applied.
         logger.warning("Modrinth title lookup failed", exc_info=True)
@@ -65,6 +65,15 @@ async def _import_titles(modrinthService: ModrinthService, result: ImportResult)
     """The titles an import result shows: what was added and every candidate."""
     return await _titles(modrinthService, list(result.added) + [c.project_id for item in result.candidates
                                                                 for c in item.candidates])
+
+def _to_import(comparison: Comparison, bundle: ModpackBundle) -> list[str]:
+    """The jars of the comparison that importing would bring into the bundle: the ones Modrinth
+    does not know (unless the bundle already keeps them as local files) and the mods outside the
+    bundle. Empty: the bundle explains every jar, and only a new build may be missing."""
+    in_bundle = {p.project_id for p in bundle.projects}
+    kept = {f.sha512 for f in bundle.local_files} | {c.sha512 for c in bundle.claimed_files}
+    return ([f.path for f in comparison.unknown if f.sha512 is None or f.sha512 not in kept]
+            + [f.path for f in comparison.extra if f.project_id not in in_bundle])
 
 def _comparison_ids(comparison: Comparison) -> list[str]:
     return ([f.project_id for f in comparison.matching if f.project_id]
@@ -116,7 +125,9 @@ async def server_detail(
         modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         jobService: JobService = Depends(Provide[Dependences.jobService]),
         ):
-    """A server: its bundle, the last scan, how it compares with its build, and what can be done."""
+    """A server: its bundle, the last scan, how it compares with its build (titles and version
+    numbers, not ids), and what can be done. Also what #server-main reloads from when a job ends:
+    htmx takes that element out of this page."""
     server = await pterodactylService.server_get(server_id)
     bundles = await modpackService.bundle_find()
     bundle = next((b for b in bundles if str(b.id) == server.bundle_id), None)
@@ -141,6 +152,9 @@ async def server_detail(
                 raise
             compare_note = str(error.detail)
     titles = await _titles(modrinthService, _comparison_ids(comparison) if comparison else [])
+    versions = await pterodactylService.compare_names(comparison) if comparison else {}
+    to_import = _to_import(comparison, bundle) if comparison and bundle else None
+    installed_build = await jobService.installed_build(server_id) if bundle else None
     active = await jobService.active_for_server(server_id)
     rollback = await jobService.rollback_state(server_id)
     build_number = (bundle.recommended_build or bundle.latest_build) if bundle else None
@@ -149,8 +163,8 @@ async def server_detail(
     deduction = await pterodactylService.deduction(server_id) if server.bundle_id is None else None
     return render(request, "servers/detail.html", actor, server=server, server_id=server_id, bundles=bundles,
                   bundle=bundle, scan=scan, comparison=comparison, compare_note=compare_note, titles=titles,
-                  active_job=active, rollback=rollback, build_number=build_number, builds=builds,
-                  deduction=deduction, loaders=[l.value for l in MinecraftLoaders], nav_active="servers")
+                  versions=versions, to_import=to_import, installed_build=installed_build, active_job=active,
+                  rollback=rollback, build_number=build_number, builds=builds, deduction=deduction, loaders=[l.value for l in MinecraftLoaders], nav_active="servers")
 
 @router.post("/servers/{server_id}/refresh")
 @inject
@@ -254,7 +268,9 @@ async def server_import(
     is listed with its candidates. Operators only."""
     result = await pterodactylService.import_server(server_id, actor)
     titles = await _import_titles(modrinthService, result)
-    return render(request, "servers/_import.html", actor, server_id=server_id, result=result, titles=titles)
+    server: PterodactylServer = await pterodactylService.server_get(server_id)
+    return render(request, "servers/_import.html", actor, server_id=server_id, result=result, titles=titles,
+                  next_bundle_id=server.bundle_id)
 
 @router.post("/servers/{server_id}/import/confirm")
 @inject

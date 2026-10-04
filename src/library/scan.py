@@ -85,10 +85,12 @@ class ClaimedFile(BaseModel):
 
 
 class ExpectedEntry(BaseModel):
-    """What a build says a project should be: from a lock entry."""
+    """What a build says a project should be: from a lock entry. `version_number` is what a person
+    reads; absent only when the entry came without it."""
     project_id: str
     version_id: str
     server: str
+    version_number: Optional[str] = None
 
 
 class Comparison(BaseModel):
@@ -100,6 +102,8 @@ class Comparison(BaseModel):
     unknown: list[ScanFile]
     # Files the build explains as its local files.
     local: list[ScanFile] = []
+    # Projects of the extra files that the build has but keeps off the server (client only).
+    client_only: list[str] = []
 
     @property
     def in_sync(self) -> bool:
@@ -145,6 +149,8 @@ def compare(files: Iterable[ScanFile], lock_entries: Iterable[Any],
             else:
                 result.different_version.append((file, entry))
     result.missing = [e for p, e in by_project.items() if p not in seen]
+    excluded = {e.project_id for e in expected if e.server == "exclude"}
+    result.client_only = sorted({f.project_id for f in result.extra if f.project_id is not None and f.project_id in excluded})
     return result
 
 

@@ -88,6 +88,16 @@ def test_comparing_says_what_matches_differs_is_missing_extra_or_unknown() -> No
     assert not result.in_sync
 
 
+def test_an_extra_the_build_keeps_off_the_server_is_client_only_and_expected_carries_its_number() -> None:
+    files = [scanned("menu.jar", project_id="M", version_id="m1"), scanned("x.jar", project_id="X", version_id="x1"),
+             scanned("b.jar", project_id="B", version_id="b-old")]
+    lock = [lock_entry("M", "m1", server="exclude"), {**lock_entry("B", "b-new"), "version_number": "2.0.1"}]
+    result = compare(files, lock)
+    assert [f.path for f in result.extra] == ["/mods/menu.jar", "/mods/x.jar"]
+    assert result.client_only == ["M"]
+    assert [e.version_number for _, e in result.different_version] == ["2.0.1"]
+
+
 def test_a_second_copy_of_a_mod_is_extra() -> None:
     files = [scanned("a.jar", project_id="A", version_id="a1"), scanned("a-copy.jar", project_id="A", version_id="a1")]
     result = compare(files, [lock_entry("A", "a1")])

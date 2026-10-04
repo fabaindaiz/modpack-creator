@@ -1,5 +1,6 @@
 {# The result of importing a server; the fragment htmx swaps into #import-result. Included
-   elsewhere (a new modpack's result), it takes another `result_id`. #}
+   elsewhere (a new modpack's result), it takes another `result_id`. With `next_bundle_id` it
+   ends with the next step, to the bundle (F25); the new modpack's result has its own. #}
 {% import "_macros.html" as ui %}
 <div id="{{ result_id | default('import-result') }}" class="space-y-4">
   <ul class="space-y-1 text-sm">
@@ -40,5 +41,8 @@
     </li>
     {% endfor %}
   </ul>
+  {% endif %}
+  {% if next_bundle_id | default(None) %}
+  <div>{{ ui.next_step("Resolver y crear build", "/modpacks/" ~ next_bundle_id) }}</div>
   {% endif %}
 </div>

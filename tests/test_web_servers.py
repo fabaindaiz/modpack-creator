@@ -102,6 +102,7 @@ class FakePterodactyl:
                 path="/mods/odd.jar", sha512="s5", metadata=ModMetadata(loader="fabric", mod_id="odd", name="Odd Mod", version="1"),
                 candidates=[ProjectCandidate(project_id="C1", slug="odd", title="Odd Mod", via="slug")])])
         self.deduced: Optional[Deduction] = None
+        self.version_labels: dict[str, str] = {}
         self.for_server: BundleForServer = BundleForServer(bundle=new_bundle(), imported=None, import_error=None)
         self.calls: list[tuple[Any, ...]] = []
         self.error: Optional[Exception] = None
@@ -157,6 +158,9 @@ class FakePterodactyl:
     async def deduction(self, server_id: str) -> Optional[Deduction]:
         return self.deduced
 
+    async def compare_names(self, comparison: Comparison) -> dict[str, str]:
+        return self.version_labels
+
     async def bundle_for_server(self, server_id: str, name: str, version: str, loader: MinecraftLoaders,
                                 import_mods: bool, actor: Actor) -> BundleForServer:
         if not actor.is_operator:  # as the real service's operator_only
@@ -169,7 +173,11 @@ class FakeJobs:
     def __init__(self) -> None:
         self.jobs: list[Job] = []
         self.state: Optional[RollbackState] = None
+        self.installed: Optional[int] = None
         self.calls: list[tuple[Any, ...]] = []
+
+    async def installed_build(self, server_id: str) -> Optional[int]:
+        return self.installed
 
     async def enqueue_scan(self, server_id: str, actor: Actor, full: bool = False) -> Job:
         self.calls.append(("enqueue_scan", server_id, actor, full))
@@ -254,7 +262,11 @@ class FakeModpack:
 
 
 class FakeModrinth:
-    async def projects_by_id(self, project_ids: list[str]) -> dict[str, ModrinthProject]:
+    def __init__(self) -> None:
+        self.filled: list[list[str]] = []
+
+    async def projects_filled(self, project_ids: list[str]) -> dict[str, ModrinthProject]:
+        self.filled.append(list(project_ids))
         titles = {"P1": "Sodium", "P2": "Lithium", "P3": "Iris", "P4": "Phosphor", "C1": "Odd Mod Project",
                   "J1": "JEI", "A1": "AppleSkin", "F1": "FerriteCore"}
         return {i: ModrinthProject.model_construct(project_id=i, slug=i.lower(), title=titles[i])
@@ -338,7 +350,7 @@ def test_detail_shows_bundle_scan_and_comparison() -> None:
     assert response.status_code == 200
     text = response.text
     assert "Survival" in text and f'href="/modpacks/{BUNDLE_ID}"' in text and "Pack Uno" in text
-    assert "todo en orden" in text and "2026-10-01 12:00" in text
+    assert "2026-10-01 12:00" in text
     assert f'hx-post="/servers/{SERVER_ID}/scan"' in text and f'hx-post="/servers/{SERVER_ID}/refresh"' in text
     assert 'id="compare"' in text and "Sodium" in text
 
@@ -388,6 +400,121 @@ def test_compare_renders_every_category() -> None:
         assert fragment in text
     for shown in ("Sodium", "sodium.jar", "lithium-old.jar", "Lithium", "Iris", "Phosphor", "extra.jar", "mystery.jar"):
         assert shown in text
+
+
+def opening_tag(text: str, element_id: str) -> str:
+    match = re.search(rf'<[a-z]+ [^>]*id="{element_id}"[^>]*>', text)
+    assert match, f"no element #{element_id}"
+    return match.group(0)
+
+
+def test_server_main_reloads_itself_and_excludes_the_polling_row() -> None:
+    """When a job ends (`job-finished`, sent by its finished row), #server-main reloads itself
+    from the page. The polling row is outside it: the reload must not restart the polling, nor
+    the row's own swap wipe the sections."""
+    client, fakes = setup()
+    running = job("server_scan", "running")
+    fakes.jobs.jobs = [running]
+    text = client.get(f"/servers/{SERVER_ID}").text
+    tag = opening_tag(text, "server-main")
+    for attribute in (f'hx-get="/servers/{SERVER_ID}"', 'hx-select="#server-main"',
+                      'hx-trigger="job-finished from:body"', 'hx-swap="outerHTML"', 'hx-disinherit="*"'):
+        assert attribute in tag
+    main_at, job_at = text.index(tag), text.index('id="server-job"')
+    assert job_at < main_at and text.index(f'hx-get="/jobs/{running.id}/row"') < main_at
+    # The sections are inside it, in the order of the spec: summary, comparison, then the side column.
+    order = [text.index(f'id="{section}"') for section in
+             ("server-summary", "comparacion", "actualizar", "modpack", "escaneo", "importar")]
+    assert main_at < order[0] and order == sorted(order)
+
+
+def summary(text: str) -> str:
+    """The summary line as read: without tags, its spaces collapsed."""
+    start = text.index('id="server-summary"')
+    return " ".join(re.sub(r"<[^>]+>", " ", text[text.index(">", start) + 1:text.index("</div>", start)]).split())
+
+
+def test_summary_line_says_installed_recommended_and_differences() -> None:
+    client, fakes = setup()
+    fakes.jobs.installed = 3
+    line = summary(client.get(f"/servers/{SERVER_ID}").text)
+    assert "Pack Uno" in line and "Instalado: build 3" in line and "Recomendado: build 2" in line
+    assert "2026-10-01 12:00" in line and "4 diferencias" in line  # otra versión, falta, sobra, desconocido
+    fakes.jobs.installed = None
+    fakes.ptero.comparison = Comparison(matching=[scan_file("/mods/sodium.jar", "P1")], different_version=[],
+                                        missing=[], extra=[], unknown=[])
+    line = summary(client.get(f"/servers/{SERVER_ID}").text)
+    assert "sin actualizar desde el panel" in line and "Coincide" in line and "diferencia" not in line
+    fakes.ptero.scan, fakes.ptero.comparison = None, None
+    assert "Sin escaneo" in summary(client.get(f"/servers/{SERVER_ID}").text)
+
+
+def test_comparison_uses_titles_and_version_numbers() -> None:
+    client, fakes = setup()
+    fakes.ptero.comparison = Comparison(
+        matching=[],
+        different_version=[(scan_file("/mods/jei-19.57.jar", "J1"),
+                            ExpectedEntry(project_id="J1", version_id="EO4u1E2G", server="include"))],
+        missing=[ExpectedEntry(project_id="A1", version_id="Ap9pLe5k", server="include")],
+        extra=[], unknown=[])
+    fakes.ptero.version_labels = {"EO4u1E2G": "19.51.0.418", "Ap9pLe5k": "21.1.0", "v": "jei-19.57.jar"}
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert "el build espera 19.51.0.418" in text and "versión 21.1.0" in text
+    assert "EO4u1E2G" not in text and "Ap9pLe5k" not in text
+    # The titles come from the catalog, filled from Modrinth for what it lacks.
+    assert "JEI" in text and "AppleSkin" in text and set(fakes.modrinth.filled[-1]) == {"J1", "A1"}
+
+
+def test_client_only_extra_says_it_does_not_go_on_the_server() -> None:
+    client, fakes = setup()
+    fakes.ptero.comparison = Comparison(matching=[], different_version=[], missing=[], unknown=[],
+                                        extra=[scan_file("/mods/extra.jar", "P4"), scan_file("/mods/other.jar", "P1")],
+                                        client_only=["P4"])
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert text.count("solo cliente: no va en el servidor") == 1 and text.count("el build no lo incluye") == 1
+
+
+def importar(text: str) -> str:
+    start = text.index('id="importar"')
+    return text[start:text.index("</section>", start)]
+
+
+def test_import_is_always_shown_and_says_when_nothing_to_import() -> None:
+    client, fakes = setup(OPERATOR)
+    # A jar Modrinth does not know and a mod outside the pack: there is something to import.
+    section = importar(client.get(f"/servers/{SERVER_ID}").text)
+    assert f'hx-post="/servers/{SERVER_ID}/import"' in section and "No hay nada que importar" not in section
+    # Everything explained (a second copy of a mod of the pack is extra, not foreign): nothing to import.
+    fakes.ptero.comparison = Comparison(matching=[scan_file("/mods/sodium.jar", "P1")], different_version=[],
+                                        missing=[], extra=[scan_file("/mods/sodium-2.jar", "P1")], unknown=[])
+    section = importar(client.get(f"/servers/{SERVER_ID}").text)
+    assert "No hay nada que importar: el modpack ya explica todos los jars del último escaneo" in section
+    assert "hx-post" not in section and "disabled" in section
+    # No scan: nothing to compare, and the page says how to find out.
+    fakes.ptero.scan, fakes.ptero.comparison = None, None
+    section = importar(client.get(f"/servers/{SERVER_ID}").text)
+    assert "Escanea el servidor para saber qué importar" in section and "hx-post" not in section
+    # An editor sees it too, disabled.
+    client, fakes = setup(EDITOR)
+    section = importar(client.get(f"/servers/{SERVER_ID}").text)
+    assert "requiere operador" in section and "hx-post" not in section
+
+
+def test_import_result_offers_the_next_step_to_the_pack() -> None:
+    client, _ = setup(OPERATOR)
+    text = client.post(f"/servers/{SERVER_ID}/import", headers=HTMX).text
+    assert "Resolver y crear build" in text and f'href="/modpacks/{BUNDLE_ID}"' in text
+
+
+def test_drift_pre_is_gone_and_dry_run_jars_fold() -> None:
+    client, fakes = setup()
+    fakes.ptero.scan = scan("⚠️ Survival no coincide con Pack Uno, build 2:\n- sobra /mods/extra.jar")
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert "<pre" not in text and "no coincide con Pack Uno" not in text
+    html = row(finished_dry_run(3))
+    folded = html[html.index("<details"):]
+    assert html.index(f'id="preview-') < html.index("<details")
+    assert "Se instalan" in folded and "Se quitan" in folded and "lithium-2.jar" in folded
 
 
 # Escanear y refrescar.
@@ -749,7 +876,7 @@ def test_detail_and_import_survive_a_failing_title_lookup() -> None:
     import main
 
     class Down(FakeModrinth):
-        projects_by_id = staticmethod(down)  # type: ignore[assignment]
+        projects_filled = staticmethod(down)  # type: ignore[assignment]
 
     main.container.modrinthService.override(providers.Object(Down()))
     detail = client.get(f"/servers/{SERVER_ID}")

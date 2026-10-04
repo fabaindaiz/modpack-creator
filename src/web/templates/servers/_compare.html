@@ -1,6 +1,8 @@
-{# A server's files against its build, by category. Needs `comparison` and `titles`. #}
+{# A server's files against its build, by category. Needs `comparison`, `titles` (project id →
+   title) and `versions` (version id → what a person reads: PterodactylService.compare_names). #}
 {% import "_macros.html" as ui %}
 {% macro name(project_id) %}{{ titles.get(project_id, project_id) if project_id else "—" }}{% endmacro %}
+{% macro version(version_id) %}{{ versions.get(version_id, version_id) if version_id else "—" }}{% endmacro %}
 <div id="compare" class="space-y-3">
   {% if comparison.in_sync %}
   {{ ui.notice("El servidor coincide con el build " ~ build_number ~ ".", "success") }}
@@ -11,7 +13,7 @@
     <td>{{ ui.badge("Otra versión", "warning") }}</td>
     <td class="break-words">{{ name(file[1].project_id) }}</td>
     <td class="font-mono text-xs break-all">{{ file[0].path }}</td>
-    <td class="text-xs text-zinc-500 dark:text-zinc-400">el build espera la versión {{ file[1].version_id }}</td>
+    <td class="text-xs break-words text-zinc-500 dark:text-zinc-400">tiene {{ version(file[0].version_id) }}; el build espera {{ version(file[1].version_id) }}</td>
   </tr>
   {% endfor %}
   {% for entry in comparison.missing %}
@@ -19,7 +21,7 @@
     <td>{{ ui.badge("Falta", "danger") }}</td>
     <td class="break-words">{{ name(entry.project_id) }}</td>
     <td class="text-zinc-400">—</td>
-    <td class="text-xs text-zinc-500 dark:text-zinc-400">versión {{ entry.version_id }}</td>
+    <td class="text-xs break-words text-zinc-500 dark:text-zinc-400">versión {{ version(entry.version_id) }}</td>
   </tr>
   {% endfor %}
   {% for file in comparison.extra %}
@@ -27,7 +29,7 @@
     <td>{{ ui.badge("Sobra", "warning") }}</td>
     <td class="break-words">{{ name(file.project_id) }}</td>
     <td class="font-mono text-xs break-all">{{ file.path }}</td>
-    <td class="text-xs text-zinc-500 dark:text-zinc-400">el build no lo incluye</td>
+    <td class="text-xs text-zinc-500 dark:text-zinc-400">{{ "solo cliente: no va en el servidor" if file.project_id in comparison.client_only else "el build no lo incluye" }}</td>
   </tr>
   {% endfor %}
   {% for file in comparison.unknown %}

@@ -272,6 +272,50 @@ def test_a_server_linked_to_a_bundle_compares_against_it_without_naming_it(mongo
     assert bundle_id is not None and in_sync
 
 
+def test_scan_of_a_linked_server_stores_its_drift(mongo: MongoRunner) -> None:
+    """Any scan of a server linked to a bundle with a build stores how it compares (F37): also
+    the update's own scan, which has no actor. The dashboard reads it; an unlinked server has none."""
+    async def scenario() -> tuple[str | None, str | None, str | None]:
+        modrinth = HashModrinthAPI({})
+        bundle_id, version_id = await build_with_fabric_api(modrinth)
+        modrinth.known[sha1(b"fabric api")] = version_id
+        panel = FakePanel()
+        panel.files = {"fabric-api.jar": (b"fabric api", T0), "handmade.jar": (b"by hand", T0)}
+        service, server_id = await setup(panel, modrinth)
+        unlinked = await service.scan(server_id, actor=None)
+        await service.server_link_bundle(server_id, bundle_id, actor=OPERATOR)
+        linked = await service.scan(server_id, actor=None)
+        return unlinked.drift, linked.drift, (await service.scan_latest(server_id)).drift
+
+    unlinked, returned, stored = mongo(scenario)
+    assert unlinked is None
+    assert returned is not None and returned.startswith("⚠️") and "handmade.jar" in returned and stored == returned
+
+
+def test_comparison_names_versions_by_number_or_by_jar(mongo: MongoRunner) -> None:
+    """Version ids read as numbers: the server's from the catalog (the scan stored them), the
+    build's from its lock; a version neither knows reads as its jar's name."""
+    async def scenario() -> tuple[dict[str, str], dict[str, str], str]:
+        modrinth = HashModrinthAPI({})
+        bundle_id, version_id = await build_with_fabric_api(modrinth)
+        older = next(v for v in FABRIC_API_VERSIONS if v != version_id)
+        modrinth.known[sha1(b"old fabric api")] = older
+        panel = FakePanel()
+        panel.files = {"fabric-api.jar": (b"old fabric api", T0)}
+        service, server_id = await setup(panel, modrinth)
+        await service.scan(server_id, actor=EDITOR)
+        comparison = await service.compare(server_id, bundle_id)
+        labels = await service.compare_names(comparison)
+        numbers = {v["id"]: v["version_number"] for v in modrinth.versions}
+        [(file, _)] = comparison.different_version
+        unknown_version = file.model_copy(update={"version_id": "notInCatalog", "path": "/mods/mystery-1.0.jar"})
+        fallback = await service.compare_names(comparison.model_copy(update={"matching": [unknown_version]}))
+        return labels, {older: numbers[older], version_id: numbers[version_id]}, fallback["notInCatalog"]
+
+    labels, expected, fallback = mongo(scenario)
+    assert labels == expected and fallback == "mystery-1.0.jar"
+
+
 def test_linking_needs_an_existing_bundle_and_comparing_needs_a_link(mongo: MongoRunner) -> None:
     async def scenario() -> list[int]:
         service, server_id = await setup(FakePanel(), HashModrinthAPI({}))

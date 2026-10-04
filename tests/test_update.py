@@ -21,8 +21,9 @@ from src.database.modpack import ModpackDatabase
 from src.database.modrinth import ModrinthDatabase
 from src.database.pterodactyl import PterodactylDatabase
 from src.model.jobs import Job
+from src.library.scan import LocalFile
 from src.model.pterodactyl import PterodactylServer
-from src.services.jobs import JobWorker
+from src.services.jobs import JobService, JobWorker
 from src.services.pterodactyl import PterodactylService
 from src.services.update import UpdateService, UpdateTiming
 from tests._actors import OPERATOR, RecordingAudit
@@ -201,11 +202,47 @@ def test_what_aborts_does_so_before_any_write(case: str, mongo: MongoRunner) -> 
 
 
 def test_an_unexplained_jar_says_to_import_first(mongo: MongoRunner) -> None:
-    async def scenario() -> str:
+    async def scenario() -> tuple[str, str]:
         s = await setup(extra_files={"/mods/hecho-a-mano.jar": b"by hand"})
-        return (await s.run(dry_run=False)).error or ""
+        job = await s.run(dry_run=False)
+        return job.status, job.error or ""
 
-    assert "importar" in mongo(scenario)
+    status, error = mongo(scenario)
+    assert status == "failed" and "importa el servidor" in error and "/mods/hecho-a-mano.jar" in error
+    assert "crea un build nuevo" not in error
+
+
+def test_unexplained_jar_message_points_to_a_new_build_when_the_pack_has_it(mongo: MongoRunner) -> None:
+    """F26: the jar was imported (a local file of the bundle) after the build was made: the build
+    does not explain it, but importing again would change nothing. A new build does."""
+    async def scenario() -> tuple[str, str]:
+        jar = b"by hand"
+        s = await setup(extra_files={"/mods/hecho-a-mano.jar": jar})
+        bundle_id = (await PterodactylDatabase().server_get(s.server_id)).bundle_id
+        assert bundle_id is not None
+        await ModpackDatabase().bundle_local_file_add(bundle_id, LocalFile(
+            filename="hecho-a-mano.jar", sha512=sha512(jar), sha1=sha1(jar), size=len(jar)))
+        job = await s.run(dry_run=True)
+        return job.status, job.error or ""
+
+    status, error = mongo(scenario)
+    assert status == "failed" and "crea un build nuevo: el modpack ya lo incluye" in error
+    assert "/mods/hecho-a-mano.jar" in error and "importa el servidor" not in error
+
+
+def test_the_installed_build_is_the_last_real_update_that_finished(mongo: MongoRunner) -> None:
+    async def scenario() -> list[int | None]:
+        s = await setup()
+        jobs = JobService(jobDB=JobDatabase(), pterodactylService=s.update.servers, pterodactylDB=PterodactylDatabase(),
+                          audit=RecordingAudit())
+        seen = [await jobs.installed_build(s.server_id)]
+        await s.run()  # a dry run installs nothing
+        seen.append(await jobs.installed_build(s.server_id))
+        await s.run(dry_run=False)
+        seen.append(await jobs.installed_build(s.server_id))
+        return seen
+
+    assert mongo(scenario) == [None, None, 1]
 
 
 # Lo que sale mal con el servidor.

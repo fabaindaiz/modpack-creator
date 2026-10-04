@@ -133,9 +133,26 @@ class PterodactylService():
         stored = await self.pterodactylDB.scan_insert(ServerScan(
             server_id=server.id, directory=directory, scanned_at=datetime.now(timezone.utc),  # type: ignore[arg-type]
             full=full, files=files))
+        if directory == SCAN_DIRECTORY:
+            stored = await self._store_drift(server_id, stored)
         if actor is not None:
             await self.audit.record(actor, "server.scan", _target(server_id), {"directory": directory, "full": full})
         return stored
+
+    async def _store_drift(self, server_id: str, scan: ServerScan) -> ServerScan:
+        """Record on a new scan how it compares with the server's build (F37), whoever scanned:
+        the dashboard reads the latest scan's. Nothing for a server without a bundle with a build.
+        Comparing is a nicety here: if it fails, the scan stays, without it. The scan job's drift
+        step compares again and decides what to announce against the scan before this one."""
+        try:
+            drift = await self.drift(server_id)
+        except HTTPException:
+            logger.warning("comparing a new scan with its build failed", exc_info=True, extra={"server_id": server_id})
+            return scan
+        if drift is None:
+            return scan
+        await self.pterodactylDB.scan_set_drift(server_id, drift)
+        return scan.model_copy(update={"drift": drift})
 
     async def _hash(self, identifier: str, files: list[ListedFile]) -> list[ScanFile]:
         """Download each file and hash its bytes. The bytes are hashed, never opened or loaded."""
@@ -209,6 +226,22 @@ class PterodactylService():
         frozen = await self.modpackDB.build_get(bundle_id, number)
         scan = await self.scan_latest(server_id, directory)
         return compare(scan.files, frozen.lock.entries, frozen.local_files, bundle.claimed_files)
+
+    async def compare_names(self, comparison: Comparison) -> dict[str, str]:
+        """
+        What a person reads for each version id of a comparison (F20, F30): the catalog's version
+        number; else the build's, from its lock; else the name of the server's jar. Project titles
+        are not here: they come from ModrinthService.projects_filled. Only reads the catalog.
+        """
+        labels: dict[str, str] = {}
+        for file in [*comparison.matching, *(f for f, _ in comparison.different_version)]:
+            if file.version_id:
+                labels[file.version_id] = file.path.rsplit("/", 1)[-1]
+        for entry in [*(e for _, e in comparison.different_version), *comparison.missing]:
+            labels[entry.version_id] = entry.version_number or labels.get(entry.version_id, entry.version_id)
+        for version in await self.modrinthDB.version_find_by_version_ids(sorted(labels)):
+            labels[version.version_id] = version.version_number
+        return labels
 
     # Importing a server (i-7985ee-17745b, d-7985ee-c8a15d): its jars that the bundle does not
     # explain are brought into the bundle. Only reads the server.

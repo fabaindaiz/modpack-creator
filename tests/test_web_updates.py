@@ -139,6 +139,23 @@ def test_the_page_without_a_check_invites_to_search() -> None:
     assert "Crear build" not in response.text and modpack.previewed == []
 
 
+def test_updates_main_reloads_itself_when_the_check_ends_and_excludes_its_row() -> None:
+    import re
+
+    client, _, checks = setup()
+    checks.latest_check = check([update("A", "Sodium")])
+    text = client.get(f"/modpacks/{BUNDLE_ID}/actualizaciones").text
+    match = re.search(r'<[a-z]+ [^>]*id="updates-main"[^>]*>', text)
+    assert match
+    tag = match.group(0)
+    for attribute in (f'hx-get="/modpacks/{BUNDLE_ID}/actualizaciones"', 'hx-select="#updates-main"',
+                      'hx-trigger="job-finished from:body"', 'hx-swap="outerHTML"', 'hx-disinherit="*"'):
+        assert attribute in tag
+    # The check's row polls in #check-job, which stays outside: the reload never restarts it.
+    assert text.index('id="check-job"') < text.index(tag) < text.index("Sodium")
+    assert 'hx-target="#check-job"' in text
+
+
 def test_the_page_lists_updates_with_titles_pins_apart_and_the_resolution_note() -> None:
     client, modpack, checks = setup()
     checks.latest_check = check([update("A", "Sodium"), update("C", "Lithium", pinned=True)])

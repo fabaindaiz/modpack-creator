@@ -205,6 +205,16 @@ class JobService():
         """The server's active job, if any (scans, updates and rollbacks share its key)."""
         return await self.jobDB.active_for(f"server:{server_id}")
 
+    async def installed_build(self, server_id: str) -> Optional[int]:
+        """The build the panel last installed on the server: that of its newest real update, if it
+        ended done. None when the newest is not (it failed, is running, or was rolled back), or
+        when the panel never updated it: what was installed by hand is not known."""
+        last = await self.jobDB.last_real_update(f"server:{server_id}")
+        if last is None or last.kind != "server_update" or last.status != "done":
+            return None
+        build = last.payload.get("build")
+        return build if isinstance(build, int) else None
+
     async def rollback_state(self, server_id: str) -> Optional[RollbackState]:
         """What the panel offers to undo the server's last real update, if it failed
         (d-7985ee-5445a0): None when there is nothing to offer. The newest rollback or real update

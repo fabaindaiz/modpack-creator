@@ -114,6 +114,19 @@ def test_finished_job_row_stops_polling() -> None:
     assert response.status_code == 200 and "every 2s" not in response.text and "hx-get" not in response.text
 
 
+def test_finished_row_triggers_a_refresh_and_an_active_one_does_not() -> None:
+    """A finished row tells the page (`job-finished`, which #server-main listens for) once: it
+    does not poll again. An active one never does, or the page would reload every 2 s."""
+    client, jobs, *_ = setup()
+    jobs.jobs = [make_job(status="done", active=False)]
+    finished = client.get(f"/jobs/{jobs.jobs[0].id}/row")
+    jobs.jobs = [make_job(status="running", active=True)]
+    active = client.get(f"/jobs/{jobs.jobs[0].id}/row")
+    assert finished.headers["HX-Trigger"] == "job-finished" and "HX-Trigger" not in active.headers
+    jobs.jobs = [make_job(status="failed", active=False, error="boom")]
+    assert client.get(f"/jobs/{jobs.jobs[0].id}/row").headers["HX-Trigger"] == "job-finished"
+
+
 def test_job_row_shows_requested_by() -> None:
     client, jobs, *_ = setup()
     jobs.jobs = [make_job(requested_by=ActorRef(iss="i", sub="s", name="Ana"))]
@@ -386,7 +399,8 @@ def test_a_finished_dry_run_loads_its_changes_lazily(path: str) -> None:
     assert MODPACK.calls == []  # the page does not wait for Modrinth
     assert f'hx-get="/jobs/{jobs.jobs[0].id}/preview"' in text and 'hx-trigger="load"' in text
     assert "Cargando cambios" in text and 'id="changes"' not in text
-    assert text.index("Se instalan") < text.index("Cargando cambios")
+    # The change block first; the jar lists folded under it (F33).
+    assert text.index("Cargando cambios") < text.index("<details") < text.index("Se instalan")
 
 
 def test_the_preview_of_a_finished_dry_run_is_the_changes_of_the_build_it_simulated() -> None:

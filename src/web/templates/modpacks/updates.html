@@ -7,7 +7,11 @@
 {{ ui.link_button("Volver al modpack", "/modpacks/" ~ bundle_id) }}
 {% endcall %}
 
-<div class="space-y-6">
+{# The check's row polls in #check-job, outside #updates-main: when the check ends, its row sends
+   `job-finished` and the sections reload from the page (F19), without restarting the polling. #}
+<div id="check-job" class="space-y-2" aria-live="polite"></div>
+
+<div id="updates-main" class="space-y-6" hx-get="/modpacks/{{ bundle_id }}/actualizaciones" hx-select="#updates-main" hx-trigger="job-finished from:body" hx-swap="outerHTML" hx-disinherit="*">
   {% call ui.section("Revisión", id="revision") %}
   <div class="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
     {% if check is none %}
@@ -23,7 +27,6 @@
     <div class="flex flex-wrap items-center gap-2">
       {{ ui.button("Buscar actualizaciones", kind="secondary", attrs={"hx-post": "/modpacks/" ~ bundle_id ~ "/actualizaciones/buscar", "hx-target": "#check-job", "hx-swap": "innerHTML"}) }}
     </div>
-    <div id="check-job" aria-live="polite"></div>
   </div>
   {% endcall %}
 
