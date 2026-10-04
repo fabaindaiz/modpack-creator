@@ -253,6 +253,28 @@ def test_error_from_a_service_without_htmx_is_a_page_with_the_notice() -> None:
     assert "<html" in response.text and "No existe" in response.text and "Editor" in response.text
 
 
+@pytest.mark.parametrize("status", [429, 502, 503, 504])
+def test_an_upstream_error_is_a_notice_not_a_500(status: int) -> None:
+    from fastapi import HTTPException
+
+    _, modpack, jobs = default_fakes()
+    fakes = (FailingPterodactyl(HTTPException(status, "Modrinth <b>caído</b>")), modpack, jobs)
+    response = client(EDITOR, fakes).get("/", headers={"HX-Request": "true"})
+    assert response.status_code == status
+    assert "data-notice" in response.text and "<html" not in response.text
+    assert "Un servicio externo no respondió; intenta de nuevo." in response.text
+    assert "Modrinth &lt;b&gt;caído&lt;/b&gt;" in response.text
+    page = client(EDITOR, fakes).get("/")
+    assert page.status_code == status and "<html" in page.text and "Un servicio externo no respondió" in page.text
+
+
+def test_app_js_swaps_the_upstream_notices_too() -> None:
+    text = client(None).get("/static/app.js").text
+    line = next(l for l in text.splitlines() if "NOTICE_STATUSES =" in l)
+    for status in ("429", "502", "503", "504"):
+        assert status in line
+
+
 # Lecturas nuevas para el tablero, contra MongoDB real.
 
 

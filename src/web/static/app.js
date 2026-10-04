@@ -4,7 +4,7 @@
   'use strict';
 
   // Errors a route answers with a notice fragment (_notice.html): shown in #notices if HTML.
-  var NOTICE_STATUSES = [403, 404, 409, 422];
+  var NOTICE_STATUSES = [403, 404, 409, 422, 429, 502, 503, 504];
 
   function notices() {
     return document.getElementById('notices');

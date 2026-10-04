@@ -25,8 +25,11 @@ TEMPLATES_DIR = WEB_DIR / "templates"
 STATIC_DIR = WEB_DIR / "static"
 DIST_DIR = STATIC_DIR / "dist"
 
-# Errors a page shows as a notice: htmx swaps these into #notices (static/app.js).
-NOTICE_STATUSES = frozenset({403, 404, 409, 422})
+# Errors a page shows as a notice: htmx swaps these into #notices (static/app.js). 429 and 5xx
+# are the upstream's (Modrinth, Pterodactyl) passed through by the clients: not a bug of ours.
+NOTICE_STATUSES = frozenset({403, 404, 409, 422, 429, 502, 503, 504})
+UPSTREAM_STATUSES = frozenset({429, 502, 503, 504})
+UPSTREAM_DOWN = "Un servicio externo no respondió; intenta de nuevo."
 # What a request that fails validation is told. Never FastAPI's error list: it echoes the input.
 INVALID_FORM = "Revisa los datos del formulario."
 
@@ -145,7 +148,7 @@ def _notice_response(request: Request, message: str, status: int) -> Optional[Re
 
 
 class WebRoute(APIRoute):
-    """A panel route: a 403, 404, 409 or 422 from a service, or a request that fails validation
+    """A panel route: a 403, 404, 409 or 422 from a service (or a 429/502/503/504 from upstream), or a request that fails validation
     (422, with a fixed message), is shown as a notice: a fragment for htmx (static/app.js swaps
     it into #notices), a page with the layout otherwise."""
 
@@ -159,6 +162,8 @@ class WebRoute(APIRoute):
                 if error.status_code not in NOTICE_STATUSES:
                     raise
                 message = str(error.detail) if error.detail else "No se pudo completar la acción."
+                if error.status_code in UPSTREAM_STATUSES:
+                    message = f"{UPSTREAM_DOWN} {error.detail}" if error.detail else UPSTREAM_DOWN
                 response = _notice_response(request, message, error.status_code)
                 if response is None:
                     raise
