@@ -828,3 +828,81 @@ def test_pin_with_bad_id_or_foreign_version_writes_nothing(mongo: MongoRunner) -
     assert wrote == {} and events == 0
     assert calls == []
     assert pins == {"AANobbMI": "v4PSXean"}
+
+
+# Comparar dos builds (N3).
+
+def preview(changelog: Optional[str] = "Arregla un crash", failed: bool = False) -> Any:
+    from src.library.changes import Change, ChangeSet
+    from src.services.modpack import ChangePreview
+
+    changes = ChangeSet(added=[Change("P3", None, "v-new")], removed=[Change("P2", "v-p2", None)],
+                        changed=[Change("P1", "v-old", "v-p1")], unchanged=4)
+    return ChangePreview(changes=changes, changelogs={"v-p1": changelog, "v-new": None},
+                         failed={"v-p1"} if failed else set())
+
+
+def test_the_builds_list_offers_to_compare_two_builds() -> None:
+    client, _, _ = setup()
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert f'action="/modpacks/{BUNDLE_ID}/builds/compare"' in text and 'method="get"' in text
+    assert 'name="de"' in text and 'name="a"' in text
+
+
+def test_compare_shows_the_four_sections_with_titles_and_changelogs() -> None:
+    client, modpack, _ = setup()
+
+    async def compare(bundle_id: str, de: int, a: int) -> Any:
+        modpack.calls.append(("compare_builds", bundle_id, de, a))
+        return preview()
+
+    modpack.compare_builds = compare  # type: ignore[attr-defined]
+    response = client.get(f"/modpacks/{BUNDLE_ID}/builds/compare", params={"de": 1, "a": 2})
+    assert response.status_code == 200 and call(modpack, "compare_builds") == ("compare_builds", str(BUNDLE_ID), 1, 2)
+    text = response.text
+    for heading in ("Agregados", "Quitados", "Cambiados", "Sin cambios"):
+        assert heading in text
+    assert "Sodium" in text and "v-old" in text and "v-p1" in text
+    assert "Arregla un crash" in text and "whitespace-pre-wrap" in text
+    assert "sin changelog" in text  # P3: Modrinth no tiene texto
+    assert "https://modrinth.com/project/P1/changelog" in text
+
+
+def test_compare_marks_a_changelog_modrinth_could_not_give() -> None:
+    client, modpack, _ = setup()
+
+    async def compare(bundle_id: str, de: int, a: int) -> Any:
+        return preview(None, failed=True)
+
+    modpack.compare_builds = compare  # type: ignore[attr-defined]
+    text = client.get(f"/modpacks/{BUNDLE_ID}/builds/compare", params={"de": 1, "a": 2}).text
+    assert "changelog no disponible" in text
+
+
+def test_a_huge_changelog_with_html_is_cut_and_escaped() -> None:
+    client, modpack, _ = setup()
+    evil = "<script>alert(1)</script>" + "a" * 10_000 + "FIN"
+
+    async def compare(bundle_id: str, de: int, a: int) -> Any:
+        return preview(evil)
+
+    modpack.compare_builds = compare  # type: ignore[attr-defined]
+    text = client.get(f"/modpacks/{BUNDLE_ID}/builds/compare", params={"de": 1, "a": 2}).text
+    assert "<script>alert" not in text and "&lt;script&gt;alert(1)&lt;/script&gt;" in text
+    assert "FIN" not in text and text.count("a" * 100) <= 40 and "a" * 4000 not in text
+
+
+def test_compare_of_a_missing_build_is_a_notice() -> None:
+    client, modpack, _ = setup()
+
+    async def compare(bundle_id: str, de: int, a: int) -> Any:
+        raise HTTP_404_NOT_FOUND("Bundle has no build 9")
+
+    modpack.compare_builds = compare  # type: ignore[attr-defined]
+    response = client.get(f"/modpacks/{BUNDLE_ID}/builds/compare", params={"de": 1, "a": 9})
+    assert response.status_code == 404 and "no build 9" in response.text and "<nav" in response.text
+
+
+def test_compare_needs_both_builds() -> None:
+    client, _, _ = setup()
+    assert client.get(f"/modpacks/{BUNDLE_ID}/builds/compare", params={"de": 1}).status_code == 422

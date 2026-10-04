@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% set nav_active = "modpacks" %}
+{% block title %}Comparar builds de {{ bundle.name }}{% endblock %}
+
+{% block content %}
+{% call ui.page_header("Build #" ~ de ~ " → #" ~ a, bundle.name) %}
+{{ ui.link_button("Volver al modpack", "/modpacks/" ~ bundle_id) }}
+{% endcall %}
+{% if de == a %}<p class="text-sm text-zinc-600 dark:text-zinc-400">Es el mismo build: no hay nada que cambie.</p>{% endif %}
+{% include "modpacks/_changes.html" %}
+{% endblock %}

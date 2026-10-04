@@ -1,9 +1,13 @@
+import asyncio
+import logging
 import re
 from datetime import datetime, timezone
 from typing import Optional
+from pydantic import BaseModel
 from src.database import ModpackDatabase, ModrinthDatabase
 from src.library.api.client.loaders import LoaderMetaAPI
 from src.library.api.client.modrinth import ModrinthAPI
+from src.library.changes import ChangeSet, diff_entries
 from src.library.mrpack import mrpack_index, write_mrpack
 from src.services.jobs import NotificationSink
 from src.library.resolution import Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, resolve
@@ -24,6 +28,20 @@ MAX_DECISIONS = 500
 
 def candidate(version: ModrinthVersion) -> Candidate:
     return Candidate.from_modrinth({**version.model_dump(mode="json"), "id": version.version_id})
+
+logger = logging.getLogger("modpack.changes")
+# How many changelogs are asked of Modrinth at once.
+CHANGELOG_CONCURRENCY = 8
+
+
+class ChangePreview(BaseModel):
+    """What changes between two locks, with the changelog of each version that arrives."""
+    changes: ChangeSet
+    # Version id -> Markdown, or None if Modrinth has no text for it. Versions in `failed` are absent.
+    changelogs: dict[str, Optional[str]]
+    # Versions whose changelog could not be read (Modrinth down, or it does not know the version).
+    failed: set[str]
+
 
 class ModpackService():
     def __init__(self,
@@ -308,6 +326,50 @@ class ModpackService():
         bundle = await self.modpackDB.bundle_recommend_build(bundle_id, number)
         await self.audit.record(actor, "build.recommend", _bundle(bundle_id), {"number": number})
         return bundle
+
+    # Changes between locks (N3).
+
+    async def change_preview(self, before: Lock, after: Lock) -> ChangePreview:
+        """
+        What changes from one lock to another, with the changelogs of the versions that arrive.
+
+        A changelog comes from the catalog, or else from Modrinth, and is then kept in the catalog.
+        A read that fails marks its version in `failed`: the preview never raises for it. Like
+        `resolve`, it writes only to the catalog of Modrinth data.
+        """
+        changes = diff_entries({e.project_id: e.version_id for e in before.entries},
+                               {e.project_id: e.version_id for e in after.entries})
+        arriving = sorted({c.to_version for c in changes.added + changes.changed if c.to_version})
+        gate = asyncio.Semaphore(CHANGELOG_CONCURRENCY)
+
+        async def fetch(version_id: str) -> tuple[str, Optional[str], bool]:
+            async with gate:
+                try:
+                    return version_id, await self._changelog(version_id), False
+                except Exception:
+                    logger.warning("changelog of %s not available", version_id, exc_info=True)
+                    return version_id, None, True
+
+        results = await asyncio.gather(*[fetch(v) for v in arriving])
+        return ChangePreview(changes=changes, changelogs={v: text for v, text, failed in results if not failed},
+                             failed={v for v, _, failed in results if failed})
+
+    async def _changelog(self, version_id: str) -> Optional[str]:
+        """The changelog of a version, None if it has none. The catalog first; else Modrinth, and
+        the version is stored with it (an empty text, so a version without one is not asked again)."""
+        stored = await self.modrinthDB.version_find_by_version_id(version_id)
+        if stored is not None and stored.changelog is not None:
+            return stored.changelog or None
+        version = await self.modrinthAPI.version_get(version_id)
+        version.changelog = version.changelog or ""
+        await self.modrinthDB.version_upsert_many([version])
+        return version.changelog or None
+
+    async def compare_builds(self, bundle_id: str, from_number: int, to_number: int) -> ChangePreview:
+        """The change from one build of the bundle to another; 404 if either does not exist."""
+        before = await self.modpackDB.build_get(bundle_id, from_number)
+        after = before if to_number == from_number else await self.modpackDB.build_get(bundle_id, to_number)
+        return await self.change_preview(before.lock, after.lock)
 
     # Global replacement rules (d-7985ee-86fffa).
 

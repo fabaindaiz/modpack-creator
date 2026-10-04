@@ -23,7 +23,9 @@ from src.model import init_databases
 from src.model.audit import AuditEvent, AuditTarget
 from src.model.jobs import Job
 from src.library.scan import LocalFile, ScanFile
-from src.model.modpack import ModpackBundle, ModpackReplacement, PackProject, ProjectOrigin
+from src.library.resolution import Lock, LockEntry, ResolveRequest, Target
+from src.model.modpack import ModpackBuild, ModpackBundle, ModpackReplacement, PackProject, ProjectOrigin
+from src.model.modrinth import ModrinthVersion
 from src.model.pterodactyl import PterodactylServer, ServerScan
 from src.model.users.actor import ActorRef
 from src.model.utils import MinecraftLoaders
@@ -66,6 +68,34 @@ def app_env(mongo_uri: str) -> dict[str, str]:
     }
 
 
+def _entry(project_id: str, version_id: str) -> LockEntry:
+    return LockEntry(project_id=project_id, origin="pack", version_id=version_id, version_number=version_id,
+                     file=None, environment="client_and_server", server="include", reason="en el pack",
+                     requested_by=[])
+
+
+async def seed_builds(bundle: ModpackBundle) -> None:
+    """Two builds whose locks differ, and the changelogs of what arrives in the catalog, so the
+    comparison page needs no network: one long, one with HTML, one without text."""
+    request = ResolveRequest(target=Target(game_version="26.3", loader="fabric", channels=frozenset({"release"})),
+                             projects=[])
+    locks = {1: [_entry("sodium", "sod-1"), _entry("gone-mod", "gone-1"), _entry("steady", "st-1")],
+             2: [_entry("sodium", "sod-2"), _entry("new-mod", "new-1"), _entry("steady", "st-1")]}
+    for number, entries in locks.items():
+        await ModpackBuild(bundle_id=bundle.id, number=number, created_at=datetime.now(timezone.utc),  # type: ignore[arg-type]
+                           loader_version="0.16.0", request=request,
+                           lock=Lock(entries=entries, problems=[], suggestions=[], needs_projects=set(),
+                                     needs_types=set(), needs_versions=set())).insert()
+    texts = {"sod-2": "## Arreglos\n" + "- un cambio con un texto bastante largo para ver cómo se parte la línea\n" * 120,
+             "new-1": "<script>alert(1)</script> <b>no es HTML</b> " + "x" * 5000, "gone-1": ""}
+    for version_id, text in texts.items():
+        await ModrinthVersion.parse(
+            id=version_id, project_id=version_id.split("-")[0], author_id="a", name=version_id,
+            version_number=version_id, version_type="release", status="listed", downloads=1,
+            game_versions=["26.3"], loaders=["fabric"], featured=False, date_published="2026-01-01T00:00:00Z",
+            dependencies=[], files=[], changelog=text).insert()
+
+
 async def seed(mongo_uri: str) -> dict[str, str]:
     """Demo data through the app's own models; returns the ids the sweep visits."""
     now = datetime.now(timezone.utc)
@@ -82,6 +112,7 @@ async def seed(mongo_uri: str) -> dict[str, str]:
     small = ModpackBundle(name="Creativo", description="", version="26.2", loader=MinecraftLoaders.neoforge)
     await big.insert()
     await small.insert()
+    await seed_builds(big)
     await ModpackReplacement(project_id="optifine", replacement="sodium").insert()
     servers = []
     for i, (name, bundle) in enumerate([("Survival", big), (LONG_NAME, big), ("Creativo", small)]):
@@ -151,6 +182,7 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
     from playwright.sync_api import sync_playwright
 
     pages = {"home": "/", "modpacks": "/modpacks", "modpack": f"/modpacks/{ids['bundle']}",
+             "compare": f"/modpacks/{ids['bundle']}/builds/compare?de=1&a=2",
              "replacements": "/replacements", "servers": "/servers", "server": f"/servers/{ids['server']}",
              "jobs": "/jobs", "job": f"/jobs/{ids['job']}", "audit": "/audit"}
     report: dict[str, dict[str, Any]] = {}
@@ -170,7 +202,7 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
                         page.on("console", lambda m, errors=errors: errors.append(m.text) if m.type == "error" else None)
                         for name, path in pages.items():
                             response = page.goto(base + path)
-                            if not page.url.split("?")[0].endswith(path):
+                            if not page.url.split("?")[0].endswith(path.split("?")[0]):
                                 raise RuntimeError(f"{path} terminó en {page.url}: una redirección no es una página revisada")
                             page.wait_for_timeout(300)
                             overflow = page.evaluate(

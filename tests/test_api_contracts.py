@@ -150,6 +150,19 @@ def test_project_versions_ask_for_all_versions_without_changelogs(mongo: MongoRu
     assert [v.version_id for v in result] == ["v1"]
 
 
+def test_a_version_is_read_by_id_with_its_changelog(mongo: MongoRunner) -> None:
+    """openapi v2.7.0: `GET /version/{id}` devuelve el Version completo; `changelog` es Markdown y
+    puede ser null."""
+    result, seen = mongo(lambda: serve(
+        {("GET", "/version/v1"): json_reply({**VERSION, "changelog": "## Arreglos\n- un crash"})},
+        lambda base: modrinth(base).version_get("v1")))
+    assert [(s.method, s.path, s.query) for s in seen] == [("GET", "/version/v1", {})]
+    assert (result.version_id, result.changelog) == ("v1", "## Arreglos\n- un crash")
+    nothing, _ = mongo(lambda: serve({("GET", "/version/v1"): json_reply({**VERSION, "changelog": None})},
+                                     lambda base: modrinth(base).version_get("v1")))
+    assert nothing.changelog is None
+
+
 def test_search_sends_the_query_and_facets_as_a_json_array() -> None:
     hits = [{"project_id": "gvQqBUqZ", "slug": "lithium", "title": "Lithium", "project_type": "mod"}]
     result, seen = run({("GET", "/search"): json_reply({"hits": hits, "offset": 0, "limit": 3, "total_hits": 1})},

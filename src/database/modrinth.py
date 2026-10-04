@@ -13,9 +13,16 @@ from src.exceptions import *
 
 class ModrinthDatabase():
     @staticmethod
-    async def _upsert[D: Document](query: FindOne[D], document: D) -> None:
-        """Insert the document, or set every field of the one the query finds to its values."""
-        await query.upsert({"$set": document.model_dump(exclude={"id", "revision_id"})}, on_insert=document)
+    async def _upsert[D: Document](query: FindOne[D], document: D, keep: frozenset[str] = frozenset()) -> None:
+        """Insert the document, or set every field of the one the query finds to its values.
+
+        A field in `keep` that is None here is left as stored: what a fuller read saved is not
+        erased by a refresh that never carried it."""
+        values = document.model_dump(exclude={"id", "revision_id"})
+        for name in keep:
+            if values.get(name) is None:
+                values.pop(name, None)
+        await query.upsert({"$set": values}, on_insert=document)
 
     def project_find(self,
             project_ids: Optional[list[str]] = None,
@@ -133,7 +140,7 @@ class ModrinthDatabase():
         :return: The stored ModrinthVersion objects.
         """
         versions = list({v.version_id: v for v in versions}.values())
-        await asyncio.gather(*[self._upsert(ModrinthVersion.find_one(ModrinthVersion.version_id == version.version_id), version) for version in versions])
+        await asyncio.gather(*[self._upsert(ModrinthVersion.find_one(ModrinthVersion.version_id == version.version_id), version, keep=frozenset({"changelog"})) for version in versions])
         return await ModrinthVersion.find(In(ModrinthVersion.version_id, [v.version_id for v in versions])).to_list()
 
     async def version_save(self, version: ModrinthVersion, version_id: Optional[PydanticObjectId] = None) -> ModrinthVersion:

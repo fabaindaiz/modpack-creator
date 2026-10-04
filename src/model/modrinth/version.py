@@ -59,6 +59,9 @@ class ModrinthVersion(Document):
     date_published: datetime
     dependencies: list[ModrinthVersionDependency]
     files: list[ModrinthVersionFile]
+    # Markdown, as Modrinth has it. Missing on documents stored before it was kept, and never in
+    # a listing (include_changelog=false); an empty string is a version Modrinth has no text for.
+    changelog: Optional[str] = None
 
     class Settings:
         indexes = [

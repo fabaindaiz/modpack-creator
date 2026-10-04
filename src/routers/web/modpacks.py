@@ -370,6 +370,26 @@ async def build_recommend(
     await modpackService.build_recommend(bundle_id, number, actor)
     return await _builds(request, actor, modpackService, bundle_id)
 
+@router.get("/modpacks/{bundle_id}/builds/compare")
+@inject
+async def build_compare(
+        bundle_id: str,
+        request: Request,
+        de: Annotated[int, Query(ge=1)],
+        a: Annotated[int, Query(ge=1)],
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
+        ):
+    """What changes from build `de` to build `a`, with the changelogs of what arrives. A read:
+    Modrinth failing shows as "changelog no disponible", never as an error."""
+    bundle = await modpackService.bundle_get(bundle_id)
+    preview = await modpackService.compare_builds(bundle_id, de, a)
+    changes = preview.changes
+    titles = await _titles(modrinthService, [c.project_id for c in changes.added + changes.removed + changes.changed])
+    return render(request, "modpacks/compare.html", actor, bundle=bundle, bundle_id=bundle_id, preview=preview,
+                  titles=titles, de=de, a=a, nav_active="modpacks")
+
 @router.get("/modpacks/{bundle_id}/builds/{number}/mrpack")
 @inject
 async def build_mrpack(

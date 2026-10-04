@@ -28,4 +28,22 @@
   </tr>
   {% endfor %}
   {% endcall %}
+  {% if builds | length > 1 %}
+  <form method="get" action="/modpacks/{{ bundle_id }}/builds/compare" class="flex flex-wrap items-end gap-2">
+    {% set SELECT = "mt-1 block rounded-md border-0 bg-white px-2.5 py-1.5 text-sm text-zinc-900 shadow-xs ring-1 ring-inset ring-zinc-300 focus-visible:outline-2 focus-visible:outline-emerald-600 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-700" %}
+    <div>
+      <label for="compare-de" class="text-sm font-medium">Comparar el build</label>
+      <select id="compare-de" name="de" class="{{ SELECT }}">
+        {% for build in builds | reverse %}<option value="{{ build.number }}"{% if loop.first %} selected{% endif %}>#{{ build.number }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="compare-a" class="text-sm font-medium">con el build</label>
+      <select id="compare-a" name="a" class="{{ SELECT }}">
+        {% for build in builds | reverse %}<option value="{{ build.number }}"{% if loop.last %} selected{% endif %}>#{{ build.number }}</option>{% endfor %}
+      </select>
+    </div>
+    {{ ui.button("Comparar", kind="secondary", type="submit") }}
+  </form>
+  {% endif %}
 </div>
