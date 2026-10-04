@@ -53,6 +53,10 @@ def app_env(mongo_uri: str) -> dict[str, str]:
         "SESSION_HTTPS_ONLY": "false",
         "MONGODB_URI": mongo_uri,
         "PTERODACTYL_API_URL": "http://127.0.0.1:1/api/",
+        # Nothing the sweep does may reach a real host: Modrinth and the loader metadata too.
+        "MODRINTH_API_URL": "http://127.0.0.1:1/v2/",
+        "FABRIC_META_URL": "http://127.0.0.1:1/fabric/",
+        "QUILT_META_URL": "http://127.0.0.1:1/quilt/",
         "OIDC_CLIENT_ID": "x",
         "OIDC_CLIENT_SECRET": "x",
         "OIDC_METADATA_URL": "http://127.0.0.1:1/.well-known/openid-configuration",
@@ -164,6 +168,8 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
                         page.on("console", lambda m, errors=errors: errors.append(m.text) if m.type == "error" else None)
                         for name, path in pages.items():
                             response = page.goto(base + path)
+                            if not page.url.split("?")[0].endswith(path):
+                                raise RuntimeError(f"{path} terminó en {page.url}: una redirección no es una página revisada")
                             page.wait_for_timeout(300)
                             overflow = page.evaluate(
                                 "document.documentElement.scrollWidth - document.documentElement.clientWidth")
@@ -179,6 +185,12 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
 
 
 def main() -> int:
+    # The app runs from this directory and must never load the repository's `.env.yaml`.
+    repo = Path(__file__).resolve().parent.parent
+    if Path.cwd().resolve() == repo or Path(".env.yaml").exists():
+        print("visual_sweep.py: se corre con `scripts/visual-sweep.sh`, desde un directorio fuera del "
+              "repositorio y sin `.env.yaml`", file=sys.stderr)
+        return 2
     mongo_uri, out_arg = sys.argv[1], sys.argv[2]
     out = Path(out_arg)
     out.mkdir(parents=True, exist_ok=True)

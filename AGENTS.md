@@ -63,7 +63,7 @@ Decididas, no preferencias. `docs/decisions.md` indexa cada una con lo que la ha
   asociar un servidor exigen el rol de operador (`OIDC_OPERATOR_GROUPS`), y lo chequea el servicio
   con `operator_only`, no la ruta: si no, una ruta nueva, de `/v1` o del panel, lo salta. Una
   sesión sin `groups` es editor. Un método de servicio nuevo que escribe agrega su fila a
-  `## Acciones y roles` de `docs/decisions.md` en el mismo commit: sin ella falla el barrido. *Tests* `tests/test_roles.py`, `tests/test_routes_roles.py`
+  `## Acciones y roles` de `docs/decisions.md` en el mismo commit: sin ella falla el barrido (con los límites de `tests/test_routes_roles.py`). *Tests* `tests/test_roles.py`, `tests/test_routes_roles.py`
   (barrido de rutas), `tests/test_operator_actions.py` (d-7985ee-edef1e, d-7985ee-b4719f).
 - **Una petición insegura solo vale si viene del mismo origen, y toda respuesta lleva la CSP.**
   `Sec-Fetch-Site` distinto de `same-origin` (o un `Origin` ajeno) da 403; sin `<script>` ni

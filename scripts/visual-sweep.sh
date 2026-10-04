@@ -25,7 +25,16 @@ npm run build >&2
 py="$(hatch run visual:python -c 'import sys; print(sys.executable)' | tail -n 1)"
 port="$("$py" -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
 docker run -d --rm --name "$name" -p "127.0.0.1:$port:27017" docker.io/library/mongo:8.0 >/dev/null
-until docker exec "$name" mongosh --quiet --eval 'db.adminCommand("ping")' >/dev/null 2>&1; do sleep 1; done
+# Hasta 60 intentos, y se corta si el contenedor murió (un puerto ocupado, una imagen que no baja).
+ready=0
+for _ in $(seq 1 60); do
+  if docker exec "$name" mongosh --quiet --eval 'db.adminCommand("ping")' >/dev/null 2>&1; then ready=1; break; fi
+  if [ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null || echo false)" != "true" ]; then
+    echo "visual-sweep.sh: el contenedor de MongoDB terminó antes de responder" >&2; exit 1
+  fi
+  sleep 1
+done
+[ "$ready" = 1 ] || { echo "visual-sweep.sh: MongoDB no respondió en 60 s" >&2; exit 1; }
 
 echo "capturas en: $out" >&2
 cd "$work"
