@@ -6,6 +6,7 @@
 
 {% block content %}
 {% call ui.page_header(bundle.name, bundle.version ~ " · " ~ bundle.loader.value) %}
+{{ ui.link_button("Actualizaciones", "/modpacks/" ~ bundle_id ~ "/actualizaciones") }}
 {{ ui.link_button("Todos los modpacks", "/modpacks") }}
 {% endcall %}
 {% if bundle.description %}<p class="max-w-3xl text-sm break-words text-zinc-600 dark:text-zinc-400">{{ bundle.description }}</p>{% endif %}

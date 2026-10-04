@@ -24,7 +24,7 @@ from src.model.audit import AuditEvent, AuditTarget
 from src.model.jobs import Job
 from src.library.scan import LocalFile, ScanFile
 from src.library.resolution import Lock, LockEntry, ResolveRequest, Target
-from src.model.modpack import ModpackBuild, ModpackBundle, ModpackReplacement, PackProject, ProjectOrigin
+from src.model.modpack import AvailableUpdate, ModpackBuild, ModpackBundle, ModpackReplacement, PackProject, ProjectOrigin, UpdateCheck
 from src.model.modrinth import ModrinthVersion
 from src.model.pterodactyl import PterodactylServer, ServerScan
 from src.model.users.actor import ActorRef
@@ -115,6 +115,20 @@ async def seed(mongo_uri: str) -> dict[str, str]:
     await seed_builds(big)
     big.latest_build = big.recommended_build = 2
     await big.save()
+    # A check of the recommended build: two updates (their changelogs are in the catalog, so the page
+    # needs no network; sod-2's is the long one) and a pinned one.
+    await ModrinthVersion.parse(
+        id="lith-2", project_id="lith", author_id="a", name="lith-2", version_number="0.15.2", version_type="release",
+        status="listed", downloads=1, game_versions=["26.3"], loaders=["fabric"], featured=False,
+        date_published="2026-01-01T00:00:00Z", dependencies=[], files=[], changelog="Un arreglo pequeño").insert()
+    await UpdateCheck(bundle_id=big.id, build_number=2, checked_at=datetime.now(timezone.utc),  # type: ignore[arg-type]
+                      updates=[AvailableUpdate(project_id="sodium", title="Sodium", from_version="sod-1", to_version="sod-2",
+                                               from_version_id="sod-1", to_version_id="sod-2"),
+                               AvailableUpdate(project_id="lith", title="Lithium con un nombre bastante largo",
+                                               from_version="0.15.1", to_version="0.15.2",
+                                               from_version_id="lith-1", to_version_id="lith-2"),
+                               AvailableUpdate(project_id="iris", title="Iris", from_version="1.0", to_version="1.1",
+                                               pinned=True)]).insert()
     await ModpackReplacement(project_id="optifine", replacement="sodium").insert()
     servers = []
     for i, (name, bundle) in enumerate([("Survival", big), (LONG_NAME, big), ("Creativo", small)]):
@@ -189,6 +203,7 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
 
     pages = {"home": "/", "modpacks": "/modpacks", "modpack": f"/modpacks/{ids['bundle']}",
              "compare": f"/modpacks/{ids['bundle']}/builds/compare?de=1&a=2",
+             "updates": f"/modpacks/{ids['bundle']}/actualizaciones",
              "replacements": "/replacements", "servers": "/servers", "server": f"/servers/{ids['server']}",
              "jobs": "/jobs", "job": f"/jobs/{ids['job']}", "dryrun": f"/jobs/{ids['dryrun']}", "audit": "/audit"}
     report: dict[str, dict[str, Any]] = {}

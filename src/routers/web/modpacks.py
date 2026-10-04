@@ -7,7 +7,7 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from src.exceptions import HTTP_422_UNPROCESSABLE_ENTITY
-from src.dependences import Dependences, ModpackService, ModrinthService
+from src.dependences import Dependences, ModpackService, ModrinthService, UpdateCheckService
 from src.model.modpack import ModpackBundle, ModpackBundleCreate, ModpackBundlePatch, ProjectOrigin
 from src.model.modrinth.project import ModrinthEnvironment
 from src.model.users import Actor
@@ -357,6 +357,59 @@ async def build_create(
     """Freeze the lock as the next build; a 409 (undecided mods, problems) is shown as a notice."""
     await modpackService.build_create(bundle_id, actor)
     return await _builds(request, actor, modpackService, bundle_id)
+
+def _builds_page(request: Request, bundle_id: str) -> Response:
+    """Go to the builds of the modpack: htmx cannot follow a redirect to a page, it is told where to go."""
+    url = f"/modpacks/{bundle_id}#builds-section"
+    if request.headers.get("HX-Request"):
+        return Response(status_code=200, headers={"HX-Redirect": url})
+    return RedirectResponse(url, status_code=303)
+
+@router.get("/modpacks/{bundle_id}/actualizaciones")
+@inject
+async def update_page(
+        bundle_id: str,
+        request: Request,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
+        ):
+    """The latest check of the modpack's recommended build: what has a newer version, with the
+    changelogs. A read: Modrinth failing shows as "changelog no disponible", never as an error."""
+    bundle = await modpackService.bundle_get(bundle_id)
+    check = await updateCheckService.latest(bundle_id)
+    counted = [u for u in check.updates if not u.pinned] if check else []
+    pinned = [u for u in check.updates if u.pinned] if check else []
+    preview = await modpackService.update_preview(counted) if counted else None
+    return render(request, "modpacks/updates.html", actor, bundle=bundle, bundle_id=bundle_id, check=check,
+                  preview=preview, pinned=pinned, titles={u.project_id: u.title for u in counted},
+                  nav_active="modpacks")
+
+@router.post("/modpacks/{bundle_id}/actualizaciones/buscar")
+@inject
+async def update_search(
+        bundle_id: str,
+        request: Request,
+        actor: Actor = Depends(get_web_actor),
+        updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
+        ):
+    """Queue a check now; the answer is its row, which polls until it finishes. A 409 (the modpack
+    has an active job) is shown as a notice."""
+    job = await updateCheckService.enqueue(bundle_id, actor)
+    return render(request, "activity/_job_row.html", actor, job=job)
+
+@router.post("/modpacks/{bundle_id}/actualizaciones/build")
+@inject
+async def update_build(
+        bundle_id: str,
+        request: Request,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        ):
+    """Create a build with the same call as the builds section: it resolves again, so the result may
+    differ from the check (pins, replacements). It does not recommend it nor deploy it."""
+    await modpackService.build_create(bundle_id, actor)
+    return _builds_page(request, bundle_id)
 
 @router.post("/modpacks/{bundle_id}/builds/{number}/recommend")
 @inject

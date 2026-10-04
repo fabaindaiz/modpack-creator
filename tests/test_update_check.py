@@ -101,8 +101,10 @@ def test_a_build_of_three_mods_with_one_current_and_one_pinned_gives_two_updates
 
     check, api = mongo(scenario)
     assert check.build_number == 1 and check.error is None
-    assert check.updates == [AvailableUpdate(project_id="A", from_version="1.0", to_version="2.0", pinned=False, title="A"),
-                             AvailableUpdate(project_id="C", from_version="1.0", to_version="3.0", pinned=True, title="C")]
+    assert check.updates == [AvailableUpdate(project_id="A", from_version="1.0", to_version="2.0", pinned=False, title="A",
+                                            from_version_id="a1", to_version_id="a2"),
+                             AvailableUpdate(project_id="C", from_version="1.0", to_version="3.0", pinned=True, title="C",
+                                            from_version_id="c1", to_version_id="c2")]
     # Un solo grupo de loaders (los mods), con la versión del juego y los canales del bundle.
     assert api.calls == [{"hashes": ["h-A", "h-B", "h-C"], "loaders": ["fabric"], "game_versions": ["26.3"],
                           "version_types": ["release", "beta"]}]
@@ -209,7 +211,7 @@ def test_a_second_check_of_the_same_modpack_gives_a_readable_409(mongo: MongoRun
 
     first, (detail, events) = mongo(scenario)
     assert first.key.startswith("bundle:") and first.requested_by.sub == EDITOR.sub
-    assert "bundle:" in str(detail)
+    assert "Ya hay una revisión en curso" in str(detail)
     assert [e[0] for e in events] == ["bundle.update_check"]
 
 

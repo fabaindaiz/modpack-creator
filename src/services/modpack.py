@@ -11,7 +11,7 @@ from src.library.changes import ChangeSet, diff_entries
 from src.library.mrpack import mrpack_index, write_mrpack
 from src.services.jobs import NotificationSink
 from src.library.resolution import Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, resolve
-from src.model.modpack import ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, PackProject, ProjectOrigin
+from src.model.modpack import AvailableUpdate, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject, ModrinthVersion
 from src.model.audit import AuditTarget
 from src.model.users import Actor
@@ -410,6 +410,14 @@ class ModpackService():
         before = await self.modpackDB.build_get(bundle_id, from_number)
         after = before if to_number == from_number else await self.modpackDB.build_get(bundle_id, to_number)
         return await self.change_preview(before.lock, after.lock)
+
+    async def update_preview(self, updates: list[AvailableUpdate]) -> ChangePreview:
+        """What the updates of a check change, with the changelogs of the versions that arrive. An
+        update stored without version ids (before they were kept) is left out. A read."""
+        usable = [u for u in updates if u.from_version_id and u.to_version_id]
+        numbers = {i: n for u in usable for i, n in ((u.from_version_id, u.from_version), (u.to_version_id, u.to_version))}
+        return await self._preview({u.project_id: u.from_version_id for u in usable},
+                                   {u.project_id: u.to_version_id for u in usable}, numbers)
 
     async def server_change_preview(self, server_id: str, build_number: int) -> ChangePreview:
         """

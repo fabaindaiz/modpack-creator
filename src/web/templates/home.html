@@ -61,6 +61,10 @@
       <td class="break-words">
         <a href="/modpacks/{{ bundle.id }}" class="font-medium hover:underline">{{ bundle.name }}</a>
         <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ bundle.version }} · {{ bundle.loader.value }}</div>
+        {% set pending = update_counts.get(bundle.id | string, 0) %}
+        {% if pending %}
+        <a href="/modpacks/{{ bundle.id }}/actualizaciones" class="mt-1 inline-block">{{ ui.badge(pending ~ (" actualización" if pending == 1 else " actualizaciones"), "warning") }}</a>
+        {% endif %}
       </td>
       <td>
         {% if build %}

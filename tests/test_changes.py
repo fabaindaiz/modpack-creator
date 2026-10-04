@@ -323,3 +323,21 @@ def test_the_page_prints_version_numbers_and_the_timeout_text() -> None:
     text = env.get_template("modpacks/_changes.html").render(preview=preview, titles={})
     assert "1.0 → 1.1" in text and "— → va" in text and "vr → —" in text  # the id when there is no number
     assert text.count("tardó demasiado; vuelve a intentar") == 2 and "changelog no disponible" not in text
+
+
+@pytest.mark.network
+def test_update_preview_maps_a_check_to_changed_versions_with_numbers_and_skips_old_checks(mongo: MongoRunner) -> None:
+    from src.model.modpack import AvailableUpdate
+
+    async def scenario() -> Any:
+        api = FakeAPI({"a2": "Nuevo", "b2": None}, failing={"b2"})
+        updates = [AvailableUpdate(project_id="A", from_version="1.0", to_version="2.0", from_version_id="a1", to_version_id="a2"),
+                   AvailableUpdate(project_id="B", from_version="1.0", to_version="2.0", from_version_id="b1", to_version_id="b2"),
+                   AvailableUpdate(project_id="OLD", from_version="1", to_version="2")]  # sin ids: antes de guardarlos
+        return await service(api).update_preview(updates)
+
+    preview = mongo(scenario)
+    assert [(c.project_id, c.from_version, c.to_version) for c in preview.changes.changed] == [("A", "a1", "a2"), ("B", "b1", "b2")]
+    assert preview.changes.added == [] and preview.changes.removed == []
+    assert preview.numbers["a2"] == "2.0" and preview.numbers["a1"] == "1.0"
+    assert preview.changelogs == {"a2": "Nuevo"} and preview.failed == {"b2"}

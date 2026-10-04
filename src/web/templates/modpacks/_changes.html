@@ -47,11 +47,15 @@
 {% endmacro %}
 
 <div id="changes" class="space-y-4">
+  {% if updates_only is not defined %}
   {{ group("Agregados", changes.added, True) }}
   {{ group("Quitados", changes.removed, False) }}
+  {% endif %}
   {{ group("Cambiados", changes.changed, True) }}
+  {% if updates_only is not defined %}
   <section aria-label="Sin cambios">
     <h3 class="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Sin cambios</h3>
     <p class="text-sm text-zinc-500 dark:text-zinc-400">{{ changes.unchanged }} archivos iguales {% if against_server is defined %}en el servidor y en el build{% else %}en los dos builds{% endif %}.</p>
   </section>
+  {% endif %}
 </div>

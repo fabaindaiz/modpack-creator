@@ -15,6 +15,10 @@ class AvailableUpdate(BaseModel):
     # The project's name for people; the id when the catalog does not have it (and for documents
     # stored before this field).
     title: str = ""
+    # Modrinth's version ids behind the numbers, to read the changelog of what arrives; empty for
+    # checks stored before these fields (their page shows no changelog).
+    from_version_id: str = ""
+    to_version_id: str = ""
 
     @model_validator(mode="after")
     def _title_falls_back_to_the_id(self) -> "AvailableUpdate":

@@ -60,6 +60,11 @@ class FakeModpack:
         return self.rows
 
 
+class FakeChecks:
+    async def latest_many(self, bundle_ids: list[str]) -> dict[PydanticObjectId, Any]:
+        return {}
+
+
 class FakeJobs:
     def __init__(self, jobs: list[Job]) -> None:
         self.jobs = jobs
@@ -87,7 +92,8 @@ def reset_overrides() -> Any:
     yield
     import main
 
-    for provider in (main.container.pterodactylService, main.container.modpackService, main.container.jobService):
+    for provider in (main.container.pterodactylService, main.container.modpackService, main.container.jobService,
+                     main.container.updateCheckService):
         provider.reset_override()
 
 
@@ -98,6 +104,7 @@ def client(actor: Optional[Actor], fakes: Optional[tuple[FakePterodactyl, FakeMo
     main.container.pterodactylService.override(providers.Object(pterodactyl))
     main.container.modpackService.override(providers.Object(modpack))
     main.container.jobService.override(providers.Object(jobs))
+    main.container.updateCheckService.override(providers.Object(FakeChecks()))
     # Sin `with`: el lifespan abriría MongoDB y el proveedor OIDC.
     test_client = TestClient(main.app, base_url="https://testserver", follow_redirects=False)
     if actor is not None:

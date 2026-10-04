@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% set nav_active = "modpacks" %}
+{% block title %}Actualizaciones de {{ bundle.name }}{% endblock %}
+
+{% block content %}
+{% call ui.page_header("Actualizaciones", bundle.name) %}
+{{ ui.link_button("Volver al modpack", "/modpacks/" ~ bundle_id) }}
+{% endcall %}
+
+<div class="space-y-6">
+  {% call ui.section("Revisión", id="revision") %}
+  <div class="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+    {% if check is none %}
+    <p class="text-zinc-600 dark:text-zinc-400">Todavía no se ha revisado este modpack. La revisión compara el build recomendado (o el último) con lo más nuevo que hay en Modrinth.</p>
+    {% else %}
+    <p>Última revisión: {{ ui.when(check.checked_at) }} · build <span class="font-medium tabular-nums">#{{ check.build_number }}</span></p>
+    {% if check.error %}
+    <p class="break-words text-red-700 dark:text-red-300" role="alert">No se pudo revisar: {{ check.error }}</p>
+    {% elif not check.updates %}
+    <p class="text-zinc-600 dark:text-zinc-400">Todo está al día: no hay versiones más nuevas.</p>
+    {% endif %}
+    {% endif %}
+    <div class="flex flex-wrap items-center gap-2">
+      {{ ui.button("Buscar actualizaciones", kind="secondary", attrs={"hx-post": "/modpacks/" ~ bundle_id ~ "/actualizaciones/buscar", "hx-target": "#check-job", "hx-swap": "innerHTML"}) }}
+    </div>
+    <div id="check-job" aria-live="polite"></div>
+  </div>
+  {% endcall %}
+
+  {% if preview is not none %}
+  {% call ui.section("Con versión nueva (" ~ (preview.changes.changed | length) ~ ")", id="actualizaciones") %}
+  {% set updates_only = true %}
+  {% include "modpacks/_changes.html" %}
+  <div class="space-y-2 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+    <p class="text-zinc-600 dark:text-zinc-400">El build nuevo sale de la resolución, no de esta lista: puede diferir (pins, reemplazos y lo que decidas para el servidor). Revisa el lock antes de recomendarlo. Crear el build no lo recomienda ni lo despliega.</p>
+    {{ ui.button("Crear build", attrs={"hx-post": "/modpacks/" ~ bundle_id ~ "/actualizaciones/build", "hx-confirm": "¿Crear un build nuevo con lo más reciente?"}) }}
+  </div>
+  {% endcall %}
+  {% endif %}
+
+  {% if pinned %}
+  {% call ui.section("Fijadas (" ~ (pinned | length) ~ ")", id="fijadas") %}
+  <p class="text-xs text-zinc-500 dark:text-zinc-400">Estas versiones están fijadas: hay una más nueva, pero no se cuentan ni se avisan.</p>
+  <ul class="divide-y divide-zinc-100 rounded-lg border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+    {% for u in pinned %}
+    <li class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-3 py-2">
+      <span class="min-w-0 font-medium break-words">{{ u.title }} {{ ui.badge("fijado", "neutral") }}</span>
+      <span class="text-xs whitespace-nowrap tabular-nums text-zinc-500 dark:text-zinc-400">{{ u.from_version }} → {{ u.to_version }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endcall %}
+  {% endif %}
+</div>
+{% endblock %}

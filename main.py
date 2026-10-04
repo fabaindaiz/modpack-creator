@@ -27,9 +27,12 @@ import src.model as model
 import asyncio
 from datetime import timedelta
 from src.services.jobs import JobWorker
+from src.services.update_check import schedule_from_env
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # First: a bad UPDATE_CHECK_AT or UPDATE_CHECK_TZ stops the start, before anything is opened.
+    update_schedule = schedule_from_env()
     dependences.configure_oauth2()
     await model.configure_beanie()
     include_routers_v1(app)
@@ -51,9 +54,14 @@ async def lifespan(app: FastAPI):
         scheduler = asyncio.create_task(container.jobService().run_scheduler(
             stop, every=timedelta(hours=float(scan_every)),
             full_every=timedelta(days=float(getenv("SCAN_FULL_EVERY_DAYS", "7")))))
+    # The daily check of each modpack's recommended build, only if UPDATE_CHECK_AT is set.
+    update_scheduler = None
+    if update_schedule is not None:
+        at, tz = update_schedule
+        update_scheduler = asyncio.create_task(container.updateCheckService().run_scheduler(stop, at, tz))
     yield
     stop.set()
-    for task in (worker, scheduler):
+    for task in (worker, scheduler, update_scheduler):
         if task is not None:
             await task
     await dependences.close_clients(container)

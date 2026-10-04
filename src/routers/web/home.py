@@ -4,7 +4,7 @@ from typing import Optional
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
-from src.dependences import Dependences, JobService, ModpackService, PterodactylService
+from src.dependences import Dependences, JobService, ModpackService, PterodactylService, UpdateCheckService
 from src.model.pterodactyl import PterodactylServer
 from src.model.users import Actor
 from src.web import WebRoute, get_web_actor, render
@@ -45,6 +45,7 @@ async def home(
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         jobService: JobService = Depends(Provide[Dependences.jobService]),
+        updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         ):
     """The dashboard: servers with their bundle and drift, each bundle's latest build, and the
     most recent jobs."""
@@ -53,5 +54,8 @@ async def home(
     servers = [await _server_row(pterodactylService, server, bundle_names)
                for server in await pterodactylService.server_find()]
     jobs = await jobService.recent(RECENT_JOBS)
-    return render(request, "home.html", actor, servers=servers, builds=builds, jobs=jobs,
+    # One query for every modpack; the pinned updates are shown on their page, never counted here.
+    checks = await updateCheckService.latest_many([str(bundle.id) for bundle, _ in builds])
+    update_counts = {str(bundle_id): sum(1 for u in check.updates if not u.pinned) for bundle_id, check in checks.items()}
+    return render(request, "home.html", actor, servers=servers, builds=builds, jobs=jobs, update_counts=update_counts,
                   server_names={str(row.server.id): row.server.name for row in servers})

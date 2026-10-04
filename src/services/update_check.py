@@ -6,8 +6,13 @@ marked `pinned` and is neither counted nor notified. A check is stored; a notifi
 only when the (non-pinned) updates differ from the last ones announced for that modpack.
 """
 import hashlib
+import asyncio
+import logging
+import re
 from collections import defaultdict
+from datetime import datetime, time, timezone, tzinfo
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 from beanie import PydanticObjectId
 from src.database.jobs import JobDatabase
 from src.database.modpack import ModpackDatabase
@@ -16,7 +21,7 @@ from src.database.update_check import UpdateCheckDatabase
 from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.resolution import Target
-from src.library.utils import utcnow
+from src.library.utils import getenv, getenv_opt, utcnow
 from src.model.audit import AuditTarget
 from src.model.jobs import Job
 from src.model.modpack import AvailableUpdate, UpdateCheck
@@ -25,6 +30,43 @@ from src.services.audit import AuditSink
 from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink
 
 DISCORD_LIMIT = 2000
+DEFAULT_TZ = "America/Santiago"
+CHECK_AT = re.compile(r"([01]\d|2[0-3]):([0-5]\d)")
+logger = logging.getLogger("modpack.update_check")
+
+def parse_check_at(value: str) -> time:
+    """`HH:MM`, 24 hours, two digits each; anything else is a ValueError that names the variable."""
+    found = CHECK_AT.fullmatch(value.strip())
+    if found is None:
+        raise ValueError(f"UPDATE_CHECK_AT must be HH:MM, 00:00 to 23:59 (got {value!r})")
+    return time(int(found.group(1)), int(found.group(2)))
+
+def schedule_from_env() -> Optional[tuple[time, ZoneInfo]]:
+    """The daily schedule from UPDATE_CHECK_AT and UPDATE_CHECK_TZ, None if UPDATE_CHECK_AT is not
+    set. A bad time or an unknown zone raises: the app must not start with a schedule that never runs."""
+    raw = getenv_opt("UPDATE_CHECK_AT")
+    if raw is None or not raw.strip():
+        return None
+    at = parse_check_at(raw)
+    name = getenv("UPDATE_CHECK_TZ", DEFAULT_TZ).strip()
+    try:
+        return at, ZoneInfo(name)
+    except (KeyError, ValueError, OSError) as error:  # ZoneInfoNotFoundError is a KeyError
+        raise ValueError(f"UPDATE_CHECK_TZ is not a known time zone (got {name!r})") from error
+
+def due_today(now_utc: datetime, at: time, tz: tzinfo, last_checked_at: Optional[datetime]) -> bool:
+    """True if the local time has passed `at` and the last check was on an earlier local date.
+    Dates are local to `tz`, never UTC: around Chile's clock changes the two differ in the evening,
+    and a check at 23:30 must not count as the next day's. A naive datetime is read as UTC."""
+    local_now = _as_utc(now_utc).astimezone(tz)
+    if local_now.time() < at:
+        return False
+    if last_checked_at is None:
+        return True
+    return _as_utc(last_checked_at).astimezone(tz).date() < local_now.date()
+
+def _as_utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
 
 def digest_of(updates: list[AvailableUpdate]) -> str:
     """What was announced: the non-pinned updates, as 'project:from>to', sorted, hashed."""
@@ -73,7 +115,8 @@ class UpdateCheckService():
                         and latest.version_id != entry.version_id):
                     updates.append(AvailableUpdate(
                         project_id=entry.project_id, from_version=entry.version_number,
-                        to_version=latest.version_number, pinned=entry.project_id in bundle.pins))
+                        to_version=latest.version_number, pinned=entry.project_id in bundle.pins,
+                        from_version_id=entry.version_id, to_version_id=latest.version_id))
         updates.sort(key=lambda u: u.project_id)
         titles = {p.project_id: p.title for p in await self.modrinthDB.project_find_by_modrinth_id([u.project_id for u in updates])}
         for update in updates:
@@ -84,12 +127,47 @@ class UpdateCheckService():
         """Queue a check of a modpack; 409 if it already has an active job (the key is shared with
         every job of the bundle). `actor` is None for the scheduler, which is not recorded."""
         await self.modpackDB.bundle_get(bundle_id)
-        job = await self.jobDB.enqueue("update_check", key=f"bundle:{bundle_id}",
-                                       payload={"bundle_id": bundle_id},
-                                       requested_by=actor.ref() if actor is not None else None)
+        try:
+            job = await self.jobDB.enqueue("update_check", key=f"bundle:{bundle_id}",
+                                           payload={"bundle_id": bundle_id},
+                                           requested_by=actor.ref() if actor is not None else None)
+        except HTTP_409_CONFLICT as error:
+            raise HTTP_409_CONFLICT("Ya hay una revisión en curso para este modpack") from error
         if actor is not None:
             await self.audit.record(actor, "bundle.update_check", AuditTarget(kind="bundle", id=bundle_id), {})
         return job
+
+    async def schedule(self, now: datetime, at: time, tz: tzinfo) -> list[Job]:
+        """Queue a check of every modpack with a build that has not been checked today (local
+        date). One without any build is skipped: it would fail every day. A modpack with an active
+        job is skipped too (409), and so is one another process queued first."""
+        bundles = [b for b in await self.modpackDB.bundle_find().to_list()
+                   if b.id is not None and (b.recommended_build or b.latest_build) is not None]
+        last = await self.checkDB.latest_many([b.id for b in bundles if b.id is not None])
+        queued = []
+        for bundle in bundles:
+            if bundle.id is None:
+                continue
+            checked = last.get(bundle.id)
+            if not due_today(now, at, tz, checked.checked_at if checked else None):
+                continue
+            try:
+                queued.append(await self.enqueue(str(bundle.id), actor=None))
+            except HTTP_409_CONFLICT:
+                continue
+        return queued
+
+    async def run_scheduler(self, stop: asyncio.Event, at: time, tz: tzinfo, check: float = 300.0) -> None:
+        """Call `schedule` every `check` seconds until `stop` is set."""
+        while not stop.is_set():
+            try:
+                await self.schedule(utcnow(), at, tz)
+            except Exception:
+                logger.exception("update check scheduler error")
+            try:
+                await asyncio.wait_for(stop.wait(), check)
+            except asyncio.TimeoutError:
+                pass
 
     async def latest(self, bundle_id: str) -> Optional[UpdateCheck]:
         if not PydanticObjectId.is_valid(bundle_id):
