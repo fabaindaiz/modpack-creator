@@ -90,25 +90,33 @@ contenedor viejo, y hace falta planificar otro hardware antes de desplegar esta 
 Los saltos, uno por versión mayor (… → 4.2 → 4.4 → 5.0), con el compose **viejo** (todavía sin
 `git pull`) y sobre su volumen anónimo:
 
-a. Parar la API vieja: `docker compose -f docker/docker-compose.yaml stop api`.
-b. Respaldar con el comando de "2. Respaldo" (la imagen 4.4 trae `mongodump`), otro nombre de archivo
-   por salto.
-c. Comprobar la FCV con el comando de "y para la FCV", más arriba: tiene que ser la de la versión
-   que corre (`"4.4"` corriendo 4.4). Si es menor, fijarla con el paso f para la versión que corre.
-d. Parar mongod limpiamente: `docker compose -f docker/docker-compose.yaml stop -t 120 mongodb`.
-e. En el `docker/docker-compose.yaml` viejo, cambiar el `image:` de `mongodb` (al principio,
-   `mongo:latest`) por la mayor siguiente (`image: mongo:5.0` desde 4.4) y levantar solo Mongo:
-   `docker compose -f docker/docker-compose.yaml up -d mongodb`. Compose recrea el contenedor
-   conservando sus volúmenes, también el anónimo (fuentes de arriba); confirmar con el comando de
-   "0. Antes" que `/data/db` sigue montado desde el mismo volumen. El compose viejo no tiene
-   healthcheck: esperar a que `db.version()` responda la versión nueva.
-f. Fijar la FCV de la versión nueva, sin `confirm` (con `mongo` hasta 4.4; en 5.0 sirve también
-   `mongosh`), al llegar a 5.0 (`"4.4"` al llegar a 4.4):
-   ```bash
-   docker exec modpack-mongodb mongo --quiet -u mongoadmin -p "$MONGODB_PASSWORD" \
-     --authenticationDatabase admin --eval 'db.adminCommand({ setFeatureCompatibilityVersion: "5.0" })'
-   ```
-g. Arrancar la API vieja: `docker compose -f docker/docker-compose.yaml up -d api`.
+**a.** Parar la API vieja: `docker compose -f docker/docker-compose.yaml stop api`.
+
+**b.** Respaldar con el comando de "2. Respaldo" (la imagen 4.4 trae `mongodump`), otro nombre de
+archivo por salto.
+
+**c.** Comprobar la FCV con el comando de "y para la FCV", más arriba: tiene que ser la de la
+versión que corre (`"4.4"` corriendo 4.4). Si es menor, fijarla con el paso **f.** para la versión
+que corre.
+
+**d.** Parar mongod limpiamente: `docker compose -f docker/docker-compose.yaml stop -t 120 mongodb`.
+
+**e.** En el `docker/docker-compose.yaml` viejo, cambiar el `image:` de `mongodb` (al principio,
+`mongo:latest`) por la mayor siguiente (`image: mongo:5.0` desde 4.4) y levantar solo Mongo:
+`docker compose -f docker/docker-compose.yaml up -d mongodb`. Compose recrea el contenedor
+conservando sus volúmenes, también el anónimo (fuentes de arriba); confirmar con el comando de
+"0. Antes" que `/data/db` sigue montado desde el mismo volumen. El compose viejo no tiene
+healthcheck: esperar a que `db.version()` responda la versión nueva.
+
+**f.** Fijar la FCV de la versión nueva, sin `confirm` (con `mongo` hasta 4.4; en 5.0 sirve
+también `mongosh`), al llegar a 5.0 (`"4.4"` al llegar a 4.4):
+
+```bash
+docker exec modpack-mongodb mongo --quiet -u mongoadmin -p "$MONGODB_PASSWORD" \
+  --authenticationDatabase admin --eval 'db.adminCommand({ setFeatureCompatibilityVersion: "5.0" })'
+```
+
+**g.** Arrancar la API vieja: `docker compose -f docker/docker-compose.yaml up -d api`.
 
 El cambio de `image:` es local, y `git pull` se niega a pisar un archivo con cambios locales: antes
 del `git pull` de "5. Desplegar", `git checkout -- docker/docker-compose.yaml` (el compose nuevo toma
@@ -212,7 +220,7 @@ En cada salto:
 1. **Parar la API**: `docker compose -f docker/docker-compose.yaml stop api`. Antes, comprobar
    que no hay trabajos activos (`/jobs`, filtrando por estado). `PTERODACTYL_WRITES` vacío es una
    segunda salvaguarda.
-2. **Respaldar**, con el comando del paso 2 y otro nombre de archivo por salto.
+2. **Respaldar**, con el comando de "2. Respaldo" y otro nombre de archivo por salto.
 3. **Comprobar la FCV.** Tiene que ser la de la versión que corre:
    ```bash
    docker exec modpack-mongodb mongosh --quiet -u mongoadmin -p "$MONGODB_PASSWORD" \
@@ -247,7 +255,8 @@ En cada salto:
    salto.
 
 Termina en `MONGO_VERSION=8.0` con FCV `"8.0"`. **Nunca** `docker compose … down -v`. Un salto que
-falla no se arregla bajando `MONGO_VERSION`: se restaura el respaldo del paso 2 en un volumen nuevo.
+falla no se arregla bajando `MONGO_VERSION`: se restaura el respaldo de ese salto (el de su paso 2)
+en un volumen nuevo.
 
 Fuentes por salto, consultadas el 2026-10-03:
 - a 8.0: [*Upgrade a Standalone to 8.0*](https://www.mongodb.com/docs/manual/release-notes/8.0-upgrade-standalone/):

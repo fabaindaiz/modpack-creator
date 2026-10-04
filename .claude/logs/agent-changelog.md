@@ -66,7 +66,15 @@ está al final del archivo, para que nada entre este párrafo y la primera entra
     (d-7985ee-cadd66), guardada como `UpdateCheck` y avisada por Discord;
   - N6: la programación diaria con `UPDATE_CHECK_AT` y `UPDATE_CHECK_TZ` (d-7985ee-2e2f58), la
     página `/modpacks/{id}/actualizaciones`, la insignia del tablero y "crear build";
-  - N7: decisiones, roadmap, plan, runbook y README.
+  - N7: decisiones, roadmap, plan, runbook y README;
+  - la ronda de la revisión final (2026-10-04): un `UPDATE_CHECK_AT` sin comillas impide arrancar
+    en vez de apagar la programación (N-R5: `load_env` sigue ignorando lo que no es texto, ahora
+    con un aviso que nombra la clave y nunca el valor); la vista previa del diálogo "Actualizar…"
+    se carga al abrirlo (`intersect once`) y no con cada visita, y sin escaneo o sin build es una
+    nota en el diálogo (200), no un aviso; cualquier falla de una revisión guarda un
+    `UpdateCheck` con su error; y `references.md`, los runbooks (pasos a–g como párrafos, el
+    chequeo de `payload.dry_run` antes de desplegar, la revisión manual que cuenta como la del
+    día) y el README.
 - **Documentos del lote:** [diseño](../../docs/superpowers/specs/2026-10-03-panel-web-next-design.md)
   y [plan](../../docs/superpowers/plans/2026-10-03-panel-web-next.md).
 - **Documentos de la sesión:** [diseño](../../docs/superpowers/specs/2026-10-02-panel-web-design.md),
@@ -146,14 +154,32 @@ sigue vacía. `AGENTS.md` suma dos invariantes (roles en los servicios, mismo or
   - N3 y N2: un error de Modrinth o Pterodactyl llegaba como un 500 genérico; ahora es un aviso;
   - dos shells o procesos de subagentes quedaron corriendo en lotes anteriores; se revisó y se
     limpió cada vez.
+- **En la ronda final del lote siguiente:**
+  - PyYAML (YAML 1.1) lee `UPDATE_CHECK_AT: 10:30` como 630 (base 60) y `load_env` lo ignoraba
+    sin decir nada: la programación quedaba apagada, contra d-7985ee-2e2f58. `04:30` o `09:30`
+    sin comillas sí quedan como texto, por el cero inicial, y por eso los tests no lo vieron;
+  - la vista previa del diálogo usaba `hx-trigger="load"` dentro del `<dialog>` cerrado: cada
+    visita de un operador pedía hasta 10 s de changelogs a Modrinth, y un servidor sin escanear
+    ponía un 409 en los avisos sin que nadie hubiera pulsado nada. Al cambiarlo apareció otro
+    error, ya existente desde N4: `app.js` cerraba el diálogo al terminar **cualquier** petición
+    de un elemento dentro de él, así que cambiar el build lo cerraba (y abrirlo, con la carga
+    perezosa, lo habría cerrado al instante). Ahora solo lo cierra la respuesta de su propio
+    formulario; el barrido visual abre el diálogo y falla si se cierra o si la vista previa carga
+    con la página (comprobado contra el `app.js` anterior: 6 problemas);
+  - el registro decía que un aviso que falla dejaba al programador reencolando cada 5 minutos:
+    no era así, `Notifier.notify` se traga sus errores. Lo que sí lo provocaba era MongoDB
+    fallando al leer el último aviso, al guardar el resultado o al releer el modpack en la rama
+    de error; ahora cualquier falla del paso guarda la revisión con su error.
 
 **Qué quedó sin hacer.**
 - ~~El detalle de un modpack no muestra los archivos locales, los canales ni los pins~~: hecho en
   el lote siguiente (N2).
-- De ese lote: si el aviso o el insert fallan tras calcular una revisión, no queda ningún
-  `UpdateCheck` y el programador reintenta cada 5 minutos contra Modrinth; una revisión manual
-  antes de `UPDATE_CHECK_AT` cuenta como la de hoy; las revisiones previas no tienen ids de versión
-  (sin changelogs); un pin sobrevive a quitar el proyecto.
+- De ese lote: ~~una falla tras calcular una revisión no deja ningún `UpdateCheck`~~ (hecho en la
+  ronda final; no era el aviso sino MongoDB); una revisión manual antes de `UPDATE_CHECK_AT`
+  cuenta como la de hoy (ahora documentado); las revisiones previas no tienen ids de versión (sin
+  changelogs); un pin sobrevive a quitar el proyecto.
+- `load_env` escribe en el log, en nivel `info`, el **valor** de una clave que ya estaba en el
+  entorno (y todo el archivo con `verbose`): puede ser un secreto. No se tocó en esta ronda.
 - Una consulta de títulos de Modrinth por fragmento y la espera secuencial del tablero (menores).
 - Los índices por `target_id` y por acción en la auditoría (se escanea la colección; chica).
 - Desplegar, y las comprobaciones de `desplegar-panel.md`.
@@ -183,6 +209,11 @@ sigue vacía. `AGENTS.md` suma dos invariantes (roles en los servicios, mismo or
   despliegue (índice nuevo de `UpdateCheck`, `UPDATE_CHECK_AT` y `UPDATE_CHECK_TZ` en el servidor);
   y qué trabajos de producción carecen de `payload.dry_run` (ahora se ven como simulación). La
   imagen arm64 sí carga `America/Santiago`.
+- **De la ronda final del lote:** que `intersect once` cargue la vista previa al abrir el diálogo
+  se comprobó solo en el Chromium sin interfaz del barrido (90 capturas, 0 problemas), no en
+  Firefox ni Safari; el `mongosh` del chequeo de `payload.dry_run` se probó contra un MongoDB 8.0
+  descartable, no contra producción; y qué `.env.yaml` de producción tiene valores sin comillas
+  (desde ahora cada uno deja un aviso en el log al arrancar).
 - **Pendiente del dueño:** `OIDC_OPERATOR_GROUPS: ""` en `.env.default`.
 
 ## 2026-10-01 · s-7985ee-2ab23b — Fase 3: importar servidores y actualizar con backup, verificación y rollback a pedido

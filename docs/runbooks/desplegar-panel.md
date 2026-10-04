@@ -42,6 +42,22 @@ Antes de empezar, si el servidor aún corre la versión anterior a la fase 0, se
    escribía en la API deja de poder hacerlo: tiene que servirse desde el mismo origen que la API.
 6. **Respaldo** de MongoDB, como en el paso 2 de `migrar-mongo-a-volumen.md`. El despliegue no toca
    ni borra documentos, pero es un cambio que sube a producción y el respaldo es barato.
+7. **Ningún trabajo `server_update` sin `payload.dry_run`.** Desde N1, un trabajo de
+   actualización sin esa clave cuenta como simulación en todos lados (falla cerrado): si una
+   actualización real vieja no la tuviera, el panel la mostraría como simulación y no ofrecería su
+   rollback. Con el `MONGODB_PASSWORD` de "1. Leer la versión que corre" de
+   `migrar-mongo-a-volumen.md` (base `jobs`, colección `Job`, como las registra
+   `src/model/__init__.py`):
+
+   ```bash
+   docker exec modpack-mongodb mongosh --quiet -u mongoadmin -p "$MONGODB_PASSWORD" \
+     --authenticationDatabase admin jobs \
+     --eval 'db.Job.countDocuments({kind:"server_update","payload.dry_run":{$exists:false}})'
+   ```
+
+   Tiene que dar `0`. Si da otro número, **no desplegar todavía**: listarlos (mismo comando con
+   `db.Job.find({kind:"server_update","payload.dry_run":{$exists:false}},{status:1,created_at:1,payload:1}).toArray()`)
+   y decidir con el dueño qué fue cada uno antes de seguir.
 
 ## 2. Qué cambia en MongoDB
 
@@ -80,6 +96,10 @@ ahora la API **no arranca** y los logs dicen `UPDATE_CHECK_AT debe ir entre comi
 (N-R5). `04:30` sin comillas sí queda como texto, por el cero inicial, pero no hay que contar con
 eso. Cualquier otra variable que YAML no lea como texto se sigue ignorando como antes, ahora con
 un aviso en los logs que nombra la variable (nunca su valor).
+
+Una revisión cuenta como la del día, sea programada o manual: una revisión hecha con el botón
+antes de `UPDATE_CHECK_AT` es la de ese día, y el programador no vuelve a revisar ese modpack
+hasta el día siguiente. Una revisión que falla también cuenta (queda guardada con su error).
 
 Una revisión solo lee Modrinth y guarda el resultado; no toca ningún servidor. Avisa por Discord
 (si hay `DISCORD_WEBHOOK_URL`) solo cuando las actualizaciones sin pin difieren de las del último

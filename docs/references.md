@@ -9,11 +9,18 @@ bien escrita. Todas se leyeron en la fuente primaria el 2026-10-01.
 - **[Modrinth API v2 — OpenAPI](https://docs.modrinth.com/openapi.yaml)** (v2.7.0) — los lotes por
   hash son `POST /version_files` y `POST /version_files/update` (plural); el cuerpo lleva `hashes`
   como array JSON de strings y `algorithm` (`sha1` o `sha512`); el de update suma `loaders` y
-  `game_versions` como arrays. `/version_file/{hash}` (singular) es para un solo hash. En
-  `GET /project/{id}/version`, `loaders` y `game_versions` van en la query como **strings con un
-  array JSON** (`'["fabric"]'`).
+  `game_versions` como arrays obligatorios, y `version_types` como array **opcional** de
+  `release`, `beta` o `alpha` (`GetLatestVersionsFromHashesBody`). `/version_file/{hash}`
+  (singular) es para un solo hash. En `GET /project/{id}/version`, `loaders` y `game_versions` van
+  en la query como **strings con un array JSON** (`'["fabric"]'`), e `include_changelog` (por
+  defecto `true`; la spec recomienda `false`) decide si cada versión trae `changelog`.
+  `GET /version/{id}` devuelve `Version`, con `changelog` (string, `nullable`) siempre presente.
+  Releído en la spec v2.7.0 el 2026-10-04.
 
-  **Lo que confirma:** `project_versions` en `src/library/api/client/modrinth.py`.
+  **Lo que confirma:** `project_versions` en `src/library/api/client/modrinth.py`, que pide
+  `include_changelog=false`: una versión del listado llega **sin** `changelog`, y la vista previa
+  de cambios lo pide con `GET /version/{id}` (`version_get`). `files_update_hash_post_many` manda
+  `version_types` solo si hay canales (los del modpack).
 
   **Lo que confirma:** los tres POST por hash de `src/library/api/client/modrinth.py`, con
   `tests/test_api_contracts.py` (S6). Las respuestas de los lotes son un mapa hash → versión
