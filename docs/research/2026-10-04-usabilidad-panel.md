@@ -157,3 +157,83 @@ Severidad: **A** bloquea o engaña · **M** cuesta pasos o confunde · **B** cos
 - No mostrar un id de Modrinth donde se puede mostrar un nombre o un número de versión.
 - No responder un error de una acción solo arriba de la página.
 - No dejar en una página una sección que dependa de un trabajo sin refrescarla al terminar.
+
+---
+
+## Ronda 2 (después de implementar la ronda 1, el mismo día)
+
+**Método:** el mismo que en la ronda 1, con la misma instancia descartable (Modrinth real y
+Pterodactyl simulado con jars reales), sobre la rama `panel-usabilidad` antes y después de las
+correcciones de la revisión final. Esta vez las acciones htmx se esperan por respuesta
+(`expect_response`), no por `networkidle`, y cada página registra las violaciones de CSP con un
+listener de `securitypolicyviolation`.
+
+### La tarea de F36, medida de nuevo
+
+| | Ronda 1 | Ronda 2 |
+|---|---|---|
+| Acciones | ~25 | **11** (3 de ellas son decisiones de un mod cada una) |
+| Cambios de página | 6 | **3** |
+| Callejones sin salida | 2 (409 invisible, simulación que pedía importar) | **0** |
+
+El recorrido de la ronda 2:
+1. agregar el servidor;
+2. "Escanear para deducir": el formulario se rellena solo, con "8 de 8 jars identificados son
+   fabric; 8 de 8 soportan 1.21.1";
+3. "Crear y vincular": crea, vincula e importa 8 mods y el archivo local;
+4. "Resolver y crear build →";
+5. "Crear build": el diálogo pide decidir 3 mods; "Decidir y crear build";
+6. "Simular en Survival →";
+7. "Simular actualización", que termina listo.
+
+### Qué quedó resuelto
+
+- **Ficha y nombres:** F01, F12, F13, F14, F20, F30 y F35. La comparación del servidor muestra
+  "tiene 19.57.0.450; el build espera 19.51.0.418", ya no ids de versión.
+- **Crear en el momento:** F18, F23 y F25.
+- **Estado vivo:** F19 (la página se refresca al terminar un trabajo), F39 (la resolución se
+  guarda) y F37 (el tablero ya no dice "Sin comparar" a un servidor comparado).
+- **Avisos:** F11 (junto al formulario o en la esquina), F17 (en español, con detalle saneado) y
+  F34 (pasos traducidos).
+- **Mensajes y textos:** F26 (el mensaje apunta al arreglo correcto) y F21 ("solo cliente: no va
+  en el servidor").
+- **Resto:** F02 ("Ya está"), F05 (selector de versiones), F06 (secciones vacías plegadas) y F42
+  ("Buscar actualizaciones de mods").
+
+### Lo nuevo encontrado
+
+- **N1 (A, corregido en la rama):** el refresco tras un trabajo violaba la CSP. htmx copia, al
+  hacer *settle*, los atributos de `htmx.config.attributesToSettle` entre elementos con el mismo id,
+  y `style` está en esa lista por defecto. Al reemplazar `#server-main` con el formulario "Nuevo
+  modpack" ya presente, el navegador bloqueaba un `style` inline. Se quitó `style` de esa lista en
+  el `htmx-config`. **Solo apareció usando la app con un flujo real:** el barrido con datos
+  sembrados no refresca una página con inputs ya presentes.
+- **N2 (M, corregido en la rama):** la revisión final de la rama encontró que un mod quitado seguía
+  en la lista como "dependencia", y que el estado "El servidor coincide…" (de tono éxito) se cerraba
+  solo tras un refresco. Ahora la lista muestra como dependencia solo lo que la resolución trajo
+  como tal, y el cierre automático vale solo para avisos de acción (`data-notice-autoclose`).
+- **N3 (M, ronda 2):** los resultados de la búsqueda quedan abiertos después de agregar, así que
+  la lista de mods queda bajo el pliegue.
+- **N4 (M, ronda 2):** la vista previa sigue mostrando una baja de versión (JEI 19.57 → 19.51) sin
+  advertirla (F27, ya en el roadmap).
+- **N5 (B):** con un servidor sin modpack, la columna derecha empezaba con "Actualizar"
+  deshabilitado. Ya está corregido: primero va "Modpack".
+
+### Aprendizajes
+
+- **Medir la tarea, no las páginas:** la cifra de acciones y cambios de página de F36 es lo que
+  convierte "se siente mejor" en un resultado comparable entre rondas.
+- **Escuchar `securitypolicyviolation` en cada página** encuentra lo que la consola apenas resume:
+  la violación trae el archivo, la columna y el elemento.
+- **Una instancia de exploración consume la VM de podman (2 GiB):** mientras estaba arriba, el
+  gate con Mongo murió por falta de memoria. Hay que detenerla antes de correr el gate.
+- **No se entra al deploy real con una cookie fabricada,** tampoco firmándola dentro del
+  contenedor. El modo automático lo bloqueó, con razón. La instancia aparte bastó para todo lo
+  que se necesitaba probar.
+
+### Para no repetir
+
+- No correr el gate con Mongo mientras la instancia de exploración ocupa la VM.
+- No confiar en `networkidle` con htmx: esperar la respuesta de la petición.
+- No dar por cubierta la CSP solo porque el HTML no tiene `style=`: también la librería puede poner
+  estilos inline.
