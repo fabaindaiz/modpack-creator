@@ -15,6 +15,10 @@ rama `feat/panel-web`; lo demás está en `main`; nada está desplegado.**
 - **Panel web, hecho en código** (i-7985ee-50d411): páginas con Jinja2 y htmx, roles de editor y
   operador por grupos del IdP, auditoría, defensa CSRF por origen con CSP estricta, y el latido
   del worker en `/health/ready`. Se despliega con `docs/runbooks/desplegar-panel.md`.
+- **Panel web, lote siguiente, hecho en código** (i-7985ee-e69c9d, sobre i-7985ee-50d411): el
+  detalle de un modpack muestra y edita archivos locales, canales y pins; la vista previa de lo
+  que cambia, con changelogs, antes de actualizar o comparar builds; y la revisión diaria de
+  versiones nuevas con aviso, página e insignia. Sin desplegar.
 
 - **Fase 0, código hecho:**
   - dependencias fijas, volumen de Mongo e imagen que arranca, login con autorización;
@@ -632,10 +636,45 @@ JSON con `request_id` y `job_id`.
   despliegue lo comprueba `docs/runbooks/desplegar-panel.md`.
 - **Lo que falta:**
   - desplegar;
-  - el detalle de un modpack todavía no muestra los archivos locales, los canales ni los pins
-    (diseño del panel §3.2).
+  - ~~el detalle de un modpack no muestra los archivos locales, los canales ni los pins (diseño
+    del panel §3.2)~~: cerrado el 2026-10-03 (i-7985ee-e69c9d).
 - **Lo que choca:** una acción de operador que se revoca vale hasta que vence la sesión (12 h
   como máximo; rotar `SESSION_SECRET` la corta).
+
+### Vista previa de una actualización y revisión diaria de versiones nuevas — Hecha en código (2026-10-03), sin desplegar · i-7985ee-e69c9d
+- **En qué quedó** (diseño `docs/superpowers/specs/2026-10-03-panel-web-next-design.md`, plan
+  `docs/superpowers/plans/2026-10-03-panel-web-next.md`). Cierra dos de las "Ideas para más
+  adelante" de `docs/plan.md` (la vista previa y la revisión nocturna, esta última diaria y con
+  botón por decisión del dueño):
+  - **Detalle del modpack:** muestra los archivos locales, y edita los canales y los pins; un pin
+    a una versión que no es del proyecto, o un id con `.` o `$`, da 422 sin escribir.
+  - **Vista previa de los cambios:** qué se agrega, quita o cambia, con el número de versión y el
+    changelog de la nueva, en la simulación (`/servers/{id}/update/preview`,
+    `/jobs/{id}/preview`), en el diálogo "Actualizar…" y en la comparación de dos builds
+    (`/modpacks/{id}/builds/compare`). Se carga aparte, al pedirla, con 10 s en total para los
+    changelogs; si Modrinth falla, "changelog no disponible" y la página sigue (d-7985ee-d88e90).
+  - **Revisión de actualizaciones** del build recomendado (`/modpacks/{id}/actualizaciones`), con
+    `POST /version_files/update`, que ignora los pins (d-7985ee-cadd66). Se guarda como
+    `UpdateCheck`; avisa por Discord con los nombres de los mods, y el tablero muestra una
+    insignia. Ofrece crear un build nuevo; nada se aplica solo.
+  - **Programación diaria** con `UPDATE_CHECK_AT` y `UPDATE_CHECK_TZ`, ambas opcionales
+    (d-7985ee-2e2f58); sin la primera no corre, y el botón sigue.
+  - Un error de Modrinth o Pterodactyl (429, 502, 503, 504) sale como aviso del panel, no como 500.
+  - **Un trabajo sin `payload.dry_run` cuenta como simulación en todos lados** (falla cerrado). El
+    dueño debe confirmar que ningún trabajo real de producción carece de esa clave.
+- **Chequeo:** `tests/test_changes.py`, `tests/test_update_check.py`, `tests/test_update_schedule.py`
+  (con el cambio de horario de Chile), `tests/test_web_updates.py`, `tests/test_api_contracts.py`,
+  contra Mongo real; la revisión visual del panel; y la imagen arm64 carga `America/Santiago`.
+- **Lo que falta:**
+  - desplegar (`docs/runbooks/desplegar-panel.md` explica el índice nuevo y las variables);
+  - una falla entre calcular la revisión y guardarla (el aviso o el insert lanzan) no deja
+    ningún `UpdateCheck`: el programador la reencola cada 5 minutos y vuelve a pedir a Modrinth;
+  - una revisión manual hecha antes de `UPDATE_CHECK_AT` cuenta como la de hoy;
+  - las revisiones guardadas antes de este lote no tienen ids de versión: muestran la insignia,
+    pero no changelogs;
+  - un pin queda en el modpack aunque se quite el proyecto, y otros menores del registro.
+- **Lo que choca:** la revisión depende de que Modrinth responda; un día sin respuesta deja un
+  `UpdateCheck` con `error`, sin aviso. Un job viejo sin `dry_run` se ve como simulación.
 
 ## Seguridad y despliegue
 

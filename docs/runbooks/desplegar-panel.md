@@ -49,9 +49,28 @@ Nada se migra ni se reescribe. Al arrancar, Beanie crea:
 - dos índices nuevos de `Job`: `created_at` (descendente), con el que el panel lista los trabajos
   recientes, y `key` + `created_at` (descendente), con el que un rollback busca la última
   actualización del servidor. El de `status` + `created_at` ya existía;
-- la colección `AuditEvent` en la base `audit`, con sus índices.
+- la colección `AuditEvent` en la base `audit`, con sus índices;
+- la colección `UpdateCheck` (las revisiones de actualizaciones), con un índice por `bundle_id`,
+  `checked_at` (descendente) y `_id` (descendente), con el que el panel lee la última revisión de
+  cada modpack.
 
-Crear un índice no toca ningún documento.
+Crear un índice no toca ningún documento. Tampoco se reescribe el catálogo: `ModrinthVersion`
+suma el campo opcional `changelog`, que los documentos viejos no tienen y cargan igual; se llena
+solo, la primera vez que alguien abre una vista previa de los cambios.
+
+**Revisión diaria de actualizaciones (opcional).** Dos variables nuevas, ambas opcionales y
+fuera de `.env.default`:
+- `UPDATE_CHECK_AT`: la hora local `HH:MM` (24 horas, dos dígitos) a la que cada modpack con un
+  build se revisa una vez al día. Sin ella no hay programación; el botón de la página
+  `/modpacks/{id}/actualizaciones` sigue funcionando. Un valor mal escrito **impide arrancar**
+  (`UPDATE_CHECK_AT must be HH:MM…` en los logs), a propósito;
+- `UPDATE_CHECK_TZ`: la zona horaria, por defecto `America/Santiago`; una zona desconocida
+  también impide arrancar.
+
+Una revisión solo lee Modrinth y guarda el resultado; no toca ningún servidor. Avisa por Discord
+(si hay `DISCORD_WEBHOOK_URL`) solo cuando las actualizaciones sin pin difieren de las del último
+aviso. Para comprobarlo después de desplegar: poner `UPDATE_CHECK_AT` unos minutos adelante,
+reiniciar, y mirar en `/jobs` un trabajo "Revisión de actualizaciones" (`update_check`) por modpack con build.
 
 Los trabajos viejos cargan sin `requested_by` (el campo es opcional). Crear un índice sobre una
 colección chica tarda un instante; en el primer arranque, `/health/ready` puede tardar unos

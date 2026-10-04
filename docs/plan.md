@@ -126,10 +126,11 @@ estos 3 jars cambiados a mano".
 
 Sin id todavía. Entran al roadmap cuando alguien las quiera construir.
 
-- **Vista previa de una actualización**: el diff de builds con los changelogs de cada versión que
-  cambia, antes de aplicar (Modrinth Hosting).
-- **Revisión nocturna**: buscar actualizaciones de todos los builds con `POST /version_files/update`
-  y mandar un resumen por Discord, sin aplicar nada.
+- ~~**Vista previa de una actualización**: el diff de builds con los changelogs de cada versión que
+  cambia, antes de aplicar (Modrinth Hosting).~~ Hecha en código (2026-10-03), i-7985ee-e69c9d.
+- ~~**Revisión nocturna**: buscar actualizaciones de todos los builds con `POST /version_files/update`
+  y mandar un resumen por Discord, sin aplicar nada.~~ Hecha en código (2026-10-03) como revisión
+  diaria del build recomendado, con botón, página e insignia; i-7985ee-e69c9d.
 - **Detección de cambios manuales** con el log de actividad de Pterodactyl (`server:file.*`,
   `server:sftp.*`) entre dos escaneos.
 - **Plugins de Paper/Velocity** desde Hangar o Modrinth, con el mismo modelo de build.
