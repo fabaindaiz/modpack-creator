@@ -123,6 +123,12 @@ class ModrinthDatabase():
         """The stored version with this Modrinth version id, or None if the catalog does not have it."""
         return await ModrinthVersion.find_one(ModrinthVersion.version_id == version_id)
 
+    async def version_find_by_version_ids(self, version_ids: list[str]) -> list[ModrinthVersion]:
+        """The stored versions with these Modrinth version ids; the ones not stored are absent."""
+        if not version_ids:
+            return []
+        return await ModrinthVersion.find(In(ModrinthVersion.version_id, version_ids)).to_list()
+
     async def version_insert(self, version: ModrinthVersion) -> ModrinthVersion:
         """
         Add a single version to the database.

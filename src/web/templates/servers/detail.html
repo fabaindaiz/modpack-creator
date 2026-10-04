@@ -61,6 +61,7 @@
         </select>
         {{ ui.button("Guardar", type="submit", small=True, disabled_reason=reason) }}
       </form>
+      {% if not server.bundle_id %}{% include "servers/_new_modpack.html" %}{% endif %}
     </div>
     {% endcall %}
 

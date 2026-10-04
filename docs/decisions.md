@@ -67,6 +67,7 @@ los dos, o una fila mal formada, hace fallar el test. El nombre del método no s
 | `PterodactylService.import_server` | operador | Lee los mods de un servidor y agrega al bundle los identificados por hash; los ubicados por metadata quedan como candidatos y los que no se ubican, como archivos locales del bundle (d-7985ee-c8a15d). |
 | `PterodactylService.import_confirm` | operador | Confirma un mod importado y lo agrega al bundle del servidor. |
 | `PterodactylService.import_local` | operador | Registra un archivo local del servidor como parte del bundle. |
+| `PterodactylService.bundle_for_server` | operador | Crea un bundle para un servidor sin bundle, lo vincula y, si se pide, importa el servidor; si la importación falla, el bundle queda creado y vinculado (solo lee el panel). |
 | `ModpackService.bundle_create` | editor | Crea un bundle. |
 | `ModpackService.bundle_update` | editor | Cambia los datos de un bundle. |
 | `ModpackService.decision_set` | editor | Decide si un mod va en el servidor o solo en el cliente. |

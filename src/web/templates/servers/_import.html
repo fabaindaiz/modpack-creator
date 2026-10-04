@@ -1,14 +1,16 @@
-{# The result of importing a server; the fragment htmx swaps into #import-result. #}
+{# The result of importing a server; the fragment htmx swaps into #import-result. Included
+   elsewhere (a new modpack's result), it takes another `result_id`. #}
 {% import "_macros.html" as ui %}
-<div id="import-result" class="space-y-4">
+<div id="{{ result_id | default('import-result') }}" class="space-y-4">
   <ul class="space-y-1 text-sm">
-    <li>Proyectos agregados al modpack: <strong>{{ result.added | length }}</strong>
+    <li>Mods agregados: <strong>{{ result.added | length }}</strong>
       {% if result.added %}<span class="text-zinc-600 dark:text-zinc-400">({% for id in result.added %}{{ titles.get(id, id) }}{{ ", " if not loop.last }}{% endfor %})</span>{% endif %}</li>
-    <li>Archivos locales registrados: <strong>{{ result.local | length }}</strong></li>
+    <li>Archivos locales registrados: <strong>{{ result.local | length }}</strong>
+      {% if result.local %}<span class="text-zinc-600 dark:text-zinc-400">(Modrinth no los conoce: quedan en el pack tal cual)</span>{% endif %}</li>
     <li>Pendientes de tu decisión: <strong>{{ result.candidates | length }}</strong></li>
   </ul>
   {% if result.local %}
-  <ul class="space-y-0.5 font-mono text-xs break-all text-zinc-600 dark:text-zinc-400">{% for path in result.local %}<li>{{ path }}</li>{% endfor %}</ul>
+  <ul class="space-y-0.5 text-xs break-all text-zinc-600 dark:text-zinc-400">{% for path in result.local %}<li>Archivo local: <span class="font-mono">{{ path }}</span></li>{% endfor %}</ul>
   {% endif %}
   {% if result.too_large %}
   {{ ui.notice("Estos archivos son demasiado grandes para leerlos y no se importaron: " ~ (result.too_large | join(", ")), "warning") }}

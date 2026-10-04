@@ -15,17 +15,19 @@ from dependency_injector import providers
 from fastapi.testclient import TestClient
 
 from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
+from src.library.deduce import Deduction
 from src.library.jarmeta import ModMetadata
 from src.library.scan import Comparison, ExpectedEntry, ScanFile
 from src.model.jobs import Job, RollbackState
 from src.model.modpack import ModpackBuild, ModpackBundle, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject
-from src.model.pterodactyl import ImportCandidate, ImportResult, ProjectCandidate, PterodactylServer, ServerScan
+from src.model.pterodactyl import BundleForServer, ImportCandidate, ImportResult, ProjectCandidate, PterodactylServer, ServerScan
 from src.model.users import Actor
 from src.model.users.actor import ActorRef
 from src.model.utils import MinecraftLoaders
 from tests._actors import EDITOR, OPERATOR, session_for
 from tests._session import session_cookie
+from tests.conftest import MongoRunner
 
 T0 = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 SERVER_ID = PydanticObjectId()
@@ -50,6 +52,15 @@ def bundle(latest_build: Optional[int] = 2, recommended_build: Optional[int] = 2
     return ModpackBundle.model_construct(
         id=BUNDLE_ID, name="Pack Uno", description="", version="1.21.1", loader=MinecraftLoaders.fabric,
         projects=[PackProject(project_id="P1", origin=ProjectOrigin.pack)], latest_build=latest_build, recommended_build=recommended_build)
+
+
+NEW_BUNDLE_ID = PydanticObjectId()
+
+
+def new_bundle(name: str = "Creativo") -> ModpackBundle:
+    return ModpackBundle.model_construct(id=NEW_BUNDLE_ID, name=name, description="", version="1.21.1",
+                                         loader=MinecraftLoaders.fabric, projects=[], latest_build=None,
+                                         recommended_build=None)
 
 
 def scan_file(path: str, project_id: Optional[str] = None, status: str = "identified") -> ScanFile:
@@ -90,6 +101,8 @@ class FakePterodactyl:
             candidates=[ImportCandidate(
                 path="/mods/odd.jar", sha512="s5", metadata=ModMetadata(loader="fabric", mod_id="odd", name="Odd Mod", version="1"),
                 candidates=[ProjectCandidate(project_id="C1", slug="odd", title="Odd Mod", via="slug")])])
+        self.deduced: Optional[Deduction] = None
+        self.for_server: BundleForServer = BundleForServer(bundle=new_bundle(), imported=None, import_error=None)
         self.calls: list[tuple[Any, ...]] = []
         self.error: Optional[Exception] = None
 
@@ -140,6 +153,14 @@ class FakePterodactyl:
     async def import_local(self, server_id: str, path: str, actor: Actor) -> list[Any]:
         self._record("import_local", server_id, path, actor)
         return []
+
+    async def deduction(self, server_id: str) -> Optional[Deduction]:
+        return self.deduced
+
+    async def bundle_for_server(self, server_id: str, name: str, version: str, loader: MinecraftLoaders,
+                                import_mods: bool, actor: Actor) -> BundleForServer:
+        self._record("bundle_for_server", server_id, name, version, loader, import_mods, actor)
+        return self.for_server
 
 
 class FakeJobs:
@@ -219,6 +240,10 @@ class FakeModpack:
     async def bundle_get(self, bundle_id: str) -> ModpackBundle:
         return bundle()
 
+    async def bundle_create(self, bundle: ModpackBundle, actor: Actor) -> ModpackBundle:
+        self.calls.append(("bundle_create", bundle, actor))
+        return new_bundle(bundle.name)
+
     async def build_find(self, bundle_id: str) -> list[ModpackBuild]:
         """Newest first, as ModpackDatabase.build_find gives them."""
         if not self.builds:
@@ -228,7 +253,8 @@ class FakeModpack:
 
 class FakeModrinth:
     async def projects_by_id(self, project_ids: list[str]) -> dict[str, ModrinthProject]:
-        titles = {"P1": "Sodium", "P2": "Lithium", "P3": "Iris", "P4": "Phosphor", "C1": "Odd Mod Project"}
+        titles = {"P1": "Sodium", "P2": "Lithium", "P3": "Iris", "P4": "Phosphor", "C1": "Odd Mod Project",
+                  "J1": "JEI", "A1": "AppleSkin", "F1": "FerriteCore"}
         return {i: ModrinthProject.model_construct(project_id=i, slug=i.lower(), title=titles[i])
                 for i in project_ids if i in titles}
 
@@ -915,3 +941,138 @@ def test_the_preview_with_modrinth_down_says_the_changelog_is_not_available() ->
     response = client.get(f"/servers/{SERVER_ID}/update/preview", params={"build": 2}, headers=HTMX)
     assert response.status_code == 200
     assert "changelog no disponible" in response.text and "Sodium" in response.text
+
+
+# Nuevo modpack para un servidor sin modpack (diseño §2): deducido del escaneo; el operador crea,
+# vincula e importa de una vez, y el editor solo crea.
+
+NEW_MODPACK = {"name": "Creativo", "version": "1.21.1", "loader": "fabric"}
+
+
+def text_of(html: str) -> str:
+    """What the page shows as text: tags removed and whitespace collapsed."""
+    return " ".join(re.sub(r"<[^>]+>", " ", html).split())
+
+
+def unlinked(fakes: Fakes, deduced: Optional[Deduction] = None, scanned: bool = True) -> None:
+    fakes.ptero.server = server(bundle_id=None)
+    fakes.ptero.comparison = None
+    fakes.ptero.scan = scan() if scanned else None
+    fakes.ptero.deduced = deduced
+
+
+def test_form_prefills_the_deduction_and_explains_it() -> None:
+    client, fakes = setup(OPERATOR)
+    unlinked(fakes, Deduction("fabric", "1.21.1", 9, {"fabric": 8, "quilt": 1}, {"1.21.1": 9, "1.21": 2}))
+    response = client.get(f"/servers/{SERVER_ID}")
+    assert response.status_code == 200
+    form = response.text.split('id="new-modpack"')[1]
+    assert "Nuevo modpack para este servidor" in response.text
+    assert f'hx-post="/servers/{SERVER_ID}/modpack"' in form
+    assert re.search(r'name="name"[^>]*value="Survival"', form)
+    assert re.search(r'name="version"[^>]*value="1.21.1"', form)
+    assert re.search(r'<option value="fabric" selected>', form)
+    assert "8 de 9" in text_of(form) and "9 de 9" in text_of(form)
+    assert re.search(r'name="import_mods"[^>]*checked', form)
+
+
+def test_a_tie_prefills_nothing_and_asks_to_choose() -> None:
+    client, fakes = setup(OPERATOR)
+    unlinked(fakes, Deduction(None, None, 2, {"fabric": 1, "forge": 1}, {"1.21.1": 1, "1.20.1": 1}))
+    form = client.get(f"/servers/{SERVER_ID}").text.split('id="new-modpack"')[1]
+    assert re.search(r'name="version"[^>]*value=""', form)
+    assert "<option value=\"fabric\" selected>" not in form
+    assert "elige" in text_of(form)
+
+
+def test_without_scan_offers_scanning_to_deduce() -> None:
+    client, fakes = setup(OPERATOR)
+    unlinked(fakes, scanned=False)
+    form = client.get(f"/servers/{SERVER_ID}").text.split('id="new-modpack"')[1]
+    assert "Escanear para deducir" in form
+    assert re.search(rf'hx-post="/servers/{SERVER_ID}/scan"[^>]*hx-target="#server-job"[^>]*>Escanear para deducir<', form)
+    assert re.search(r'name="import_mods"[^>]*disabled', form)
+
+
+def test_a_linked_server_offers_no_new_modpack() -> None:
+    client, _ = setup(OPERATOR)
+    assert "Nuevo modpack para este servidor" not in client.get(f"/servers/{SERVER_ID}").text
+
+
+def test_an_editor_sees_that_linking_needs_an_operator() -> None:
+    client, fakes = setup(EDITOR)
+    unlinked(fakes, Deduction("fabric", "1.21.1", 1, {"fabric": 1}, {"1.21.1": 1}))
+    form = client.get(f"/servers/{SERVER_ID}").text.split('id="new-modpack"')[1]
+    assert f'hx-post="/servers/{SERVER_ID}/modpack"' in form
+    assert re.search(r'name="import_mods"[^>]*disabled', form) and "operador" in text_of(form)
+
+
+@pytest.mark.network
+def test_editor_post_only_creates_the_pack_even_if_link_is_forged(mongo: MongoRunner) -> None:
+    client, fakes = setup(EDITOR)
+    unlinked(fakes)
+
+    async def scenario() -> Any:  # init_beanie: crear el Document exige la base inicializada
+        return client.post(f"/servers/{SERVER_ID}/modpack", headers=HTMX,
+                           data={**NEW_MODPACK, "import_mods": "1", "link": "1", "import": "1"})
+
+    response = mongo(scenario)
+    assert response.status_code == 200
+    [created] = [c for c in fakes.modpack.calls if c[0] == "bundle_create"]
+    assert (created[1].name, created[1].version, created[1].loader, created[2]) == \
+        ("Creativo", "1.21.1", MinecraftLoaders.fabric, EDITOR)
+    assert fakes.ptero.calls == []
+    assert "Pide a un operador que lo vincule" in response.text
+    assert f'href="/modpacks/{NEW_BUNDLE_ID}"' in response.text
+
+
+def test_an_editor_cannot_create_one_for_a_linked_server() -> None:
+    client, fakes = setup(EDITOR)
+    response = client.post(f"/servers/{SERVER_ID}/modpack", headers=HTMX, data=NEW_MODPACK)
+    assert response.status_code == 409
+    assert fakes.modpack.calls == []
+
+
+def test_operator_post_shows_the_result_and_next_step() -> None:
+    client, fakes = setup(OPERATOR)
+    unlinked(fakes)
+    fakes.ptero.for_server = BundleForServer(
+        bundle=new_bundle(), import_error=None,
+        imported=ImportResult(added=["J1", "A1", "F1"], local=["/mods/local.jar"], candidates=[], too_large=[]))
+    response = client.post(f"/servers/{SERVER_ID}/modpack", headers=HTMX, data={**NEW_MODPACK, "import_mods": "1"})
+    assert response.status_code == 200
+    assert only(fakes.ptero.calls, "bundle_for_server")[1:] == \
+        (str(SERVER_ID), "Creativo", "1.21.1", MinecraftLoaders.fabric, True, OPERATOR)
+    assert fakes.modpack.calls == []
+    text = text_of(response.text)
+    assert "Mods agregados: 3 (JEI, AppleSkin, FerriteCore)" in text
+    assert "Archivo local: /mods/local.jar" in text
+    assert "Resolver y crear build" in text and f'href="/modpacks/{NEW_BUNDLE_ID}"' in response.text
+    assert 'id="notices" hx-swap-oob="beforeend"' in response.text
+
+
+def test_operator_post_without_the_checkbox_does_not_import() -> None:
+    client, fakes = setup(OPERATOR)
+    unlinked(fakes)
+    client.post(f"/servers/{SERVER_ID}/modpack", headers=HTMX, data=NEW_MODPACK)
+    assert only(fakes.ptero.calls, "bundle_for_server")[5] is False
+
+
+def test_a_failed_import_says_so_and_offers_importing_again() -> None:
+    client, fakes = setup(OPERATOR)
+    unlinked(fakes)
+    fakes.ptero.for_server = BundleForServer(bundle=new_bundle(), imported=None,
+                                             import_error="El modpack quedó creado y vinculado, pero la importación falló.")
+    response = client.post(f"/servers/{SERVER_ID}/modpack", headers=HTMX, data={**NEW_MODPACK, "import_mods": "1"})
+    assert response.status_code == 200
+    assert "la importación falló" in response.text
+    assert f'hx-post="/servers/{SERVER_ID}/import"' in response.text
+
+
+def test_a_new_modpack_needs_a_name_and_a_known_loader() -> None:
+    client, fakes = setup(OPERATOR)
+    unlinked(fakes)
+    for data in ({**NEW_MODPACK, "name": "   "}, {**NEW_MODPACK, "loader": "optifine"},
+                 {**NEW_MODPACK, "name": "x" * 121}):
+        assert client.post(f"/servers/{SERVER_ID}/modpack", headers=HTMX, data=data).status_code == 422
+    assert fakes.ptero.calls == []

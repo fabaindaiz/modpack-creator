@@ -29,6 +29,11 @@ Límites conocidos:
 - Que un método audita se detecta solo con la forma literal `<x>.audit.record(` en su propio
   cuerpo: un `audit.record(` sobre una variable local, un alias o un helper que audite por él no
   cuentan, y ese método tendría que ir en `NOT_AUDITED` o auditar directamente.
+- Una ruta que atiende a los dos roles por caminos distintos (el operador llega al método de
+  operador, el editor a uno de editor) no puede dar 403 a un editor: va en `ROLE_BRANCHING_ROUTES`
+  con su razón y el test que prueba que un editor no llega al método de operador. El barrido no la
+  manda; el método sigue siendo `operator_only`, y una entrada que ya no llama a un método de
+  operador hace fallar el test.
 """
 import ast
 import inspect
@@ -59,6 +64,14 @@ ROW = re.compile(r"^\|\s*`(?P<method>[A-Za-z_]\w*\.[A-Za-z_]\w*)`\s*\|\s*(?P<rol
 # alguna es POST; cada una con su razón. Hoy ninguna lo es, y una nueva tiene que justificarse aquí.
 UNCLASSIFIED_WRITE_ROUTES: dict[tuple[str, str], str] = {}
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
+# Rutas que llaman a un método de operador solo si el actor lo es, y atienden a un editor con un
+# método de editor: no responden 403 a un editor. Cada una con su razón y el test que lo prueba.
+ROLE_BRANCHING_ROUTES: dict[tuple[str, str], str] = {
+    ("src.routers.web.servers", "server_new_modpack"):
+        "un editor solo crea el pack (ModpackService.bundle_create) y bundle_for_server no se llama, aunque el "
+        "formulario traiga vincular e importar: "
+        "tests/test_web_servers.py::test_editor_post_only_creates_the_pack_even_if_link_is_forged",
+}
 SERVICES = Path(__file__).resolve().parent.parent / "src" / "services"
 # Filas de la tabla cuyo método no llama a `audit.record`, cada una con su razón (verificada leyendo
 # el método). Un método que escribe algo que importa audita; estos solo tocan el catálogo local.
@@ -304,10 +317,15 @@ def test_no_operator_route_lets_an_editor_through() -> None:
     # encontrarse (otro nombre, otra forma de llamarlo), el barrido no la pierde en silencio.
     assert set().union(*(r.calls for r in routes)) == names
 
+    stale = set(ROLE_BRANCHING_ROUTES) - {r.key for r in routes}
+    assert stale == set(), f"entradas de ROLE_BRANCHING_ROUTES que ya no llaman a un método de operador: {stale}"
+
     client = TestClient(application, follow_redirects=False)
     client.cookies.set("session", session_cookie(session_for(EDITOR), SECRET))
     answers = {}
     for route in routes:
+        if route.key in ROLE_BRANCHING_ROUTES:
+            continue
         headers = {"Sec-Fetch-Site": "same-origin"} if route.method in UNSAFE else {}
         response = client.request(route.method, route.path, params=route.params,
                                   data=route.form or None, headers=headers)

@@ -1,0 +1,52 @@
+{#
+  "Nuevo modpack para este servidor", for a server without one (panel usability §2). Loader and
+  Minecraft version come from the latest scan when it decides them; without a scan, scanning is
+  offered. An operator creates, links and imports in one step; an editor only creates.
+  Needs: server, server_id, scan, deduction, loaders, actor. Swapped by servers/_new_modpack_done.html.
+#}
+{% import "_macros.html" as ui %}
+{% set FIELD = "block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm text-zinc-900 shadow-xs ring-1 ring-inset ring-zinc-300 placeholder:text-zinc-400 focus-visible:outline-2 focus-visible:outline-emerald-600 disabled:opacity-50 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-700" %}
+{% set loader = deduction.loader if deduction else None %}
+{% set game_version = deduction.game_version if deduction else None %}
+<div id="new-modpack" class="space-y-3 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+  <h3 class="font-medium">Nuevo modpack para este servidor</h3>
+  {% if not scan %}
+  <p class="text-zinc-600 dark:text-zinc-400">Sin escaneo no se puede deducir el loader ni la versión de Minecraft.</p>
+  {{ ui.button("Escanear para deducir", kind="secondary", small=True, attrs={"hx-post": "/servers/" ~ server_id ~ "/scan", "hx-target": "#server-job", "hx-swap": "innerHTML"}) }}
+  {% elif deduction and deduction.identified %}
+  <p class="text-zinc-600 dark:text-zinc-400">
+    {%- if loader %}{{ deduction.loader_votes[loader] }} de {{ deduction.identified }} jars identificados son {{ loader }}{% else %}Los jars identificados no deciden el loader: elige uno{% endif %};
+    {% if game_version %}{{ deduction.version_votes[game_version] }} de {{ deduction.identified }} soportan {{ game_version }}{% else %}no deciden la versión de Minecraft: elige una{% endif %}.</p>
+  {% else %}
+  <p class="text-zinc-600 dark:text-zinc-400">El último escaneo no tiene jars identificados: elige el loader y la versión de Minecraft.</p>
+  {% endif %}
+  <form class="space-y-2" hx-post="/servers/{{ server_id }}/modpack" hx-target="#new-modpack" hx-swap="outerHTML">
+    <div>
+      <label for="new-modpack-name" class="font-medium">Nombre</label>
+      <input id="new-modpack-name" name="name" type="text" required maxlength="120" value="{{ server.name }}" class="{{ FIELD }}">
+    </div>
+    <div class="grid grid-cols-2 gap-2">
+      <div>
+        <label for="new-modpack-version" class="font-medium">Minecraft</label>
+        <input id="new-modpack-version" name="version" type="text" required maxlength="40" placeholder="1.21.1" value="{{ game_version or '' }}" class="{{ FIELD }}">
+      </div>
+      <div>
+        <label for="new-modpack-loader" class="font-medium">Loader</label>
+        <select id="new-modpack-loader" name="loader" required class="{{ FIELD }}">
+          <option value=""{% if not loader %} selected{% endif %}>Elige…</option>
+          {% for option in loaders %}
+          <option value="{{ option }}"{% if option == loader %} selected{% endif %}>{{ option }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <label class="flex items-center gap-2">
+      <input type="checkbox" name="import_mods" value="1"{% if scan and actor.is_operator %} checked{% else %} disabled{% endif %} class="rounded border-zinc-300 dark:border-zinc-700">
+      Importar lo que tiene el servidor
+    </label>
+    {% if not actor.is_operator %}
+    <p class="text-xs text-zinc-500 dark:text-zinc-400">Vincular e importar requieren operador: se crea el modpack y un operador lo vincula a este servidor.</p>
+    {% endif %}
+    {{ ui.button("Crear modpack" if not actor.is_operator else "Crear y vincular", type="submit", small=True) }}
+  </form>
+</div>

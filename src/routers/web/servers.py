@@ -7,8 +7,10 @@ from src.dependences import Dependences, JobService, ModpackService, ModrinthSer
 from src.exceptions import HTTP_403_FORBIDDEN, HTTP_409_CONFLICT, HTTP_422_UNPROCESSABLE_ENTITY
 from src.library.scan import Comparison
 from src.model.jobs import Job
-from src.model.pterodactyl import PterodactylServer
+from src.model.modpack import ModpackBundle
+from src.model.pterodactyl import ImportResult, PterodactylServer
 from src.model.users import Actor
+from src.model.utils import MinecraftLoaders
 from src.web import WebRoute, get_web_actor, render
 
 logger = logging.getLogger("modpack.web")
@@ -18,6 +20,8 @@ router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
 MODRINTH_REF = r"^[A-Za-z0-9_\-]+$"
 CONFIRM_MESSAGE = "Escribe el nombre exacto del servidor"
 RELINKED_MESSAGE = "El servidor cambió de modpack; vuelve a cargar la página"
+ALREADY_LINKED_MESSAGE = "Este servidor ya tiene modpack: vuelve a cargar la página"
+NEW_MODPACK_FIELDS_MESSAGE = "Escribe el nombre del modpack y su versión de Minecraft"
 STALE_B_MESSAGE = ("La reversión con A ya terminó; vuelve a cargar la página para confirmar B con el nombre "
                    "del servidor.")
 
@@ -56,6 +60,11 @@ async def preview_context(modpackService: ModpackService, modrinthService: Modri
     changes = preview.changes
     titles = await _titles(modrinthService, [c.project_id for c in changes.added + changes.removed + changes.changed])
     return {"preview": preview, "titles": titles}
+
+async def _import_titles(modrinthService: ModrinthService, result: ImportResult) -> dict[str, str]:
+    """The titles an import result shows: what was added and every candidate."""
+    return await _titles(modrinthService, list(result.added) + [c.project_id for item in result.candidates
+                                                                for c in item.candidates])
 
 def _comparison_ids(comparison: Comparison) -> list[str]:
     return ([f.project_id for f in comparison.matching if f.project_id]
@@ -137,9 +146,11 @@ async def server_detail(
     build_number = (bundle.recommended_build or bundle.latest_build) if bundle else None
     builds = sorted(await modpackService.build_find(str(bundle.id)), key=lambda b: b.number, reverse=True) \
         if bundle is not None else []
+    deduction = await pterodactylService.deduction(server_id) if server.bundle_id is None else None
     return render(request, "servers/detail.html", actor, server=server, server_id=server_id, bundles=bundles,
                   bundle=bundle, scan=scan, comparison=comparison, compare_note=compare_note, titles=titles,
-                  active_job=active, rollback=rollback, build_number=build_number, builds=builds, nav_active="servers")
+                  active_job=active, rollback=rollback, build_number=build_number, builds=builds,
+                  deduction=deduction, loaders=[l.value for l in MinecraftLoaders], nav_active="servers")
 
 @router.post("/servers/{server_id}/refresh")
 @inject
@@ -179,6 +190,40 @@ async def server_bundle(
     await pterodactylService.server_link_bundle(server_id, bundle_id or None, actor)
     return _back(request, server_id)
 
+@router.post("/servers/{server_id}/modpack")
+@inject
+async def server_new_modpack(
+        server_id: str,
+        request: Request,
+        name: Annotated[str, Form(min_length=1, max_length=120)],
+        version: Annotated[str, Form(min_length=1, max_length=40)],
+        loader: Annotated[MinecraftLoaders, Form()],
+        import_mods: Annotated[bool, Form()] = False,
+        actor: Actor = Depends(get_web_actor),
+        pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
+        ):
+    """A new bundle for a server without one (panel usability §2). An operator creates it, links
+    it and, if asked, imports the server, in one step. An editor only creates it: linking and
+    importing need an operator, so whatever else an editor's form sends is ignored, and the
+    operator-only service method is never called for them (the service would refuse it anyway)."""
+    name, version = name.strip(), version.strip()
+    if not name or not version:
+        raise HTTP_422_UNPROCESSABLE_ENTITY(NEW_MODPACK_FIELDS_MESSAGE)
+    if actor.is_operator:
+        outcome = await pterodactylService.bundle_for_server(server_id, name, version, loader, import_mods, actor)
+        titles = await _import_titles(modrinthService, outcome.imported) if outcome.imported else {}
+        return render(request, "servers/_new_modpack_done.html", actor, server_id=server_id,
+                      bundle=outcome.bundle, outcome=outcome, titles=titles)
+    server: PterodactylServer = await pterodactylService.server_get(server_id)
+    if server.bundle_id is not None:
+        raise HTTP_409_CONFLICT(ALREADY_LINKED_MESSAGE)
+    created = await modpackService.bundle_create(
+        ModpackBundle(name=name, description="", version=version, loader=loader), actor)
+    return render(request, "servers/_new_modpack_done.html", actor, server_id=server_id, bundle=created,
+                  outcome=None, titles={})
+
 @router.post("/servers/{server_id}/import")
 @inject
 async def server_import(
@@ -191,8 +236,7 @@ async def server_import(
     """Bring the server's unexplained jars into its bundle; whatever needs a person's decision
     is listed with its candidates. Operators only."""
     result = await pterodactylService.import_server(server_id, actor)
-    ids = list(result.added) + [c.project_id for item in result.candidates for c in item.candidates]
-    titles = await _titles(modrinthService, ids)
+    titles = await _import_titles(modrinthService, result)
     return render(request, "servers/_import.html", actor, server_id=server_id, result=result, titles=titles)
 
 @router.post("/servers/{server_id}/import/confirm")

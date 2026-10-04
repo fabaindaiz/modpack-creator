@@ -4,6 +4,7 @@ from typing import Annotated, Optional
 from pydantic import BaseModel
 from src.library.jarmeta import ModMetadata
 from src.library.scan import ScanFile
+from src.model.modpack import ModpackBundle
 
 class ServerScan(Document):
     """What one directory of a server had at one moment (i-7985ee-43df2f, option 1): every jar
@@ -39,3 +40,10 @@ class ImportResult(BaseModel):
     candidates: list[ImportCandidate]
     local: list[str]
     too_large: list[str]
+
+class BundleForServer(BaseModel):
+    """A bundle made for a server: created and linked, and what importing the server did, or why
+    it failed (the bundle stays created and linked, and importing can be tried again)."""
+    bundle: ModpackBundle
+    imported: Optional[ImportResult]
+    import_error: Optional[str]

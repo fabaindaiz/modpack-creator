@@ -1,21 +1,26 @@
 import asyncio
 import hashlib
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 from src.database import ModpackDatabase, ModrinthDatabase, PterodactylDatabase
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.api.client.pterodactyl import PterodactylAPI
 from fastapi import HTTPException
+from src.library.deduce import Deduction, deduce_target
 from src.library.jarmeta import ModMetadata, read_mod_metadata
 from src.library.scan import ClaimedFile, Comparison, ListedFile, LocalFile, ScanFile, compare, drift_message, plan_scan
 from src.model.modpack import ModpackBundle, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthVersion
-from src.model.pterodactyl import ImportCandidate, ImportResult, ProjectCandidate, PterodactylFile, PterodactylServer, ServerScan
+from src.model.pterodactyl import BundleForServer, ImportCandidate, ImportResult, ProjectCandidate, PterodactylFile, PterodactylServer, ServerScan
 from src.exceptions import *
 from src.library.auth.roles import operator_only
 from src.model.audit import AuditTarget
 from src.model.users import Actor
+from src.model.utils import MinecraftLoaders
 from src.services.audit import AuditSink
+
+logger = logging.getLogger("modpack.servers")
 
 # A jar from a server is untrusted: it is hashed, never loaded, and not downloaded past this
 # size (untrusted-package-is-parsed-never-loaded). The largest common mods are a few tens of MiB.
@@ -24,6 +29,8 @@ SCAN_MAX_BYTES = 128 * 1024 * 1024
 # signed URL and the download): a large first scan is paced by this and by the panel.
 SCAN_CONCURRENCY = 4
 SCAN_DIRECTORY = "/mods"
+IMPORT_FAILED = ("El modpack quedó creado y vinculado a este servidor, pero la importación de sus mods falló. "
+                 "Vuelve a intentarlo con «Importar».")
 
 class PterodactylService():
     def __init__(self,
@@ -269,6 +276,45 @@ class PterodactylService():
         projects = await self.modrinthDB.project_upsert_many(await self.modrinthAPI.project_get_many(project_ids))
         await self.modpackDB.bundle_projects_add(
             bundle_id, [PackProject(project_id=p.project_id, origin=ProjectOrigin.admin) for p in projects])
+
+    # A new bundle for a server without one (panel usability §2): deduced from the latest scan.
+
+    async def deduction(self, server_id: str) -> Optional[Deduction]:
+        """The loader and Minecraft version the identified jars of the latest scan point to, read
+        from the catalog; None if the server has no scan. A jar whose version the catalog does not
+        have does not vote."""
+        scan = await self.pterodactylDB.scan_latest(server_id, SCAN_DIRECTORY)
+        if scan is None:
+            return None
+        version_ids = [f.version_id for f in scan.files if f.status == "identified" and f.version_id]
+        versions = {v.version_id: v for v in await self.modrinthDB.version_find_by_version_ids(sorted(set(version_ids)))}
+        return deduce_target([(versions[i].loaders, versions[i].game_versions) for i in version_ids if i in versions])
+
+    @operator_only
+    async def bundle_for_server(self, server_id: str, name: str, version: str, loader: MinecraftLoaders,
+                                import_mods: bool, actor: Actor) -> BundleForServer:
+        """
+        Create a bundle for a server without one, link it and, if `import_mods`, import the server
+        into it, each step with its audit event. Operators only, since linking and importing are.
+        409 if the server already has a bundle, before anything is created. If importing fails,
+        the bundle stays created and linked (an empty linked bundle, never a touched server: this
+        only reads the panel) and the answer says so.
+        """
+        server = await self.pterodactylDB.server_get(server_id)
+        if server.bundle_id is not None:
+            raise HTTP_409_CONFLICT("Este servidor ya tiene modpack: vuelve a cargar la página")
+        bundle = await self.modpackDB.bundle_insert(ModpackBundle(name=name, description="", version=version, loader=loader))
+        await self.audit.record(actor, "bundle.create", AuditTarget(kind="bundle", id=str(bundle.id)))
+        await self.server_link_bundle(server_id, str(bundle.id), actor)
+        imported, import_error = None, None
+        if import_mods:
+            try:
+                imported = await self.import_server(server_id, actor)
+            except Exception:
+                logger.warning("import after creating a bundle for a server failed", exc_info=True,
+                               extra={"server_id": server_id, "bundle_id": str(bundle.id)})
+                import_error = IMPORT_FAILED
+        return BundleForServer(bundle=bundle, imported=imported, import_error=import_error)
 
     def _scanned(self, scan: ServerScan, path: str) -> ScanFile:
         file = next((f for f in scan.files if f.path == path), None)
