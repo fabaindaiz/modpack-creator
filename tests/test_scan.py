@@ -98,6 +98,25 @@ def test_an_extra_the_build_keeps_off_the_server_is_client_only_and_expected_car
     assert [e.version_number for _, e in result.different_version] == ["2.0.1"]
 
 
+def test_unexplained_jars_split_into_what_the_pack_has_and_what_it_does_not() -> None:
+    """F26: a jar the build does not explain is either in the pack already (a new build fixes it)
+    or not (importing does). An extra of a mod of the pack is explained: a second copy, to remove."""
+    from src.library.scan import unexplained
+
+    files = [scanned("kept.jar", status="unknown", project_id=None, version_id=None, sha512="k" * 128),
+             scanned("claimed.jar", status="unknown", project_id=None, version_id=None, sha512="c" * 128),
+             scanned("stranger.jar", status="unknown", project_id=None, version_id=None, sha512="s" * 128),
+             scanned("huge.jar", status="too_large", project_id=None, version_id=None, sha512=None),
+             scanned("a.jar", project_id="A", version_id="a1"), scanned("a-copy.jar", project_id="A", version_id="a1"),
+             scanned("x.jar", project_id="X", version_id="x1")]
+    result = unexplained(compare(files, [lock_entry("A", "a1")]), bundle_projects={"A"},
+                         kept_sha512s={"k" * 128, "c" * 128})
+    assert result.in_pack == ["/mods/kept.jar", "/mods/claimed.jar"]
+    assert result.foreign == ["/mods/stranger.jar", "/mods/huge.jar", "/mods/x.jar"]
+    nothing = unexplained(compare(files[4:6], [lock_entry("A", "a1")]), bundle_projects={"A"}, kept_sha512s=set())
+    assert nothing.in_pack == [] and nothing.foreign == []
+
+
 def test_a_second_copy_of_a_mod_is_extra() -> None:
     files = [scanned("a.jar", project_id="A", version_id="a1"), scanned("a-copy.jar", project_id="A", version_id="a1")]
     result = compare(files, [lock_entry("A", "a1")])

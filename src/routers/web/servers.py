@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from src.dependences import Dependences, JobService, ModpackService, ModrinthService, PterodactylService, UpdateService
 from src.exceptions import HTTP_403_FORBIDDEN, HTTP_409_CONFLICT, HTTP_422_UNPROCESSABLE_ENTITY
-from src.library.scan import Comparison
+from src.library.scan import Comparison, unexplained
 from src.model.jobs import Job
 from src.model.modpack import ModpackBundle
 from src.model.pterodactyl import ImportResult, PterodactylServer
@@ -65,15 +65,6 @@ async def _import_titles(modrinthService: ModrinthService, result: ImportResult)
     """The titles an import result shows: what was added and every candidate."""
     return await _titles(modrinthService, list(result.added) + [c.project_id for item in result.candidates
                                                                 for c in item.candidates])
-
-def _to_import(comparison: Comparison, bundle: ModpackBundle) -> list[str]:
-    """The jars of the comparison that importing would bring into the bundle: the ones Modrinth
-    does not know (unless the bundle already keeps them as local files) and the mods outside the
-    bundle. Empty: the bundle explains every jar, and only a new build may be missing."""
-    in_bundle = {p.project_id for p in bundle.projects}
-    kept = {f.sha512 for f in bundle.local_files} | {c.sha512 for c in bundle.claimed_files}
-    return ([f.path for f in comparison.unknown if f.sha512 is None or f.sha512 not in kept]
-            + [f.path for f in comparison.extra if f.project_id not in in_bundle])
 
 def _comparison_ids(comparison: Comparison) -> list[str]:
     return ([f.project_id for f in comparison.matching if f.project_id]
@@ -153,7 +144,10 @@ async def server_detail(
             compare_note = str(error.detail)
     titles = await _titles(modrinthService, _comparison_ids(comparison) if comparison else [])
     versions = await pterodactylService.compare_names(comparison) if comparison else {}
-    to_import = _to_import(comparison, bundle) if comparison and bundle else None
+    # What importing would bring: the jars the bundle itself does not explain (F26's rule).
+    to_import = unexplained(comparison, (p.project_id for p in bundle.projects),
+                            [*(f.sha512 for f in bundle.local_files), *(c.sha512 for c in bundle.claimed_files)]
+                            ).foreign if comparison and bundle else None
     installed_build = await jobService.installed_build(server_id) if bundle else None
     active = await jobService.active_for_server(server_id)
     rollback = await jobService.rollback_state(server_id)

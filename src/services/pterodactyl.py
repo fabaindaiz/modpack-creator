@@ -108,7 +108,7 @@ class PterodactylService():
     # What a server has (i-7985ee-43df2f, option 1). Only reads: listing and downloading.
 
     async def scan(self, server_id: str, actor: Optional[Actor], directory: str = SCAN_DIRECTORY,
-                   full: bool = False) -> ServerScan:
+                   full: bool = False, record_drift: bool = True) -> ServerScan:
         """
         Scan a directory of a server: which jars it has, and which Modrinth version each one is.
 
@@ -117,6 +117,8 @@ class PterodactylService():
         against Modrinth. Writes nothing to the server.
 
         :param actor: Who asked; None for the scheduler's and the worker's scans, which are not recorded.
+        :param record_drift: Store how the scan compares with the server's build (F37). False for a
+            real update's preflight: the update changes the server right after, so it would be stale.
         :return: The stored scan.
         """
         server = await self.pterodactylDB.server_get(server_id)
@@ -133,7 +135,7 @@ class PterodactylService():
         stored = await self.pterodactylDB.scan_insert(ServerScan(
             server_id=server.id, directory=directory, scanned_at=datetime.now(timezone.utc),  # type: ignore[arg-type]
             full=full, files=files))
-        if directory == SCAN_DIRECTORY:
+        if record_drift and directory == SCAN_DIRECTORY:
             stored = await self._store_drift(server_id, stored)
         if actor is not None:
             await self.audit.record(actor, "server.scan", _target(server_id), {"directory": directory, "full": full})

@@ -28,7 +28,7 @@ from src.exceptions import *
 from src.library.api.client.download import Downloader
 from src.library.api.client.pterodactyl import PterodactylAPI
 from src.library.mrpack import ALLOWED_DOMAINS
-from src.library.scan import ScanFile, compare
+from src.library.scan import Unexplained, compare, unexplained
 from src.model.jobs import Job, is_real_update
 from src.model.pterodactyl import PterodactylServer
 from src.library.auth.roles import operator_only
@@ -214,13 +214,13 @@ class UpdateService():
                 raise refuse("the server is not linked to a bundle")
             bundle = await self.modpackDB.bundle_get(server.bundle_id)
             build = await self.modpackDB.build_get(str(bundle.id), job.payload["build"])
-            scan = await self.servers.scan(str(server.id), actor=None)
+            # A real update changes the server right after: this scan's drift would be stale at once.
+            scan = await self.servers.scan(str(server.id), actor=None, record_drift=dry_run)
             comparison = compare(scan.files, build.lock.entries, build.local_files, bundle.claimed_files)
-            in_bundle = {p.project_id for p in bundle.projects}
-            known = {f.sha512 for f in bundle.local_files} | {c.sha512 for c in bundle.claimed_files}
-            unexplained = [*comparison.unknown, *(f for f in comparison.extra if f.project_id not in in_bundle)]
-            if unexplained:
-                raise refuse(_unexplained_reason(unexplained, in_bundle, known))
+            jars = unexplained(comparison, (p.project_id for p in bundle.projects),
+                               [*(f.sha512 for f in bundle.local_files), *(c.sha512 for c in bundle.claimed_files)])
+            if jars.in_pack or jars.foreign:
+                raise refuse(_unexplained_reason(jars))
             entries = {e.project_id: e for e in build.lock.entries}
             install = [entries[e.project_id] for _, e in comparison.different_version] + \
                       [entries[e.project_id] for e in comparison.missing]
@@ -440,16 +440,11 @@ class UpdateService():
 async def _value(value: dict[str, Any]) -> dict[str, Any]:
     return value
 
-def _unexplained_reason(files: list[ScanFile], in_bundle: set[str], known: set[str]) -> str:
-    """Why jars the build does not explain stop the update, pointing at the fix (F26): a jar the
-    bundle already has (as a project, a local file or a claimed jar) needs a new build; any other
-    needs importing the server."""
-    in_pack = [f.path for f in files if (f.project_id is not None and f.project_id in in_bundle)
-               or (f.sha512 is not None and f.sha512 in known)]
-    foreign = [f.path for f in files if f.path not in in_pack]
+def _unexplained_reason(jars: Unexplained) -> str:
+    """Why jars the build does not explain stop the update, pointing at the fix (F26)."""
     reasons = []
-    if foreign:
-        reasons.append(f"importa el servidor: el modpack no explica {', '.join(foreign)}")
-    if in_pack:
-        reasons.append(f"crea un build nuevo: el modpack ya lo incluye y el build no: {', '.join(in_pack)}")
+    if jars.foreign:
+        reasons.append(f"importa el servidor: el modpack no explica {', '.join(jars.foreign)}")
+    if jars.in_pack:
+        reasons.append(f"crea un build nuevo: el modpack ya lo incluye y el build no: {', '.join(jars.in_pack)}")
     return "; ".join(reasons)

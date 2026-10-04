@@ -91,7 +91,7 @@ los dos, o una fila mal formada, hace fallar el test. El nombre del método no s
 | `ModrinthService.project_update_many` | editor | Refresca varios mods del catálogo desde Modrinth. |
 | `PterodactylService.server_create` | editor | Registra un servidor del panel en la base (no escribe en el panel). |
 | `PterodactylService.server_update` | editor | Refresca los datos de un servidor desde el panel (solo lee el panel). |
-| `PterodactylService.scan` | editor | Escanea los archivos de un servidor y guarda el resultado, con su comparación con el build si el servidor tiene modpack con build (solo lee el panel). |
+| `PterodactylService.scan` | editor | Escanea los archivos de un servidor y guarda el resultado, con su comparación con el build si el servidor tiene modpack con build, salvo en el preflight de una actualización real (solo lee el panel). |
 | `JobService.enqueue_scan` | editor | Encola un escaneo de un servidor. |
 | `UpdateCheckService.enqueue` | editor | Encola la revisión de actualizaciones del build recomendado de un modpack; solo lee Modrinth y guarda el resultado. |
 

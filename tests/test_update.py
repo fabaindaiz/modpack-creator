@@ -230,6 +230,22 @@ def test_unexplained_jar_message_points_to_a_new_build_when_the_pack_has_it(mong
     assert "/mods/hecho-a-mano.jar" in error and "importa el servidor" not in error
 
 
+def test_only_a_dry_runs_scan_records_its_drift(mongo: MongoRunner) -> None:
+    """A real update changes the server right after its preflight scan: that scan's comparison
+    would be stale at once, so it records none. A dry run changes nothing: its scan's is true."""
+    async def scenario() -> tuple[str | None, str | None]:
+        s = await setup()
+        await s.run()  # dry run
+        dry = (await PterodactylDatabase().scan_latest(s.server_id, "/mods"))
+        await s.run(dry_run=False)
+        real = (await PterodactylDatabase().scan_latest(s.server_id, "/mods"))
+        assert dry is not None and real is not None and dry.id != real.id
+        return dry.drift, real.drift
+
+    dry, real = mongo(scenario)
+    assert dry is not None and dry.startswith("⚠️") and real is None
+
+
 def test_the_installed_build_is_the_last_real_update_that_finished(mongo: MongoRunner) -> None:
     async def scenario() -> list[int | None]:
         s = await setup()

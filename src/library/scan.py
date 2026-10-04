@@ -164,3 +164,27 @@ def drift_message(server: str, bundle: str, build: int, comparison: Comparison) 
     lines += [f"- sobra {f.path}" for f in comparison.extra]
     lines += [f"- desconocido {f.path}" for f in comparison.unknown]
     return "\n".join(lines)
+
+
+class Unexplained(BaseModel):
+    """The jars of a server that its build does not explain, by fix (F26): `in_pack` the bundle
+    already has (as a local or claimed file), so a new build explains them; `foreign` it does not,
+    so importing the server brings them in. Paths, in the comparison's order."""
+    in_pack: list[str]
+    foreign: list[str]
+
+
+def unexplained(comparison: Comparison, bundle_projects: Iterable[str], kept_sha512s: Iterable[str]) -> Unexplained:
+    """
+    What stops an update to the compared build, and what importing would bring.
+
+    :param bundle_projects: The bundle's project ids: an extra of one of them is a copy to remove,
+        explained.
+    :param kept_sha512s: The sha512 of the bundle's local and claimed files: an unknown jar with
+        one of them is in the pack, though not in this build.
+    """
+    projects, kept = set(bundle_projects), set(kept_sha512s)
+    in_pack = [f.path for f in comparison.unknown if f.sha512 is not None and f.sha512 in kept]
+    foreign = ([f.path for f in comparison.unknown if f.sha512 is None or f.sha512 not in kept]
+               + [f.path for f in comparison.extra if f.project_id not in projects])
+    return Unexplained(in_pack=in_pack, foreign=foreign)
