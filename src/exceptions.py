@@ -69,3 +69,13 @@ class HTTP_504_GATEWAY_TIMEOUT(HTTPException):
     """Used when a request to another api takes too long to process"""
     def __init__(self, detail: Optional[str] = None):
         super().__init__(status.HTTP_504_GATEWAY_TIMEOUT, detail)
+
+class UpstreamError(HTTPException):
+    """An external service (Modrinth, Pterodactyl, ...) failed. `detail` is the English text /v1
+    returns; the panel shows its own Spanish message from `service` and `upstream_status`, plus
+    `raw` (sanitized) as a detail."""
+    def __init__(self, service: str, upstream_status: int, detail: Optional[str] = None, raw: str = ""):
+        super().__init__(upstream_status, detail if detail is not None else raw)
+        self.service = service
+        self.upstream_status = upstream_status
+        self.raw = raw

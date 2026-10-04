@@ -11,6 +11,8 @@ QUILT_META_URL = getenv("QUILT_META_URL", "https://meta.quiltmc.org/")
 class LoaderMetaAPI(HttpAPI):
     """The loaders' own metadata, for the version a build freezes (research §2). Only reads.
     NeoForge and Forge have none here: their version is the admin's to set."""
+    SERVICE = "el servicio de loaders"
+
     def __init__(self, fabric_url: str = FABRIC_META_URL, quilt_url: str = QUILT_META_URL) -> None:
         super().__init__(base_url=None)
         self.fabric_url = fabric_url

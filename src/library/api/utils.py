@@ -6,6 +6,8 @@ from aiohttp import ClientResponse, ConnectionTimeoutError, ClientResponseError,
 from src.library.utils import WRAP
 from src.exceptions import *
 
+UNKNOWN_SERVICE = "un servicio externo"
+
 class FakeResponse(Exception): ...
 
 # A read rate-limited with 429 waits what Retry-After asks, capped, and tries again: hammering a
@@ -56,17 +58,20 @@ def handle_errors(func: WRAP) -> WRAP:
     # A read that wants retries declares backoff on its client method.
     @wraps(func)
     async def wrapper(*args, **kwargs):
+        # args[0] is the client (these are methods of HttpAPI); its SERVICE names it for the panel.
+        service = getattr(args[0], "SERVICE", UNKNOWN_SERVICE) if args else UNKNOWN_SERVICE
         try:
             return await func(*args, **kwargs)
         except ServerConnectionError as e:
-            raise HTTP_502_BAD_GATEWAY(f"Request has failed with connection error: {e}") from e
+            raise UpstreamError(service, 502, f"Request has failed with connection error: {e}", raw=str(e)) from e
         except ConnectionTimeoutError as e:
-            raise HTTP_504_GATEWAY_TIMEOUT(f"Request has failed with timeout error: {e}") from e
+            raise UpstreamError(service, 504, f"Request has failed with timeout error: {e}", raw=str(e)) from e
         except ClientResponseError as e:
             if e.status == 429:
                 retry_after = retry_after_seconds(e.headers.get("Retry-After") if e.headers else None)
                 raise HTTP_429_TOO_MANY_REQUESTS(f"Rate limited: {e.message}", retry_after) from e
-            raise HTTPException(status_code=e.status, detail=f"Request has failed with status error {e.status}: {e.message}") from e
+            raise UpstreamError(service, e.status, f"Request has failed with status error {e.status}: {e.message}",
+                                raw=f"{e.request_info.method} {e.request_info.url}: {e.message}") from e
         except Exception as e:
             raise HTTP_500_INTERNAL_SERVER_ERROR(f"Request has failed with unhandled: {e}") from e
     return wrapper # type: ignore

@@ -12,6 +12,8 @@ MODRINTH_TOKEN = getenv_opt("MODRINTH_TOKEN")
 MODRINTH_AGENT = getenv_opt("MODRINTH_AGENT")
 
 class ModrinthAPI(HttpAPI):
+    SERVICE = "Modrinth"
+
     def __init__(self) -> None:
         super().__init__(
             base_url=MODRINTH_API_URL)

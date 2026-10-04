@@ -92,10 +92,19 @@
 {% endmacro %}
 
 {# A message for the person: an error, a warning, a success. The close button is handled by app.js. #}
-{% macro notice(message, tone="error") %}
-<div data-notice role="{{ 'alert' if tone == 'error' else 'status' }}"
+{% macro notice(message, tone="error", detail=None, request_id=None) %}
+<div data-notice data-notice-tone="{{ tone }}" role="{{ 'alert' if tone == 'error' else 'status' }}"
   class="flex items-start gap-3 rounded-md border px-3 py-2 text-sm shadow-sm {{ NOTICE_TONES[tone] }}">
-  <p class="min-w-0 flex-1 break-words whitespace-pre-line">{{ message }}</p>
+  <div class="min-w-0 flex-1">
+    <p class="break-words whitespace-pre-line">{{ message }}</p>
+    {% if detail %}
+    <details class="mt-1 text-xs opacity-80">
+      <summary class="cursor-pointer">Ver detalle</summary>
+      <p class="mt-1 break-words font-mono">{{ detail }}</p>
+      {% if request_id %}<p class="mt-1 break-words">Identificador: <span class="font-mono">{{ request_id }}</span></p>{% endif %}
+    </details>
+    {% endif %}
+  </div>
   <button type="button" data-notice-close class="-my-0.5 shrink-0 rounded px-1 text-base leading-none opacity-70 hover:opacity-100" aria-label="Cerrar aviso">&times;</button>
 </div>
 {% endmacro %}

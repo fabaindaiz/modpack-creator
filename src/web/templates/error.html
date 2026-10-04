@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Error {{ status }}{% endblock %}
 
-{% block notices %}{{ ui.notice(message, "error") }}{% endblock %}
+{% block notices %}{{ ui.notice(message, "error", detail=detail, request_id=request_id) }}{% endblock %}
 
 {% block content %}
 {{ ui.page_header("No se pudo mostrar la página", "Error " ~ status ~ ".") }}

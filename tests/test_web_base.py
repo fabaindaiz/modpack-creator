@@ -384,3 +384,58 @@ def test_form_missing_a_field_without_htmx_gets_the_error_page() -> None:
 def test_a_valid_form_still_reaches_the_route() -> None:
     response = form_app().post("/form", data={"name": "ok", "count": "2"}, headers={"HX-Request": "true"})
     assert response.status_code == 200 and "ok" in response.text
+
+
+def _upstream_client(error: Exception) -> TestClient:
+    _, modpack, jobs = default_fakes()
+    return client(EDITOR, (FailingPterodactyl(error), modpack, jobs))
+
+
+def test_upstream_404_reads_in_spanish_with_a_sanitized_detail() -> None:
+    from src.exceptions import UpstreamError
+
+    error = UpstreamError("Pterodactyl", 404, raw="Request has failed at https://node/x?token=abc now")
+    response = _upstream_client(error).get("/", headers={"HX-Request": "true", "Sec-Fetch-Site": "same-origin"})
+    body = response.text
+    visible = re.sub(r"<[^>]+>", " ", body)
+    assert response.status_code == 404
+    assert "Pterodactyl no encontró lo pedido." in body
+    assert "Request has failed with" not in visible
+    assert "token=abc" not in body and "https://node/x" in body
+    assert "Ver detalle" in body and "Pterodactyl · HTTP 404" in body
+    assert 'data-notice-tone="error"' in body
+    request_id = response.headers["X-Request-ID"]
+    assert request_id in body
+
+
+def test_upstream_messages_by_status() -> None:
+    from src.web import upstream_message
+
+    assert upstream_message("Modrinth", 401) == "Modrinth rechazó la credencial del panel."
+    assert upstream_message("Modrinth", 403) == "Modrinth rechazó la credencial del panel."
+    assert upstream_message("Modrinth", 502) == "Modrinth no respondió; intenta de nuevo."
+    assert upstream_message("Modrinth", 504) == "Modrinth no respondió; intenta de nuevo."
+    assert upstream_message("Modrinth", 400) == "Modrinth respondió con un error (400)."
+
+
+def test_upstream_500_from_above_is_a_502_notice() -> None:
+    from src.exceptions import UpstreamError
+
+    response = _upstream_client(UpstreamError("Modrinth", 500, raw="boom")).get("/", headers={"HX-Request": "true"})
+    assert response.status_code == 502
+    assert "Modrinth respondió con un error (500)." in response.text
+
+
+def test_upstream_error_without_htmx_is_a_page_with_the_notice() -> None:
+    from src.exceptions import UpstreamError
+
+    response = _upstream_client(UpstreamError("Pterodactyl", 404, raw="x")).get("/")
+    assert response.status_code == 404 and "<html" in response.text
+    assert "Pterodactyl no encontró lo pedido." in response.text
+
+
+def test_sanitize_detail_cuts_queries_and_length() -> None:
+    from src.web import sanitize_detail
+
+    assert sanitize_detail("GET https://a.b/c?token=s&x=1 failed") == "GET https://a.b/c failed"
+    assert len(sanitize_detail("x" * 900)) == 500

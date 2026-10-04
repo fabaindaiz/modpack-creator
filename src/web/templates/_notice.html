@@ -1,3 +1,3 @@
 {# A notice as an htmx fragment: static/app.js swaps it into #notices (403, 404, 409, 422, and the upstream's 429, 502, 503, 504). #}
 {% import "_macros.html" as ui %}
-{{ ui.notice(message, tone) }}
+{{ ui.notice(message, tone, detail=detail | default(none), request_id=request_id | default(none)) }}

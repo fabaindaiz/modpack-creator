@@ -63,3 +63,30 @@ def test_one_client_keeps_one_connection_across_requests() -> None:
     peers, closed = asyncio.run(_peers_seen(3))
     assert len(peers) == 3 and len(set(peers)) == 1
     assert closed
+
+
+@pytest.mark.network
+def test_status_error_is_an_upstream_error_naming_the_service() -> None:
+    """A client with SERVICE answering 404 raises UpstreamError: the service, the upstream status
+    and the same English detail as before (so /v1 does not change)."""
+    from src.exceptions import UpstreamError
+
+    class FakePterodactylAPI(HttpAPI):
+        SERVICE = "Pterodactyl"
+
+    async def missing(request: web.Request) -> web.Response:
+        return web.Response(status=404, text="nope")
+
+    async def run() -> UpstreamError:
+        app = web.Application()
+        app.router.add_get("/resource", missing)
+        async with TestServer(app) as server:
+            api = FakePterodactylAPI(base_url=str(server.make_url("/")))
+            with pytest.raises(UpstreamError) as caught:
+                await api._request(METHOD.GET, "resource")
+            return caught.value
+
+    error = asyncio.run(run())
+    assert isinstance(error, UpstreamError) and error.service == "Pterodactyl" and error.upstream_status == 404
+    assert error.status_code == 404
+    assert error.detail.startswith("Request has failed with status error 404")

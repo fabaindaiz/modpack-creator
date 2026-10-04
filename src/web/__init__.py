@@ -4,6 +4,7 @@ Pages are server-rendered with Jinja2 and enhanced with htmx. Under the CSP (`we
 nothing inline runs: no `<script>` without `src`, no `style=`, no `hx-on`.
 """
 import hashlib
+import re
 from pathlib import Path
 from typing import Any, Callable, Coroutine, Optional
 from urllib.parse import quote, urlsplit
@@ -15,8 +16,10 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.routing import APIRoute
 from fastapi.templating import Jinja2Templates
 
+from src.exceptions import UpstreamError
 from src.library.auth.redirect import is_local_path
 from src.library.auth.roles import actor_from_session
+from src.library.logging import request_id as current_request_id
 from src.model.users import Actor
 from src.services.users import OIDC_OPERATOR_GROUPS
 
@@ -30,6 +33,8 @@ DIST_DIR = STATIC_DIR / "dist"
 NOTICE_STATUSES = frozenset({403, 404, 409, 422, 429, 502, 503, 504})
 UPSTREAM_STATUSES = frozenset({429, 502, 503, 504})
 UPSTREAM_DOWN = "Un servicio externo no respondió; intenta de nuevo."
+DETAIL_LIMIT = 500
+_URL_QUERY = re.compile(r"(https?://[^\s?]+)\?[^\s]*")
 # What a request that fails validation is told. Never FastAPI's error list: it echoes the input.
 INVALID_FORM = "Revisa los datos del formulario."
 
@@ -135,15 +140,35 @@ def render(request: Request, name: str, actor: Actor, **context: Any) -> HTMLRes
     return templates.TemplateResponse(request, name, {"actor": actor, **context})
 
 
-def _notice_response(request: Request, message: str, status: int) -> Optional[Response]:
+def upstream_message(service: str, status: int) -> str:
+    """What the person reads when `service` failed with `status` (never the English detail)."""
+    if status == 404:
+        return f"{service} no encontró lo pedido."
+    if status in (401, 403):
+        return f"{service} rechazó la credencial del panel."
+    if status in (502, 504):
+        return f"{service} no respondió; intenta de nuevo."
+    return f"{service} respondió con un error ({status})."
+
+
+def sanitize_detail(text: str) -> str:
+    """The upstream's text without the query of any URL (it can carry a token), cut to 500 characters."""
+    return _URL_QUERY.sub(r"\1", text)[:DETAIL_LIMIT]
+
+
+def _notice_response(request: Request, message: str, status: int, detail: Optional[str] = None,
+                     request_id: Optional[str] = None) -> Optional[Response]:
     if request.headers.get("HX-Request"):
-        return templates.TemplateResponse(request, "_notice.html", {"message": message, "tone": "error"},
-                                          status_code=status)
+        return templates.TemplateResponse(
+            request, "_notice.html",
+            {"message": message, "tone": "error", "detail": detail, "request_id": request_id},
+            status_code=status)
     actor = getattr(request.state, "actor", None)
     if not isinstance(actor, Actor):
         return None
     return templates.TemplateResponse(request, "error.html",
-                                      {"actor": actor, "message": message, "status": status},
+                                      {"actor": actor, "message": message, "status": status,
+                                       "detail": detail, "request_id": request_id},
                                       status_code=status)
 
 
@@ -158,6 +183,15 @@ class WebRoute(APIRoute):
         async def web_handler(request: Request) -> Response:
             try:
                 return await handler(request)
+            except UpstreamError as error:
+                # An upstream's 400 or 500 is not ours to show as such: the panel answers 502.
+                status = error.status_code if error.status_code in NOTICE_STATUSES else 502
+                detail = f"{error.service} · HTTP {error.upstream_status} · {sanitize_detail(error.raw)}"
+                response = _notice_response(request, upstream_message(error.service, error.upstream_status),
+                                            status, detail, current_request_id())
+                if response is None:
+                    raise
+                return response
             except HTTPException as error:
                 if error.status_code not in NOTICE_STATUSES:
                     raise

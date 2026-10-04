@@ -21,6 +21,8 @@ def writes_enabled(value: Optional[str]) -> bool:
 PTERODACTYL_WRITES = writes_enabled(getenv_opt("PTERODACTYL_WRITES"))
 
 class PterodactylAPI(HttpAPI):
+    SERVICE = "Pterodactyl"
+
     def __init__(self) -> None:
         super().__init__(
             base_url=PTERODACTYL_API_URL)
