@@ -163,3 +163,20 @@ def test_following_a_version_stores_it_and_what_it_depends_on(mongo: MongoRunner
     assert projects == {"iris", "sodium"}
     # La versión de Sodium que pide esta Iris, para 26.3: no la de 1.21.11 que piden otras.
     assert versions == {iris_for("26.3"): ["26.3"], "bAZQdGpg": ["26.3"]}
+
+
+@pytest.mark.network
+def test_icon_url_is_stored_and_absent_reads_as_none(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[str | None, str | None]:
+        with_icon = load("project-sodium.json")
+        without = load("project-lithium.json")
+        with_icon["icon_url"] = "https://cdn.modrinth.com/data/AANobbMI/icon.png"
+        without.pop("icon_url", None)
+        await ModrinthDatabase().project_upsert_many(
+            [ModrinthProject.parse(**with_icon), ModrinthProject.parse(**without)])
+        a = await ModrinthProject.find_one(ModrinthProject.slug == "sodium")
+        b = await ModrinthProject.find_one(ModrinthProject.slug == "lithium")
+        assert a and b
+        return a.icon_url, b.icon_url
+
+    assert mongo(scenario) == ("https://cdn.modrinth.com/data/AANobbMI/icon.png", None)

@@ -9,6 +9,8 @@ algorithm is docs/research/2026-10-resolucion-y-formatos.md §5, with three deci
 """
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+import hashlib
+import json
 from datetime import datetime
 from typing import Any, Literal, Optional
 from pydantic import BaseModel
@@ -176,6 +178,16 @@ class ResolveRequest(BaseModel):
     pins: dict[str, str] = {}
     replacements: dict[str, Optional[str]] = {}
     server_decisions: dict[str, bool] = {}
+
+
+def request_digest(request: ResolveRequest) -> str:
+    """A stable sha256 of what a resolution was asked for: the same request, in any order of
+    projects, keys or channels, gives the same digest; any change to it gives another."""
+    data = request.model_dump(mode="json")
+    data["projects"] = sorted(data["projects"])
+    data["target"]["channels"] = sorted(data["target"]["channels"])
+    text = json.dumps(data, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(text.encode()).hexdigest()
 
 
 class LockEntry(BaseModel):

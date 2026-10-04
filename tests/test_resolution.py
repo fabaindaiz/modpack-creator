@@ -20,6 +20,7 @@ from src.library.resolution import (
     ResolveRequest,
     Target,
     merge_replacements,
+    request_digest,
     resolve,
     server_inclusion,
 )
@@ -303,3 +304,31 @@ def test_each_lock_entry_keeps_its_project_type() -> None:
     versions = [cand("rp", "rp", loader="minecraft"), cand("a", "a")]
     lock = resolve(request("rp", "a"), Catalog.of(versions, types={"rp": "resourcepack", "a": "mod"}))
     assert {e.project_id: e.project_type for e in lock.entries} == {"rp": "resourcepack", "a": "mod"}
+
+
+def digest_request(**overrides: Any) -> ResolveRequest:
+    channels = overrides.pop("channels", None)
+    fields: dict[str, Any] = {"target": Target(game_version="26.3", loader="fabric"), "projects": ["a", "b"]}
+    if channels is not None:
+        fields["target"] = Target(game_version="26.3", loader="fabric", channels=frozenset(channels))
+    fields.update(overrides)
+    return ResolveRequest(**fields)
+
+
+def test_digest_ignores_order_and_follows_inputs() -> None:
+    a = digest_request(projects=["b", "a"], pins={"a": "1", "b": "2"})
+    b = digest_request(projects=["a", "b"], pins={"b": "2", "a": "1"})
+    assert request_digest(a) == request_digest(b)
+    assert len(request_digest(a)) == 64
+    for changed in (digest_request(projects=["a"], pins={"a": "1", "b": "2"}),
+                    digest_request(projects=["a", "b"], pins={"a": "9", "b": "2"}),
+                    digest_request(projects=["a", "b"], pins={"a": "1", "b": "2"}, server_decisions={"a": True}),
+                    digest_request(projects=["a", "b"], pins={"a": "1", "b": "2"}, channels={"beta"}),
+                    digest_request(projects=["a", "b"], pins={"a": "1", "b": "2"}, replacements={"a": None})):
+        assert request_digest(changed) != request_digest(a)
+
+
+def test_digest_ignores_channel_order() -> None:
+    a = digest_request(channels=["release", "beta", "alpha"])
+    b = digest_request(channels=["alpha", "beta", "release"])
+    assert request_digest(a) == request_digest(b)

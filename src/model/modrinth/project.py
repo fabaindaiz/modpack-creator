@@ -70,6 +70,8 @@ class ModrinthProject(Document):
     issues_url: Optional[str]
     source_url: Optional[str]
     wiki_url: Optional[str]
+    # Absent when Modrinth gives no icon; the panel only shows one from cdn.modrinth.com.
+    icon_url: Optional[str] = None
 
     published: datetime
     updated: datetime
