@@ -118,9 +118,10 @@
 </div>
 {% endmacro %}
 
-{# A message for the person: an error, a warning, a success. The close button is handled by app.js. #}
-{% macro notice(message, tone="error", detail=None, request_id=None) %}
-<div data-notice data-notice-tone="{{ tone }}" role="{{ 'alert' if tone == 'error' else 'status' }}"
+{# A message for the person: an error, a warning, a success. The close button is handled by app.js;
+   `autoclose` (only ui.success sets it) makes app.js remove it after a few seconds. #}
+{% macro notice(message, tone="error", detail=None, request_id=None, autoclose=False) %}
+<div data-notice data-notice-tone="{{ tone }}"{% if autoclose %} data-notice-autoclose{% endif %} role="{{ 'alert' if tone == 'error' else 'status' }}"
   class="flex items-start gap-3 rounded-md border px-3 py-2 text-sm shadow-sm {{ NOTICE_TONES[tone] }}">
   <div class="min-w-0 flex-1">
     <p class="break-words whitespace-pre-line">{{ message }}</p>
@@ -136,8 +137,9 @@
 </div>
 {% endmacro %}
 
-{# A success message: a notice that closes itself after a few seconds (app.js). #}
-{% macro success(message) %}{{ notice(message, "success") }}{% endmacro %}
+{# The success of an action: a notice that closes itself after a few seconds (app.js). A status
+   that only reads green (the server in sync) is ui.notice(..., "success") and stays. #}
+{% macro success(message) %}{{ notice(message, "success", autoclose=True) }}{% endmacro %}
 
 {#
   A confirmation dialog (<dialog>). A button with data-dialog-open="<id>" opens it (app.js); the

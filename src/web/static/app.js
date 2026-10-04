@@ -79,14 +79,17 @@
     showTemplate('notice-network-error', null, evt.detail.elt);
   });
 
-  // A success notice closes itself after five seconds; errors and warnings stay until closed.
+  // The success of an action (ui.success marks it data-notice-autoclose) closes itself after five
+  // seconds; errors, warnings and statuses that only read green (the server in sync, redrawn by a
+  // live refresh) stay until closed.
   var CLOSE_AFTER_MS = 5000;
+  var AUTOCLOSE = '[data-notice-autoclose]';
   function scheduleClose(node) {
     if (!(node instanceof Element)) {
       return;
     }
-    var found = node.matches('[data-notice-tone="success"]') ? [node] : [];
-    node.querySelectorAll('[data-notice-tone="success"]').forEach(function (n) {
+    var found = node.matches(AUTOCLOSE) ? [node] : [];
+    node.querySelectorAll(AUTOCLOSE).forEach(function (n) {
       found.push(n);
     });
     found.forEach(function (notice) {
@@ -100,6 +103,8 @@
       record.addedNodes.forEach(scheduleClose);
     });
   }).observe(document.body, { childList: true, subtree: true });
+  // The page may be drawn with one (after a redirect, "Modpack vinculado"): no mutation adds it.
+  scheduleClose(document.body);
 
   document.addEventListener('click', function (evt) {
     var element = evt.target instanceof Element ? evt.target : null;

@@ -3,6 +3,7 @@
 Los servicios se sustituyen con dobles en el contenedor, como en `tests/test_health.py`, y la app
 se arma sin `with`: el lifespan abriría MongoDB y el proveedor OIDC.
 """
+import json
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -167,7 +168,19 @@ def test_layout_has_nav_logout_notices_and_htmx_config() -> None:
     assert 'href="/v1/logout"' in text
     assert re.search(r'<div id="notices"[^>]*aria-live="polite"', text)
     assert ('<meta name="htmx-config" '
-            'content=\'{"allowEval":false,"selfRequestsOnly":true,"includeIndicatorStyles":false}\'>') in text
+            'content=\'{"allowEval":false,"selfRequestsOnly":true,"includeIndicatorStyles":false,'
+            '"attributesToSettle":["class","width","height"]}\'>') in text
+
+
+def test_htmx_never_settles_the_style_attribute() -> None:
+    """htmx's settle step copies `attributesToSettle` from an old element to the new one with the
+    same id; copying `style` is an inline style the CSP refuses (a console error on every live
+    refresh of a section with inputs). The default list has it: ours must not."""
+    text = client(EDITOR).get("/").text
+    meta = re.search(r'<meta name="htmx-config" content=\'([^\']*)\'>', text)
+    assert meta
+    settle = json.loads(meta.group(1))["attributesToSettle"]
+    assert "style" not in settle and "class" in settle
     assert re.search(r'<script src="/static/app\.js\?v=[0-9a-f]{12}" defer></script>', text)
 
 
@@ -458,6 +471,14 @@ def test_success_notice_has_the_success_tone() -> None:
     assert 'data-notice-tone="success"' in text and "Listo &lt;b&gt;" in text
 
 
+def test_only_ui_success_closes_itself() -> None:
+    """A success notice from an action closes itself; a status that only reads green (the server
+    in sync) is a success-tone notice too, and must stay when a live refresh brings it in."""
+    assert "data-notice-autoclose" in _render_macro('{{ ui.success("Listo") }}')
+    status = _render_macro('{{ ui.notice("El servidor coincide", "success") }}')
+    assert 'data-notice-tone="success"' in status and "data-notice-autoclose" not in status
+
+
 def test_notices_container_is_fixed_and_outside_main() -> None:
     text = client(EDITOR).get("/").text
     tag = re.search(r'<div id="notices"[^>]*>', text)
@@ -468,3 +489,7 @@ def test_notices_container_is_fixed_and_outside_main() -> None:
 def test_app_js_places_notices_and_closes_successes() -> None:
     text = client(None).get("/static/app.js").text
     assert "data-form-notice" in text and "MutationObserver" in text and "5000" in text
+    # Only the notices ui.success marks: never every success-tone notice a swap brings in.
+    assert "[data-notice-autoclose]" in text and 'data-notice-tone="success"' not in text
+    # Also the ones the page is drawn with (a notice after a redirect): no mutation brings them in.
+    assert "scheduleClose(document.body)" in text

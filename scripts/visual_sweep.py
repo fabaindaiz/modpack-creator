@@ -331,6 +331,7 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
                                            "console_errors": list(errors)}
                             errors.clear()
                         report.update(shoot_open_card(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
+                        report.update(check_live_refresh(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                         if who == "operator":
                             report.update(shoot_update_dialog(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                             report.update(shoot_build_dialog(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
@@ -391,6 +392,27 @@ def shoot_build_dialog(page: Any, base: str, out: Path, ids: dict[str, str], pre
     problems = [p for p, bad in (("el diálogo de decisiones no se abrió", not opened),
                                  ("el diálogo se cerró al enviarlo sin decidir", not stays)) if bad]
     return {key: _report(response, errors, problems)}
+
+
+def check_live_refresh(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
+                       errors: list[str]) -> dict[str, dict[str, Any]]:
+    """A job ending (`job-finished`) reloads #server-main of a server without a modpack, whose form
+    has inputs with ids. An input that got a style from outside (autofill, an extension: here set
+    through the CSSOM, which the CSP allows) must not have it copied by htmx's settle step: that is
+    an inline style attribute the CSP refuses, and it shows as a console error."""
+    response = page.goto(base + f"/servers/{ids['server_new']}")
+    page.wait_for_load_state("networkidle")
+    page.evaluate("""() => {
+        document.getElementById('server-main').dataset.old = '1';
+        document.getElementById('new-modpack-name').style.outline = '0px';
+    }""")
+    page.evaluate("htmx.trigger(document.body, 'job-finished')")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(500)
+    reloaded = page.evaluate("!document.querySelector('#server-main[data-old]') && !!document.getElementById('new-modpack-name')")
+    key = f"{prefix}-server-new-refresh"
+    page.screenshot(path=str(out / f"{key}.png"))
+    return {key: _report(response, errors, ["#server-main no se recargó al terminar un trabajo"] if not reloaded else [])}
 
 
 def check_notices(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
