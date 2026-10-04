@@ -1,5 +1,5 @@
 from beanie import PydanticObjectId, SortDirection
-from typing import Iterable, Optional
+from typing import Any, Iterable, Optional
 from src.model.modpack import UpdateCheck
 
 class UpdateCheckDatabase():
@@ -21,9 +21,9 @@ class UpdateCheckDatabase():
         ids = list(bundle_ids)
         if not ids:
             return {}
-        checks = await UpdateCheck.find({"bundle_id": {"$in": ids}}) \
-            .sort(("checked_at", SortDirection.DESCENDING), ("_id", SortDirection.DESCENDING)).to_list()
-        found: dict[PydanticObjectId, UpdateCheck] = {}
-        for check in checks:
-            found.setdefault(check.bundle_id, check)
-        return found
+        # Index order, and only the first check of each modpack leaves MongoDB.
+        pipeline: list[dict[str, Any]] = [{"$match": {"bundle_id": {"$in": ids}}},
+                    {"$sort": {"bundle_id": 1, "checked_at": -1, "_id": -1}},
+                    {"$group": {"_id": "$bundle_id", "doc": {"$first": "$$ROOT"}}}]
+        cursor = await UpdateCheck.get_pymongo_collection().aggregate(pipeline)
+        return {row["_id"]: UpdateCheck.model_validate(row["doc"]) async for row in cursor}

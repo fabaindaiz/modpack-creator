@@ -11,8 +11,9 @@ from typing import Any, Optional
 from beanie import PydanticObjectId
 from src.database.jobs import JobDatabase
 from src.database.modpack import ModpackDatabase
+from src.database.modrinth import ModrinthDatabase
 from src.database.update_check import UpdateCheckDatabase
-from src.exceptions import HTTP_409_CONFLICT
+from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.resolution import Target
 from src.library.utils import utcnow
@@ -34,6 +35,7 @@ class UpdateCheckService():
     def __init__(self,
             modpackDB: ModpackDatabase,
             modrinthAPI: ModrinthAPI,
+            modrinthDB: ModrinthDatabase,
             updateCheckDB: UpdateCheckDatabase,
             jobDB: JobDatabase,
             audit: AuditSink,
@@ -41,6 +43,7 @@ class UpdateCheckService():
             ) -> None:
         self.modpackDB = modpackDB
         self.api = modrinthAPI
+        self.modrinthDB = modrinthDB
         self.checkDB = updateCheckDB
         self.jobDB = jobDB
         self.audit = audit
@@ -66,11 +69,15 @@ class UpdateCheckService():
                 [e.file.sha512 for e in entries], "sha512", loaders, [bundle.version], bundle.channels)
             for entry in entries:
                 latest = found.get(entry.file.sha512)
-                if latest is not None and latest.version_id != entry.version_id:
+                if (latest is not None and latest.project_id == entry.project_id
+                        and latest.version_id != entry.version_id):
                     updates.append(AvailableUpdate(
                         project_id=entry.project_id, from_version=entry.version_number,
                         to_version=latest.version_number, pinned=entry.project_id in bundle.pins))
         updates.sort(key=lambda u: u.project_id)
+        titles = {p.project_id: p.title for p in await self.modrinthDB.project_find_by_modrinth_id([u.project_id for u in updates])}
+        for update in updates:
+            update.title = titles.get(update.project_id) or update.project_id
         return UpdateCheck(bundle_id=PydanticObjectId(bundle_id), build_number=number, checked_at=utcnow(), updates=updates)
 
     async def enqueue(self, bundle_id: str, actor: Optional[Actor]) -> Job:
@@ -85,6 +92,8 @@ class UpdateCheckService():
         return job
 
     async def latest(self, bundle_id: str) -> Optional[UpdateCheck]:
+        if not PydanticObjectId.is_valid(bundle_id):
+            raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' not found")
         return await self.checkDB.latest(PydanticObjectId(bundle_id))
 
     async def latest_many(self, bundle_ids: list[str]) -> dict[PydanticObjectId, UpdateCheck]:
@@ -100,12 +109,14 @@ class UpdateCheckService():
             try:
                 result = await self.compute(bundle_id)
             except Exception as error:
-                # Modrinth down (or no build): kept as a check with its error, and no notification.
+                # Catches everything (Modrinth down, no build, a bug): the error is recorded, no notice. Kept as a check with its error, and no notification.
                 bundle = await self.modpackDB.bundle_get(bundle_id)
                 await self.checkDB.insert(UpdateCheck(
                     bundle_id=PydanticObjectId(bundle_id), build_number=bundle.recommended_build or bundle.latest_build or 0,
                     checked_at=utcnow(), error=f"{type(error).__name__}: {error}"[:500]))
                 return {"error": f"{type(error).__name__}: {error}"[:500]}
+            # Notify, then insert: deliberate. A crash in between repeats one notice; the other
+            # order would lose it for good.
             if await self._should_notify(result):
                 result.notified_digest = digest_of(result.updates)
                 if self.notifier is not None:
@@ -126,6 +137,6 @@ class UpdateCheckService():
     async def _message(self, bundle_id: str, check: UpdateCheck) -> str:
         bundle = await self.modpackDB.bundle_get(bundle_id)
         shown = [u for u in check.updates if not u.pinned]
-        listing = ", ".join(f"{u.project_id} {u.from_version}→{u.to_version}" for u in shown)
+        listing = ", ".join(f"{u.title} {u.from_version}→{u.to_version}" for u in shown)
         text = f"🔎 {bundle.name} (build {check.build_number}): {len(shown)} mods con actualización — {listing}"
         return text[:DISCORD_LIMIT]

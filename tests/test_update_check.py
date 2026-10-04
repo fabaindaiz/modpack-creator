@@ -1,5 +1,5 @@
 """La revisión de actualizaciones (N5): el build recomendado contra Modrinth, lo guardado y el aviso."""
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Sequence, cast
 
 import pytest
@@ -7,14 +7,15 @@ from beanie import PydanticObjectId
 
 from src.database.jobs import JobDatabase
 from src.database.modpack import ModpackDatabase
+from src.database.modrinth import ModrinthDatabase
 from src.database.update_check import UpdateCheckDatabase
-from src.exceptions import HTTP_409_CONFLICT
+from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
 from src.library.resolution import CandidateFile, Lock, LockEntry, ResolveRequest, Target
 from src.model.modpack import ModpackBuild, ModpackBundle
 from src.model.modrinth import ModrinthVersion
 from src.model.modpack.update_check import AvailableUpdate, UpdateCheck
 from src.model.utils import MinecraftLoaders
-from src.services.jobs import JobWorker
+from src.services.jobs import JobContext, JobWorker
 from src.services.update_check import UpdateCheckService, digest_of
 from tests._actors import EDITOR, RecordingAudit
 from tests.conftest import MongoRunner
@@ -64,7 +65,7 @@ class Recorder:
 
 
 def make(api: FakeModrinth, audit: RecordingAudit | None = None, notifier: Recorder | None = None) -> UpdateCheckService:
-    return UpdateCheckService(ModpackDatabase(), cast(Any, api), UpdateCheckDatabase(), JobDatabase(),
+    return UpdateCheckService(ModpackDatabase(), cast(Any, api), ModrinthDatabase(), UpdateCheckDatabase(), JobDatabase(),
                               audit or RecordingAudit(), notifier or Recorder())
 
 
@@ -100,8 +101,8 @@ def test_a_build_of_three_mods_with_one_current_and_one_pinned_gives_two_updates
 
     check, api = mongo(scenario)
     assert check.build_number == 1 and check.error is None
-    assert check.updates == [AvailableUpdate(project_id="A", from_version="1.0", to_version="2.0", pinned=False),
-                             AvailableUpdate(project_id="C", from_version="1.0", to_version="3.0", pinned=True)]
+    assert check.updates == [AvailableUpdate(project_id="A", from_version="1.0", to_version="2.0", pinned=False, title="A"),
+                             AvailableUpdate(project_id="C", from_version="1.0", to_version="3.0", pinned=True, title="C")]
     # Un solo grupo de loaders (los mods), con la versión del juego y los canales del bundle.
     assert api.calls == [{"hashes": ["h-A", "h-B", "h-C"], "loaders": ["fabric"], "game_versions": ["26.3"],
                           "version_types": ["release", "beta"]}]
@@ -226,3 +227,75 @@ def test_latest_many_returns_the_newest_check_of_each_bundle(mongo: MongoRunner)
 
     found, a, b = mongo(scenario)
     assert found == {a: 2, b: 1}
+
+
+@pytest.mark.network
+def test_the_notice_names_mods_by_title_and_falls_back_to_the_id(mongo: MongoRunner) -> None:
+    async def scenario() -> list[str]:
+        from tests._modrinth import RecordedModrinthAPI
+        [sodium] = await RecordedModrinthAPI().project_get_many(["AANobbMI"])
+        sodium.project_id, sodium.title = "A", "Sodium"
+        await ModrinthDatabase().project_upsert_many([sodium])
+        notifier = Recorder()
+        service = make(FakeModrinth(newer()), notifier=notifier)
+        bundle_id = await bundle_with(three_mods())
+        await service.enqueue(bundle_id, None)
+        await JobWorker(JobDatabase(), service.handlers()).run_once()
+        return notifier.sent
+
+    [text] = mongo(scenario)
+    assert "Sodium 1.0→2.0" in text and "C 1.0→3.0" in text
+
+
+@pytest.mark.network
+def test_a_hash_answered_with_another_project_is_not_an_update(mongo: MongoRunner) -> None:
+    async def scenario() -> UpdateCheck:
+        bundle_id = await bundle_with([entry("A", "a1", "1.0")])
+        return await make(FakeModrinth({"h-A": version_doc("x2", "OTHER", "2.0")})).compute(bundle_id)
+
+    assert mongo(scenario).updates == []
+
+
+@pytest.mark.network
+def test_rerunning_the_step_after_the_insert_does_not_notify_again(mongo: MongoRunner) -> None:
+    async def scenario() -> list[str]:
+        notifier = Recorder()
+        service = make(FakeModrinth(newer()), notifier=notifier)
+        bundle_id = await bundle_with(three_mods())
+        await service.enqueue(bundle_id, None)
+        claimed = await JobDatabase().claim("w", datetime.now(timezone.utc), timedelta(seconds=60))
+        assert claimed is not None
+        context = JobContext(claimed, JobDatabase(), "w")
+        await service._run(claimed, context)
+        await service._run(claimed, context)  # the checkpoint holds: the step does not run twice
+        # And a retry that lost the checkpoint (crash after the insert) finds the digest stored.
+        claimed.checkpoint.clear()
+        await service._run(claimed, context)
+        return notifier.sent
+
+    assert len(mongo(scenario)) == 1
+
+
+@pytest.mark.network
+def test_latest_with_a_malformed_id_is_a_404(mongo: MongoRunner) -> None:
+    async def scenario() -> None:
+        await make(FakeModrinth({})).latest("not-an-id")
+
+    with pytest.raises(HTTP_404_NOT_FOUND):
+        mongo(scenario)
+
+
+@pytest.mark.network
+def test_latest_many_with_several_checks_per_bundle_returns_only_the_newest(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        db = UpdateCheckDatabase()
+        ids = [PydanticObjectId(await bundle_with([])) for _ in range(3)]
+        for bundle in ids[:2]:
+            for day in (3, 1, 5, 2):
+                await db.insert(UpdateCheck(bundle_id=bundle, build_number=day,
+                                            checked_at=datetime(2026, 10, day, tzinfo=timezone.utc)))
+        found = await db.latest_many(ids)
+        return {k: v.build_number for k, v in found.items()}, ids
+
+    found, ids = mongo(scenario)
+    assert found == {ids[0]: 5, ids[1]: 5}
