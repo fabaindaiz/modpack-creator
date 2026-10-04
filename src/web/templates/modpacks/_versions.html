@@ -1,0 +1,24 @@
+{# The versions a mod of the pack can be pinned to, loaded into its card when it opens: a <select>
+   that posts the version id to the existing pin route. Modrinth failing is said here, with a retry. #}
+{% import "_macros.html" as ui %}
+{% if failed %}
+<div class="flex flex-wrap items-center gap-2 text-xs text-amber-800 dark:text-amber-300">
+  <span>Modrinth no respondió; no se pudieron cargar las versiones.</span>
+  {{ ui.button("Reintentar", kind="secondary", small=True, attrs={
+    "hx-get": "/modpacks/" ~ bundle_id ~ "/projects/" ~ project_id ~ "/versions",
+    "hx-target": "#versions-" ~ project_id, "hx-swap": "innerHTML"}) }}
+</div>
+{% elif not versions %}
+<p class="text-xs text-zinc-500 dark:text-zinc-400">Modrinth no tiene versiones de este mod para la versión de Minecraft, el loader y los canales del modpack.</p>
+{% else %}
+<form hx-post="/modpacks/{{ bundle_id }}/pins" hx-target="#mods" hx-swap="outerHTML" class="flex flex-wrap items-end gap-2">
+  <input type="hidden" name="project_id" value="{{ project_id }}">
+  <div class="min-w-0 flex-1">
+    <label for="pin-{{ project_id }}" class="text-xs font-medium">Fijar una versión</label>
+    <select id="pin-{{ project_id }}" name="version_id" required class="mt-1 block w-full rounded-md border-0 bg-white px-2 py-1 text-xs text-zinc-900 shadow-xs ring-1 ring-inset ring-zinc-300 focus-visible:outline-2 focus-visible:outline-emerald-600 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-700">
+      {% for option in versions %}<option value="{{ option.version_id }}">{{ option.version_number }} ({{ option.channel }}, {{ option.published.strftime("%Y-%m-%d") }})</option>{% endfor %}
+    </select>
+  </div>
+  {{ ui.button("Fijar", type="submit", kind="secondary", small=True) }}
+</form>
+{% endif %}

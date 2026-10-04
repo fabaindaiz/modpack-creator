@@ -16,7 +16,7 @@ from src.model.jobs import Job
 from src.model.modpack import AvailableUpdate, ModpackBuild, ModpackBundle, UpdateCheck
 from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
-from src.services.modpack import ChangePreview
+from src.services.modpack import ChangePreview, ModList
 from tests._actors import EDITOR, session_for
 from tests._session import session_cookie
 
@@ -68,6 +68,9 @@ class FakeModpack:
 
     async def latest_builds(self) -> list[tuple[ModpackBundle, Optional[ModpackBuild]]]:
         return [(self.bundle, None)]
+
+    async def mod_list(self, bundle_id: str, check: Optional[UpdateCheck]) -> ModList:
+        return ModList(rows=[], resolution=None, stale=False, icons_missing=0)
 
 
 class FakeChecks:
@@ -220,7 +223,7 @@ def test_the_detail_links_to_the_page() -> None:
         text = client.get(f"/modpacks/{BUNDLE_ID}").text
     finally:
         main.container.modrinthService.reset_override()
-    assert f'href="/modpacks/{BUNDLE_ID}/actualizaciones"' in text
+    assert f'href="/modpacks/{BUNDLE_ID}/actualizaciones"' in text and "Buscar actualizaciones de mods" in text
 
 
 def test_the_dashboard_badge_counts_without_the_pinned_ones_in_one_query() -> None:

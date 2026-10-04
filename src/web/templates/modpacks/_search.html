@@ -22,11 +22,12 @@
       {% if hit.description %}<p class="line-clamp-2 text-sm break-words text-zinc-600 dark:text-zinc-400">{{ hit.description }}</p>{% endif %}
       <p class="text-xs text-zinc-500 dark:text-zinc-400">{% if hit.author %}@{{ hit.author }} · {% endif %}{{ hit.downloads }} descargas</p>
     </div>
-    <div class="shrink-0">
+    {# Adding it answers #mods and, out of band, this slot as "Ya está" (the form's id says so). #}
+    <div id="hit-{{ hit.project_id }}" class="shrink-0">
       {% if hit.added %}
       {{ ui.badge("Ya está", "accent") }}
       {% else %}
-      <form hx-post="/modpacks/{{ bundle_id }}/projects" hx-target="#projects" hx-swap="outerHTML">
+      <form id="hit-add-{{ hit.project_id }}" hx-post="/modpacks/{{ bundle_id }}/projects" hx-target="#mods" hx-swap="outerHTML">
         <input type="hidden" name="ref" value="{{ hit.project_id }}">
         {{ ui.button("Agregar", type="submit", small=True) }}
       </form>

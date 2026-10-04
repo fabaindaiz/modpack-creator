@@ -6,18 +6,15 @@
 
 {% block content %}
 {% call ui.page_header(bundle.name, bundle.version ~ " · " ~ bundle.loader.value) %}
-{{ ui.link_button("Actualizaciones", "/modpacks/" ~ bundle_id ~ "/actualizaciones") }}
+{{ ui.link_button("Buscar actualizaciones de mods", "/modpacks/" ~ bundle_id ~ "/actualizaciones") }}
 {{ ui.link_button("Todos los modpacks", "/modpacks") }}
 {% endcall %}
 {% if bundle.description %}<p class="max-w-3xl text-sm break-words text-zinc-600 dark:text-zinc-400">{{ bundle.description }}</p>{% endif %}
 
-<div class="grid grid-cols-1 gap-6 xl:grid-cols-2">
-  <div class="min-w-0 space-y-6">
-    {% call ui.section("Proyectos", id="proyectos") %}
-    {% include "modpacks/_projects.html" %}
-    {% endcall %}
-
-    {% call ui.section("Agregar proyectos", id="agregar") %}
+{# Mods wide on the left and a side column (spec §5); below xl, one column in the same order. #}
+<div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
+  <div class="min-w-0 space-y-6 xl:col-span-2">
+    {% call ui.section("Mods", id="mods-section") %}
     <div class="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
       <div>
         <label for="search-q" class="text-sm font-medium">Buscar en Modrinth</label>
@@ -26,8 +23,8 @@
           class="mt-1 {{ FIELD }}">
         <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Solo resultados para {{ bundle.version }} y {{ bundle.loader.value }}.</p>
       </div>
-      <div id="search-results" aria-live="polite"></div>
-      <form hx-post="/modpacks/{{ bundle_id }}/projects" hx-target="#projects" hx-swap="outerHTML" class="flex flex-wrap items-end gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+      <div id="search-results" aria-live="polite" class="max-h-96 overflow-y-auto"></div>
+      <form hx-post="/modpacks/{{ bundle_id }}/projects" hx-target="#mods" hx-swap="outerHTML" class="flex flex-wrap items-end gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
         <div class="min-w-0 flex-1">
           <label for="add-ref" class="text-sm font-medium">O por slug o id</label>
           <input id="add-ref" name="ref" type="text" required maxlength="200" pattern="[A-Za-z0-9_\-]+" placeholder="sodium" class="mt-1 {{ FIELD }}">
@@ -35,29 +32,42 @@
         {{ ui.button("Agregar", type="submit", kind="secondary") }}
       </form>
     </div>
+    {% include "modpacks/_mods.html" %}
     {% endcall %}
   </div>
 
   <div class="min-w-0 space-y-6">
+    {% call ui.section("Builds", id="builds-section") %}
+    {% include "modpacks/_builds.html" %}
+    {% endcall %}
+
+    {% if servers %}
+    {% call ui.section("Servidores vinculados", id="servers-section") %}
+    <ul class="divide-y divide-zinc-100 rounded-lg border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+      {% for server in servers %}
+      <li class="flex flex-wrap items-center gap-2 px-3 py-2">
+        <a href="/servers/{{ server.id }}" class="min-w-0 flex-1 font-medium break-words hover:text-emerald-700 hover:underline dark:hover:text-emerald-300">{{ server.name }}</a>
+        {% if server.is_suspended %}{{ ui.badge("suspendido", "danger") }}{% elif server.status %}{{ ui.badge(server.status, "warning") }}{% else %}{{ ui.badge("sin estado especial") }}{% endif %}
+        {{ ui.link_button("Simular", "/servers/" ~ server.id ~ "#actualizar", small=True) }}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endcall %}
+    {% else %}
+    <p id="servers-section" class="text-sm text-zinc-500 dark:text-zinc-400">Servidores vinculados: ninguno. Se vincula desde la página de cada <a href="/servers" class="font-medium text-emerald-700 hover:underline dark:text-emerald-300">servidor</a>.</p>
+    {% endif %}
+
     {% call ui.section("Canales", id="channels-section") %}
     {% include "modpacks/_channels.html" %}
     {% endcall %}
 
-    {% call ui.section("Versiones fijadas", id="pins-section") %}
-    {% include "modpacks/_pins.html" %}
-    {% endcall %}
-
+    {% if bundle.local_files %}
     {% call ui.section("Archivos locales", id="local-files-section") %}
     {% include "modpacks/_local_files.html" %}
     {% endcall %}
-
-    {% call ui.section("Lock", id="lock-section") %}
-    {% include "modpacks/_lock.html" %}
-    {% endcall %}
-
-    {% call ui.section("Builds", id="builds-section") %}
-    {% include "modpacks/_builds.html" %}
-    {% endcall %}
+    {% else %}
+    <p id="local-files-section" class="text-sm text-zinc-500 dark:text-zinc-400">Archivos locales: ninguno</p>
+    {% endif %}
   </div>
 </div>
 {% endblock %}
