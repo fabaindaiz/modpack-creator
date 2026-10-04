@@ -26,7 +26,7 @@
   <div id="server-summary" class="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
     {% if bundle %}
     <span>Modpack: <a href="/modpacks/{{ bundle.id }}" class="font-medium hover:underline">{{ bundle.name }}</a></span>
-    <span>Instalado: {% if installed_build is not none %}<span class="tabular-nums">build {{ installed_build }}</span>{% else %}<span class="text-zinc-500 dark:text-zinc-400">sin actualizar desde el panel</span>{% endif %}</span>
+    <span>Instalado: {% if installed_build is not none %}<span class="tabular-nums">build {{ installed_build }}</span>{% else %}<span class="text-zinc-500 dark:text-zinc-400">sin actualización terminada desde el panel</span>{% endif %}</span>
     <span>Recomendado: {% if bundle.recommended_build %}<span class="tabular-nums">build {{ bundle.recommended_build }}</span>{% else %}<span class="text-zinc-500 dark:text-zinc-400">ninguno</span>{% endif %}</span>
     {% elif server.bundle_id %}
     <span class="text-zinc-500 dark:text-zinc-400">Modpack desconocido</span>
@@ -92,24 +92,30 @@
       {% endcall %}
 
       {#
-        Importar is always shown (panel usability §5). `to_import` is None without a comparison:
-        a bundle without builds can still be filled by importing.
+        Importar is always shown (panel usability §5). `to_import` (scan.unexplained_for) is None
+        without a comparison: a bundle without builds can still be filled by importing. Jars too
+        large to read count as unexplained, but importing only lists them.
       #}
       {% call ui.section("Importar el servidor", id="importar") %}
       <div class="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+        {% set importable = (to_import.foreign | reject("in", to_import.too_large) | list) if to_import else [] %}
         {% if not server.bundle_id %}
         {% set import_reason = "el servidor está sin modpack" %}
         <p class="text-zinc-600 dark:text-zinc-400">Vincula el servidor a un modpack, o crea uno, para importar sus jars.</p>
         {% elif not scan %}
         {% set import_reason = "sin escaneo" %}
         <p class="text-zinc-600 dark:text-zinc-400">Escanea el servidor para saber qué importar.</p>
-        {% elif to_import is not none and not to_import %}
+        {% elif to_import is not none and not to_import.foreign %}
         {% set import_reason = "no hay nada que importar" %}
-        <p class="text-zinc-600 dark:text-zinc-400">No hay nada que importar: el modpack ya explica todos los jars del último escaneo.</p>
+        <p class="text-zinc-600 dark:text-zinc-400">No hay nada que importar: el modpack ya explica todos los jars del último escaneo.
+          {%- if to_import.in_pack %} El build no incluye {{ to_import.in_pack | length }} de ellos: crea un build nuevo.{% endif %}</p>
+        {% elif to_import is not none and not importable %}
+        {% set import_reason = "demasiado grandes para importar" %}
+        <p class="text-zinc-600 dark:text-zinc-400">{{ to_import.too_large | length }} {{ "jar" if to_import.too_large | length == 1 else "jars" }} del último escaneo {{ "es demasiado grande" if to_import.too_large | length == 1 else "son demasiado grandes" }} para leerlos: importar no puede traerlos al modpack.</p>
         {% else %}
         {% set import_reason = reason %}
         <p class="text-zinc-600 dark:text-zinc-400">
-          {%- if to_import %}{{ to_import | length }} {{ "jar" if to_import | length == 1 else "jars" }} del último escaneo que el modpack no explica. {% endif -%}
+          {%- if importable %}{{ importable | length }} {{ "jar" if importable | length == 1 else "jars" }} del último escaneo que el modpack no explica. {% endif -%}
           Importar los trae al modpack: los que Modrinth reconoce se agregan; los demás esperan tu decisión. Solo lee el servidor.</p>
         {% endif %}
         {% if import_reason %}

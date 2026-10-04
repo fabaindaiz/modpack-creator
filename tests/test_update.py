@@ -230,6 +230,67 @@ def test_unexplained_jar_message_points_to_a_new_build_when_the_pack_has_it(mong
     assert "/mods/hecho-a-mano.jar" in error and "importa el servidor" not in error
 
 
+def test_both_fixes_are_said_when_both_kinds_of_jar_are_there(mongo: MongoRunner) -> None:
+    async def scenario() -> str:
+        jar = b"by hand"
+        s = await setup(extra_files={"/mods/hecho-a-mano.jar": jar, "/mods/ajeno.jar": b"stranger"})
+        bundle_id = (await PterodactylDatabase().server_get(s.server_id)).bundle_id
+        assert bundle_id is not None
+        await ModpackDatabase().bundle_local_file_add(bundle_id, LocalFile(
+            filename="hecho-a-mano.jar", sha512=sha512(jar), sha1=sha1(jar), size=len(jar)))
+        return (await s.run(dry_run=True)).error or ""
+
+    assert mongo(scenario) == ("importa el servidor: el modpack no explica /mods/ajeno.jar; crea un build nuevo: "
+                               "el modpack ya lo incluye y el build no: /mods/hecho-a-mano.jar")
+
+
+def test_a_real_update_ends_with_a_scan_compared_with_the_new_build(mongo: MongoRunner) -> None:
+    """The preflight's scan is stale once the jars change (it records no drift): a done real update
+    scans again, read-only, so the dashboard and the server page show the state it left (F37)."""
+    async def scenario() -> tuple[str, int, str | None]:
+        s = await setup()
+        job = await s.run(dry_run=False)
+        scans = await PterodactylDatabase().scan_find(s.server_id)
+        return job.status, len(scans), scans[0].drift
+
+    status, new_scans, drift = mongo(scenario)
+    assert status == "done" and new_scans == 2  # the preflight's and the one after
+    assert drift is not None and drift.startswith("✅") and "build 1" in drift
+
+
+def test_a_real_update_with_nothing_to_change_still_records_the_state(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[str, str | None]:
+        s = await setup(installed="newest")
+        job = await s.run(dry_run=False)
+        latest = await PterodactylDatabase().scan_latest(s.server_id, "/mods")
+        assert latest is not None
+        return job.status, latest.drift
+
+    status, drift = mongo(scenario)
+    assert status == "done" and drift is not None and drift.startswith("✅")
+
+
+def test_a_failing_rescan_after_the_update_leaves_it_done_and_is_logged(mongo: MongoRunner,
+                                                                          caplog: pytest.LogCaptureFixture) -> None:
+    async def scenario() -> tuple[str, list[str], str | None]:
+        s = await setup()
+        real_scan = s.update.servers.scan
+
+        async def scan(server_id: str, actor: Any, record_drift: bool = True, **kwargs: Any) -> Any:
+            if record_drift:  # the rescan after the update; the preflight's records none
+                raise RuntimeError("panel down")
+            return await real_scan(server_id, actor, record_drift=record_drift, **kwargs)
+
+        s.update.servers.scan = scan  # type: ignore[method-assign, assignment]
+        job = await s.run(dry_run=False)
+        return job.status, s.recorder.sent, job.error
+
+    with caplog.at_level("WARNING", logger="modpack.update"):
+        status, sent, error = mongo(scenario)
+    assert status == "done" and error is None and "✅" in sent[-1]
+    assert any("scan after the update" in r.getMessage() for r in caplog.records)
+
+
 def test_only_a_dry_runs_scan_records_its_drift(mongo: MongoRunner) -> None:
     """A real update changes the server right after its preflight scan: that scan's comparison
     would be stale at once, so it records none. A dry run changes nothing: its scan's is true."""
@@ -238,8 +299,9 @@ def test_only_a_dry_runs_scan_records_its_drift(mongo: MongoRunner) -> None:
         await s.run()  # dry run
         dry = (await PterodactylDatabase().scan_latest(s.server_id, "/mods"))
         await s.run(dry_run=False)
-        real = (await PterodactylDatabase().scan_latest(s.server_id, "/mods"))
-        assert dry is not None and real is not None and dry.id != real.id
+        # The real run's preflight scan: the one before the rescan that ends a done update.
+        real = (await PterodactylDatabase().scan_find(s.server_id))[1]
+        assert dry is not None and dry.id != real.id
         return dry.drift, real.drift
 
     dry, real = mongo(scenario)

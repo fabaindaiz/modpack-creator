@@ -273,8 +273,9 @@ def test_a_server_linked_to_a_bundle_compares_against_it_without_naming_it(mongo
 
 
 def test_scan_of_a_linked_server_stores_its_drift(mongo: MongoRunner) -> None:
-    """Any scan of a server linked to a bundle with a build stores how it compares (F37): also
-    the update's own scan, which has no actor. The dashboard reads it; an unlinked server has none."""
+    """A scan of a server linked to a bundle with a build stores how it compares (F37), also one
+    without an actor (the scheduler's, a dry run's). Only a real update's preflight scan does not
+    (`record_drift=False`, tests/test_update.py). The dashboard reads it; an unlinked server has none."""
     async def scenario() -> tuple[str | None, str | None, str | None]:
         modrinth = HashModrinthAPI({})
         bundle_id, version_id = await build_with_fabric_api(modrinth)

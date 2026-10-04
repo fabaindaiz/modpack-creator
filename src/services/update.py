@@ -16,6 +16,7 @@ the downloads and writes nothing: it records what it would do. Writes still go t
 Pterodactyl client's gate (PTERODACTYL_WRITES).
 """
 import asyncio
+import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -28,7 +29,7 @@ from src.exceptions import *
 from src.library.api.client.download import Downloader
 from src.library.api.client.pterodactyl import PterodactylAPI
 from src.library.mrpack import ALLOWED_DOMAINS
-from src.library.scan import Unexplained, compare, unexplained
+from src.library.scan import Unexplained, compare, unexplained_for
 from src.model.jobs import Job, is_real_update
 from src.model.pterodactyl import PterodactylServer
 from src.library.auth.roles import operator_only
@@ -39,6 +40,8 @@ from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink, 
 from src.services.pterodactyl import PterodactylService
 
 import hashlib
+
+logger = logging.getLogger("modpack.update")
 
 @dataclass
 class UpdateTiming:
@@ -180,6 +183,9 @@ class UpdateService():
         server = await self.serverDB.server_get(payload["server_id"])
         plan = await context.step("preflight", lambda: self._preflight(job, server, dry_run))
         if not plan["install"] and not plan["remove"]:
+            if not dry_run:
+                # Its preflight scan recorded no drift (a real run's never does): record the state it confirmed.
+                await self._rescan(server)
             return
         ident = server.identifier
         try:
@@ -217,8 +223,7 @@ class UpdateService():
             # A real update changes the server right after: this scan's drift would be stale at once.
             scan = await self.servers.scan(str(server.id), actor=None, record_drift=dry_run)
             comparison = compare(scan.files, build.lock.entries, build.local_files, bundle.claimed_files)
-            jars = unexplained(comparison, (p.project_id for p in bundle.projects),
-                               [*(f.sha512 for f in bundle.local_files), *(c.sha512 for c in bundle.claimed_files)])
+            jars = unexplained_for(comparison, bundle)
             if jars.in_pack or jars.foreign:
                 raise refuse(_unexplained_reason(jars))
             entries = {e.project_id: e for e in build.lock.entries}
@@ -378,11 +383,25 @@ class UpdateService():
 
     async def _finish(self, ident: str, backup: dict[str, Any], server: PterodactylServer,
                       plan: dict[str, Any], ops: Ops) -> dict[str, Any]:
-        """Release the backup's lock, and announce it. mods.old stays until a person removes it."""
+        """Release the backup's lock, announce it, and record the state the update left (`_rescan`).
+        mods.old stays until a person removes it."""
         if backup.get("uuid") and not ops.dry_run and (await self.api.backup_get(ident, backup["uuid"])).is_locked:
             await ops.write("unlock backup", lambda: self.api.backup_lock_toggle(ident, backup["uuid"]))
         await self._notify(f"✅ {server.name} actualizado a {plan['bundle']}, build {plan['build']}.", ops.dry_run)
+        if not ops.dry_run:
+            await self._rescan(server)
         return {}
+
+    async def _rescan(self, server: PterodactylServer) -> None:
+        """After a real update that ended well, scan the server again and record how it compares
+        with its build (F37): the preflight's scan predates the new jars and records none. Only
+        reads the panel (lists and downloads). Best effort, inside the finish step and never a step
+        of its own: the update already succeeded, so a failure here is logged, never the job's."""
+        try:
+            await self.servers.scan(str(server.id), actor=None, record_drift=True)
+        except Exception:
+            logger.warning("the scan after the update failed: the server's state waits for the next scan",
+                           exc_info=True, extra={"server_id": str(server.id)})
 
     # Rollbacks, only on request (d-7985ee-5445a0).
 

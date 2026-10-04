@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from src.dependences import Dependences, JobService, ModpackService, ModrinthService, PterodactylService, UpdateService
 from src.exceptions import HTTP_403_FORBIDDEN, HTTP_409_CONFLICT, HTTP_422_UNPROCESSABLE_ENTITY
-from src.library.scan import Comparison, unexplained
+from src.library.scan import Comparison, unexplained_for
 from src.model.jobs import Job
 from src.model.modpack import ModpackBundle
 from src.model.pterodactyl import ImportResult, PterodactylServer
@@ -145,9 +145,7 @@ async def server_detail(
     titles = await _titles(modrinthService, _comparison_ids(comparison) if comparison else [])
     versions = await pterodactylService.compare_names(comparison) if comparison else {}
     # What importing would bring: the jars the bundle itself does not explain (F26's rule).
-    to_import = unexplained(comparison, (p.project_id for p in bundle.projects),
-                            [*(f.sha512 for f in bundle.local_files), *(c.sha512 for c in bundle.claimed_files)]
-                            ).foreign if comparison and bundle else None
+    to_import = unexplained_for(comparison, bundle) if comparison and bundle else None
     installed_build = await jobService.installed_build(server_id) if bundle else None
     active = await jobService.active_for_server(server_id)
     rollback = await jobService.rollback_state(server_id)

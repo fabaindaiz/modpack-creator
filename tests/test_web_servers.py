@@ -444,7 +444,7 @@ def test_summary_line_says_installed_recommended_and_differences() -> None:
     fakes.ptero.comparison = Comparison(matching=[scan_file("/mods/sodium.jar", "P1")], different_version=[],
                                         missing=[], extra=[], unknown=[])
     line = summary(client.get(f"/servers/{SERVER_ID}").text)
-    assert "sin actualizar desde el panel" in line and "Coincide" in line and "diferencia" not in line
+    assert "sin actualización terminada desde el panel" in line and "Coincide" in line and "diferencia" not in line
     fakes.ptero.scan, fakes.ptero.comparison = None, None
     assert "Sin escaneo" in summary(client.get(f"/servers/{SERVER_ID}").text)
 
@@ -494,6 +494,16 @@ def test_import_is_always_shown_and_says_when_nothing_to_import() -> None:
     fakes.ptero.scan, fakes.ptero.comparison = None, None
     section = importar(client.get(f"/servers/{SERVER_ID}").text)
     assert "Escanea el servidor para saber qué importar" in section and "hx-post" not in section
+    # Only jars too large to read: importing could not bring them either.
+    fakes.ptero.scan = scan()
+    fakes.ptero.comparison = Comparison(matching=[], different_version=[], missing=[], extra=[],
+                                        unknown=[scan_file("/mods/huge.jar", None, "too_large")])
+    section = importar(client.get(f"/servers/{SERVER_ID}").text)
+    assert "demasiado grande" in section and "Importar los trae" not in section and "hx-post" not in section
+    # A server without a modpack: link one, or create it, first.
+    fakes.ptero.server, fakes.ptero.comparison = server(bundle_id=None), None
+    section = importar(client.get(f"/servers/{SERVER_ID}").text)
+    assert "Vincula el servidor a un modpack" in section and "hx-post" not in section
     # An editor sees it too, disabled.
     client, fakes = setup(EDITOR)
     section = importar(client.get(f"/servers/{SERVER_ID}").text)

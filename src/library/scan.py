@@ -5,9 +5,9 @@ the sha1 of its bytes against Modrinth, as the Modrinth App, ferium and Prism do
 downloaded again only if its path, size or modification time changed, or on a full scan:
 restoring a backup keeps old modification times, which the cache cannot see.
 """
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime, timezone
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, Protocol
 from pydantic import BaseModel, field_validator
 
 ScanStatus = Literal["identified", "unknown", "too_large"]
@@ -169,9 +169,11 @@ def drift_message(server: str, bundle: str, build: int, comparison: Comparison) 
 class Unexplained(BaseModel):
     """The jars of a server that its build does not explain, by fix (F26): `in_pack` the bundle
     already has (as a local or claimed file), so a new build explains them; `foreign` it does not,
-    so importing the server brings them in. Paths, in the comparison's order."""
+    so importing the server brings them in, except `too_large`, the part of `foreign` too large to
+    read, which importing only lists. Paths, in the comparison's order."""
     in_pack: list[str]
     foreign: list[str]
+    too_large: list[str] = []
 
 
 def unexplained(comparison: Comparison, bundle_projects: Iterable[str], kept_sha512s: Iterable[str]) -> Unexplained:
@@ -187,4 +189,32 @@ def unexplained(comparison: Comparison, bundle_projects: Iterable[str], kept_sha
     in_pack = [f.path for f in comparison.unknown if f.sha512 is not None and f.sha512 in kept]
     foreign = ([f.path for f in comparison.unknown if f.sha512 is None or f.sha512 not in kept]
                + [f.path for f in comparison.extra if f.project_id not in projects])
-    return Unexplained(in_pack=in_pack, foreign=foreign)
+    too_large = [f.path for f in comparison.unknown if f.status == "too_large"]
+    return Unexplained(in_pack=in_pack, foreign=foreign, too_large=too_large)
+
+
+class _HasProjectId(Protocol):
+    @property
+    def project_id(self) -> str: ...
+
+
+class _HasSha512(Protocol):
+    @property
+    def sha512(self) -> str: ...
+
+
+class BundleContents(Protocol):
+    """What `unexplained_for` reads of a bundle (a ModpackBundle; named here to avoid importing
+    the model, which imports this module)."""
+    @property
+    def projects(self) -> Sequence[_HasProjectId]: ...
+    @property
+    def local_files(self) -> Sequence[_HasSha512]: ...
+    @property
+    def claimed_files(self) -> Sequence[_HasSha512]: ...
+
+
+def unexplained_for(comparison: Comparison, bundle: BundleContents) -> Unexplained:
+    """`unexplained` with what a bundle has: its projects, and its local and claimed jars."""
+    return unexplained(comparison, (p.project_id for p in bundle.projects),
+                       [*(f.sha512 for f in bundle.local_files), *(c.sha512 for c in bundle.claimed_files)])

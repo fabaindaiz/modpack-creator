@@ -113,6 +113,7 @@ def test_unexplained_jars_split_into_what_the_pack_has_and_what_it_does_not() ->
                          kept_sha512s={"k" * 128, "c" * 128})
     assert result.in_pack == ["/mods/kept.jar", "/mods/claimed.jar"]
     assert result.foreign == ["/mods/stranger.jar", "/mods/huge.jar", "/mods/x.jar"]
+    assert result.too_large == ["/mods/huge.jar"]  # unexplained, but importing only lists it
     nothing = unexplained(compare(files[4:6], [lock_entry("A", "a1")]), bundle_projects={"A"}, kept_sha512s=set())
     assert nothing.in_pack == [] and nothing.foreign == []
 
