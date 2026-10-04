@@ -1,6 +1,6 @@
 """Acciones de editor: cada cambio que hace un editor queda en la auditoría, después de tener éxito.
 
-- Una tabla de 13 métodos: cada uno graba exactamente un evento con su acción, su tipo de objetivo
+- Una tabla de métodos: cada uno graba exactamente un evento con su acción, su tipo de objetivo
   y la persona que lo pidió.
 - Si grabar falla, el error se propaga y la acción queda hecha (decidido: el 500 lleva `request_id`).
 - El programador y el handler del worker actúan sin persona: `actor=None` explícito, ningún evento.
@@ -99,6 +99,20 @@ async def decisions_set(audit: RecordingAudit, actor: Actor) -> str:
     return bundle_id
 
 
+async def pin_set(audit: RecordingAudit, actor: Actor) -> str:
+    service = modpack(audit)
+    bundle_id = await bundle_of(service, audit, "sodium")
+    await service.pin_set(bundle_id, "AANobbMI", "v4PSXean", actor=actor)
+    return bundle_id
+
+
+async def pin_unset(audit: RecordingAudit, actor: Actor) -> str:
+    service = modpack(audit)
+    bundle_id = await bundle_of(service, audit, "sodium")
+    await service.pin_unset(bundle_id, "AANobbMI", actor=actor)
+    return bundle_id
+
+
 async def project_add(audit: RecordingAudit, actor: Actor) -> str:
     service = modpack(audit)
     bundle_id = await bundle_of(service, audit)
@@ -180,6 +194,8 @@ TABLE: list[tuple[Case, str, str, dict[str, Any] | None]] = [
     (bundle_update, "bundle.update", "bundle", None),
     (decision_set, "bundle.decision", "bundle", {"project_id": "AANobbMI", "server": True}),
     (decisions_set, "bundle.decision", "bundle", {"decisions": {"AANobbMI": True, "P2": False}}),
+    (pin_set, "bundle.pin", "bundle", {"project_id": "AANobbMI", "version_id": "v4PSXean"}),
+    (pin_unset, "bundle.pin", "bundle", {"project_id": "AANobbMI", "version_id": None}),
     (project_add, "bundle.project.add", "bundle", {"refs": ["iris"], "origin": "admin"}),
     (pack_replace, "bundle.project.replace", "bundle", None),
     (project_remove, "bundle.project.remove", "bundle", None),

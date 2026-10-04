@@ -126,6 +126,28 @@ class ModpackDatabase():
             raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' not found")
         return await self.bundle_get(bundle_id)
 
+    async def bundle_pin_set(self, bundle_id: str, project_id: str, version_id: str) -> ModpackBundle:
+        """
+        Pin one mod to a version, touching only that key: two pins made at the same time both
+        stay. Both ids must be plain Modrinth ids (the caller checks them): `project_id` becomes a
+        key of a dotted path.
+        """
+        oid = self._bundle_oid(bundle_id)
+        result = await ModpackBundle.get_pymongo_collection().update_one(
+            {"_id": oid}, {"$set": {f"pins.{project_id}": version_id}})
+        if not result.matched_count:
+            raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' not found")
+        return await self.bundle_get(bundle_id)
+
+    async def bundle_pin_unset(self, bundle_id: str, project_id: str) -> ModpackBundle:
+        """Remove one mod's pin, touching only that key. `project_id` must be a plain Modrinth id."""
+        oid = self._bundle_oid(bundle_id)
+        result = await ModpackBundle.get_pymongo_collection().update_one(
+            {"_id": oid}, {"$unset": {f"pins.{project_id}": ""}})
+        if not result.matched_count:
+            raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' not found")
+        return await self.bundle_get(bundle_id)
+
     async def bundle_pack_replace(self, bundle_id: str, projects: list[PackProject]) -> list[PackProject]:
         """
         Replace what the pack brings, keeping what the admin added (d-7985ee-b15dd4).

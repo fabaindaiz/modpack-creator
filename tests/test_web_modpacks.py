@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 
 from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
 from src.library.resolution import Lock, LockEntry, Problem
+from src.library.scan import LocalFile
 from src.model.modpack import ModpackBuild, ModpackBundle, ModpackReplacement, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject
 from src.model.users import Actor
@@ -38,7 +39,9 @@ def bundle(projects: Optional[list[PackProject]] = None, decisions: Optional[dic
         id=BUNDLE_ID, name="Pack Uno", description="Un pack", version="1.21.1", loader=MinecraftLoaders.fabric,
         projects=projects if projects is not None else [PackProject(project_id="P1", origin=ProjectOrigin.pack),
                                                        PackProject(project_id="P2", origin=ProjectOrigin.admin)],
-        server_decisions=decisions if decisions is not None else {"OLD": True}, latest_build=2, recommended_build=1)
+        server_decisions=decisions if decisions is not None else {"OLD": True}, latest_build=2, recommended_build=1,
+        channels=["release"], pins={"P1": "ver-p1"},
+        local_files=[LocalFile(filename="custom.jar", sha512="ab12cd34ef56" + "0" * 100, sha1="x", size=1536)])
 
 
 def build(number: int) -> ModpackBuild:
@@ -92,6 +95,20 @@ class FakeModpack:
 
     async def decisions_set(self, bundle_id: str, decisions: dict[str, bool], actor: Actor) -> ModpackBundle:
         self._record("decisions_set", bundle_id, decisions, actor)
+        return self.bundle
+
+    async def bundle_update(self, bundle_id: str, patch: Any, actor: Actor) -> ModpackBundle:
+        self._record("bundle_update", bundle_id, patch, actor)
+        return self.bundle
+
+    async def pin_set(self, bundle_id: str, project_id: str, version_id: str, actor: Actor) -> ModpackBundle:
+        self._record("pin_set", bundle_id, project_id, version_id, actor)
+        self.bundle.pins = {**self.bundle.pins, project_id: version_id}
+        return self.bundle
+
+    async def pin_unset(self, bundle_id: str, project_id: str, actor: Actor) -> ModpackBundle:
+        self._record("pin_unset", bundle_id, project_id, actor)
+        self.bundle.pins = {k: v for k, v in self.bundle.pins.items() if k != project_id}
         return self.bundle
 
     async def project_add(self, bundle_id: str, refs: list[str], origin: ProjectOrigin, actor: Actor) -> list[PackProject]:
@@ -692,3 +709,122 @@ def test_bulk_with_one_bad_id_writes_nothing(mongo: MongoRunner) -> None:
     assert statuses == [422, 422, 422, 422, 404]
     assert stored == {"OLD": True, "P1": True, "P2": False}
     assert (action, target.kind, details, count) == ("bundle.decision", "bundle", {"decisions": {"P1": True, "P2": False}}, 1)
+
+
+# Detalle (a): archivos locales, canales y pines.
+
+def test_detail_shows_local_files_channels_and_pins() -> None:
+    client, _, _ = setup()
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert 'id="local-files"' in text and "custom.jar" in text and "1,5 KiB" in text and "ab12cd34ef56" in text
+    assert "ab12cd34ef560" not in text
+    assert 'id="channels"' in text and f'hx-post="/modpacks/{BUNDLE_ID}/channels"' in text
+    assert re.search(r'name="channel" value="release"[^>]*checked', text)
+    assert not re.search(r'name="channel" value="beta"[^>]*checked', text)
+    assert 'id="pins"' in text and "ver-p1" in text and f'hx-delete="/modpacks/{BUNDLE_ID}/pins/P1"' in text
+
+
+def test_detail_without_local_files_says_so() -> None:
+    client, modpack, _ = setup()
+    modpack.bundle.local_files = []
+    assert "Sin archivos locales" in client.get(f"/modpacks/{BUNDLE_ID}").text
+
+
+def test_channels_are_saved_through_the_service_with_the_actor() -> None:
+    client, modpack, _ = setup()
+    response = client.post(f"/modpacks/{BUNDLE_ID}/channels", headers=HTMX, data={"channel": ["release", "beta"]})
+    assert response.status_code == 200 and 'id="channels"' in response.text
+    _, bundle_id, patch, who = call(modpack, "bundle_update")
+    assert (bundle_id, patch.channels, who) == (str(BUNDLE_ID), ["release", "beta"], EDITOR)
+
+
+def test_channels_need_at_least_one_and_only_known_ones() -> None:
+    client, modpack, _ = setup()
+    assert client.post(f"/modpacks/{BUNDLE_ID}/channels", headers=HTMX, data={}).status_code == 422
+    assert client.post(f"/modpacks/{BUNDLE_ID}/channels", headers=HTMX, data={"channel": "nightly"}).status_code == 422
+    assert modpack.calls == []
+
+
+def test_pin_add_and_remove_call_the_service_with_the_actor() -> None:
+    client, modpack, _ = setup()
+    added = client.post(f"/modpacks/{BUNDLE_ID}/pins", headers=HTMX, data={"project_id": "P2", "version_id": "ver-p2"})
+    assert added.status_code == 200 and 'id="pins"' in added.text and "ver-p2" in added.text
+    assert call(modpack, "pin_set")[1:] == (str(BUNDLE_ID), "P2", "ver-p2", EDITOR)
+    removed = client.request("DELETE", f"/modpacks/{BUNDLE_ID}/pins/P1", headers=HTMX)
+    assert removed.status_code == 200 and 'id="pins"' in removed.text
+    assert call(modpack, "pin_unset")[1:] == (str(BUNDLE_ID), "P1", EDITOR)
+
+
+def test_pin_with_a_bad_id_is_refused_before_the_service() -> None:
+    client, modpack, _ = setup()
+    for bad in ("a.b", "$set", "a/b"):
+        response = client.post(f"/modpacks/{BUNDLE_ID}/pins", headers=HTMX, data={"project_id": bad, "version_id": "v1"})
+        assert response.status_code == 422
+        response = client.post(f"/modpacks/{BUNDLE_ID}/pins", headers=HTMX, data={"project_id": "P1", "version_id": bad})
+        assert response.status_code == 422
+    assert modpack.calls == []
+
+
+@pytest.mark.network
+def test_pins_are_written_one_key_at_a_time(mongo: MongoRunner) -> None:
+    from src.database import ModpackDatabase
+
+    async def scenario() -> dict[str, str]:
+        database = ModpackDatabase()
+        created = await database.bundle_insert(_stored_bundle())
+        bundle_id = str(created.id)
+        await asyncio.gather(*(database.bundle_pin_set(bundle_id, f"P{i}", f"v{i}") for i in range(20)))
+        await database.bundle_pin_unset(bundle_id, "P0")
+        updated = await database.bundle_pin_unset(bundle_id, "NEVER")
+        assert updated.pins == (await database.bundle_get(bundle_id)).pins
+        for call_ in (database.bundle_pin_set(str(PydanticObjectId()), "P1", "v"), database.bundle_pin_unset(str(PydanticObjectId()), "P1")):
+            with pytest.raises(Exception) as missing:
+                await call_
+            assert getattr(missing.value, "status_code") == 404
+        return updated.pins
+
+    assert mongo(scenario) == {f"P{i}": f"v{i}" for i in range(1, 20)}
+
+
+@pytest.mark.network
+def test_pin_with_bad_id_or_foreign_version_writes_nothing(mongo: MongoRunner) -> None:
+    from typing import cast
+
+    from fastapi import HTTPException
+
+    from src.database import ModpackDatabase, ModrinthDatabase
+    from tests._actors import RecordingAudit
+    from tests._modrinth import IRIS, SODIUM, RecordedModrinthAPI
+
+    async def scenario() -> tuple[list[tuple[str, int]], dict[str, str], int, list[Any], dict[str, str]]:
+        database, audit, api = ModpackDatabase(), RecordingAudit(), RecordedModrinthAPI()
+        service = ModpackService(database, ModrinthDatabase(), cast(Any, api), None, audit)  # type: ignore[arg-type]
+        created = await database.bundle_insert(_stored_bundle())
+        bundle_id = str(created.id)
+        await service.project_add(bundle_id, ["sodium"], ProjectOrigin.admin, actor=EDITOR)
+        audit.events.clear()
+        api.calls.clear()
+        refused: list[tuple[str, int]] = []
+        attempts = [(SODIUM, "a.b"), ("a.b", "v4PSXean"), ("$x", "v1"), (SODIUM, ""),   # ids malos
+                    (IRIS, "vTN4NRGW"),        # el proyecto no está en el modpack
+                    (SODIUM, "vTN4NRGW"),      # la versión es de otro proyecto
+                    (SODIUM, "nope")]          # Modrinth no la conoce
+        for project_id, version_id in attempts:
+            with pytest.raises(HTTPException) as error:
+                await service.pin_set(bundle_id, project_id, version_id, actor=EDITOR)
+            refused.append((str(error.value.detail), error.value.status_code))
+        wrote = (await database.bundle_get(bundle_id)).pins
+        events = len(audit.events)
+        await service.pin_set(bundle_id, SODIUM, "v4PSXean", actor=EDITOR)
+        # una versión ya en el catálogo no vuelve a pedirse a Modrinth
+        await ModrinthDatabase().version_upsert_many([await api.version_get("v4PSXean")])
+        api.calls.clear()
+        await service.pin_set(bundle_id, SODIUM, "v4PSXean", actor=EDITOR)
+        return refused, wrote, events, api.calls, (await database.bundle_get(bundle_id)).pins
+
+    refused, wrote, events, calls, pins = mongo(scenario)
+    assert [status for _, status in refused] == [422] * 7
+    assert "La versión no es de ese proyecto" in refused[5][0]
+    assert wrote == {} and events == 0
+    assert calls == []
+    assert pins == {"AANobbMI": "v4PSXean"}

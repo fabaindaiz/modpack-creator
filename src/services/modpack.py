@@ -81,6 +81,48 @@ class ModpackService():
         await self.audit.record(actor, "bundle.decision", _bundle(bundle_id), {"decisions": decisions})
         return updated
 
+    async def pin_set(self, bundle_id: str, project_id: str, version_id: str, actor: Actor) -> ModpackBundle:
+        """Pin one mod of the bundle to a version, atomically; only that pin changes.
+
+        422 for an id that is not a Modrinth id (it would become a nested key), a project the
+        bundle does not have, or a version that is not of that project: the catalog is asked first,
+        Modrinth if the catalog does not have it. Nothing is written for a refused pin.
+        """
+        for value in (project_id, version_id):
+            if not MODRINTH_ID.fullmatch(value):
+                raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{value}' no es un id de Modrinth")
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        if project_id not in {p.project_id for p in bundle.projects}:
+            raise HTTP_422_UNPROCESSABLE_ENTITY("Ese proyecto no está en el modpack")
+        if await self._version_project(version_id) != project_id:
+            raise HTTP_422_UNPROCESSABLE_ENTITY("La versión no es de ese proyecto")
+        updated = await self.modpackDB.bundle_pin_set(bundle_id, project_id, version_id)
+        await self.audit.record(actor, "bundle.pin", _bundle(bundle_id),
+                                {"project_id": project_id, "version_id": version_id})
+        return updated
+
+    async def pin_unset(self, bundle_id: str, project_id: str, actor: Actor) -> ModpackBundle:
+        """Remove the pin of one mod; only that pin changes. 422 for an id that is not a Modrinth id."""
+        if not MODRINTH_ID.fullmatch(project_id):
+            raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{project_id}' no es un id de Modrinth")
+        updated = await self.modpackDB.bundle_pin_unset(bundle_id, project_id)
+        await self.audit.record(actor, "bundle.pin", _bundle(bundle_id),
+                                {"project_id": project_id, "version_id": None})
+        return updated
+
+    async def _version_project(self, version_id: str) -> Optional[str]:
+        """The project a version belongs to: from the catalog, else from Modrinth (which does not
+        know it: None)."""
+        stored = await self.modrinthDB.version_find_by_version_id(version_id)
+        if stored is not None:
+            return stored.project_id
+        try:
+            return (await self.modrinthAPI.version_get(version_id)).project_id
+        except HTTPException as error:
+            if error.status_code == 404:
+                return None
+            raise
+
     # Content (i-7985ee-063a3a).
 
     async def project_find(self, bundle_id: str) -> list[PackProject]:

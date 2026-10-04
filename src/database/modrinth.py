@@ -112,6 +112,10 @@ class ModrinthDatabase():
             raise HTTP_404_NOT_FOUND(f"Version with ID '{version_id}' not found.")
         return document
     
+    async def version_find_by_version_id(self, version_id: str) -> Optional[ModrinthVersion]:
+        """The stored version with this Modrinth version id, or None if the catalog does not have it."""
+        return await ModrinthVersion.find_one(ModrinthVersion.version_id == version_id)
+
     async def version_insert(self, version: ModrinthVersion) -> ModrinthVersion:
         """
         Add a single version to the database.

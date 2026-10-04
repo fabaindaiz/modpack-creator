@@ -22,7 +22,7 @@ from pymongo import AsyncMongoClient
 from src.model import init_databases
 from src.model.audit import AuditEvent, AuditTarget
 from src.model.jobs import Job
-from src.library.scan import ScanFile
+from src.library.scan import LocalFile, ScanFile
 from src.model.modpack import ModpackBundle, ModpackReplacement, PackProject, ProjectOrigin
 from src.model.pterodactyl import PterodactylServer, ServerScan
 from src.model.users.actor import ActorRef
@@ -76,7 +76,9 @@ async def seed(mongo_uri: str) -> dict[str, str]:
         description="Pack principal", version="26.3", loader=MinecraftLoaders.fabric,
         projects=[PackProject(project_id=f"mod-{i:03d}-{'x' * (i % 40)}", origin=ProjectOrigin.admin if i % 7 == 0 else ProjectOrigin.pack)
                   for i in range(300)],
-        server_decisions={"mod-001-x": True})
+        server_decisions={"mod-001-x": True},
+        pins={"mod-001-x": "v4PSXean"},
+        local_files=[LocalFile(filename="custom-datapack-helper-con-un-nombre-largo.jar", sha512="d" * 128, sha1="e" * 40, size=2_621_440)])
     small = ModpackBundle(name="Creativo", description="", version="26.2", loader=MinecraftLoaders.neoforge)
     await big.insert()
     await small.insert()

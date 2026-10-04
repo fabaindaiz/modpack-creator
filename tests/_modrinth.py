@@ -41,3 +41,11 @@ class RecordedModrinthAPI:
     async def version_get_many(self, ids: list[str]) -> list[ModrinthVersion]:
         self.calls.append(("version_get_many", tuple(ids)))
         return [ModrinthVersion.parse(**copy.deepcopy(v)) for v in self.versions if v["id"] in ids]
+
+    async def version_get(self, id: str) -> ModrinthVersion:
+        from src.exceptions import HTTP_404_NOT_FOUND
+        self.calls.append(("version_get", id))
+        for v in self.versions:
+            if v["id"] == id:
+                return ModrinthVersion.parse(**copy.deepcopy(v))
+        raise HTTP_404_NOT_FOUND(f"No version {id}")

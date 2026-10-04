@@ -38,6 +38,18 @@
   </div>
 
   <div class="min-w-0 space-y-6">
+    {% call ui.section("Canales", id="channels-section") %}
+    {% include "modpacks/_channels.html" %}
+    {% endcall %}
+
+    {% call ui.section("Versiones fijadas", id="pins-section") %}
+    {% include "modpacks/_pins.html" %}
+    {% endcall %}
+
+    {% call ui.section("Archivos locales", id="local-files-section") %}
+    {% include "modpacks/_local_files.html" %}
+    {% endcall %}
+
     {% call ui.section("Lock", id="lock-section") %}
     {% include "modpacks/_lock.html" %}
     {% endcall %}

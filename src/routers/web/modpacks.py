@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from src.exceptions import HTTP_422_UNPROCESSABLE_ENTITY
 from src.dependences import Dependences, ModpackService, ModrinthService
-from src.model.modpack import ModpackBundle, ModpackBundleCreate, ProjectOrigin
+from src.model.modpack import ModpackBundle, ModpackBundleCreate, ModpackBundlePatch, ProjectOrigin
 from src.model.modrinth.project import ModrinthEnvironment
 from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
@@ -21,6 +21,8 @@ router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
 MODRINTH_REF = r"^[A-Za-z0-9_\-]+$"
 # The prefix of a bulk-decision field: `decision.<project id>`.
 DECISION_PREFIX = "decision."
+# The channels a modpack may allow, most stable first (Modrinth's version types).
+CHANNELS = ("release", "beta", "alpha")
 SEARCH_LIMIT = 10
 SEARCH_TEXT_MAX = 100
 # The only host the CSP lets an <img> load from besides ourselves (web_security.CSP).
@@ -111,6 +113,21 @@ async def _projects(request: Request, actor: Actor, modrinthService: ModrinthSer
     titles = await _titles(modrinthService, [p.project_id for p in projects])
     return render(request, "modpacks/_projects.html", actor, bundle_id=bundle_id, projects=projects, titles=titles)
 
+def human_size(size: int) -> str:
+    """1536 → "1,5 KiB", 3 MiB → "3,0 MiB"; under 1 KiB in bytes."""
+    if size < 1024:
+        return f"{max(size, 0)} B"
+    unit, divisor = ("KiB", 1024) if size < 1024 ** 2 else ("MiB", 1024 ** 2)
+    return f"{size / divisor:.1f}".replace(".", ",") + f" {unit}"
+
+def _channels(request: Request, actor: Actor, bundle: ModpackBundle, bundle_id: str) -> Response:
+    return render(request, "modpacks/_channels.html", actor, bundle_id=bundle_id, bundle=bundle, channel_names=CHANNELS)
+
+async def _pins(request: Request, actor: Actor, modrinthService: ModrinthService, bundle: ModpackBundle,
+                bundle_id: str) -> Response:
+    titles = await _titles(modrinthService, [p.project_id for p in bundle.projects] + list(bundle.pins))
+    return render(request, "modpacks/_pins.html", actor, bundle_id=bundle_id, bundle=bundle, titles=titles)
+
 async def _lock(request: Request, actor: Actor, modpackService: ModpackService, modrinthService: ModrinthService,
                 bundle_id: str) -> Response:
     lock = await modpackService.resolve(bundle_id)
@@ -171,9 +188,10 @@ async def modpack_detail(
     """A bundle: its projects by origin, the search to add more, the lock and its builds."""
     bundle = await modpackService.bundle_get(bundle_id)
     builds = await modpackService.build_find(bundle_id)
-    titles = await _titles(modrinthService, [p.project_id for p in bundle.projects])
+    titles = await _titles(modrinthService, [p.project_id for p in bundle.projects] + list(bundle.pins))
     return render(request, "modpacks/detail.html", actor, bundle=bundle, bundle_id=bundle_id, projects=bundle.projects,
-                  titles=titles, builds=builds, lock=None, nav_active="modpacks")
+                  titles=titles, builds=builds, lock=None, channel_names=CHANNELS, human_size=human_size,
+                  nav_active="modpacks")
 
 @router.get("/modpacks/{bundle_id}/search")
 @inject
@@ -226,6 +244,52 @@ async def project_remove(
         ):
     projects = await modpackService.project_remove(bundle_id, project_id, actor)
     return await _projects(request, actor, modrinthService, bundle_id, projects)
+
+@router.post("/modpacks/{bundle_id}/channels")
+@inject
+async def modpack_channels(
+        bundle_id: str,
+        request: Request,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        ):
+    """Save the channels the modpack allows (the checked boxes, most stable first). At least one."""
+    chosen = {str(v) for k, v in (await request.form()).multi_items() if k == "channel"}
+    if not chosen:
+        raise HTTP_422_UNPROCESSABLE_ENTITY("Elige al menos un canal")
+    if not chosen <= set(CHANNELS):
+        raise HTTP_422_UNPROCESSABLE_ENTITY("Los canales son release, beta y alpha")
+    updated = await modpackService.bundle_update(
+        bundle_id, ModpackBundlePatch(channels=[c for c in CHANNELS if c in chosen]), actor)
+    return _channels(request, actor, updated, bundle_id)
+
+@router.post("/modpacks/{bundle_id}/pins")
+@inject
+async def pin_add(
+        bundle_id: str,
+        request: Request,
+        project_id: Annotated[str, Form(min_length=1, max_length=200, pattern=MODRINTH_REF)],
+        version_id: Annotated[str, Form(min_length=1, max_length=200, pattern=MODRINTH_REF)],
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
+        ):
+    """Pin a mod to a version of that mod: one key, written atomically by the service."""
+    updated = await modpackService.pin_set(bundle_id, project_id, version_id, actor)
+    return await _pins(request, actor, modrinthService, updated, bundle_id)
+
+@router.delete("/modpacks/{bundle_id}/pins/{project_id}")
+@inject
+async def pin_remove(
+        bundle_id: str,
+        project_id: str,
+        request: Request,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
+        ):
+    updated = await modpackService.pin_unset(bundle_id, project_id, actor)
+    return await _pins(request, actor, modrinthService, updated, bundle_id)
 
 @router.post("/modpacks/{bundle_id}/resolve")
 @inject
