@@ -5,7 +5,7 @@
 #}
 {% import "_macros.html" as ui %}
 {% set label, tone = ui.JOB_STATUS.get(job.status, (job.status, "neutral")) %}
-{% set dry_run = job.kind == "server_update" and job.payload.get("dry_run", False) %}
+{% set dry_run = job.kind == "server_update" and job.payload.get("dry_run") is not sameas false %}
 {% set server_id = job.payload.get("server_id") or (job.key[7:] if job.key and job.key.startswith("server:") else None) %}
 <tr id="job-tr-{{ job.id }}" data-job="{{ job.id }}"
   {%- if job.active %} hx-get="/jobs/{{ job.id }}/tr" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>

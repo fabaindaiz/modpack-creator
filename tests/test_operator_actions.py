@@ -83,7 +83,7 @@ def test_operator_rollback_records_the_event_before_the_job(mongo: MongoRunner) 
     async def scenario() -> tuple[str, str, list[tuple[str, Any, Any, Any, Any]], Any, int]:
         audit = RecordingAudit(on_record=count_jobs)
         s = await update_setup(audit=audit)
-        failed = await Job(kind="server_update", key=f"server:{s.server_id}", payload={"server_id": s.server_id},
+        failed = await Job(kind="server_update", key=f"server:{s.server_id}", payload={"server_id": s.server_id, "dry_run": False},
                            status="failed", active=False, checkpoint={"swap": {}}, created_at=NOW).insert()
         job = await s.update.enqueue_rollback(s.server_id, str(failed.id), "A", actor=OPERATOR)
         stored = await JobDatabase().get(str(job.id))
@@ -101,7 +101,7 @@ def test_failed_audit_queues_nothing(mongo: MongoRunner) -> None:
         s = await update_setup(audit=RecordingAudit(fail=True))
         with pytest.raises(RuntimeError):
             await s.update.enqueue_update(s.server_id, actor=OPERATOR, dry_run=False)
-        failed = await Job(kind="server_update", key=f"server:{s.server_id}", payload={"server_id": s.server_id},
+        failed = await Job(kind="server_update", key=f"server:{s.server_id}", payload={"server_id": s.server_id, "dry_run": False},
                            status="failed", active=False, checkpoint={"swap": {}}, created_at=NOW).insert()
         with pytest.raises(RuntimeError):
             await s.update.enqueue_rollback(s.server_id, str(failed.id), "A", actor=OPERATOR)
@@ -132,9 +132,9 @@ def test_a_busy_server_is_refused_before_auditing(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[list[int], int, int]:
         audit = RecordingAudit()
         s = await update_setup(audit=audit)
-        await Job(kind="server_scan", key=f"server:{s.server_id}", payload={"server_id": s.server_id},
+        await Job(kind="server_scan", key=f"server:{s.server_id}", payload={"server_id": s.server_id, "dry_run": False},
                   created_at=NOW).insert()
-        failed = await Job(kind="server_update", key=f"server:{s.server_id}", payload={"server_id": s.server_id},
+        failed = await Job(kind="server_update", key=f"server:{s.server_id}", payload={"server_id": s.server_id, "dry_run": False},
                            status="failed", active=False, checkpoint={"swap": {}}, created_at=NOW).insert()
         codes = []
         for call in (s.update.enqueue_update(s.server_id, actor=OPERATOR, dry_run=False),
@@ -449,7 +449,7 @@ def test_rollback_state_survives_sixty_newer_scans(mongo: MongoRunner) -> None:
         s = await update_setup()
         failed = await failed_update(s.server_id, NOW)
         for minute in range(60):
-            await Job(kind="server_scan", key=f"server:{s.server_id}", payload={"server_id": s.server_id},
+            await Job(kind="server_scan", key=f"server:{s.server_id}", payload={"server_id": s.server_id, "dry_run": False},
                       status="done", active=False, created_at=NOW + timedelta(minutes=minute + 1)).insert()
         await failed_update(s.server_id, NOW + timedelta(days=1), dry_run=True)
         service = job_service()

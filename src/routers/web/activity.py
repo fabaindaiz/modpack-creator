@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from src.exceptions import HTTP_422_UNPROCESSABLE_ENTITY
 from src.dependences import AuditService, Dependences, JobService, PterodactylService
-from src.model.jobs import Job
+from src.model.jobs import Job, is_real_update
 from src.model.users import Actor
 from src.web import WebRoute, get_web_actor, render
 
@@ -44,7 +44,7 @@ async def _server_context(job: Job, pterodactylService: PterodactylService,
         except HTTPException:
             pass
         if jobService is not None and job.kind == "server_update" and job.status == "done" \
-                and job.payload.get("dry_run", False):
+                and not is_real_update(job):
             context["rollback"] = await jobService.rollback_state(server_id)
     return context
 

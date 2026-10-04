@@ -274,6 +274,29 @@ def test_a_rollback_needs_a_failed_update_of_that_server(mongo: MongoRunner) -> 
     assert mongo(scenario) == [409, 404, 422]
 
 
+def test_job_without_dry_run_is_a_simulation_everywhere(mongo: MongoRunner) -> None:
+    """A job that lost its `dry_run` key is a simulation for the worker, the rollback and the
+    panel's idea of the last real update: failing closed, never a real run by omission."""
+    async def scenario() -> tuple[Any, ...]:
+        s = await setup()
+        jobs = JobDatabase()
+        queued = await jobs.enqueue("server_update", key=f"server:{s.server_id}",
+                                    payload={"server_id": s.server_id, "build": 1})
+        worker = JobWorker(jobs, s.update.handlers(), owner="w1", clock=lambda: NOW)
+        while await worker.run_once():
+            pass
+        ran = await Job.get(queued.id)
+        assert ran is not None
+        await Job.get_pymongo_collection().update_one(
+            {"_id": ran.id}, {"$set": {"status": "failed", "checkpoint.swap": {}, "checkpoint.backup": {}}})
+        with pytest.raises(HTTPException) as refused:
+            await s.update.enqueue_rollback(s.server_id, str(ran.id), "A", actor=OPERATOR)
+        return s.panel.writes, refused.value.status_code, await jobs.last_real_update(f"server:{s.server_id}")
+
+    writes, code, last = mongo(scenario)
+    assert writes == [] and code == 409 and last is None
+
+
 def test_a_retry_after_the_backup_does_not_make_a_second_one(mongo: MongoRunner) -> None:
     """La entrega es al menos una vez: si el proceso muere después de crear el backup y antes de
     anotarlo, el reintento lo encuentra por su nombre (retry-over-irreversible-effect)."""

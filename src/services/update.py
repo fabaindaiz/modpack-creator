@@ -28,7 +28,7 @@ from src.library.api.client.download import Downloader
 from src.library.api.client.pterodactyl import PterodactylAPI
 from src.library.mrpack import ALLOWED_DOMAINS
 from src.library.scan import compare
-from src.model.jobs import Job
+from src.model.jobs import Job, is_real_update
 from src.model.pterodactyl import PterodactylServer
 from src.library.auth.roles import operator_only
 from src.model.audit import AuditTarget
@@ -135,7 +135,7 @@ class UpdateService():
         update = await self.jobDB.get(update_id)
         if update.kind != "server_update" or update.payload.get("server_id") != server_id or update.status != "failed":
             raise HTTP_409_CONFLICT(f"Job '{update_id}' is not a failed update of server '{server_id}'")
-        if update.payload.get("dry_run", False):
+        if not is_real_update(update):
             raise HTTP_409_CONFLICT(f"Job '{update_id}' was a dry run: it changed nothing to roll back")
         latest = await self.jobDB.last_real_update(f"server:{server_id}")
         latest_update = latest.payload.get("update_id") if latest and latest.kind == "server_rollback" else \
@@ -174,7 +174,7 @@ class UpdateService():
 
     async def _update(self, job: Job, context: JobContext) -> None:
         payload = job.payload
-        dry_run = bool(payload.get("dry_run", True))
+        dry_run = not is_real_update(job)
         ops = Ops(dry_run)
         server = await self.serverDB.server_get(payload["server_id"])
         plan = await context.step("preflight", lambda: self._preflight(job, server, dry_run))

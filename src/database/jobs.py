@@ -38,9 +38,9 @@ class JobDatabase():
     async def last_real_update(self, key: str) -> Optional[Job]:
         """The newest rollback, or real update, of this key (d-7985ee-5445a0). Any real update
         counts, written or not: one refused in preflight still supersedes an earlier one (R17).
-        A dry run never does: it wrote nothing. A rollback names the update it undoes in
+        A dry run never does, nor does an update without `dry_run`: they wrote nothing. A rollback names the update it undoes in
         `payload.update_id`: whoever reads it follows it back there."""
-        real = {"kind": "server_update", "payload.dry_run": {"$ne": True}}
+        real = {"kind": "server_update", "payload.dry_run": False}
         return await Job.find({"key": key, "$or": [{"kind": "server_rollback"}, real]}
                               ).sort([("created_at", SortDirection.DESCENDING), ("_id", SortDirection.DESCENDING)]).first_or_none()
 

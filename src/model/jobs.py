@@ -47,6 +47,11 @@ class Job(Document):
                        partialFilterExpression={"kind": "server_rollback"}),
         ]
 
+def is_real_update(job: Job) -> bool:
+    """A server update that was asked to write: `dry_run` is explicitly False. A job without the
+    key is a simulation, for the worker and for every check: failing closed."""
+    return job.kind == "server_update" and job.payload.get("dry_run") is False
+
 class RollbackState(BaseModel):
     """What the panel can still offer to undo a failed update (d-7985ee-5445a0): the modes
     allowed, the done rollback A, if one reverted it (then only B is left), the newest B that

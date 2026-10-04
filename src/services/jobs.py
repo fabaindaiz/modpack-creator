@@ -9,7 +9,7 @@ from uuid import uuid4
 from src.database.jobs import JobDatabase
 from src.database.pterodactyl import PterodactylDatabase
 from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
-from src.model.jobs import Job, RollbackState
+from src.model.jobs import Job, RollbackState, is_real_update
 from src.model.audit import AuditTarget
 from src.model.users import Actor
 from src.services.audit import AuditSink
@@ -218,7 +218,7 @@ class JobService():
             except HTTP_404_NOT_FOUND:
                 return None
         if update is None or update.kind != "server_update" or update.status != "failed" \
-                or update.payload.get("server_id") != server_id or update.payload.get("dry_run", False):
+                or update.payload.get("server_id") != server_id or not is_real_update(update):
             return None
         rollbacks = await self.jobDB.rollbacks_of(str(update.id))
         if done_rollback(rollbacks, "B") is not None:
