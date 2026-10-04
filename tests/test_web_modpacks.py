@@ -172,12 +172,16 @@ class FakeModpack:
             pack = {p.project_id: p.origin.value for p in self.bundle.projects}
             rows = [row(i, self.titles.get(i, i), origin, side=entries[i].server if i in entries else None,
                         pinned=i in self.bundle.pins) for i, origin in pack.items()]
-            rows += [row(i, self.titles.get(i, i), None, side=e.server) for i, e in entries.items() if i not in pack]
-        # Like the service: a title for each row and for what the resolution's suggestions and problems name.
+            rows += [row(i, self.titles.get(i, i), None, side=e.server, pinned=i in self.bundle.pins)
+                     for i, e in entries.items() if i not in pack]
+        # Like the service: a title for each row, for what the resolution's suggestions and problems
+        # name, and for the pins no row shows.
+        orphan_pins = [i for i in self.bundle.pins if i not in {r.project_id for r in rows}]
         named = [s.project_id for s in self.saved.lock.suggestions] + [p.project_id for p in self.saved.lock.problems
                                                                       if p.project_id] if self.saved else []
-        titles = {i: self.titles.get(i, i) for i in named} | {r.project_id: r.title for r in rows}
-        return ModList(rows=rows, resolution=self.saved, stale=self.stale, icons_missing=0, titles=titles)
+        titles = {i: self.titles.get(i, i) for i in named + orphan_pins} | {r.project_id: r.title for r in rows}
+        return ModList(rows=rows, resolution=self.saved, stale=self.stale, icons_missing=0, titles=titles,
+                       orphan_pins=orphan_pins)
 
     async def project_versions(self, bundle_id: str, project_id: str) -> list[VersionOption]:
         self.calls.append(("project_versions", bundle_id, project_id))
@@ -657,21 +661,48 @@ def test_dialog_submit_with_bad_decisions_is_refused_before_saving() -> None:
     assert response.status_code == 422 and modpack.calls == []
 
 
-def test_still_blocked_after_deciding_shows_the_reason_inside_the_dialog() -> None:
-    client, modpack, _ = setup()
-    modpack.blocked = undecided_block("P3", detail="Mods sin decidir: Otro")
-    modpack.titles["P3"] = "Otro"
-    response = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX, data={"decision.P2": "si"})
+OPAQUE = "No se puede congelar este lock: P3: falta decidir si va en el servidor"
+
+
+def test_still_blocked_after_deciding_names_the_mods_by_title_inside_the_dialog() -> None:
+    client, modpack, modrinth = setup()
+    modpack.blocked = undecided_block("P3", detail=OPAQUE)
+    modrinth.titles["P3"] = "Otro"
+    response = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX, data={"dialog": "1", "decision.P2": "si"})
     assert response.status_code == 200 and response.headers["HX-Retarget"] == "#build-dialog"
-    assert "Mods sin decidir: Otro" in response.text and 'name="decision.P3"' in response.text
+    reason = visible(response.text.split("data-notice-tone")[1].split("</p>")[0])
+    assert "Falta decidir si van en el servidor: Otro" in reason
+    assert "P3:" not in response.text and 'name="decision.P3"' in response.text
 
 
-def test_blocked_by_problems_after_deciding_shows_the_reason_inside_the_dialog() -> None:
+def test_blocked_by_problems_after_deciding_names_them_by_title_inside_the_dialog() -> None:
     client, modpack, _ = setup()
-    modpack.blocked = undecided_block(only=False, detail="Problemas: no hay versión")
-    response = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX, data={"decision.P2": "si"})
-    assert response.status_code == 200 and "Problemas: no hay versión" in response.text
+    modpack.blocked = BuildBlocked(OPAQUE, lock(problems=[Problem(kind="unresolvable", project_id="P2",
+                                                                  detail="sin versión para 1.21.1")]), False)
+    response = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX, data={"dialog": "1", "decision.P2": "si"})
+    assert response.status_code == 200 and "Lithium: sin versión para 1.21.1" in response.text
+    assert OPAQUE not in response.text
     assert response.headers["HX-Retarget"] == "#build-dialog" and "Decidir y crear build" not in response.text
+
+
+def test_the_dialog_sent_without_deciding_says_what_is_missing() -> None:
+    client, modpack, _ = setup()
+    modpack.blocked = undecided_block("P2", detail=OPAQUE)
+    first = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX).text
+    assert 'name="dialog"' in first and "data-notice" not in first  # the button's click: no reason yet
+    response = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX, data={"dialog": "1", "decision.P2": ""})
+    assert response.status_code == 200 and response.headers["HX-Retarget"] == "#build-dialog"
+    assert "Elige «En el servidor» o «Solo cliente» para al menos un mod" in response.text
+    assert "decisions_set" not in [c[0] for c in modpack.calls]
+
+
+def test_blocked_by_problems_from_the_dialog_stays_in_the_dialog() -> None:
+    client, modpack, _ = setup()
+    modpack.blocked = BuildBlocked(OPAQUE, lock(problems=[Problem(kind="unresolvable", project_id="P2",
+                                                                  detail="sin versión")]), False)
+    response = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX, data={"dialog": "1"})
+    assert response.status_code == 200 and response.headers["HX-Retarget"] == "#build-dialog"
+    assert "Lithium: sin versión" in response.text
 
 
 def test_blocked_by_problems_is_a_notice_not_a_dialog() -> None:
@@ -696,6 +727,42 @@ def test_the_build_button_says_decide_when_the_saved_resolution_has_pending() ->
     modpack.saved = resolution(lock(entry("P1")))
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
     assert "Decidir y crear build…" not in text and ">Crear build<" in text
+
+
+def builds_part(text: str) -> str:
+    tag = re.search(r'<div id="builds"[^>]*>', text)
+    assert tag, "no #builds"
+    return text[tag.start():]
+
+
+@pytest.mark.parametrize("route,data", [("decisions", {"project_id": "P2", "server": "yes"}),
+                                        ("decisions/bulk", {"decision.P2": "si"})])
+def test_decisions_refresh_the_builds_out_of_band(route: str, data: dict[str, str]) -> None:
+    """After deciding, the builds section is redrawn in the same answer: its button says whether
+    something is still pending, so it never keeps saying "Decidir y crear build…" until a reload."""
+    client, modpack, _ = setup()
+    modpack.lock = lock(entry("P1"), entry("P2", "admin"), entry("P3", "admin"))
+    text = client.post(f"/modpacks/{BUNDLE_ID}/{route}", headers=HTMX, data=data).text
+    assert 'hx-swap-oob="true"' in re.search(r'<div id="builds"[^>]*>', text).group(0)  # type: ignore[union-attr]
+    builds = builds_part(text)
+    assert "Decidir y crear build…" in builds and "No quedan mods por decidir" not in builds
+    assert text.count("Decisiones guardadas") == 1
+
+
+@pytest.mark.parametrize("route,data", [("decisions", {"project_id": "P2", "server": "yes"}),
+                                        ("decisions/bulk", {"decision.P2": "si"})])
+def test_deciding_the_last_mod_highlights_crear_build(route: str, data: dict[str, str]) -> None:
+    client, modpack, _ = setup()
+    modpack.lock = lock(entry("P1"), entry("P2"))
+    builds = builds_part(client.post(f"/modpacks/{BUNDLE_ID}/{route}", headers=HTMX, data=data).text)
+    assert "No quedan mods por decidir" in builds and ">Crear build<" in builds
+    assert "Decidir y crear build…" not in builds and "data-ready" in builds
+
+
+def test_the_page_does_not_highlight_crear_build_by_itself() -> None:
+    client, modpack, _ = setup()
+    modpack.saved = resolution(lock(entry("P1")))
+    assert "No quedan mods por decidir" not in client.get(f"/modpacks/{BUNDLE_ID}").text
 
 
 def test_a_new_build_offers_simulating_on_linked_servers() -> None:
@@ -912,6 +979,21 @@ def test_detail_shows_local_files_channels_and_pins() -> None:
     assert not re.search(r'name="channel" value="beta"[^>]*checked', text)
     assert "fijado" in card(text, "P1") and f'hx-delete="/modpacks/{BUNDLE_ID}/pins/P1"' in card(text, "P1")
     assert "fijado" not in card(text, "P2") and "ver-p1" not in visible(text)
+
+
+def test_pins_without_a_row_are_listed_and_can_be_removed() -> None:
+    """A pin on a mod that left the pack has no card: a line names it, by title, with its own
+    "Quitar fijación". A pinned dependency keeps it in its card."""
+    client, modpack, _ = setup()
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert "Fijaciones de mods que ya no están" not in text
+    modpack.bundle.pins = {"P1": "ver-p1", "GONE": "v-gone", "D1": "v-d1"}
+    modpack.titles.update({"GONE": "Viejo", "D1": "Lib"})
+    modpack.saved = resolution(lock(entry("P1"), entry("P2"), entry("D1")))
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    orphans = text.split("Fijaciones de mods que ya no están")[1]
+    assert "Viejo" in orphans and f'hx-delete="/modpacks/{BUNDLE_ID}/pins/GONE"' in orphans
+    assert "pins/D1" not in orphans and f'hx-delete="/modpacks/{BUNDLE_ID}/pins/D1"' in card(text, "D1")
 
 
 def test_detail_without_local_files_says_so() -> None:

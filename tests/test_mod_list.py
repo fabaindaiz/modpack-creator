@@ -15,7 +15,7 @@ from src.model.modpack import (AvailableUpdate, ModpackBuild, ModpackBundle, Mod
 from src.model.modrinth import ModrinthProject, ModrinthVersion
 from src.model.utils import MinecraftLoaders
 from src.services.modpack import ModpackService
-from tests._actors import RecordingAudit
+from tests._actors import EDITOR, RecordingAudit
 from tests.conftest import MongoRunner
 from tests.test_builds import FakeLoaders
 
@@ -99,13 +99,13 @@ class Scenario:
         await self.modpackDB.resolution_save(ModpackResolution(
             bundle_id=bundle.id, resolved_at=NOW, request_digest="d", lock=lock(*entries)))  # type: ignore[arg-type]
 
-    async def built(self, bundle_id: str, *entries: LockEntry) -> None:
+    async def built(self, bundle_id: str, *entries: LockEntry, number: int = 1) -> None:
         bundle = await self.modpackDB.bundle_get(bundle_id)
         request = ResolveRequest(target=Target(game_version="1.21.1", loader="fabric", channels=frozenset({"release"})),
                                  projects=[])
-        await self.modpackDB.build_insert(ModpackBuild(bundle_id=bundle.id, number=1, created_at=NOW,  # type: ignore[arg-type]
+        await self.modpackDB.build_insert(ModpackBuild(bundle_id=bundle.id, number=number, created_at=NOW,  # type: ignore[arg-type]
                                                        request=request, lock=lock(*entries)))
-        await self.modpackDB.bundle_latest_build(bundle_id, 1)
+        await self.modpackDB.bundle_latest_build(bundle_id, number)
 
 
 def test_rows_join_pack_projects_and_resolved_dependencies(mongo: MongoRunner) -> None:
@@ -161,6 +161,22 @@ def test_build_version_and_newer_version_from_the_check(mongo: MongoRunner) -> N
     assert mongo(scenario) == [("0.8.13", "0.8.14", False), ("1.0", None, False)]
 
 
+def test_newer_versions_only_from_a_check_of_the_latest_build(mongo: MongoRunner) -> None:
+    """The version shown is the latest build's; a check of another build (the recommended one, older)
+    compares against other versions, so its "→ newer" is not shown next to it."""
+    async def scenario() -> Any:
+        s = Scenario(FakeModrinth())
+        await s.modrinthDB.project_upsert_many([project("P1", "Sodium")])
+        bundle_id = await s.bundle([("P1", ProjectOrigin.pack)])
+        await s.built(bundle_id, entry("P1", "0.8.13"))
+        await s.built(bundle_id, entry("P1", "0.8.14"), number=2)
+        check = UpdateCheck(bundle_id=(await s.modpackDB.bundle_get(bundle_id)).id, build_number=1, checked_at=NOW,  # type: ignore[arg-type]
+                            updates=[AvailableUpdate(project_id="P1", from_version="0.8.13", to_version="0.8.14")])
+        return [(r.build_version, r.newer_version) for r in (await s.service.mod_list(bundle_id, check=check)).rows]
+
+    assert mongo(scenario) == [("0.8.14", None)]
+
+
 def test_pinned_rows_never_show_a_newer_version(mongo: MongoRunner) -> None:
     async def scenario() -> Any:
         s = Scenario(FakeModrinth())
@@ -173,6 +189,40 @@ def test_pinned_rows_never_show_a_newer_version(mongo: MongoRunner) -> None:
         return [(r.project_id, r.pinned, r.newer_version) for r in (await s.service.mod_list(bundle_id, check=check)).rows]
 
     assert mongo(scenario) == [("P1", True, None), ("P2", False, None)]
+
+
+def test_a_removed_project_leaves_the_list(mongo: MongoRunner) -> None:
+    """Removing a project does not resolve again: its entry stays in the saved lock, but only the
+    resolution's real dependencies (no origin) are rows besides the pack's projects."""
+    async def scenario() -> Any:
+        s = Scenario(FakeModrinth())
+        await s.modrinthDB.project_upsert_many([project("P1", "Sodium"), project("P2", "Iris"), project("D1", "Lib"),
+                                                project("P3", "Old")])
+        bundle_id = await s.bundle([("P1", ProjectOrigin.admin), ("P2", ProjectOrigin.admin), ("P3", ProjectOrigin.pack)])
+        await s.resolved(bundle_id, entry("P1", "1", origin="admin"), entry("P2", "1", origin="admin"),
+                         entry("P3", "1", origin="pack"), entry("D1", "1", origin=None, requested_by=["P1"]))
+        await s.service.project_remove(bundle_id, "P2", EDITOR)
+        await s.service.pack_replace(bundle_id, [], EDITOR)
+        return [r.project_id for r in (await s.service.mod_list(bundle_id, check=None)).rows]
+
+    assert mongo(scenario) == ["P1", "D1"]
+
+
+def test_pins_outside_every_row_are_listed_with_their_titles(mongo: MongoRunner) -> None:
+    """A pin on a project that left the pack (and is not a dependency) has no row: the list names
+    it, titled from the same single fill, so it can still be removed."""
+    async def scenario() -> Any:
+        api = FakeModrinth([project("GONE", "Viejo")])
+        s = Scenario(api)
+        await s.modrinthDB.project_upsert_many([project("P1", "Sodium"), project("D1", "Lib")])
+        bundle_id = await s.bundle([("P1", ProjectOrigin.pack)], pins={"P1": "v1", "D1": "v2", "GONE": "v3"})
+        await s.resolved(bundle_id, entry("P1", "1"), entry("D1", "1", origin=None, requested_by=["P1"]))
+        listed = await s.service.mod_list(bundle_id, check=None)
+        return listed.orphan_pins, listed.titles.get("GONE"), api.calls
+
+    orphans, title, calls = mongo(scenario)
+    assert orphans == ["GONE"] and title == "Viejo"
+    assert calls == [("project_get_many", ["GONE"])]
 
 
 def test_missing_icons_are_filled_in_one_batch_call(mongo: MongoRunner) -> None:

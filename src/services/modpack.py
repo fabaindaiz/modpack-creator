@@ -92,6 +92,9 @@ class ModList:
     # A title for every row and every project the resolution's suggestions and problems name (the
     # id when the catalog lacks it), from the same single fill: a page never fills twice.
     titles: dict[str, str] = field(default_factory=dict)
+    # The pinned projects no row shows (they left the pack and are not a dependency), in pin order:
+    # listed apart so their pin can still be removed. `titles` names them.
+    orphan_pins: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -260,10 +263,11 @@ class ModpackService():
     async def mod_list(self, bundle_id: str, check: Optional[UpdateCheck]) -> ModList:
         """
         The pack's mods as one list: its projects in order, then the dependencies of the latest
-        saved resolution by title, each with its card data. Without a resolution, only the pack's
-        projects. The catalog is filled first, in one call within `icon_deadline` (best effort), for
-        the missing icons and for the projects the resolution's suggestions and problems name: a
-        Modrinth that is down gives the list without them, never an error. Writes the catalog.
+        saved resolution (its entries without an origin) by title, each with its card data. Without a
+        resolution, only the pack's projects. The pins no row shows are listed apart. The catalog is
+        filled first, in one call within `icon_deadline` (best effort), for the missing icons and for
+        the projects the resolution's suggestions and problems and those pins name: a Modrinth that
+        is down gives the list without them, never an error. Writes the catalog.
 
         :param check: The latest update check, for the newer versions; None shows none.
         """
@@ -276,16 +280,22 @@ class ModpackService():
             build = await self.modpackDB.build_get(bundle_id, bundle.latest_build)
             in_build = {e.project_id: e.version_number for e in build.lock.entries}
         pack = {p.project_id: p.origin.value for p in bundle.projects}
-        dependencies = [i for i in entries if i not in pack]
+        # Only what the resolution brought in itself: an entry with an origin was asked for by the
+        # pack, and one no longer in it was removed or replaced since (that does not resolve again).
+        dependencies = [i for i, e in entries.items() if i not in pack and e.origin is None]
+        orphan_pins = [i for i in bundle.pins if i not in pack and i not in dependencies]
         requesters = {r for e in entries.values() for r in e.requested_by}
-        named: list[str] = []
+        named: list[str] = list(orphan_pins)
         if resolution is not None:
-            named = [x.project_id for x in resolution.lock.suggestions]
+            named += [x.project_id for x in resolution.lock.suggestions]
             named += [r for x in resolution.lock.suggestions for r in x.requested_by]
             named += [x.project_id for x in resolution.lock.problems if x.project_id]
         catalog = await fill_catalog(self.modrinthDB, self.modrinthAPI,
                                      [*pack, *dependencies, *sorted(requesters), *named], self.icon_deadline)
-        newer = {u.project_id: u.to_version for u in check.updates if not u.pinned} if check else {}
+        # The newer versions are against the build the check looked at: only shown next to that
+        # build's versions, the latest's (a check of the recommended build compares older ones).
+        current = check is not None and check.build_number == bundle.latest_build
+        newer = {u.project_id: u.to_version for u in check.updates if not u.pinned} if check and current else {}
         target = Target(game_version=bundle.version, loader=str(bundle.loader.value), channels=frozenset(bundle.channels))
 
         def row(project_id: str, origin: Optional[str]) -> ModRow:
@@ -312,7 +322,7 @@ class ModpackService():
         titles = {i: catalog[i].title if i in catalog else i for i in named}
         titles.update({r.project_id: r.title for r in rows})
         return ModList(rows=rows, resolution=resolution, stale=stale,
-                       icons_missing=sum(1 for r in rows if r.icon_url is None), titles=titles)
+                       icons_missing=sum(1 for r in rows if r.icon_url is None), titles=titles, orphan_pins=orphan_pins)
 
     async def project_versions(self, bundle_id: str, project_id: str) -> list[VersionOption]:
         """

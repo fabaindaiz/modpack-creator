@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Form, Query, Request
 from starlette.datastructures import FormData
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from src.exceptions import BuildBlocked, HTTP_422_UNPROCESSABLE_ENTITY, UpstreamError
+from src.library.resolution import Lock
 from src.dependences import Dependences, ModpackService, ModrinthService, PterodactylService, UpdateCheckService
 from src.model.modpack import ModpackBundle, ModpackBundleCreate, ModpackBundlePatch, ProjectOrigin
 from src.model.modrinth.project import ModrinthEnvironment
@@ -147,6 +148,35 @@ def _channels(request: Request, actor: Actor, bundle: ModpackBundle, bundle_id: 
 def _has_pending(saved: Optional[tuple[Any, bool]]) -> bool:
     """Whether the current (not stale) saved resolution has mods left to decide."""
     return saved is not None and not saved[1] and bool(saved[0].lock.undecided)
+
+async def _decided(request: Request, actor: Actor, modpackService: ModpackService,
+                   updateCheckService: UpdateCheckService, bundle_id: str) -> Response:
+    """#mods after saving decisions (and resolving again), with #builds redrawn out of band: its
+    button says whether something is still pending, and "Crear build" is the highlighted next step
+    when the current resolution has nothing left to decide and no problems (spec §2)."""
+    context = await _mods_context(modpackService, updateCheckService, bundle_id)
+    mods = context["mods"]
+    saved = (mods.resolution, mods.stale) if mods.resolution else None
+    pending = _has_pending(saved)
+    lock = mods.resolution.lock if mods.resolution else None
+    ready = lock is not None and not mods.stale and not pending and not lock.problems and lock.complete
+    return render(request, "modpacks/_mods.html", actor, success="Decisiones guardadas", builds_oob=True,
+                  builds=await modpackService.build_find(bundle_id), pending=pending, ready=ready, **context)
+
+# What the decision dialog says when it is sent with every mod left "Sin decidir".
+NOTHING_DECIDED = "Elige «En el servidor» o «Solo cliente» para al menos un mod."
+
+def _blocked_reason(lock: Lock, titles: dict[str, str]) -> str:
+    """Why a build was refused, from its fresh lock, naming mods by title (never by id): each
+    problem, the mods left to decide, and a resolution that did not finish."""
+    lines = [f"{titles.get(p.project_id, p.project_id)}: {p.detail}" if p.project_id else p.detail
+             for p in lock.problems]
+    if lock.undecided:
+        lines.append("Falta decidir si van en el servidor: "
+                     + ", ".join(titles.get(e.project_id, e.project_id) for e in lock.undecided))
+    if not lock.complete:
+        lines.append("La resolución no terminó: la cadena de dependencias es demasiado larga.")
+    return "\n".join(["No se puede crear el build:", *lines])
 
 async def _builds(request: Request, actor: Actor, modpackService: ModpackService, bundle_id: str,
                   success: Optional[str] = None, next_servers: Optional[list[Any]] = None) -> Response:
@@ -388,8 +418,7 @@ async def modpack_decide(
     resolution is run again so the mod leaves "Sin decidir"."""
     await modpackService.decision_set(bundle_id, project_id, server == "yes", actor)
     await modpackService.resolve(bundle_id)
-    return await _mods(request, actor, modpackService, updateCheckService, bundle_id,
-                       success="Decisiones guardadas")
+    return await _decided(request, actor, modpackService, updateCheckService, bundle_id)
 
 @router.post("/modpacks/{bundle_id}/decisions/bulk")
 @inject
@@ -407,8 +436,7 @@ async def modpack_decide_bulk(
         raise HTTP_422_UNPROCESSABLE_ENTITY("Elige al menos una decisión")
     await modpackService.decisions_set(bundle_id, decisions, actor)
     await modpackService.resolve(bundle_id)
-    return await _mods(request, actor, modpackService, updateCheckService, bundle_id,
-                       success="Decisiones guardadas")
+    return await _decided(request, actor, modpackService, updateCheckService, bundle_id)
 
 @router.post("/modpacks/{bundle_id}/builds")
 @inject
@@ -421,21 +449,31 @@ async def build_create(
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
         ):
     """Freeze the lock as the next build. With `decision.<id>` fields (from the dialog) they are saved
-    first. Blocked by undecided mods, or blocked again after deciding, it answers the dialog into
-    #build-dialog (the reason inside once decisions were sent); blocked by problems without
-    decisions, or any other 409, is a notice."""
-    decisions = _parse_decisions(await request.form())
+    first. Blocked by undecided mods, or blocked again when sent from the dialog (its `dialog`
+    field), it answers the dialog into #build-dialog, with the reason inside once the dialog was
+    sent: the mods by title, or that none was decided. Blocked by problems from the button, or any
+    other 409, is a notice."""
+    form = await request.form()
+    decisions = _parse_decisions(form)
+    from_dialog = form.get("dialog") == "1"
     try:
         if decisions:
             await modpackService.decisions_set(bundle_id, decisions, actor)
         build = await modpackService.build_create(bundle_id, actor)
     except BuildBlocked as blocked:
-        if not (blocked.only_undecided or decisions):
+        if not (blocked.only_undecided or decisions or from_dialog):
             raise
         undecided = blocked.lock.undecided if blocked.only_undecided else []
-        titles = await _titles(modrinthService, [e.project_id for e in undecided])
+        named = [e.project_id for e in blocked.lock.undecided] + [p.project_id for p in blocked.lock.problems
+                                                                  if p.project_id]
+        titles = await _titles(modrinthService, named)
+        reason = None
+        if from_dialog and not decisions and blocked.only_undecided:
+            reason = NOTHING_DECIDED
+        elif from_dialog or decisions:
+            reason = _blocked_reason(blocked.lock, titles)
         response = render(request, "modpacks/_decide_dialog.html", actor, bundle_id=bundle_id, undecided=undecided,
-                          titles=titles, reason=str(blocked.detail) if decisions else None)
+                          titles=titles, reason=reason)
         response.headers["HX-Retarget"] = "#build-dialog"
         response.headers["HX-Reswap"] = "innerHTML"
         return response

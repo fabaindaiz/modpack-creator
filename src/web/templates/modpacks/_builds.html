@@ -1,8 +1,14 @@
-{# The bundle's builds; the fragment htmx swaps into #builds. #}
+{# The bundle's builds; the fragment htmx swaps into #builds. `oob` sends it out of band (after
+   decisions are saved); `ready` highlights "Crear build" as the next step (nothing left to decide). #}
 {% import "_macros.html" as ui %}
-<div id="builds" class="space-y-3">
-  <div class="flex flex-wrap items-center justify-between gap-2">
+{% set ready = ready is defined and ready %}
+<div id="builds" class="space-y-3"{% if oob is defined and oob %} hx-swap-oob="true"{% endif %}>
+  <div class="flex flex-wrap items-center justify-between gap-2{{ ' rounded-lg border border-emerald-300 bg-emerald-50 p-3 dark:border-emerald-500/40 dark:bg-emerald-950/40' if ready else '' }}"{% if ready %} data-ready{% endif %}>
+    {% if ready %}
+    <p class="text-sm font-medium text-emerald-800 dark:text-emerald-200">No quedan mods por decidir: ya puedes crear el build.</p>
+    {% else %}
     <p class="text-sm text-zinc-600 dark:text-zinc-400">Crear build vuelve a resolver y congela ese lock; no cambia después.</p>
+    {% endif %}
     {{ ui.button("Decidir y crear build…" if pending else "Crear build", attrs={
       "hx-post": "/modpacks/" ~ bundle_id ~ "/builds", "hx-target": "#builds", "hx-swap": "outerHTML"}) }}
   </div>

@@ -1,8 +1,10 @@
 {# The dialog "Crear build" opens when mods are undecided; the fragment htmx swaps into #build-dialog.
-   `undecided` are the lock's entries to decide, `reason` why the last try was blocked (if it was). #}
+   `undecided` are the lock's entries to decide, `reason` why the last try was blocked (if it was).
+   The `dialog` field tells the route the form was sent from here, also with nothing decided. #}
 {% import "_macros.html" as ui %}
 {% call ui.confirm_dialog("decide-dialog", "Decidir los mods pendientes", confirm_label="Decidir y crear build" if undecided else "Reintentar crear build",
     kind="primary", open_now=True, form_attrs={"hx-post": "/modpacks/" ~ bundle_id ~ "/builds", "hx-target": "#builds", "hx-swap": "outerHTML"}) %}
+<input type="hidden" name="dialog" value="1">
 {% if reason %}{{ ui.notice(reason, "warning") }}{% endif %}
 {% if undecided %}
 <p>Modrinth no dice si estos mods van en el servidor. Al decidirlos se crea el build; los que dejes sin decidir seguirán bloqueándolo.</p>

@@ -1,8 +1,9 @@
 {# The pack's mods as one list (spec §1): the saved resolution on top, then a row per mod with its
    card in a <details>. What changes together is in #mods, the fragment the resolve, decision,
-   project and pin routes answer. A route may add, after it, a success (or info) notice and the search hit
-   to mark as added, both out of band. `icon` and `https_url` only let through URLs that may be
-   shown (an icon from Modrinth's CDN, an https link); everything from Modrinth is escaped. #}
+   project and pin routes answer. A route may add, after it, a success (or info) notice, the search
+   hit to mark as added and (after decisions, `builds_oob`) the builds section, all out of band.
+   `icon` and `https_url` only let through URLs that may be shown (an icon from Modrinth's CDN, an
+   https link); everything from Modrinth is escaped. #}
 {% import "_macros.html" as ui %}
 {% set SIDE = {
   "include": ("En el servidor", "accent"),
@@ -85,7 +86,7 @@
             </form>
             {% endif %}
 
-            {% if in_pack %}
+            {% if in_pack or row.pinned %}
             <div class="space-y-2">
               {% if row.pinned %}
               <div class="flex flex-wrap items-center gap-2 text-xs">
@@ -96,9 +97,11 @@
                   "hx-confirm": "¿Quitar la versión fijada de " ~ row.title ~ "?"}) }}
               </div>
               {% endif %}
+              {% if in_pack %}
               <div id="versions-{{ row.project_id }}" aria-live="polite">
                 <p class="text-xs text-zinc-500 dark:text-zinc-400">Cargando versiones…</p>
               </div>
+              {% endif %}
             </div>
             {% endif %}
 
@@ -116,6 +119,22 @@
       {% endfor %}
     </ul>
     {% endif %}
+    {# A pin on a mod that left the pack has no card: listed here, so it can still be removed. #}
+    {% if mods.orphan_pins %}
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-xs text-zinc-600 dark:text-zinc-400">
+      <span class="font-medium">Fijaciones de mods que ya no están:</span>
+      {% for project_id in mods.orphan_pins %}
+      {% set name = titles.get(project_id, project_id) %}
+      <span class="inline-flex items-center gap-1">
+        <span class="break-words">{{ name }}</span>
+        {{ ui.button("Quitar fijación", kind="ghost", small=True, attrs={
+          "hx-delete": "/modpacks/" ~ bundle_id ~ "/pins/" ~ project_id,
+          "hx-target": "#mods", "hx-swap": "outerHTML",
+          "hx-confirm": "¿Quitar la versión fijada de " ~ name ~ "?"}) }}
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
   </div>
 </div>
 {% if success is defined and success %}
@@ -125,4 +144,7 @@
 {% endif %}
 {% if hit is defined and hit %}
 <div id="hit-{{ hit }}" hx-swap-oob="true" class="shrink-0">{{ ui.badge("Ya está", "accent") }}</div>
+{% endif %}
+{% if builds_oob is defined and builds_oob %}
+{% with success=None, next_servers=None, oob=True %}{% include "modpacks/_builds.html" %}{% endwith %}
 {% endif %}
