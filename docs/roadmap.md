@@ -667,9 +667,12 @@ JSON con `request_id` y `job_id`.
   contra Mongo real; la revisión visual del panel; y la imagen arm64 carga `America/Santiago`.
 - **Lo que falta:**
   - desplegar (`docs/runbooks/desplegar-panel.md` explica el índice nuevo y las variables);
-  - una falla entre calcular la revisión y guardarla (el aviso o el insert lanzan) no deja
-    ningún `UpdateCheck`: el programador la reencola cada 5 minutos y vuelve a pedir a Modrinth;
-  - una revisión manual hecha antes de `UPDATE_CHECK_AT` cuenta como la de hoy;
+  - ~~una falla entre calcular la revisión y guardarla no deja ningún `UpdateCheck`~~: hecho en
+    la ronda final. No era el aviso (`Notifier.notify` se traga sus errores y deja su línea),
+    sino MongoDB al leer el último aviso, al guardar o al releer el modpack; ahora cualquier
+    falla del paso guarda una revisión con su `error`, y el programador la cuenta como la del día;
+  - una revisión manual hecha antes de `UPDATE_CHECK_AT` cuenta como la de hoy (documentado en el
+    runbook y el README);
   - las revisiones guardadas antes de este lote no tienen ids de versión: muestran la insignia,
     pero no changelogs;
   - un pin queda en el modpack aunque se quite el proyecto, y otros menores del registro.

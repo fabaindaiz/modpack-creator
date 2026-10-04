@@ -198,6 +198,63 @@ def test_modrinth_down_stores_an_error_fails_the_job_and_sends_nothing(mongo: Mo
     assert sent == []
 
 
+class FlakyChecks(UpdateCheckDatabase):
+    """MongoDB failing once, where named: `last_notified` (what _should_notify reads) or the first
+    `insert` (the result's)."""
+
+    def __init__(self, where: str) -> None:
+        self.where = where
+
+    async def last_notified(self, bundle_id: PydanticObjectId) -> UpdateCheck | None:
+        if self.where == "last_notified":
+            self.where = ""
+            raise RuntimeError("mongo hiccup")
+        return await super().last_notified(bundle_id)
+
+    async def insert(self, check: UpdateCheck) -> UpdateCheck:
+        if self.where == "insert":
+            self.where = ""
+            raise RuntimeError("mongo hiccup")
+        return await super().insert(check)
+
+
+class BundleUnreadableAfterCompute(ModpackDatabase):
+    """Reads the bundle for `enqueue` and `compute`, then fails: the read of the error branch."""
+
+    def __init__(self) -> None:
+        self.reads = 0
+
+    async def bundle_get(self, bundle_id: str) -> ModpackBundle:
+        self.reads += 1
+        if self.reads > 2:
+            raise RuntimeError("mongo hiccup")
+        return await super().bundle_get(bundle_id)
+
+
+@pytest.mark.network
+@pytest.mark.parametrize("where", ["last_notified", "insert", "bundle_get"])
+def test_a_failure_after_the_compute_still_stores_an_error_check(mongo: MongoRunner, where: str) -> None:
+    """Whatever fails in the step (Modrinth, or MongoDB reading the last notice, storing the result
+    or reading the bundle again), a failed check is stored: the scheduler counts it as today's and
+    does not queue the modpack again every 5 minutes."""
+    async def scenario() -> tuple[Any, Any]:
+        modpacks = BundleUnreadableAfterCompute() if where == "bundle_get" else ModpackDatabase()
+        api = FakeModrinth({}, failing=where == "bundle_get") if where == "bundle_get" else FakeModrinth(newer())
+        checks = FlakyChecks(where) if where != "bundle_get" else UpdateCheckDatabase()
+        service = UpdateCheckService(modpacks, cast(Any, api), ModrinthDatabase(), checks, JobDatabase(),
+                                     RecordingAudit(), Recorder())
+        bundle_id = await bundle_with(three_mods())
+        job = await service.enqueue(bundle_id, None)
+        await JobWorker(JobDatabase(), service.handlers()).run_once()
+        return await JobDatabase().get(str(job.id)), await UpdateCheckDatabase().latest(PydanticObjectId(bundle_id))
+
+    job, check = mongo(scenario)
+    assert job.status == "failed"
+    assert check is not None and check.error is not None and check.notified_digest is None
+    assert ("Modrinth down" if where == "bundle_get" else "mongo hiccup") in check.error
+    assert check.build_number == (0 if where == "bundle_get" else 1)
+
+
 @pytest.mark.network
 def test_a_second_check_of_the_same_modpack_gives_a_readable_409(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[Any, Any]:

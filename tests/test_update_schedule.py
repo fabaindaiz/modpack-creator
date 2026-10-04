@@ -251,6 +251,19 @@ def test_the_scheduler_queues_a_check_per_due_modpack_with_no_actor_and_skips_th
 
 
 @pytest.mark.network
+def test_a_failed_check_today_stops_the_scheduler_queueing_the_modpack_again(mongo: MongoRunner) -> None:
+    """A failed check counts as the day's: otherwise a modpack whose check keeps failing would be
+    queued again every 5 minutes, hitting Modrinth each time."""
+    async def scenario() -> int:
+        failing = await bundle("Falla", recommended=1, latest=1)
+        await UpdateCheck(bundle_id=PydanticObjectId(failing), build_number=1, checked_at=local(2026, 7, 10, 4, 1),
+                          error="RuntimeError: mongo hiccup").insert()
+        return len(await make().schedule(local(2026, 7, 10, 9, 0), AT, SCL))
+
+    assert mongo(scenario) == 0
+
+
+@pytest.mark.network
 def test_the_scheduler_does_not_queue_before_the_hour(mongo: MongoRunner) -> None:
     async def scenario() -> int:
         await bundle("Due", recommended=1, latest=1)

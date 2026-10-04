@@ -198,27 +198,44 @@ class UpdateCheckService():
         bundle_id = job.payload["bundle_id"]
 
         async def check() -> dict[str, Any]:
+            result: Optional[UpdateCheck] = None
             try:
                 result = await self.compute(bundle_id)
+                # Notify, then insert: deliberate. A crash in between repeats one notice; the other
+                # order would lose it for good.
+                if await self._should_notify(result):
+                    result.notified_digest = digest_of(result.updates)
+                    if self.notifier is not None:
+                        await self.notifier.notify(await self._message(bundle_id, result))
+                await self.checkDB.insert(result)
+                return {"updates": len(result.updates), "notified": result.notified_digest is not None}
             except Exception as error:
-                # Catches everything (Modrinth down, no build, a bug): the error is recorded, no notice. Kept as a check with its error, and no notification.
-                bundle = await self.modpackDB.bundle_get(bundle_id)
-                await self.checkDB.insert(UpdateCheck(
-                    bundle_id=PydanticObjectId(bundle_id), build_number=bundle.recommended_build or bundle.latest_build or 0,
-                    checked_at=utcnow(), error=f"{type(error).__name__}: {error}"[:500]))
-                return {"error": f"{type(error).__name__}: {error}"[:500]}
-            # Notify, then insert: deliberate. A crash in between repeats one notice; the other
-            # order would lose it for good.
-            if await self._should_notify(result):
-                result.notified_digest = digest_of(result.updates)
-                if self.notifier is not None:
-                    await self.notifier.notify(await self._message(bundle_id, result))
-            await self.checkDB.insert(result)
-            return {"updates": len(result.updates), "notified": result.notified_digest is not None}
+                # Everything (Modrinth down, no build, MongoDB failing a read or the insert, a bug)
+                # ends as a stored check with its error and no notice: the scheduler counts it as
+                # the day's, instead of queueing the modpack again every 5 minutes.
+                message = f"{type(error).__name__}: {error}"[:500]
+                await self._store_error(bundle_id, result.build_number if result is not None else None, message)
+                return {"error": message}
 
         outcome = await context.step("check", check)
         if "error" in outcome:
             raise JobFailed(outcome["error"])
+
+    async def _store_error(self, bundle_id: str, build_number: Optional[int], message: str) -> None:
+        """Best effort: the build is the one computed, else the bundle's, else 0; if MongoDB cannot
+        store it either, the job still fails and the line is logged."""
+        try:
+            if build_number is None:
+                try:
+                    bundle = await self.modpackDB.bundle_get(bundle_id)
+                    build_number = bundle.recommended_build or bundle.latest_build
+                except Exception:
+                    logger.warning("update check: bundle unreadable for the error check", exc_info=True)
+            await self.checkDB.insert(UpdateCheck(
+                bundle_id=PydanticObjectId(bundle_id), build_number=build_number or 0,
+                checked_at=utcnow(), error=message))
+        except Exception:
+            logger.exception("update check: the failed check could not be stored")
 
     async def _should_notify(self, check: UpdateCheck) -> bool:
         if not any(not u.pinned for u in check.updates):
