@@ -692,6 +692,31 @@ JSON con `request_id` y `job_id`.
 - **Lo que choca:** la revisión depende de que Modrinth responda; un día sin respuesta deja un
   `UpdateCheck` con `error`, sin aviso. Un job viejo sin `dry_run` se ve como simulación.
 
+### Panel, usabilidad: la ronda 1 hecha en código, la ronda 2 planeada (2026-10-04), sin desplegar · i-7985ee-1bb2ea
+- **En qué quedó la ronda 1** (diseño `docs/superpowers/specs/2026-10-04-panel-usabilidad-design.md`, recorrido
+  en `docs/research/2026-10-04-usabilidad-panel.md`): la lista única de mods con ficha, el modpack
+  nuevo desde la página de un servidor, el diálogo que decide los pendientes al crear un build, los
+  avisos junto al formulario y en la esquina, la resolución guardada para mostrar, la página del
+  servidor que se refresca al terminar un trabajo y el reescaneo tras una actualización real. Cada
+  decisión del dueño tiene su fila en `docs/decisions.md` (d-7985ee-fe2ccb, d-7985ee-a38714,
+  d-7985ee-cf8746, d-7985ee-d7e6c4, d-7985ee-d69917, d-7985ee-04ffd3).
+- **Chequeo:** el gate contra MongoDB real, y el barrido visual (`scripts/visual-sweep.sh`), que
+  ahora corre un Modrinth local con el sodium grabado de `tests/fixtures/modrinth/` y comprueba en
+  un navegador lo que el HTML no dice: la ficha abierta con su selector de versiones (con Modrinth
+  caído, el aviso con "Reintentar"), el diálogo de decisiones que sigue abierto al enviarlo sin
+  decidir, el aviso de error dentro de `[data-form-notice]` y el de éxito que se va solo.
+- **Lo que falta (ronda 2, fuera de alcance de la ronda 1):**
+  - el tablero "necesita atención";
+  - móvil: navegación compacta y tablas como tarjetas;
+  - selectores de la versión de Minecraft y del loader al crear un pack (F09);
+  - advertir bajas de versión (F27);
+  - el diálogo de actualización directa que advierte lo que la simulación encontraría (F28);
+  - enlazar URLs en changelogs (F29);
+  - repetir el recorrido con Modrinth real y medir de nuevo la tarea de F36 en la instancia local;
+  - desplegar.
+- **Lo que choca:** el barrido no ve Modrinth ni Pterodactyl reales ni el login OIDC; la ficha pide
+  las versiones de un mod a Modrinth al abrirse (una llamada por ficha, solo al abrirla).
+
 ## Seguridad y despliegue
 
 ### Fijar las versiones de las dependencias — Hecha (2026-10-01) · i-7985ee-bb2fde
