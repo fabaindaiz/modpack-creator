@@ -91,9 +91,11 @@
   });
 
   // A form inside a confirmation dialog closes it once its request is answered, also on an
-  // error: the modal would otherwise hide the notice that explains it.
+  // error: the modal would otherwise hide the notice that explains it. Only the form: what the
+  // dialog loads for itself (the update preview when it opens, the build select) leaves it open.
   document.addEventListener('htmx:afterRequest', function (evt) {
-    var dialog = evt.detail.elt instanceof Element ? evt.detail.elt.closest('dialog') : null;
+    var elt = evt.detail.elt;
+    var dialog = elt instanceof HTMLFormElement ? elt.closest('dialog') : null;
     if (dialog && dialog.open) {
       dialog.close();
     }

@@ -30,6 +30,8 @@
     <input type="hidden" name="bundle_id" value="{{ bundle.id }}">
     {% set chosen = bundle.recommended_build or bundle.latest_build %}
     <label for="{{ direct }}-build" class="block font-medium">Build a instalar</label>
+    {# The preview loads when the dialog opens (a closed <dialog> is not displayed, so it does not
+       intersect), never with the page: it may wait up to 10 s for Modrinth. #}
     <select id="{{ direct }}-build" name="build" hx-get="/servers/{{ server_id }}/update/preview" hx-trigger="change" hx-target="#update-preview" hx-include="this" class="block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 dark:bg-zinc-900 dark:ring-zinc-700">
       {% for b in builds %}
       <option value="{{ b.number }}"{% if b.number == chosen %} selected{% endif %}>
@@ -37,7 +39,7 @@
       </option>
       {% endfor %}
     </select>
-    <div id="update-preview" class="space-y-2" aria-live="polite" hx-get="/servers/{{ server_id }}/update/preview?build={{ chosen }}" hx-trigger="load" hx-target="this" hx-swap="innerHTML">
+    <div id="update-preview" class="space-y-2" aria-live="polite" hx-get="/servers/{{ server_id }}/update/preview?build={{ chosen }}" hx-trigger="intersect once" hx-target="this" hx-swap="innerHTML">
       <p class="text-sm text-zinc-500 dark:text-zinc-400">Cargando cambios…</p>
     </div>
     <label for="{{ direct }}-confirm" class="block font-medium">Escribe el nombre exacto del servidor para confirmar: <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{{ server.name }}</code></label>

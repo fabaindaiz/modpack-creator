@@ -233,6 +233,16 @@ def test_app_js_shows_a_notice_for_every_other_client_error() -> None:
     assert "shouldSwap = false" in other and "showTemplate('notice-client-error')" in other
 
 
+def test_app_js_closes_a_dialog_only_for_its_own_form() -> None:
+    """A dialog closes when its form is answered; a fragment it loads for itself (the update
+    preview when it opens, the build select's change) must leave it open."""
+    text = client(None).get("/static/app.js").text
+    handler = text[text.index("htmx:afterRequest"):]
+    handler = handler[:handler.index("});")]
+    assert "HTMLFormElement" in handler and "dialog.close()" in handler
+    assert handler.index("HTMLFormElement") < handler.index("dialog.close()")
+
+
 class FailingPterodactyl(FakePterodactyl):
     def __init__(self, error: Exception) -> None:
         super().__init__([], {})

@@ -857,9 +857,21 @@ def test_the_direct_dialog_loads_its_preview_lazily_and_the_page_never_waits_for
     text = client.get(f"/servers/{SERVER_ID}").text
     assert fakes.modpack.calls == []  # the page does not build the preview
     assert 'id="update-preview"' in text and "Cargando cambios" in text and 'id="changes"' not in text
-    assert f'hx-get="/servers/{SERVER_ID}/update/preview?build=2"' in text and 'hx-trigger="load"' in text
     assert f'hx-get="/servers/{SERVER_ID}/update/preview"' in text and 'hx-trigger="change"' in text
     assert 'hx-target="#update-preview"' in text and 'hx-include="this"' in text
+
+
+def test_the_dialog_preview_is_requested_only_when_the_dialog_opens() -> None:
+    """A closed <dialog> is not displayed: `intersect once` fires when it opens, never on the page
+    load (a `load` trigger cost every visit up to 10 s of Modrinth and swapped notices in)."""
+    client, fakes = setup(OPERATOR)
+    text = client.get(f"/servers/{SERVER_ID}").text
+    preview = re.search(r'<div id="update-preview"[^>]*>', text)
+    assert preview is not None
+    tag = preview.group(0)
+    assert f'hx-get="/servers/{SERVER_ID}/update/preview?build=2"' in tag
+    assert 'hx-trigger="intersect once"' in tag
+    assert 'hx-trigger="load"' not in text.split('id="update-dialog-direct"', 1)[1].split("</dialog>", 1)[0]
 
 
 def test_the_lazy_load_asks_for_the_default_build() -> None:
@@ -884,12 +896,17 @@ def test_the_build_of_the_preview_is_a_positive_number() -> None:
     assert fakes.modpack.calls == []
 
 
-def test_the_preview_without_a_scan_is_a_conflict_notice() -> None:
+@pytest.mark.parametrize("error", [HTTP_409_CONFLICT("Escanea el servidor antes de comparar"),
+                                   HTTP_404_NOT_FOUND("Escanea el servidor antes de comparar")])
+def test_the_preview_without_a_scan_is_an_inline_note_not_a_notice(error: Exception) -> None:
+    """No scan (409) or a build gone (404): the dialog says it in place, with a 200. A notice in
+    #notices would come from loading a preview nobody asked about."""
     client, fakes = setup(OPERATOR)
-    fakes.modpack.preview_error = HTTP_409_CONFLICT("Escanea el servidor antes de comparar")
+    fakes.modpack.preview_error = error
     response = client.get(f"/servers/{SERVER_ID}/update/preview", params={"build": 2}, headers=HTMX)
-    assert response.status_code == 409
-    assert "Escanea el servidor antes de comparar" in response.text and "data-notice" in response.text
+    assert response.status_code == 200
+    assert "Escanea el servidor antes de comparar" in response.text and "data-notice" not in response.text
+    assert "<html" not in response.text
 
 
 def test_the_preview_with_modrinth_down_says_the_changelog_is_not_available() -> None:

@@ -233,12 +233,11 @@ async def server_update_changes(
         modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         ):
     """What updating the server to `build` would change, with the changelogs of what arrives: what
-    the direct dialog loads when the build is chosen. A read, so an editor may load it; a server
-    with no scan is a 409 notice."""
-    preview = await modpackService.server_change_preview(server_id, build)
-    changes = preview.changes
-    titles = await _titles(modrinthService, [c.project_id for c in changes.added + changes.removed + changes.changed])
-    return render(request, "servers/_preview_body.html", actor, preview=preview, titles=titles)
+    the direct dialog loads when it opens and when the build is chosen. A read, so an editor may
+    load it. A server with no scan or a build gone is a note in the dialog with a 200, not a
+    notice: nobody clicked anything that failed."""
+    return render(request, "servers/_preview_body.html", actor,
+                  **await preview_context(modpackService, modrinthService, server_id, build))
 
 @router.post("/servers/{server_id}/update/preview")
 @inject

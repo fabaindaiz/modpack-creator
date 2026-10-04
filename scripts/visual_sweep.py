@@ -234,10 +234,36 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
                             report[key] = {"status": response.status if response else None, "overflow_px": overflow,
                                            "console_errors": list(errors)}
                             errors.clear()
+                        if who == "operator":
+                            report.update(shoot_update_dialog(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                         ctx.close()
         finally:
             browser.close()
     return report
+
+
+def shoot_update_dialog(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
+                        errors: list[str]) -> dict[str, dict[str, Any]]:
+    """The direct update dialog, opened: its preview loads only then (`intersect once`), and the
+    dialog must stay open when the preview answers (app.js closes it only for its own form)."""
+    path = f"/servers/{ids['server']}"
+    response = page.goto(base + path)
+    page.wait_for_load_state("networkidle")
+    loaded_before = page.evaluate("!document.querySelector('#update-preview')?.textContent.includes('Cargando cambios')")
+    page.click('[data-dialog-open="update-dialog-direct"]')
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(300)
+    still_open = page.evaluate("document.getElementById('update-dialog-direct').open")
+    loaded = page.evaluate("!document.querySelector('#update-preview').textContent.includes('Cargando cambios')")
+    key = f"{prefix}-server-dialog"
+    page.screenshot(path=str(out / f"{key}.png"))
+    problems = [p for p, bad in (("la vista previa cargó con la página", loaded_before),
+                                 ("el diálogo se cerró", not still_open),
+                                 ("la vista previa no cargó al abrir", not loaded)) if bad]
+    entry = {"status": response.status if response else None, "overflow_px": 0, "console_errors": list(errors),
+             "problems": problems}
+    errors.clear()
+    return {key: entry}
 
 
 def main() -> int:
@@ -269,7 +295,8 @@ def main() -> int:
             app.kill()
         log.close()
     (out / "report.json").write_text(json.dumps(report, indent=1))
-    bad = {k: v for k, v in report.items() if v["status"] != 200 or v["overflow_px"] > 0 or v["console_errors"]}
+    bad = {k: v for k, v in report.items()
+           if v["status"] != 200 or v["overflow_px"] > 0 or v["console_errors"] or v.get("problems")}
     print(f"{len(report)} capturas; {len(bad)} con problemas")
     for key, value in bad.items():
         print(f"  {key}: {json.dumps(value, ensure_ascii=False)}")
