@@ -14,7 +14,7 @@ from src.model.users import Actor
 from src.model.users.actor import ActorRef
 from tests._actors import EDITOR, OPERATOR, session_for
 from tests._session import session_cookie
-from tests.test_web_servers import BUNDLE_ID, FakePterodactyl, PENDING_ROLLBACK, SERVER_ID, failed_real_update, job as make_job
+from tests.test_web_servers import BUNDLE_ID, FakeModpack, FakeModrinth, FakePterodactyl, PENDING_ROLLBACK, SERVER_ID, failed_real_update, job as make_job
 
 T0 = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 PLAN = {"preflight": {"build": 3, "bundle": "Pack Uno", "bundle_id": str(BUNDLE_ID), "install": [{"filename": "a.jar"}],
@@ -72,14 +72,25 @@ def reset_overrides() -> Any:
     yield
     import main
 
-    for name in ("jobService", "auditService", "pterodactylService"):
+    for name in ("jobService", "auditService", "pterodactylService", "modpackService", "modrinthService"):
         getattr(main.container, name).reset_override()
+
+
+MODPACK = FakeModpack()
+
+
+def reset_modpack() -> None:
+    MODPACK.preview_error = None
+    MODPACK.calls.clear()
 
 
 def setup(actor: Optional[Actor] = EDITOR) -> tuple[TestClient, FakeJobs, FakeAudit, FakePterodactyl]:
     import main
 
     jobs, audit, ptero = FakeJobs(), FakeAudit(), FakePterodactyl()
+    reset_modpack()
+    main.container.modpackService.override(providers.Object(MODPACK))
+    main.container.modrinthService.override(providers.Object(FakeModrinth()))
     main.container.jobService.override(providers.Object(jobs))
     main.container.auditService.override(providers.Object(audit))
     main.container.pterodactylService.override(providers.Object(ptero))
@@ -365,3 +376,33 @@ def test_older_link_only_when_more_exist() -> None:
         assert ("Ver anteriores" in text) is has_link
         if has_link:
             assert f"before={audit.events[49].id}" in text
+
+
+@pytest.mark.parametrize("path", ["", "/row"])
+def test_a_finished_dry_run_shows_what_it_changes_under_the_plan(path: str) -> None:
+    client, jobs, *_ = setup(EDITOR)
+    jobs.jobs = [finished_dry_run()]
+    text = client.get(f"/jobs/{jobs.jobs[0].id}{path}").text
+    assert ("server_change_preview", str(SERVER_ID), 3) in MODPACK.calls  # the build the plan simulated
+    assert 'id="changes"' in text and "Arregla un crash" in text and "Sodium" in text
+    assert text.index("Se instalan") < text.index('id="changes"')
+
+
+def test_a_finished_dry_run_without_a_scan_says_so_instead_of_the_changes() -> None:
+    from src.exceptions import HTTP_409_CONFLICT
+
+    client, jobs, *_ = setup(EDITOR)
+    MODPACK.preview_error = HTTP_409_CONFLICT("Escanea el servidor antes de comparar")
+    jobs.jobs = [finished_dry_run()]
+    response = client.get(f"/jobs/{jobs.jobs[0].id}/row")
+    assert response.status_code == 200 and "Escanea el servidor antes de comparar" in response.text
+    assert 'id="changes"' not in response.text
+
+
+def test_an_active_dry_run_and_a_scan_do_not_ask_for_the_preview() -> None:
+    client, jobs, *_ = setup(EDITOR)
+    jobs.jobs = [make_job("server_update", payload={"server_id": str(SERVER_ID), "dry_run": True})]
+    client.get(f"/jobs/{jobs.jobs[0].id}/row")
+    jobs.jobs = [make_job("server_scan", status="done", active=False, payload={"server_id": str(SERVER_ID)})]
+    client.get(f"/jobs/{jobs.jobs[0].id}/row")
+    assert MODPACK.calls == []

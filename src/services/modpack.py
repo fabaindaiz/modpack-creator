@@ -4,7 +4,7 @@ import re
 from datetime import datetime, timezone
 from typing import Optional
 from pydantic import BaseModel
-from src.database import ModpackDatabase, ModrinthDatabase
+from src.database import ModpackDatabase, ModrinthDatabase, PterodactylDatabase
 from src.library.api.client.loaders import LoaderMetaAPI
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.changes import ChangeSet, diff_entries
@@ -16,6 +16,7 @@ from src.model.modrinth import ModrinthProject, ModrinthVersion
 from src.model.audit import AuditTarget
 from src.model.users import Actor
 from src.services.audit import AuditSink
+from src.services.pterodactyl import SCAN_DIRECTORY
 from src.exceptions import *
 
 # Each round fetches what the lock needs; a dependency chain deeper than this is reported as an
@@ -32,6 +33,9 @@ def candidate(version: ModrinthVersion) -> Candidate:
 logger = logging.getLogger("modpack.changes")
 # How many changelogs are asked of Modrinth at once.
 CHANGELOG_CONCURRENCY = 8
+# How long a preview waits for changelogs in all (N-R2): Modrinth rate-limiting may back off for a
+# minute per request, and a page about a game server must not wait for it.
+CHANGELOG_DEADLINE = 10.0
 
 
 class ChangePreview(BaseModel):
@@ -51,7 +55,11 @@ class ModpackService():
             loaderAPI: LoaderMetaAPI,
             audit: AuditSink,
             notifier: Optional[NotificationSink] = None,
+            pterodactylDB: Optional[PterodactylDatabase] = None,
+            changelog_deadline: float = CHANGELOG_DEADLINE,
             ) -> None:
+        self.pterodactylDB = pterodactylDB or PterodactylDatabase()
+        self.changelog_deadline = changelog_deadline
         self.modpackDB = modpackDB
         self.modrinthDB = modrinthDB
         self.modrinthAPI = modrinthAPI
@@ -337,8 +345,12 @@ class ModpackService():
         A read that fails marks its version in `failed`: the preview never raises for it. Like
         `resolve`, it writes only to the catalog of Modrinth data.
         """
-        changes = diff_entries({e.project_id: e.version_id for e in before.entries},
-                               {e.project_id: e.version_id for e in after.entries})
+        return await self._preview({e.project_id: e.version_id for e in before.entries},
+                                   {e.project_id: e.version_id for e in after.entries})
+
+    async def _preview(self, before: dict[str, str], after: dict[str, str]) -> ChangePreview:
+        """`change_preview` on maps of project id to version id."""
+        changes = diff_entries(before, after)
         arriving = sorted({c.to_version for c in changes.added + changes.changed if c.to_version})
         gate = asyncio.Semaphore(CHANGELOG_CONCURRENCY)
 
@@ -350,9 +362,19 @@ class ModpackService():
                     logger.warning("changelog of %s not available", version_id, exc_info=True)
                     return version_id, None, True
 
-        results = await asyncio.gather(*[fetch(v) for v in arriving])
-        return ChangePreview(changes=changes, changelogs={v: text for v, text, failed in results if not failed},
-                             failed={v for v, _, failed in results if failed})
+        tasks = {v: asyncio.create_task(fetch(v)) for v in arriving}
+        done, pending = await asyncio.wait(tasks.values(), timeout=self.changelog_deadline) if tasks else (set(), set())
+        for task in pending:
+            task.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+        changelogs: dict[str, Optional[str]] = {}
+        failed: set[str] = set()
+        for version_id, task in tasks.items():
+            if task in done and not task.cancelled() and not task.result()[2]:
+                changelogs[version_id] = task.result()[1]
+            else:
+                failed.add(version_id)  # failed, or not fetched in time
+        return ChangePreview(changes=changes, changelogs=changelogs, failed=failed)
 
     async def _changelog(self, version_id: str) -> Optional[str]:
         """The changelog of a version, None if it has none. The catalog first; else Modrinth, and
@@ -370,6 +392,24 @@ class ModpackService():
         before = await self.modpackDB.build_get(bundle_id, from_number)
         after = before if to_number == from_number else await self.modpackDB.build_get(bundle_id, to_number)
         return await self.change_preview(before.lock, after.lock)
+
+    async def server_change_preview(self, server_id: str, build_number: int) -> ChangePreview:
+        """
+        What updating a server to a build would change: what its latest scan identified, against
+        what the build puts on the server (the entries that go there, not the client-only ones).
+        409 if the server has no bundle or no scan; 404 if the build does not exist. A read.
+        """
+        server = await self.pterodactylDB.server_get(server_id)
+        if server.bundle_id is None:
+            raise HTTP_409_CONFLICT(f"Server '{server_id}' is not linked to a bundle")
+        build = await self.modpackDB.build_get(server.bundle_id, build_number)
+        scan = await self.pterodactylDB.scan_latest(server_id, SCAN_DIRECTORY)
+        if scan is None:
+            raise HTTP_409_CONFLICT("Escanea el servidor antes de comparar")
+        before = {f.project_id: f.version_id for f in scan.files
+                  if f.status == "identified" and f.project_id and f.version_id}
+        after = {e.project_id: e.version_id for e in build.lock.entries if e.server == "include"}
+        return await self._preview(before, after)
 
     # Global replacement rules (d-7985ee-86fffa).
 

@@ -11,11 +11,14 @@ import pytest
 
 from src.database.modpack import ModpackDatabase
 from src.database.modrinth import ModrinthDatabase
+from src.database.pterodactyl import PterodactylDatabase
 from src.exceptions import HTTP_404_NOT_FOUND
 from src.library.changes import Change, ChangeSet, diff_entries
+from src.library.scan import ScanFile
 from src.library.resolution import Lock, LockEntry, ResolveRequest, Target
 from src.model.modpack import ModpackBuild, ModpackBundle
 from src.model.modrinth import ModrinthVersion
+from src.model.pterodactyl import PterodactylServer, ServerScan
 from src.model.utils import MinecraftLoaders
 from src.services.modpack import ModpackService
 from tests._actors import RecordingAudit
@@ -199,3 +202,83 @@ def test_compare_builds_uses_the_locks_of_both_builds(mongo: MongoRunner) -> Non
     assert preview.changelogs == {"v2": "nuevo"}
     assert getattr(missing, "status_code", None) == 404
     assert (same.changes.changed, same.changes.added, same.changes.removed, same.changes.unchanged) == ([], [], [], 1)
+
+
+# La vista previa de un servidor: lo que tiene contra lo que pondría un build (N4).
+
+def scan_file(path: str, project_id: str | None, version_id: str | None, status: str = "identified") -> ScanFile:
+    return ScanFile(path=path, size=1, modified_at=T0, status=status,  # type: ignore[arg-type]
+                    sha1="s", sha512="h-" + path, project_id=project_id, version_id=version_id)
+
+
+async def seed_server(files: list[ScanFile] | None, entries: list[LockEntry]) -> str:
+    """A server linked to a bundle with build 1 (with a scan, unless `files` is None)."""
+    created = await ModpackBundle(name="pack", description="", version="26.3", loader=MinecraftLoaders.fabric).insert()
+    request = ResolveRequest(target=Target(game_version="26.3", loader="fabric", channels=frozenset({"release"})),
+                             projects=[])
+    await ModpackDatabase().build_insert(ModpackBuild(
+        bundle_id=created.id, number=1, created_at=T0, loader_version="0.16",  # type: ignore[arg-type]
+        request=request, lock=lock(*entries)))
+    server = await PterodactylDatabase().server_insert(PterodactylServer(
+        identifier="1a2b3c4d", internal_id=1, uuid="1a2b3c4d-0000", name="Survival", node="n1",
+        description="", status=None, is_suspended=False, is_installing=False, is_transferring=False,
+        bundle_id=str(created.id)))
+    if files is not None:
+        await PterodactylDatabase().scan_insert(ServerScan(server_id=server.id, directory="/mods",  # type: ignore[arg-type]
+                                                           scanned_at=T0, full=False, files=files))
+    return str(server.id)
+
+
+@pytest.mark.network
+def test_a_server_preview_compares_the_scan_with_what_the_build_puts_on_the_server(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        files = [scan_file("/mods/p.jar", "P", "v1"), scan_file("/mods/q.jar", "Q", "q1"),
+                 scan_file("/mods/gone.jar", "G", "g1"), scan_file("/mods/odd.jar", None, None, "unknown")]
+        server_id = await seed_server(files, [entry("P", "v2"), entry("Q", "q1"), entry("N", "n1"),
+                                                         entry("C", "c1", "exclude")])
+        return await service(FakeAPI({"v2": "nuevo", "n1": None})).server_change_preview(server_id, 1)
+
+    preview = mongo(scenario)
+    assert [(c.project_id, c.from_version, c.to_version) for c in preview.changes.changed] == [("P", "v1", "v2")]
+    assert [c.project_id for c in preview.changes.added] == ["N"]  # lo del cliente no va al servidor
+    assert [c.project_id for c in preview.changes.removed] == ["G"]  # lo no identificado no cuenta
+    assert preview.changes.unchanged == 1 and preview.changelogs == {"v2": "nuevo", "n1": None}
+
+
+@pytest.mark.network
+def test_a_server_preview_without_a_scan_is_a_conflict(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        server_id = await seed_server(None, [entry("P", "v2")])
+        with pytest.raises(Exception) as error:
+            await service(FakeAPI({})).server_change_preview(server_id, 1)
+        return error.value
+
+    error = mongo(scenario)
+    assert getattr(error, "status_code", None) == 409 and "Escanea el servidor antes de comparar" in str(error.detail)
+
+
+class SlowAPI(FakeAPI):
+    """Modrinth limitando: las versiones lentas tardan mucho más que el plazo."""
+
+    async def version_get(self, id: str) -> ModrinthVersion:
+        if id.startswith("slow"):
+            self.calls.append(id)
+            await asyncio.sleep(30)
+        return await super().version_get(id)
+
+
+@pytest.mark.network
+def test_the_preview_returns_by_its_deadline_and_marks_what_it_did_not_fetch(mongo: MongoRunner) -> None:
+    import time
+
+    async def scenario() -> Any:
+        api = SlowAPI({"v2": "rápido", "slow1": "x", "slow2": "y"})
+        svc = ModpackService(modpackDB=ModpackDatabase(), modrinthDB=ModrinthDatabase(), modrinthAPI=cast(Any, api),
+                             loaderAPI=cast(Any, FakeLoaders()), audit=RecordingAudit(), changelog_deadline=0.3)
+        started = time.monotonic()
+        preview = await svc.change_preview(lock(), lock(entry("P", "v2"), entry("S1", "slow1"), entry("S2", "slow2")))
+        return preview, time.monotonic() - started
+
+    preview, took = mongo(scenario)
+    assert took < 3
+    assert preview.changelogs == {"v2": "rápido"} and preview.failed == {"slow1", "slow2"}

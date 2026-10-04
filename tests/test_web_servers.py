@@ -189,10 +189,29 @@ class FakeUpdate:
         return job("server_rollback", requested_by=actor.ref())
 
 
+def change_preview(failed: bool = False) -> Any:
+    from src.library.changes import Change, ChangeSet
+    from src.services.modpack import ChangePreview
+
+    changes = ChangeSet(added=[Change("P3", None, "v-new")], removed=[Change("P2", "v-p2", None)],
+                        changed=[Change("P1", "v-old", "v-p1")], unchanged=4)
+    return ChangePreview(changes=changes, changelogs={} if failed else {"v-p1": "Arregla un crash", "v-new": None},
+                         failed={"v-p1", "v-new"} if failed else set())
+
+
 class FakeModpack:
     def __init__(self) -> None:
         self.builds = True
         self.recommended: Optional[int] = 2
+        self.preview: Any = change_preview()
+        self.preview_error: Optional[Exception] = None
+        self.calls: list[tuple[Any, ...]] = []
+
+    async def server_change_preview(self, server_id: str, build_number: int) -> Any:
+        self.calls.append(("server_change_preview", server_id, build_number))
+        if self.preview_error is not None:
+            raise self.preview_error
+        return self.preview
 
     async def bundle_find(self) -> list[ModpackBundle]:
         return [bundle(5, self.recommended) if self.builds else bundle(None, None)]
@@ -829,3 +848,60 @@ def test_the_newest_failed_rollback_attempt_is_said(mode: str) -> None:
     assert text.index(f"El último intento de {mode} falló") < text.index('name="mode" value="A"')
     fakes.jobs.state = RollbackState(update=failed, allowed=["A", "B"])
     assert "El último intento de" not in client.get(f"/servers/{SERVER_ID}").text
+
+
+# La vista previa de lo que cambia (N4).
+
+def test_the_direct_dialog_comes_with_the_preview_of_the_recommended_build() -> None:
+    client, fakes = setup(OPERATOR)
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert ("server_change_preview", str(SERVER_ID), 2) in fakes.modpack.calls
+    assert 'id="update-preview"' in text and 'id="changes"' in text
+    assert "Arregla un crash" in text and "Sodium" in text and "Iris" in text
+    assert f'hx-get="/servers/{SERVER_ID}/update/preview"' in text and 'hx-trigger="change"' in text
+    assert 'hx-target="#update-preview"' in text and 'hx-include="this"' in text
+
+
+def test_the_dialog_still_opens_without_a_scan_and_says_why() -> None:
+    client, fakes = setup(OPERATOR)
+    fakes.modpack.preview_error = HTTP_409_CONFLICT("Escanea el servidor antes de comparar")
+    response = client.get(f"/servers/{SERVER_ID}")
+    assert response.status_code == 200 and 'id="update-preview"' in response.text
+    assert "Escanea el servidor antes de comparar" in response.text and 'id="changes"' not in response.text
+
+
+def test_an_editor_does_not_load_the_preview_for_a_dialog_that_is_not_there() -> None:
+    client, fakes = setup(EDITOR)
+    client.get(f"/servers/{SERVER_ID}")
+    assert fakes.modpack.calls == []
+
+
+def test_changing_the_build_asks_for_its_preview_and_returns_the_fragment() -> None:
+    client, fakes = setup(EDITOR)  # read: an editor loads it too
+    response = client.get(f"/servers/{SERVER_ID}/update/preview", params={"build": 3}, headers=HTMX)
+    assert response.status_code == 200
+    assert ("server_change_preview", str(SERVER_ID), 3) in fakes.modpack.calls
+    assert 'id="changes"' in response.text and "<html" not in response.text and "Arregla un crash" in response.text
+
+
+def test_the_build_of_the_preview_is_a_positive_number() -> None:
+    client, fakes = setup(OPERATOR)
+    assert client.get(f"/servers/{SERVER_ID}/update/preview", params={"build": 0}, headers=HTMX).status_code == 422
+    assert client.get(f"/servers/{SERVER_ID}/update/preview", headers=HTMX).status_code == 422
+    assert fakes.modpack.calls == []
+
+
+def test_the_preview_without_a_scan_is_a_conflict_notice() -> None:
+    client, fakes = setup(OPERATOR)
+    fakes.modpack.preview_error = HTTP_409_CONFLICT("Escanea el servidor antes de comparar")
+    response = client.get(f"/servers/{SERVER_ID}/update/preview", params={"build": 2}, headers=HTMX)
+    assert response.status_code == 409
+    assert "Escanea el servidor antes de comparar" in response.text and "data-notice" in response.text
+
+
+def test_the_preview_with_modrinth_down_says_the_changelog_is_not_available() -> None:
+    client, fakes = setup(OPERATOR)
+    fakes.modpack.preview = change_preview(failed=True)
+    response = client.get(f"/servers/{SERVER_ID}/update/preview", params={"build": 2}, headers=HTMX)
+    assert response.status_code == 200
+    assert "changelog no disponible" in response.text and "Sodium" in response.text

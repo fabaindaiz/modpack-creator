@@ -3,7 +3,8 @@
   servers/_update.html, d-7985ee-aca3e8): bound to its build and bundle (hidden `build` and
   `bundle_id`; a plan from before it carried its bundle asks to simulate again), warning when it
   would discard a pending rollback (`rollback`, JobService.rollback_state, when the page knows it),
-  and confirmed by typing the server's name (`server_name`, when the page knows it). #}
+  and confirmed by typing the server's name (`server_name`, when the page knows it). Under the plan,
+  what it changes (`preview`, `titles` or `preview_note`, when the page knows them). #}
 {% import "_macros.html" as ui %}
 {% set plan = job.checkpoint.get("preflight") %}
 {% set lines = job.checkpoint.get("log", {}).get("lines", []) %}
@@ -27,6 +28,7 @@
       </ul>
     </div>
   </div>
+  {% include "servers/_preview_body.html" %}
   {% endif %}
   {% if lines %}
   <details>

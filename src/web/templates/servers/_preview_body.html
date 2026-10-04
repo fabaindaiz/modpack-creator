@@ -1,0 +1,11 @@
+{# What an update would change on a server: `preview` and `titles`, or `preview_note` (why there is none).
+   Shared by the direct dialog (_update.html) and the finished dry run (_dry_run.html). #}
+{% if preview is defined and preview %}
+<div class="space-y-2">
+  <h3 class="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Qué cambiaría en el servidor</h3>
+  {% set against_server = True %}
+  {% include "modpacks/_changes.html" %}
+</div>
+{% elif preview_note is defined and preview_note %}
+<p class="text-sm text-zinc-600 dark:text-zinc-400">{{ preview_note }}</p>
+{% endif %}

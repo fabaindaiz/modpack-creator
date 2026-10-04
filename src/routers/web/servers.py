@@ -1,7 +1,7 @@
 import logging
 from typing import Annotated, Any, Literal
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from src.dependences import Dependences, JobService, ModpackService, ModrinthService, PterodactylService, UpdateService
 from src.exceptions import HTTP_403_FORBIDDEN, HTTP_409_CONFLICT, HTTP_422_UNPROCESSABLE_ENTITY
@@ -41,6 +41,21 @@ async def _titles(modrinthService: ModrinthService, project_ids: list[str]) -> d
         logger.warning("Modrinth title lookup failed", exc_info=True)
         found = {}
     return {project_id: found[project_id].title if project_id in found else project_id for project_id in project_ids}
+
+async def preview_context(modpackService: ModpackService, modrinthService: ModrinthService, server_id: str,
+                          build_number: int) -> dict[str, Any]:
+    """What updating the server to a build would change, for a template: `preview` and `titles`, or
+    `preview_note` when it cannot be shown (no scan, no bundle, no such build). Modrinth failing is
+    not an error: the preview marks the changelogs it could not read."""
+    try:
+        preview = await modpackService.server_change_preview(server_id, build_number)
+    except HTTPException as error:
+        if error.status_code not in (404, 409):
+            raise
+        return {"preview_note": str(error.detail)}
+    changes = preview.changes
+    titles = await _titles(modrinthService, [c.project_id for c in changes.added + changes.removed + changes.changed])
+    return {"preview": preview, "titles": titles}
 
 def _comparison_ids(comparison: Comparison) -> list[str]:
     return ([f.project_id for f in comparison.matching if f.project_id]
@@ -122,9 +137,14 @@ async def server_detail(
     build_number = (bundle.recommended_build or bundle.latest_build) if bundle else None
     builds = sorted(await modpackService.build_find(str(bundle.id)), key=lambda b: b.number, reverse=True) \
         if bundle is not None else []
+    # The direct update dialog opens on the default build with its changes: only an operator can open it.
+    preview = await preview_context(modpackService, modrinthService, server_id, build_number) \
+        if actor.is_operator and bundle is not None and build_number is not None and builds else {}
+    titles = {**titles, **preview.pop("titles", {})}
     return render(request, "servers/detail.html", actor, server=server, server_id=server_id, bundles=bundles,
                   bundle=bundle, scan=scan, comparison=comparison, compare_note=compare_note, titles=titles,
-                  active_job=active, rollback=rollback, build_number=build_number, builds=builds, nav_active="servers")
+                  active_job=active, rollback=rollback, build_number=build_number, builds=builds, nav_active="servers",
+                  **preview)
 
 @router.post("/servers/{server_id}/refresh")
 @inject
@@ -206,6 +226,24 @@ async def server_import_local(
     """The admin keeps a jar as a local file of the bundle."""
     await pterodactylService.import_local(server_id, path, actor)
     return render(request, "servers/_import_done.html", actor, path=path, what="local", project_id="")
+
+@router.get("/servers/{server_id}/update/preview")
+@inject
+async def server_update_changes(
+        server_id: str,
+        request: Request,
+        build: Annotated[int, Query(ge=1)],
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
+        ):
+    """What updating the server to `build` would change, with the changelogs of what arrives: what
+    the direct dialog loads when the build is chosen. A read, so an editor may load it; a server
+    with no scan is a 409 notice."""
+    preview = await modpackService.server_change_preview(server_id, build)
+    changes = preview.changes
+    titles = await _titles(modrinthService, [c.project_id for c in changes.added + changes.removed + changes.changed])
+    return render(request, "servers/_preview_body.html", actor, preview=preview, titles=titles)
 
 @router.post("/servers/{server_id}/update/preview")
 @inject

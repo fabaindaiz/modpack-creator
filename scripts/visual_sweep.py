@@ -113,6 +113,8 @@ async def seed(mongo_uri: str) -> dict[str, str]:
     await big.insert()
     await small.insert()
     await seed_builds(big)
+    big.latest_build = big.recommended_build = 2
+    await big.save()
     await ModpackReplacement(project_id="optifine", replacement="sodium").insert()
     servers = []
     for i, (name, bundle) in enumerate([("Survival", big), (LONG_NAME, big), ("Creativo", small)]):
@@ -122,14 +124,18 @@ async def seed(mongo_uri: str) -> dict[str, str]:
         await server.insert()
         assert server.id is not None
         servers.append(server)
+        # Three jars are the ones of the builds' locks (sodium changes, one goes, one stays), so the
+        # update preview of the server has something to show.
+        known = {1: ("sodium", "sod-1"), 2: ("gone-mod", "gone-1"), 3: ("steady", "st-1")}
         files = [ScanFile(path=f"/mods/mod-{j}.jar", size=1000 + j, modified_at=now,
                           status="identified" if j % 5 else "unknown", sha1="a" * 40, sha512="b" * 128,
-                          project_id=f"mod-{j:03d}" if j % 5 else None, version_id="v1" if j % 5 else None)
+                          project_id=known[j][0] if j in known else f"mod-{j:03d}" if j % 5 else None,
+                          version_id=known[j][1] if j in known else "v1" if j % 5 else None)
                  for j in range(12)]
         await ServerScan(server_id=server.id, directory="/mods", scanned_at=now - timedelta(hours=i), full=False,
                          files=files, drift="2 jars de más y 1 versión distinta" if i == 0 else None).insert()
     survival = str(servers[0].id)
-    plan = {"build": 4, "bundle": big.name, "remove": ["/mods/old-1.jar", "/mods/old-2.jar"],
+    plan = {"build": 2, "bundle_id": str(big.id), "bundle": big.name, "remove": ["/mods/old-1.jar", "/mods/old-2.jar"],
             "install": [{"project_id": "lithium", "filename": "lithium-fabric-0.15.1+mc26.3.jar",
                          "url": "https://cdn.modrinth.com/x", "sha512": "c" * 128, "size": 1}]}
     failed = Job(kind="server_update", key=f"server:{servers[1].id}",
@@ -139,7 +145,7 @@ async def seed(mongo_uri: str) -> dict[str, str]:
                  checkpoint={"preflight": plan, "swap": {}, "backup": {"uuid": "b"}})
     jobs = [
         Job(kind="server_update", key=f"server:{survival}",
-            payload={"server_id": survival, "build": 4, "dry_run": True}, status="done", active=False,
+            payload={"server_id": survival, "build": 2, "dry_run": True}, status="done", active=False,
             created_at=now - timedelta(minutes=10), finished_at=now - timedelta(minutes=9), requested_by=OLGA,
             checkpoint={"preflight": plan, "log": {"lines": ["stage lithium-fabric-0.15.1+mc26.3.jar", "save-all",
                                                               "stop", "backup update-x"]}}),
@@ -162,7 +168,7 @@ async def seed(mongo_uri: str) -> dict[str, str]:
                          else {"number": k},
                          request_id=f"req-{k:04d}").insert()
     await client.close()
-    return {"server": survival, "bundle": str(big.id), "job": str(failed.id)}
+    return {"server": survival, "bundle": str(big.id), "job": str(failed.id), "dryrun": str(jobs[0].id)}
 
 
 def wait_ready(base: str, app: "subprocess.Popen[bytes]") -> None:
@@ -184,7 +190,7 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
     pages = {"home": "/", "modpacks": "/modpacks", "modpack": f"/modpacks/{ids['bundle']}",
              "compare": f"/modpacks/{ids['bundle']}/builds/compare?de=1&a=2",
              "replacements": "/replacements", "servers": "/servers", "server": f"/servers/{ids['server']}",
-             "jobs": "/jobs", "job": f"/jobs/{ids['job']}", "audit": "/audit"}
+             "jobs": "/jobs", "job": f"/jobs/{ids['job']}", "dryrun": f"/jobs/{ids['dryrun']}", "audit": "/audit"}
     report: dict[str, dict[str, Any]] = {}
     chromium = os.environ.get("PLAYWRIGHT_CHROMIUM") or None
     with sync_playwright() as p:
