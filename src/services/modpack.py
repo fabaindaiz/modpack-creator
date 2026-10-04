@@ -19,6 +19,8 @@ from src.exceptions import *
 RESOLVE_ROUNDS = 32
 # What a Modrinth project id looks like; anything else is not a key to store.
 MODRINTH_ID = re.compile(r"[A-Za-z0-9_-]+")
+# One request decides at most this many mods: a bigger one is a mistake or abuse.
+MAX_DECISIONS = 500
 
 def candidate(version: ModrinthVersion) -> Candidate:
     return Candidate.from_modrinth({**version.model_dump(mode="json"), "id": version.version_id})
@@ -59,7 +61,7 @@ class ModpackService():
         """Decide whether one mod goes on the server; only that decision changes, atomically.
         422 for an id that is not a Modrinth project id: it would become a nested key."""
         if not MODRINTH_ID.fullmatch(project_id):
-            raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{project_id}' is not a Modrinth project id")
+            raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{project_id}' no es un id de proyecto de Modrinth")
         updated = await self.modpackDB.bundle_decision_set(bundle_id, project_id, server)
         await self.audit.record(actor, "bundle.decision", _bundle(bundle_id),
                                 {"project_id": project_id, "server": server})
@@ -69,10 +71,12 @@ class ModpackService():
         """Decide several mods at once, in one atomic write. 422 if there is none or any id is not a
         Modrinth project id: every id is checked first, so nothing is written for a bad batch."""
         if not decisions:
-            raise HTTP_422_UNPROCESSABLE_ENTITY("There is no decision to save")
+            raise HTTP_422_UNPROCESSABLE_ENTITY("No hay ninguna decisión que guardar")
+        if len(decisions) > MAX_DECISIONS:
+            raise HTTP_422_UNPROCESSABLE_ENTITY(f"Demasiadas decisiones de una vez (máximo {MAX_DECISIONS})")
         for project_id in decisions:
             if not MODRINTH_ID.fullmatch(project_id):
-                raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{project_id}' is not a Modrinth project id")
+                raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{project_id}' no es un id de proyecto de Modrinth")
         updated = await self.modpackDB.bundle_decisions_set(bundle_id, decisions)
         await self.audit.record(actor, "bundle.decision", _bundle(bundle_id), {"decisions": decisions})
         return updated

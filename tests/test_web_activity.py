@@ -149,7 +149,7 @@ def test_jobs_page_lists_recent_jobs_with_who_asked() -> None:
     jobs.jobs = [make_job(requested_by=ActorRef(iss="i", sub="s", name="Ana")), make_job(requested_by=None)]
     response = client.get("/jobs")
     assert response.status_code == 200 and "Ana" in response.text and "programado" in response.text
-    assert jobs.calls == [{"server_id": None, "kind": None, "status": None, "before_id": None, "limit": 50}]
+    assert jobs.calls == [{"server_id": None, "kind": None, "status": None, "before_id": None, "limit": 51}]
 
 
 def test_jobs_table_links_each_row_to_its_page_and_names_the_server() -> None:
@@ -176,7 +176,7 @@ def test_jobs_table_refreshes_only_the_active_rows() -> None:
 def test_jobs_filters_pass_through_as_exact_values() -> None:
     client, jobs, *_ = setup()
     client.get("/jobs", params={"servidor": ".*", "tipo": "server_*", "estado": "done", "before": "abc"})
-    assert jobs.calls[-1] == {"server_id": ".*", "kind": "server_*", "status": "done", "before_id": "abc", "limit": 50}
+    assert jobs.calls[-1] == {"server_id": ".*", "kind": "server_*", "status": "done", "before_id": "abc", "limit": 51}
     client.get("/jobs", params={"servidor": "", "tipo": "", "estado": ""})
     assert jobs.calls[-1]["server_id"] is None and jobs.calls[-1]["kind"] is None and jobs.calls[-1]["status"] is None
 
@@ -193,9 +193,9 @@ def test_jobs_filter_form_has_selects_with_the_known_values() -> None:
 
 def test_jobs_paginate_keeping_the_filters() -> None:
     client, jobs, *_ = setup()
-    jobs.jobs = [make_job() for _ in range(50)]
+    jobs.jobs = [make_job() for _ in range(51)]
     text = client.get("/jobs", params={"estado": "done"}).text
-    assert f"before={jobs.jobs[-1].id}" in text and "estado=done" in text and "anteriores" in text
+    assert f"before={jobs.jobs[49].id}" in text and "estado=done" in text and "anteriores" in text
     jobs.jobs = [make_job()]
     assert "anteriores" not in client.get("/jobs").text
 
@@ -252,14 +252,14 @@ def test_audit_filters_pass_through_as_exact_values() -> None:
     assert response.status_code == 200
     [call] = audit.calls
     assert call["actor_sub"] == ".*" and call["action"] == "server.*" and call["target_id"] == "t1"
-    assert call["before_id"] is None and call["limit"] == 50
+    assert call["before_id"] is None and call["limit"] == 51
 
 
 def test_audit_paginates_with_before() -> None:
     client, _, audit, _ = setup()
-    audit.events = [event() for _ in range(50)]
+    audit.events = [event() for _ in range(51)]
     response = client.get("/audit")
-    last = audit.events[-1].id
+    last = audit.events[49].id
     assert f"before={last}" in response.text and "anteriores" in response.text
     client.get("/audit", params={"before": str(last)})
     assert audit.calls[-1]["before_id"] == str(last)
@@ -330,7 +330,7 @@ def test_audit_bad_dates_are_a_422_notice_never_a_500(params: dict[str, str]) ->
 
 def test_audit_older_link_keeps_the_dates() -> None:
     client, _, audit, _ = setup()
-    audit.events = [event() for _ in range(50)]
+    audit.events = [event() for _ in range(51)]
     text = client.get("/audit", params={"desde": "2026-10-01", "hasta": "2026-10-02"}).text
     assert "desde=2026-10-01" in text and "hasta=2026-10-02" in text
 
@@ -346,3 +346,22 @@ def test_the_real_run_from_a_job_warns_when_a_rollback_is_pending(path: str) -> 
     text = client.get(f"/jobs/{jobs.jobs[0].id}{path}").text
     assert PENDING_ROLLBACK in text and text.index(PENDING_ROLLBACK) < text.index('name="confirm"')
     assert jobs.asked_state[-1] == str(SERVER_ID)
+
+
+def test_older_link_only_when_more_exist() -> None:
+    client, jobs, audit, _ = setup()
+    for count, has_link in ((50, False), (51, True)):
+        jobs.jobs = [make_job() for _ in range(count)]
+        jobs.calls.clear()
+        text = client.get("/jobs").text
+        assert jobs.calls[0]["limit"] == 51
+        assert ("Ver anteriores" in text) is has_link
+        if has_link:
+            assert f"before={jobs.jobs[49].id}" in text and str(jobs.jobs[50].id) not in text
+        audit.events = [event() for _ in range(count)]
+        audit.calls.clear()
+        text = client.get("/audit").text
+        assert audit.calls[0]["limit"] == 51
+        assert ("Ver anteriores" in text) is has_link
+        if has_link:
+            assert f"before={audit.events[49].id}" in text

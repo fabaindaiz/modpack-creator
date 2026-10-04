@@ -685,6 +685,14 @@ def test_an_editor_is_refused_before_anything_is_compared() -> None:
     assert response.status_code == 403 and fakes.update.calls == []
 
 
+def test_editor_with_mismatched_bundle_is_refused_before_comparing() -> None:
+    client, fakes = setup(EDITOR)
+    for bundle_id in ("", str(PydanticObjectId())):
+        response = client.post(f"/servers/{SERVER_ID}/update", headers=HTMX,
+                               data={"bundle_id": bundle_id, "confirm": "otro", "build": "2"})
+        assert response.status_code == 403 and fakes.update.calls == []
+
+
 def test_detail_and_import_survive_a_failing_title_lookup() -> None:
     client, fakes = setup(OPERATOR)
 

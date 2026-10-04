@@ -268,3 +268,19 @@ def test_the_scheduler_and_the_worker_scan_without_a_person(mongo: MongoRunner) 
         return len(queued), len(audit.events), scans.actors, queued[0].requested_by
 
     assert mongo(scenario) == (1, 0, [None], None)
+
+
+def test_bulk_decisions_capped_at_500() -> None:
+    """More than 500 decisions at once is a 422 before anything is read or written."""
+    from fastapi import HTTPException
+
+    async def scenario() -> tuple[int, str]:
+        service = ModpackService(modpackDB=cast(Any, None), modrinthDB=cast(Any, None), modrinthAPI=cast(Any, None),
+                                 loaderAPI=cast(Any, None), audit=RecordingAudit())
+        with pytest.raises(HTTPException) as refused:
+            await service.decisions_set("b", {f"P{i}": True for i in range(501)}, actor=EDITOR)
+        return refused.value.status_code, str(refused.value.detail)
+
+    import asyncio
+    code, detail = asyncio.run(scenario())
+    assert code == 422 and "Demasiadas decisiones de una vez (máximo 500)" in detail

@@ -63,8 +63,10 @@ async def job_list(
     """Jobs newest first, 50 per page, filtered by exact values; `before` is the id of the last
     job shown."""
     jobs = await jobService.find(server_id=servidor or None, kind=tipo or None, status=estado or None,
-                                 before_id=before or None, limit=JOBS_SHOWN)
-    older = f"before={jobs[-1].id}" if len(jobs) >= JOBS_SHOWN else None
+                                 before_id=before or None, limit=JOBS_SHOWN + 1)
+    has_older = len(jobs) > JOBS_SHOWN  # one more than shown: only then is there a next page
+    jobs = jobs[:JOBS_SHOWN]
+    older = f"before={jobs[-1].id}" if has_older else None
     filters = {"servidor": servidor or "", "tipo": tipo or "", "estado": estado or ""}
     return render(request, "activity/jobs.html", actor, jobs=jobs, filters=filters, older=older,
                   server_names=await _server_names(pterodactylService), nav_active="jobs")
@@ -136,8 +138,10 @@ async def audit_log(
         raise HTTP_422_UNPROCESSABLE_ENTITY("'Hasta' no es una fecha válida (AAAA-MM-DD)")
     events = await auditService.find(
         actor_sub=actor_filter or None, action=action or None, target_id=target or None,
-        before_id=before or None, limit=AUDIT_PAGE, since=since, until=until)
-    older = f"before={events[-1].id}" if len(events) >= AUDIT_PAGE else None
+        before_id=before or None, limit=AUDIT_PAGE + 1, since=since, until=until)
+    has_older = len(events) > AUDIT_PAGE
+    events = events[:AUDIT_PAGE]
+    older = f"before={events[-1].id}" if has_older else None
     filters = {"actor": actor_filter or "", "action": action or "", "target": target or "",
                "desde": desde or "", "hasta": hasta or ""}
     return render(request, "activity/audit.html", actor, events=events, filters=filters, older=older,
