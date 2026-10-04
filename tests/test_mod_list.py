@@ -208,6 +208,37 @@ def test_modrinth_down_still_lists_without_icons(mongo: MongoRunner, api: FakeMo
     assert missing == 2
 
 
+def test_suggestion_and_problem_titles_come_from_the_same_single_fill(mongo: MongoRunner) -> None:
+    from src.library.resolution import Problem, Suggestion
+
+    async def scenario(api: FakeModrinth, deadline: float) -> Any:
+        s = Scenario(api, icon_deadline=deadline)
+        await s.modrinthDB.project_upsert_many([project("P1", "Sodium")])
+        bundle_id = await s.bundle([("P1", ProjectOrigin.pack)])
+        bundle = await s.modpackDB.bundle_get(bundle_id)
+        saved = lock(entry("P1", "1"))
+        saved.suggestions = [Suggestion(project_id="S1", requested_by=["P1"])]
+        saved.problems = [Problem(kind="unresolvable", project_id="X1", detail="sin versión")]
+        await s.modpackDB.resolution_save(ModpackResolution(
+            bundle_id=bundle.id, resolved_at=NOW, request_digest="d", lock=saved))  # type: ignore[arg-type]
+        started = asyncio.get_running_loop().time()
+        listed = await s.service.mod_list(bundle_id, check=None)
+        return asyncio.get_running_loop().time() - started, listed.titles, api.calls
+
+    def working() -> Any:
+        return scenario(FakeModrinth([project("S1", "Mod Menu"), project("X1", "Roto")]), 5.0)
+
+    def hanging() -> Any:
+        return scenario(FakeModrinth(delay=30.0), 0.2)
+
+    _, titles, calls = mongo(working)
+    assert calls == [("project_get_many", ["S1", "X1"])]  # one batch call for icons and titles together
+    assert titles == {"P1": "Sodium", "S1": "Mod Menu", "X1": "Roto"}
+    took, titles, calls = mongo(hanging)
+    assert took < 0.2 * 2 and len(calls) == 1  # one deadline, never two in a row
+    assert titles == {"P1": "Sodium", "S1": "S1", "X1": "X1"}
+
+
 def test_support_flags_follow_the_pack(mongo: MongoRunner) -> None:
     async def scenario() -> Any:
         s = Scenario(FakeModrinth())

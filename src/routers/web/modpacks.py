@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Optional
 from urllib.parse import urlsplit
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from src.exceptions import HTTP_422_UNPROCESSABLE_ENTITY, UpstreamError
 from src.dependences import Dependences, ModpackService, ModrinthService, PterodactylService, UpdateCheckService
@@ -115,31 +115,23 @@ async def _titles(modrinthService: ModrinthService, project_ids: list[str]) -> d
     found = await modrinthService.projects_by_id(sorted(set(project_ids)))
     return {project_id: found[project_id].title if project_id in found else project_id for project_id in project_ids}
 
-async def _mods_context(modpackService: ModpackService, modrinthService: ModrinthService,
-                        updateCheckService: UpdateCheckService, bundle_id: str) -> dict[str, Any]:
-    """What _mods.html needs: the bundle, its mod list (with the latest update check, for the newer
-    versions) and a title for every project the saved resolution names. The suggestions and
-    problems may name projects outside the list: those are filled from the catalog (best effort)."""
+async def _mods_context(modpackService: ModpackService, updateCheckService: UpdateCheckService,
+                        bundle_id: str) -> dict[str, Any]:
+    """What _mods.html needs: the bundle and its mod list, with the latest update check (for the
+    newer versions) and the titles of what the saved resolution names. Modrinth is asked at most
+    once, inside mod_list, within one deadline."""
     bundle = await modpackService.bundle_get(bundle_id)
     mods = await modpackService.mod_list(bundle_id, await updateCheckService.latest(bundle_id))
-    titles = {r.project_id: r.title for r in mods.rows}
-    if mods.resolution is not None:
-        saved = mods.resolution.lock
-        named = [s.project_id for s in saved.suggestions] + [r for s in saved.suggestions for r in s.requested_by]
-        named += [p.project_id for p in saved.problems if p.project_id]
-        missing = [i for i in dict.fromkeys(named) if i not in titles]
-        if missing:
-            found = await modrinthService.projects_filled(missing)
-            titles.update({i: p.title for i, p in found.items()})
-    return {"bundle": bundle, "bundle_id": bundle_id, "mods": mods, "titles": titles, "icon": _icon,
+    return {"bundle": bundle, "bundle_id": bundle_id, "mods": mods, "titles": mods.titles, "icon": _icon,
             "https_url": _https_url, "downloads": abbreviate_downloads}
 
-async def _mods(request: Request, actor: Actor, modpackService: ModpackService, modrinthService: ModrinthService,
-                updateCheckService: UpdateCheckService, bundle_id: str, success: Optional[str] = None,
+async def _mods(request: Request, actor: Actor, modpackService: ModpackService, updateCheckService: UpdateCheckService,
+                bundle_id: str, success: Optional[str] = None, info: Optional[str] = None,
                 hit: Optional[str] = None) -> Response:
-    """The #mods fragment; `success` and `hit` go after it, out of band (a notice, a search hit marked "Ya está")."""
-    context = await _mods_context(modpackService, modrinthService, updateCheckService, bundle_id)
-    return render(request, "modpacks/_mods.html", actor, success=success, hit=hit, **context)
+    """The #mods fragment; `success` or `info` and `hit` go after it, out of band (a notice, a search
+    hit marked "Ya está")."""
+    context = await _mods_context(modpackService, updateCheckService, bundle_id)
+    return render(request, "modpacks/_mods.html", actor, success=success, info=info, hit=hit, **context)
 
 def human_size(size: int) -> str:
     """1536 → "1,5 KiB", 3 MiB → "3,0 MiB"; under 1 KiB in bytes."""
@@ -198,13 +190,12 @@ async def modpack_detail(
         request: Request,
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
-        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
         ):
     """A bundle: its mods as one list under the saved resolution, the search to add more, and on the
     side its builds, the servers linked to it, its channels and its local files."""
-    context = await _mods_context(modpackService, modrinthService, updateCheckService, bundle_id)
+    context = await _mods_context(modpackService, updateCheckService, bundle_id)
     builds = await modpackService.build_find(bundle_id)
     linked = str(context["bundle"].id)
     servers = [s for s in await pterodactylService.server_find() if s.bundle_id == linked]
@@ -244,7 +235,6 @@ async def project_add(
         ref: Annotated[str, Form(min_length=1, max_length=200, pattern=MODRINTH_REF)],
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
-        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         ):
     """Add a Modrinth project (slug or id) as an addition of the admin. Says what was added; when
@@ -254,10 +244,10 @@ async def project_add(
     projects = await modpackService.project_add(bundle_id, [ref], ProjectOrigin.admin, actor)
     added = [p.project_id for p in projects if p.project_id not in before]
     from_hit = request.headers.get("HX-Trigger") == f"hit-add-{ref}" and any(p.project_id == ref for p in projects)
-    context = await _mods_context(modpackService, modrinthService, updateCheckService, bundle_id)
+    context = await _mods_context(modpackService, updateCheckService, bundle_id)
     names = ", ".join(context["titles"].get(i, i) for i in added)
-    success = f"Agregado: {names}" if names else "Ese mod ya estaba en el modpack"
-    return render(request, "modpacks/_mods.html", actor, success=success, hit=ref if from_hit else None, **context)
+    return render(request, "modpacks/_mods.html", actor, success=f"Agregado: {names}" if names else None,
+                  info=None if names else "Ese mod ya estaba en el modpack", hit=ref if from_hit else None, **context)
 
 @router.delete("/modpacks/{bundle_id}/projects/{project_id}")
 @inject
@@ -267,11 +257,10 @@ async def project_remove(
         request: Request,
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
-        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         ):
     await modpackService.project_remove(bundle_id, project_id, actor)
-    return await _mods(request, actor, modpackService, modrinthService, updateCheckService, bundle_id)
+    return await _mods(request, actor, modpackService, updateCheckService, bundle_id)
 
 @router.get("/modpacks/{bundle_id}/projects/{project_id}/versions")
 @inject
@@ -290,11 +279,8 @@ async def project_versions(
     failed = False
     try:
         versions = await modpackService.project_versions(bundle_id, project_id)
-    except UpstreamError:
-        failed = True
-    except HTTPException:
-        raise
-    except Exception:
+    except (UpstreamError, TimeoutError):
+        # Only Modrinth failing or not answering is "Modrinth no respondió"; anything else is ours.
         logger.warning("Modrinth versions failed for %s in bundle %s", project_id, bundle_id, exc_info=True)
         failed = True
     return render(request, "modpacks/_versions.html", actor, bundle_id=bundle_id, project_id=project_id,
@@ -327,12 +313,11 @@ async def pin_add(
         version_id: Annotated[str, Form(min_length=1, max_length=200, pattern=MODRINTH_REF)],
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
-        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         ):
     """Pin a mod to a version of that mod: one key, written atomically by the service."""
     await modpackService.pin_set(bundle_id, project_id, version_id, actor)
-    return await _mods(request, actor, modpackService, modrinthService, updateCheckService, bundle_id)
+    return await _mods(request, actor, modpackService, updateCheckService, bundle_id)
 
 @router.delete("/modpacks/{bundle_id}/pins/{project_id}")
 @inject
@@ -342,11 +327,10 @@ async def pin_remove(
         request: Request,
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
-        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         ):
     await modpackService.pin_unset(bundle_id, project_id, actor)
-    return await _mods(request, actor, modpackService, modrinthService, updateCheckService, bundle_id)
+    return await _mods(request, actor, modpackService, updateCheckService, bundle_id)
 
 @router.post("/modpacks/{bundle_id}/resolve")
 @inject
@@ -355,13 +339,12 @@ async def modpack_resolve(
         request: Request,
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
-        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         ):
     """Resolve the bundle now and show the mods under it. The resolution is kept only to show it:
     a build resolves again and freezes that lock."""
     await modpackService.resolve(bundle_id)
-    return await _mods(request, actor, modpackService, modrinthService, updateCheckService, bundle_id)
+    return await _mods(request, actor, modpackService, updateCheckService, bundle_id)
 
 @router.post("/modpacks/{bundle_id}/decisions")
 @inject
@@ -372,14 +355,13 @@ async def modpack_decide(
         server: Annotated[Literal["yes", "no"], Form()],
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
-        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         ):
     """Decide whether a mod goes on the server: one key, written atomically by the service. The
     resolution is run again so the mod leaves "Sin decidir"."""
     await modpackService.decision_set(bundle_id, project_id, server == "yes", actor)
     await modpackService.resolve(bundle_id)
-    return await _mods(request, actor, modpackService, modrinthService, updateCheckService, bundle_id,
+    return await _mods(request, actor, modpackService, updateCheckService, bundle_id,
                        success="Decisiones guardadas")
 
 @router.post("/modpacks/{bundle_id}/decisions/bulk")
@@ -389,7 +371,6 @@ async def modpack_decide_bulk(
         request: Request,
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
-        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         ):
     """Save every decision of the form at once, then resolve again (as for one decision). Fields are `decision.<id>` = `si` | `no`; a mod left
@@ -410,7 +391,7 @@ async def modpack_decide_bulk(
         raise HTTP_422_UNPROCESSABLE_ENTITY("Elige al menos una decisión")
     await modpackService.decisions_set(bundle_id, decisions, actor)
     await modpackService.resolve(bundle_id)
-    return await _mods(request, actor, modpackService, modrinthService, updateCheckService, bundle_id,
+    return await _mods(request, actor, modpackService, updateCheckService, bundle_id,
                        success="Decisiones guardadas")
 
 @router.post("/modpacks/{bundle_id}/builds")

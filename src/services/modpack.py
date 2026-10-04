@@ -2,7 +2,7 @@ import asyncio
 import logging
 import re
 from datetime import datetime, timezone
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 from pydantic import BaseModel
 from src.database import ModpackDatabase, ModrinthDatabase, PterodactylDatabase
@@ -89,6 +89,9 @@ class ModList:
     stale: bool
     # Rows still without an icon after filling the catalog.
     icons_missing: int
+    # A title for every row and every project the resolution's suggestions and problems name (the
+    # id when the catalog lacks it), from the same single fill: a page never fills twice.
+    titles: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -258,8 +261,9 @@ class ModpackService():
         """
         The pack's mods as one list: its projects in order, then the dependencies of the latest
         saved resolution by title, each with its card data. Without a resolution, only the pack's
-        projects. The catalog is filled first for the missing icons (best effort, `icon_deadline`):
-        a Modrinth that is down gives the list without them, never an error. Writes the catalog.
+        projects. The catalog is filled first, in one call within `icon_deadline` (best effort), for
+        the missing icons and for the projects the resolution's suggestions and problems name: a
+        Modrinth that is down gives the list without them, never an error. Writes the catalog.
 
         :param check: The latest update check, for the newer versions; None shows none.
         """
@@ -274,8 +278,13 @@ class ModpackService():
         pack = {p.project_id: p.origin.value for p in bundle.projects}
         dependencies = [i for i in entries if i not in pack]
         requesters = {r for e in entries.values() for r in e.requested_by}
-        catalog = await fill_catalog(self.modrinthDB, self.modrinthAPI, [*pack, *dependencies, *sorted(requesters)],
-                                     self.icon_deadline)
+        named: list[str] = []
+        if resolution is not None:
+            named = [x.project_id for x in resolution.lock.suggestions]
+            named += [r for x in resolution.lock.suggestions for r in x.requested_by]
+            named += [x.project_id for x in resolution.lock.problems if x.project_id]
+        catalog = await fill_catalog(self.modrinthDB, self.modrinthAPI,
+                                     [*pack, *dependencies, *sorted(requesters), *named], self.icon_deadline)
         newer = {u.project_id: u.to_version for u in check.updates if not u.pinned} if check else {}
         target = Target(game_version=bundle.version, loader=str(bundle.loader.value), channels=frozenset(bundle.channels))
 
@@ -300,8 +309,10 @@ class ModpackService():
 
         rows = [row(i, origin) for i, origin in pack.items()]
         rows += sorted((row(i, None) for i in dependencies), key=lambda r: r.title)
+        titles = {i: catalog[i].title if i in catalog else i for i in named}
+        titles.update({r.project_id: r.title for r in rows})
         return ModList(rows=rows, resolution=resolution, stale=stale,
-                       icons_missing=sum(1 for r in rows if r.icon_url is None))
+                       icons_missing=sum(1 for r in rows if r.icon_url is None), titles=titles)
 
     async def project_versions(self, bundle_id: str, project_id: str) -> list[VersionOption]:
         """

@@ -1,6 +1,6 @@
 {# The pack's mods as one list (spec §1): the saved resolution on top, then a row per mod with its
    card in a <details>. What changes together is in #mods, the fragment the resolve, decision,
-   project and pin routes answer. A route may add, after it, a success notice and the search hit
+   project and pin routes answer. A route may add, after it, a success (or info) notice and the search hit
    to mark as added, both out of band. `icon` and `https_url` only let through URLs that may be
    shown (an icon from Modrinth's CDN, an https link); everything from Modrinth is escaped. #}
 {% import "_macros.html" as ui %}
@@ -120,6 +120,8 @@
 </div>
 {% if success is defined and success %}
 <div id="notices" hx-swap-oob="beforeend">{{ ui.success(success) }}</div>
+{% elif info is defined and info %}
+<div id="notices" hx-swap-oob="beforeend">{{ ui.notice(info, "info") }}</div>
 {% endif %}
 {% if hit is defined and hit %}
 <div id="hit-{{ hit }}" hx-swap-oob="true" class="shrink-0">{{ ui.badge("Ya está", "accent") }}</div>

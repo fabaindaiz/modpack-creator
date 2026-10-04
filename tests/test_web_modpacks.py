@@ -14,7 +14,7 @@ from beanie import PydanticObjectId
 from dependency_injector import providers
 from fastapi.testclient import TestClient
 
-from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
+from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT, UpstreamError
 from src.library.resolution import Lock, LockEntry, Problem, Suggestion
 from src.library.scan import LocalFile
 from src.model.modpack import (AvailableUpdate, ModpackBuild, ModpackBundle, ModpackReplacement, ModpackResolution,
@@ -172,7 +172,11 @@ class FakeModpack:
             rows = [row(i, self.titles.get(i, i), origin, side=entries[i].server if i in entries else None,
                         pinned=i in self.bundle.pins) for i, origin in pack.items()]
             rows += [row(i, self.titles.get(i, i), None, side=e.server) for i, e in entries.items() if i not in pack]
-        return ModList(rows=rows, resolution=self.saved, stale=self.stale, icons_missing=0)
+        # Like the service: a title for each row and for what the resolution's suggestions and problems name.
+        named = [s.project_id for s in self.saved.lock.suggestions] + [p.project_id for p in self.saved.lock.problems
+                                                                      if p.project_id] if self.saved else []
+        titles = {i: self.titles.get(i, i) for i in named} | {r.project_id: r.title for r in rows}
+        return ModList(rows=rows, resolution=self.saved, stale=self.stale, icons_missing=0, titles=titles)
 
     async def project_versions(self, bundle_id: str, project_id: str) -> list[VersionOption]:
         self.calls.append(("project_versions", bundle_id, project_id))
@@ -215,7 +219,6 @@ class FakeModrinth:
              "author": "coderbot", "downloads": 1234, "icon_url": "https://cdn.modrinth.com/data/P3/icon.png"}]
         self.error: Optional[Exception] = None
         self.searches: list[tuple[Any, ...]] = []
-        self.filled: list[list[str]] = []
 
     async def search(self, query: str, game_version: Optional[str], loader: Optional[str], limit: int = 10) -> list[dict[str, Any]]:
         self.searches.append((query, game_version, loader, limit))
@@ -226,9 +229,6 @@ class FakeModrinth:
     async def projects_by_id(self, project_ids: list[str]) -> dict[str, ModrinthProject]:
         return {i: project(i, self.titles[i]) for i in project_ids if i in self.titles}
 
-    async def projects_filled(self, project_ids: list[str]) -> dict[str, ModrinthProject]:
-        self.filled.append(list(project_ids))
-        return {i: project(i, self.titles[i]) for i in project_ids if i in self.titles}
 
 
 class FakeChecks:
@@ -498,6 +498,9 @@ def test_add_project_is_an_admin_addition_by_the_actor() -> None:
     assert '<div id="notices" hx-swap-oob="beforeend">' in response.text and "Agregado: Iris" in response.text
     # El formulario "por slug o id" no viene de un resultado de la búsqueda: nada que marcar fuera de banda.
     assert 'id="hit-P3"' not in response.text
+    again = client.post(f"/modpacks/{BUNDLE_ID}/projects", headers=HTMX, data={"ref": "P3"})
+    notice = again.text[again.text.index('<div id="notices"'):]
+    assert "Ese mod ya estaba en el modpack" in notice and 'data-notice-tone="info"' in notice
 
 
 def test_add_unknown_project_shows_the_reason_as_a_notice() -> None:
@@ -1087,10 +1090,18 @@ def test_versions_fragment_says_when_there_is_none_or_modrinth_fails() -> None:
     modpack.versions = []
     text = client.get(f"/modpacks/{BUNDLE_ID}/projects/P1/versions", headers=HTMX).text
     assert "<select" not in text and "no tiene versiones" in text
-    modpack.versions_error = RuntimeError("down")
-    response = client.get(f"/modpacks/{BUNDLE_ID}/projects/P1/versions", headers=HTMX)
-    assert response.status_code == 200 and "Modrinth no respondió" in response.text
-    assert f'hx-get="/modpacks/{BUNDLE_ID}/projects/P1/versions"' in response.text  # reintentar
+    for down in (UpstreamError("Modrinth", 504, raw="timeout"), TimeoutError()):
+        modpack.versions_error = down
+        response = client.get(f"/modpacks/{BUNDLE_ID}/projects/P1/versions", headers=HTMX)
+        assert response.status_code == 200 and "Modrinth no respondió" in response.text
+        assert f'hx-get="/modpacks/{BUNDLE_ID}/projects/P1/versions"' in response.text  # reintentar
+
+
+def test_versions_fragment_does_not_blame_modrinth_for_our_own_bug() -> None:
+    client, modpack, _ = setup()
+    modpack.versions_error = RuntimeError("a bug of ours")
+    with pytest.raises(RuntimeError):  # the panel's 500 handling, not "Modrinth no respondió"
+        client.get(f"/modpacks/{BUNDLE_ID}/projects/P1/versions", headers=HTMX)
 
 
 def test_saved_resolution_shows_with_time_and_stale_notice() -> None:
@@ -1106,13 +1117,13 @@ def test_saved_resolution_shows_with_time_and_stale_notice() -> None:
 
 
 def test_suggestions_have_titles_and_an_add_button() -> None:
-    client, modpack, modrinth = setup()
-    modrinth.titles["P7"] = "Mod Menu"
+    # The titles come with the mod list (one Modrinth fill per render): the fake Modrinth has no
+    # projects_filled, so a second fill from the route would fail here.
+    client, modpack, _ = setup()
+    modpack.titles.update(P7="Mod Menu", P6="Roto")
     modpack.saved = resolution(lock(entry("P1"), suggestions=[Suggestion(project_id="P7", requested_by=["P1"])],
                                     problems=[Problem(kind="unresolvable", project_id="P6", detail="sin versión")]))
-    modrinth.titles["P6"] = "Roto"
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
-    assert modrinth.filled and {"P6", "P7"} <= set(modrinth.filled[0])
     suggestions = text[text.index("Sugerencias"):]
     assert "Mod Menu" in suggestions and "sugerida por Sodium" in suggestions
     assert f'hx-post="/modpacks/{BUNDLE_ID}/projects"' in suggestions and 'name="ref" value="P7"' in suggestions
