@@ -14,7 +14,7 @@ from beanie import PydanticObjectId
 from dependency_injector import providers
 from fastapi.testclient import TestClient
 
-from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
+from src.exceptions import HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
 from src.library.deduce import Deduction
 from src.library.jarmeta import ModMetadata
 from src.library.scan import Comparison, ExpectedEntry, ScanFile
@@ -159,6 +159,8 @@ class FakePterodactyl:
 
     async def bundle_for_server(self, server_id: str, name: str, version: str, loader: MinecraftLoaders,
                                 import_mods: bool, actor: Actor) -> BundleForServer:
+        if not actor.is_operator:  # as the real service's operator_only
+            raise HTTP_403_FORBIDDEN("This action requires the operator role")
         self._record("bundle_for_server", server_id, name, version, loader, import_mods, actor)
         return self.for_server
 
@@ -999,12 +1001,27 @@ def test_a_linked_server_offers_no_new_modpack() -> None:
     assert "Nuevo modpack para este servidor" not in client.get(f"/servers/{SERVER_ID}").text
 
 
-def test_an_editor_sees_that_linking_needs_an_operator() -> None:
+def test_an_editor_form_posts_to_the_draft_and_says_linking_needs_an_operator() -> None:
     client, fakes = setup(EDITOR)
     unlinked(fakes, Deduction("fabric", "1.21.1", 1, {"fabric": 1}, {"1.21.1": 1}))
     form = client.get(f"/servers/{SERVER_ID}").text.split('id="new-modpack"')[1]
-    assert f'hx-post="/servers/{SERVER_ID}/modpack"' in form
-    assert re.search(r'name="import_mods"[^>]*disabled', form) and "operador" in text_of(form)
+    assert f'hx-post="/servers/{SERVER_ID}/modpack/borrador"' in form
+    assert re.search(r'name="import_mods"[^>]*disabled', form) and "requiere operador" in text_of(form)
+
+
+def test_an_operator_form_posts_to_the_operator_route() -> None:
+    client, fakes = setup(OPERATOR)
+    unlinked(fakes)
+    form = client.get(f"/servers/{SERVER_ID}").text.split('id="new-modpack"')[1]
+    assert f'hx-post="/servers/{SERVER_ID}/modpack"' in form and "/modpack/borrador" not in form
+
+
+def test_an_editor_posting_to_the_operator_route_is_refused_and_nothing_is_created() -> None:
+    client, fakes = setup(EDITOR)
+    unlinked(fakes)
+    response = client.post(f"/servers/{SERVER_ID}/modpack", headers=HTMX, data={**NEW_MODPACK, "import_mods": "1"})
+    assert response.status_code == 403
+    assert fakes.ptero.calls == [] and fakes.modpack.calls == []
 
 
 @pytest.mark.network
@@ -1013,7 +1030,7 @@ def test_editor_post_only_creates_the_pack_even_if_link_is_forged(mongo: MongoRu
     unlinked(fakes)
 
     async def scenario() -> Any:  # init_beanie: crear el Document exige la base inicializada
-        return client.post(f"/servers/{SERVER_ID}/modpack", headers=HTMX,
+        return client.post(f"/servers/{SERVER_ID}/modpack/borrador", headers=HTMX,
                            data={**NEW_MODPACK, "import_mods": "1", "link": "1", "import": "1"})
 
     response = mongo(scenario)
@@ -1028,7 +1045,7 @@ def test_editor_post_only_creates_the_pack_even_if_link_is_forged(mongo: MongoRu
 
 def test_an_editor_cannot_create_one_for_a_linked_server() -> None:
     client, fakes = setup(EDITOR)
-    response = client.post(f"/servers/{SERVER_ID}/modpack", headers=HTMX, data=NEW_MODPACK)
+    response = client.post(f"/servers/{SERVER_ID}/modpack/borrador", headers=HTMX, data=NEW_MODPACK)
     assert response.status_code == 409
     assert fakes.modpack.calls == []
 
@@ -1072,7 +1089,8 @@ def test_a_failed_import_says_so_and_offers_importing_again() -> None:
 def test_a_new_modpack_needs_a_name_and_a_known_loader() -> None:
     client, fakes = setup(OPERATOR)
     unlinked(fakes)
-    for data in ({**NEW_MODPACK, "name": "   "}, {**NEW_MODPACK, "loader": "optifine"},
-                 {**NEW_MODPACK, "name": "x" * 121}):
-        assert client.post(f"/servers/{SERVER_ID}/modpack", headers=HTMX, data=data).status_code == 422
-    assert fakes.ptero.calls == []
+    for route in ("modpack", "modpack/borrador"):
+        for data in ({**NEW_MODPACK, "name": "   "}, {**NEW_MODPACK, "loader": "optifine"},
+                     {**NEW_MODPACK, "name": "x" * 121}):
+            assert client.post(f"/servers/{SERVER_ID}/{route}", headers=HTMX, data=data).status_code == 422
+    assert fakes.ptero.calls == [] and fakes.modpack.calls == []

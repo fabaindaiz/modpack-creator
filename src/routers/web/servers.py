@@ -190,6 +190,12 @@ async def server_bundle(
     await pterodactylService.server_link_bundle(server_id, bundle_id or None, actor)
     return _back(request, server_id)
 
+def _new_modpack_fields(name: str, version: str) -> tuple[str, str]:
+    name, version = name.strip(), version.strip()
+    if not name or not version:
+        raise HTTP_422_UNPROCESSABLE_ENTITY(NEW_MODPACK_FIELDS_MESSAGE)
+    return name, version
+
 @router.post("/servers/{server_id}/modpack")
 @inject
 async def server_new_modpack(
@@ -201,21 +207,32 @@ async def server_new_modpack(
         import_mods: Annotated[bool, Form()] = False,
         actor: Actor = Depends(get_web_actor),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
-        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         ):
-    """A new bundle for a server without one (panel usability §2). An operator creates it, links
-    it and, if asked, imports the server, in one step. An editor only creates it: linking and
-    importing need an operator, so whatever else an editor's form sends is ignored, and the
-    operator-only service method is never called for them (the service would refuse it anyway)."""
-    name, version = name.strip(), version.strip()
-    if not name or not version:
-        raise HTTP_422_UNPROCESSABLE_ENTITY(NEW_MODPACK_FIELDS_MESSAGE)
-    if actor.is_operator:
-        outcome = await pterodactylService.bundle_for_server(server_id, name, version, loader, import_mods, actor)
-        titles = await _import_titles(modrinthService, outcome.imported) if outcome.imported else {}
-        return render(request, "servers/_new_modpack_done.html", actor, server_id=server_id,
-                      bundle=outcome.bundle, outcome=outcome, titles=titles)
+    """A new bundle for a server without one (panel usability §2), created, linked and, if asked,
+    with the server imported, in one step. Operators only: the service refuses an editor, whose
+    form posts to the draft route instead."""
+    name, version = _new_modpack_fields(name, version)
+    outcome = await pterodactylService.bundle_for_server(server_id, name, version, loader, import_mods, actor)
+    titles = await _import_titles(modrinthService, outcome.imported) if outcome.imported else {}
+    return render(request, "servers/_new_modpack_done.html", actor, server_id=server_id,
+                  bundle=outcome.bundle, outcome=outcome, titles=titles)
+
+@router.post("/servers/{server_id}/modpack/borrador")
+@inject
+async def server_new_modpack_draft(
+        server_id: str,
+        request: Request,
+        name: Annotated[str, Form(min_length=1, max_length=120)],
+        version: Annotated[str, Form(min_length=1, max_length=40)],
+        loader: Annotated[MinecraftLoaders, Form()],
+        actor: Actor = Depends(get_web_actor),
+        pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        ):
+    """A new bundle for a server without one, only created: linking it and importing the server
+    need an operator, and this route has no way to ask for either."""
+    name, version = _new_modpack_fields(name, version)
     server: PterodactylServer = await pterodactylService.server_get(server_id)
     if server.bundle_id is not None:
         raise HTTP_409_CONFLICT(ALREADY_LINKED_MESSAGE)

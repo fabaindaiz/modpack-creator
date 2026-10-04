@@ -1,7 +1,8 @@
 {#
   "Nuevo modpack para este servidor", for a server without one (panel usability §2). Loader and
   Minecraft version come from the latest scan when it decides them; without a scan, scanning is
-  offered. An operator creates, links and imports in one step; an editor only creates.
+  offered. An operator creates, links and imports in one step; an editor's form posts to the
+  draft route, which only creates.
   Needs: server, server_id, scan, deduction, loaders, actor. Swapped by servers/_new_modpack_done.html.
 #}
 {% import "_macros.html" as ui %}
@@ -20,7 +21,7 @@
   {% else %}
   <p class="text-zinc-600 dark:text-zinc-400">El último escaneo no tiene jars identificados: elige el loader y la versión de Minecraft.</p>
   {% endif %}
-  <form class="space-y-2" hx-post="/servers/{{ server_id }}/modpack" hx-target="#new-modpack" hx-swap="outerHTML">
+  <form class="space-y-2" hx-post="/servers/{{ server_id }}/modpack{{ '' if actor.is_operator else '/borrador' }}" hx-target="#new-modpack" hx-swap="outerHTML">
     <div>
       <label for="new-modpack-name" class="font-medium">Nombre</label>
       <input id="new-modpack-name" name="name" type="text" required maxlength="120" value="{{ server.name }}" class="{{ FIELD }}">
@@ -42,7 +43,7 @@
     </div>
     <label class="flex items-center gap-2">
       <input type="checkbox" name="import_mods" value="1"{% if scan and actor.is_operator %} checked{% else %} disabled{% endif %} class="rounded border-zinc-300 dark:border-zinc-700">
-      Importar lo que tiene el servidor
+      Importar lo que tiene el servidor{% if not actor.is_operator %} <span class="text-xs text-zinc-500 dark:text-zinc-400">(requiere operador)</span>{% endif %}
     </label>
     {% if not actor.is_operator %}
     <p class="text-xs text-zinc-500 dark:text-zinc-400">Vincular e importar requieren operador: se crea el modpack y un operador lo vincula a este servidor.</p>
