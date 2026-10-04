@@ -39,6 +39,9 @@ términos de este repositorio. Un agente que lee `AGENTS.md` ya la sigue; aquí 
 | 7. Reportar | Qué se hizo, qué no, qué quedó sin verificar. Commit en Conventional Commits, sin trailers, **solo cuando el dueño lo pide**. |
 | 8. Cierre | Una entrada en `.claude/logs/agent-changelog.md`, con qué salió mal en el camino y qué quedó sin hacer. Push, y **CI en verde** antes de dar el ítem por hecho. |
 
+**Subagentes:** todo prompt de subagente empieza por leer `AGENTS.md` del disco, porque un subagente
+puede recibir la copia del inicio de la sesión, ya vieja.
+
 **Ramas:** para un ítem que toca datos de producción, autenticación o el compose (S2, S3, S5), trabajar
 en una rama y abrir un PR: CI corre antes de llegar a `main`. Lo demás puede ir directo a `main`.
 

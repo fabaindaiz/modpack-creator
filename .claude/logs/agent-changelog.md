@@ -100,6 +100,17 @@ redirect abierto de protocolo relativo, el rollback B inalcanzable tras un A fal
 ya hecho que se volvía a ofrecer, `UPDATE_CHECK_AT` sin comillas que apagaba la programación (YAML
 base 60), la vista previa ansiosa de 10 s, ids de versión opacos y `Sec-Fetch-Site: none` aceptado.
 
+Cuenta por plan (aproximada: los libros de cada plan se borraron, son cifras del controlador):
+
+| Plan | Tareas | Rondas de corrección | Revisión de toda la rama |
+|---|---|---|---|
+| 1 (el panel) | 12 + un arreglo visual + ola final | en unas 4 a 6 tareas | 2 a 3 defectos Important entre tareas |
+| Addendum | 11 + ola final | en unas 4 a 6 tareas | 2 a 3 defectos Important entre tareas |
+| Lote siguiente (a–d) | 7 + ola final | en unas 4 a 6 tareas | 2 a 3 defectos Important entre tareas |
+
+Los 18 dictámenes del controlador se revisaron con el dueño después del plan 1 y la mayoría
+cambió: de ahí las 11 tareas del addendum.
+
 **Por qué.** El dueño pidió un panel web para operar sin llamar a la API a mano, con dos niveles
 de permiso y un registro de quién hizo qué sobre servidores reales. Cada decisión se registró en
 `docs/decisions.md`; el roadmap cierra i-7985ee-50d411 y corrige tres entradas que habían quedado
@@ -208,6 +219,13 @@ sigue vacía. `AGENTS.md` suma dos invariantes (roles en los servicios, mismo or
   verde); antes de desplegar, correr el conteo `dry_run` de `docs/runbooks/desplegar-panel.md`
   (debe dar 0); desplegar con los runbooks; crear el grupo de operadores en authentik; un login real
   de editor y de operador; la primera actualización real en el servidor de prueba.
+- **Del cierre de evaluación y cosecha (2026-10-04):** el PATCH de `/v1` de un bundle
+  (`ModpackDatabase.bundle_update` → `Document.set`) reemplaza enteros los mapas anidados `pins`,
+  `replacements` y `server_decisions`: mandar un pin borra los demás (medido; ningún test lo
+  cubre). Arreglo: actualizaciones por clave, como `pin_set` y `decision_set`. Además, el
+  docstring de `src/library/scan.py` exagera el punto ciego de la caché (un restore con otra hora
+  se nota; solo se pierde una edición con el mismo tamaño y la misma hora al milisegundo): solo
+  una nota, el código no se tocó.
 - **Limpieza:** las imágenes de podman bajadas (mongo 4.4, 5.0, 6.0, 8.0 y `modpack-creator-api:ci`)
   se pueden borrar, y `.superpowers/sdd/2026-10-02-panel-web/` (fuera de git).
 

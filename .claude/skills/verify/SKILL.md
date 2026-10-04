@@ -16,6 +16,7 @@ dice, no se da por verificado.
 
 ```bash
 ./scripts/check.sh        # = hatch run gate: bundle, audit, typecheck, tests (lo mismo que CI)
+./scripts/test-mongo.sh   # el gate con un MongoDB descartable (docker es podman aquí); sin él los tests de base se saltan
 ```
 
 ## Si cambió algo de esto
@@ -26,12 +27,17 @@ dice, no se da por verificado.
 - **`src/model/*`** (un `Document`, un índice): `scripts/audit.py` revisa el registro en
   `init_beanie`; un índice nuevo o cambiado afecta los datos que ya están en producción, y eso el
   gate no lo ve.
-- **`docker/*` o `requirements.txt`**: el gate no construye la imagen. Dilo.
+- **`docker/*` o `requirements.txt`**: `check.sh` no construye la imagen; el job `image` de CI sí
+  (construye, importa `main`, revisa assets y compose). Dilo: el despliegue real no se verificó.
+- **`src/web/*`** (plantillas, CSS, JS): los tests miran el HTML, no el aspecto. Corre a mano
+  `./scripts/visual-sweep.sh [salida]` (con `PLAYWRIGHT_CHROMIUM=<ruta>` si el navegador de
+  Playwright no está instalado) y revisa las capturas.
 - **`.env.default` o un `getenv` nuevo**: `audit` exige que toda variable obligatoria esté en la
   plantilla.
 
 ## Reportar
 
-Di qué pasó y qué no, con la salida. Nunca llames verificado algo que no corrió. Los AVISOS del
-audit (reintentos sobre POST) son conocidos y están en `docs/roadmap.md`: nómbralos como
-conocidos, no como nuevos.
+Di qué pasó y qué no, con la salida. Nunca llames verificado algo que no corrió. Un fallo del audit,
+incluido `retried_writes` (d-7985ee-05d032), es un fallo: el audit ya no tiene avisos conocidos.
+Si `env_template` falla por una variable que falta en `.env.default`, dilo: la línea la agrega el
+dueño, no el agente.

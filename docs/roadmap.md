@@ -44,30 +44,26 @@ en `.env.default`, que agrega el dueño).
 - **Lo siguiente, todo del dueño, en orden:**
   0. agregar `OIDC_OPERATOR_GROUPS: ""` a `.env.default` (el gate de `audit` falla en
      `env_template`, y CI con él) y crear el grupo de operadores en authentik;
-  1. antes de desplegar, el conteo `dry_run` de `desplegar-panel.md` (debe dar 0); luego desplegar
-     con los runbooks (`migrar-mongo-a-volumen.md` y `desplegar-panel.md`);
-  2. S7 operación: un usuario de servicio no admin, una clave `ptlc_` con `allowed_ips` y revocar
+  1. decir qué versión de MongoDB corre en producción y, si es menor que 8.0, migrar primero a esa
+     versión y subirla después, con "Subir a MongoDB 8.0" de `migrar-mongo-a-volumen.md`
+     (d-7985ee-83eb5b: producción sube a 8.0 y CI se queda en 8.0);
+  2. antes de desplegar, el conteo `dry_run` de `desplegar-panel.md` (debe dar 0); luego
+     desplegar con los runbooks (`migrar-mongo-a-volumen.md` y `desplegar-panel.md`);
+  3. S7 operación: un usuario de servicio no admin, una clave `ptlc_` con `allowed_ips` y revocar
      la vieja (i-7985ee-63226e);
-  3. un login real con una cuenta fuera del grupo, otro de editor y otro de operador (con una
+  4. un login real con una cuenta fuera del grupo, otro de editor y otro de operador (con una
      simulación), y las comprobaciones de `desplegar-panel.md`;
-  4. los puntos de control de las fases 1 y 2, con `PTERODACTYL_WRITES` vacío: armar el pack de
+  5. los puntos de control de las fases 1 y 2, con `PTERODACTYL_WRITES` vacío: armar el pack de
      un servidor real, escanearlo y comparar. Con eso se decide si se suma packwiz y se abre la
-     fase 3, que escribe en servidores.
+     fase 3, que escribe en servidores;
+  6. **la primera actualización real en el servidor de prueba**, con
+     `docs/runbooks/primera-actualizacion-real.md`.
 - **Fase 3, en código, sin ejecutar en real:**
   - importar un servidor (i-7985ee-17745b);
   - actualizarlo con backup, verificación y rollback a pedido (i-7985ee-495708), con modo
     simulación y probado de punta a punta con el cliente HTTP real contra un panel simulado.
   Antes, después del primer cierre: `.mrpack`, logs JSON, trabajos, avisos por Discord,
   servidor-bundle y `httpx2`.
-- **Lo siguiente, del dueño, en orden:**
-  1. desplegar (runbook de Mongo);
-  2. el usuario de servicio y la clave nueva;
-  3. el login real;
-  4. los puntos de control de las fases 1 y 2;
-  5. **la primera actualización real en el servidor de prueba**, con
-     `docs/runbooks/primera-actualizacion-real.md`;
-  6. decir qué versión de MongoDB corre en producción y, si es menor que 8.0, migrar primero a esa versión y subirla después, con
-     "Subir a MongoDB 8.0" de `migrar-mongo-a-volumen.md` (CI ya usa `mongo:8.0`).
 - **Pendiente de código:**
   - `load_env` registra el valor de una clave ya presente en el entorno y vuelca todo con
     `verbose` (Low, `src/library/utils/__init__.py`): registrar solo claves;
@@ -77,6 +73,13 @@ en `.env.default`, que agrega el dueño).
     tablero, índices de auditoría por `target_id` y acción, un pin que sobrevive a quitar el
     proyecto);
   - subir producción a MongoDB 8.0, si no lo está (d-7985ee-83eb5b);
+  - **el PATCH de `/v1` de un bundle reemplaza enteros los mapas anidados** (`pins`,
+    `replacements`, `server_decisions`; `ModpackDatabase.bundle_update` → `Document.set`): mandar
+    un pin borra los demás (medido por la cosecha) y ningún test lo cubre. Arreglo: actualizar
+    por clave, como `pin_set` y `decision_set`, con su test;
+  - el docstring de `src/library/scan.py` exagera el punto ciego de la caché (un restore con otra
+    hora sí se nota; solo se pierde una edición con el mismo tamaño y la misma hora al
+    milisegundo): corregir el texto, el código no cambia;
   - packwiz, tras el punto de control de la fase 2.
 
 ## Modpacks y versiones
@@ -338,7 +341,7 @@ El trabajo de `wip pterodactyl version`.
 - **Contenido que falta:** no hay hash (depende de i-7985ee-43df2f).
 - `version_create` está anotado como `PterodactylServer`, pero devuelve una lista.
 - `version_update` no existe.
-- `PterodactylModpack` no está registrado en Beanie (`UNREGISTERED_BASELINE` en `scripts/audit.py`).
+- (Histórico) `PterodactylModpack` no estaba registrado; la clase ya no existe y la baseline está vacía.
 
 ### Una versión de Modrinth por fila, muchas por proyecto — Hecha (2026-10-01), sin desplegar · i-7985ee-be55dd
 - **En qué quedó:**
@@ -419,7 +422,7 @@ Hoy ningún router los llama. i-7985ee-43df2f depende de `POST /version_files`.
   `ClientConnectionError` que nunca actuaba (el wrapper convertía toda excepción antes). No
   reintentaba, pero aparentaba hacerlo, y reordenar los decoradores lo habría hecho reintentar
   escrituras. Se borró; el audit no lo veía porque está fuera de los clientes.
-Los 6 AVISOS del audit (`server_power`, `server_files_upload`, `server_files_delete` y los POST de
+(Histórico: hoy el audit imprime `0 avisos`.) Los 6 AVISOS del audit (`server_power`, `server_files_upload`, `server_files_delete` y los POST de
 hashes de Modrinth).
 - Los POST de Modrinth son lecturas idempotentes por diseño: se pueden marcar como tales.
 - Los de Pterodactyl no.
@@ -501,8 +504,8 @@ por metadata para que el admin confirme, y registra lo demás como archivos loca
 El procedimiento de 8 pasos de `research/2026-10-operacion-pterodactyl.md`: preflight, parar,
 backup, staging, swap a `mods.old/`, arrancar, verificar, rollback A (devolver `mods.old`) o B
 (restaurar el backup).
-- **Lo que choca:** son escrituras sobre servidores reales. Antes, d-7985ee-05d032 tiene que pasar
-  de aviso a fallo (i-7985ee-05c4a0). Un 204 de `power` no prueba nada: hay que volver a leer el
+- **Lo que choca:** son escrituras sobre servidores reales. d-7985ee-05d032 ya es un fallo
+  del audit (i-7985ee-05c4a0). Un 204 de `power` no prueba nada: hay que volver a leer el
   estado. `restore` trunca sin parar el servidor.
 - **A favor:** el cliente ya sabe listar, subir, renombrar y borrar.
 - **Depende de:** i-7985ee-0ec295, i-7985ee-63226e, i-7985ee-098611.
@@ -723,7 +726,8 @@ Una clave `ptlc_` de un usuario **no admin**, subusuario de cada servidor con lo
   (`init_databases` en `src/model/__init__.py`). Sin `TEST_MONGODB_URI` se salta en local y falla
   en CI. En local: `./scripts/test-mongo.sh` (d-7985ee-1a2f53).
 - **Lo que encontró:** la migración de usuarios antiguos de S3 reventaba (ver i-7985ee-c64e06).
-- **Lo que falta:** igualar la versión de CI con la de producción cuando se conozca (runbook §1).
+- **Lo que falta:** nada de lo planeado. CI no sigue a producción: producción sube a 8.0 y CI se
+  queda en 8.0 (d-7985ee-83eb5b).
 `services: mongo` con versión fija en `check.yml` y una base descartable por sesión. mongomock-motor
 no sirve con el cliente async de PyMongo que usa Beanie 2 (`research/2026-10-arquitectura.md` §2).
 
@@ -757,8 +761,7 @@ sesión. Cualquier cuenta del proveedor opera los servidores de Pterodactyl.
   `LAYERING_BASELINE` está vacía. Antes del cambio se escribió `tests/test_routes_auth.py`: toda
   ruta de `/v1` sin sesión da 401 (se vio fallar abriendo una ruta).
 - **Mecanismo:** la regla y el audit existen (d-7985ee-16ed28).
-- **Contenido que falta:** 14 inyecciones en `LAYERING_BASELINE`.
-- Cada una se mueve a su servicio y sale de la lista en el mismo cambio.
+- **Contenido que falta:** nada de lo planeado: `LAYERING_BASELINE` está vacía.
 
 ## Proceso y herramientas
 
@@ -778,6 +781,35 @@ Fricción vista al menos dos veces, con su costo.
   la agrega el dueño. **Chequeo:** pedirle a un agente que lea `.env.default`.
 - Propuesto al bundle, en general, como `a-deny-for-secrets-catches-their-template`.
 
+### Fricciones de la sesión del panel — Planeada
+- **Comandos que esperan stdin:** un heredoc canalizado a `cat` colgó a un subagente dos veces.
+  Cuesta una sesión de subagente detenida a mano. Ya es regla en `AGENTS.md`.
+- **Procesos que se quedan:** se encontraron procesos y contenedores sobrantes de subagentes dos
+  veces. Cuesta puertos ocupados y resultados que mienten. Ya es regla en `AGENTS.md`.
+- **El gate rojo toda la sesión** (ya es i-7985ee-a900ec): el deny sobre `.env.default` dejó `audit`
+  en rojo durante tres planes; cada plan lo parchó en lugar de arreglarlo en el origen y un
+  implementador se saltó la suite completa, que el controlador tuvo que repetir.
+- **Planes versionados que apuntan a scripts de la sesión:** los planes citan
+  `scratchpad/mongo/with-mongo.sh` y `scratchpad/shots/run.sh`, que no viven en el repositorio.
+  Cuesta punteros muertos en la sesión siguiente. Decisión del dueño: un modo "solo tests" de
+  `./scripts/test-mongo.sh` (y el barrido visual ya es `./scripts/visual-sweep.sh`).
+
+## Decisiones pendientes del dueño
+
+Salen de la evaluación del 2026-10-04 (`.agents/evaluation-2026-10-04-5e58c1.md`); ninguna se
+aplica sin su respuesta.
+1. Agregar `OIDC_OPERATOR_GROUPS` a `.env.default` (los agentes no lo leen ni lo editan).
+2. Los dictámenes como parte de la aprobación del diseño, antes de ejecutar un plan: cada opción
+   con ejemplos, una por vez. Se anota en `AGENTS.md` solo si el dueño lo aprueba.
+3. Un comando del repositorio que reemplace los scripts de la sesión (un modo "solo tests" de
+   `./scripts/test-mongo.sh`).
+4. Una revisión cruzada a mitad de plan después de las tareas que comparten una máquina de
+   estados (rollback, lectura de configuración): +0,5 h por plan.
+5. Un hook `PreToolUse` (o el sandbox) que rechace comandos de shell con `.env.yaml` o
+   `.env.default`; `carrier.toml` rechazó los hooks, así que es decisión suya (d-7985ee-794d11,
+   d-7985ee-57db37).
+6. Aprobar en el próximo release las 7 propuestas de la cosecha.
+
 ## Cerradas por medición
 
 Ninguna todavía.
@@ -786,9 +818,9 @@ Ninguna todavía.
 
 | ¿Rompe alguna invariante? | Idea |
 |---|---|
-| toca escrituras sobre servidores reales: d-7985ee-05d032 debe pasar de aviso a fallo antes | i-7985ee-43df2f opción 2/3 |
+| toca escrituras sobre servidores reales: d-7985ee-05d032 (ya es un fallo del audit desde S6) las cubre | i-7985ee-43df2f opción 2/3 |
 | cambia un índice con datos en producción: no se puede probar solo con el gate | i-7985ee-be55dd |
 | cambia el ciclo de vida de los clientes: el test de arranque (d-7985ee-313583) debe cubrir el cierre | i-7985ee-57034c |
-| escribe sobre servidores reales: exige d-7985ee-05d032 como fallo, no como aviso | i-7985ee-495708 |
+| escribe sobre servidores reales: d-7985ee-05d032 ya es un fallo, no un aviso (desde S6) | i-7985ee-495708 |
 | cambia el modelo de datos de modpacks: los bundles existentes necesitan migración | i-7985ee-098611 |
 | toca el compose de producción: respaldar la base antes | i-7985ee-e21d5d |

@@ -52,7 +52,8 @@ Decididas, no preferencias. `docs/decisions.md` indexa cada una con lo que la ha
   antes de enviar nada. Leer y escanear servidores nunca lo necesita. *Audit* `ungated_writes`,
   `tests/test_write_gate.py` (d-7985ee-5739fc).
 - **Contrasta cada llamada externa con su especificación** antes de escribirla: rutas, métodos y
-  forma del cuerpo están en `docs/references.md`. El gate no habla con las APIs reales.
+  forma del cuerpo están en `docs/references.md`. `tests/test_api_contracts.py` comprueba método,
+  ruta y cuerpo de los clientes contra esa especificación; el gate no habla con las APIs reales.
 - **Autenticarse no es estar autorizado.** Solo entra quien está en un grupo de
   `OIDC_ALLOWED_GROUPS` o tiene un email verificado de `OIDC_ALLOWED_EMAILS`; la identidad es
   `iss` + `sub`, nunca el email. `tests/test_auth.py` (d-7985ee-8befe2, d-7985ee-361ed0).
@@ -71,7 +72,12 @@ Decididas, no preferencias. `docs/decisions.md` indexa cada una con lo que la ha
   esquema llega mal y el chequeo rechaza al propio panel. `tests/test_web_security.py`
   (d-7985ee-491c83).
 - **Un permiso denegado no se esquiva**: ni redirección de shell, ni `sed`, ni otra herramienta. Se
-  avisa y se sigue con lo demás. `.claude/settings.json` (d-7985ee-794d11).
+  avisa y se sigue con lo demás. Es disciplina (peldaño 1): nada la hace cumplir, y el bloqueo de
+  `.env.default` viene de los permisos de usuario del dueño, no de `.claude/settings.json`. Un
+  hook queda como decisión pendiente suya (d-7985ee-794d11).
+- **Un comando nunca espera stdin**: sin heredocs canalizados a `cat` ni lecturas interactivas; un
+  comando así colgó a un subagente dos veces. **Una sesión detiene todo proceso y contenedor que
+  arrancó**: dos veces quedaron procesos sobrantes que ocupaban puertos y falseaban resultados.
 - **Los datos de MongoDB viven en el volumen `mongodb-data`**: nunca `docker compose down -v`, y
   `MONGO_VERSION` nunca menor que la que escribió los datos (d-7985ee-398653). Cualquier cambio
   de despliegue que toque datos sigue un runbook de `docs/runbooks/`.
@@ -104,11 +110,12 @@ El entorno es hatch con Python 3.12 (`pyproject.toml`); las dependencias salen d
 fallar. Los tests de base corren contra un MongoDB real: en CI siempre, en local solo con
 `./scripts/test-mongo.sh` (d-7985ee-1a2f53). Ningún test abre una conexión sin
 `@pytest.mark.network`, y ninguno resuelve un nombre fuera de localhost (d-7985ee-1a20c1). Lo que el gate **no** cubre, y hay que decirlo en el
-reporte: la imagen Docker, los datos de producción, el login OIDC, cualquier llamada real a
+reporte: los datos de producción, el login OIDC, cualquier llamada real a
 Modrinth o Pterodactyl, y el aspecto del panel: los tests miran el HTML, no cómo se ve, así que
 la revisión visual (anchos de 360, 768 y 1280 px, claro y oscuro) es manual:
 `./scripts/visual-sweep.sh [salida]` (no va en el gate; requiere Docker y Chromium, ver el README,
-"Revisión visual"). Skill `verify`.
+"Revisión visual"). La imagen Docker no la cubre `check.sh` sino el job `image` de CI (construye, importa `main`,
+revisa los assets y el compose); el despliegue real sigue sin verificarse. Skill `verify`.
 
 ## Commits
 

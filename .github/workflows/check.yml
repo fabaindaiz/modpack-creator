@@ -13,8 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     services:
       mongo:
-        # Fija, como MONGO_VERSION en docker/.env. La de producción no se conoce todavía
-        # (docs/runbooks/migrar-mongo-a-volumen.md); al conocerla, igualar esta.
+        # Fija, como MONGO_VERSION en docker/.env. CI no sigue a producción: producción
+        # se sube a 8.0 y CI se queda en 8.0 (d-7985ee-83eb5b, docs/runbooks/migrar-mongo-a-volumen.md).
         image: mongo:8.0
         ports:
           - 27017:27017
