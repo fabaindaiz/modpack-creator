@@ -138,7 +138,7 @@ def test_a_modrinth_failure_marks_the_version_and_never_raises(mongo: MongoRunne
             lock(entry("P", "v1"), entry("Q", "q1")), lock(entry("P", "v2"), entry("Q", "v3"), entry("Z", "ghost")))
 
     preview = mongo(scenario)
-    assert preview.failed == {"v3", "ghost"}
+    assert preview.failed == {"v3", "ghost"} and preview.timed_out == set()
     assert preview.changelogs == {"v2": "bien"}
 
 
@@ -281,4 +281,45 @@ def test_the_preview_returns_by_its_deadline_and_marks_what_it_did_not_fetch(mon
 
     preview, took = mongo(scenario)
     assert took < 3
-    assert preview.changelogs == {"v2": "rápido"} and preview.failed == {"slow1", "slow2"}
+    assert preview.changelogs == {"v2": "rápido"} and preview.failed == set()
+    assert preview.timed_out == {"slow1", "slow2"}  # not a failure: asking again may work
+
+
+@pytest.mark.network
+def test_the_preview_of_two_locks_carries_the_version_numbers_of_their_entries(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        first = entry("P", "id-1").model_copy(update={"version_number": "1.0.0"})
+        second = entry("P", "id-2").model_copy(update={"version_number": "1.1.0"})
+        kept = entry("K", "k-1").model_copy(update={"version_number": "9"})
+        return await service(FakeAPI({"id-2": None})).change_preview(lock(first, kept), lock(second, kept))
+
+    assert mongo(scenario).numbers == {"id-1": "1.0.0", "id-2": "1.1.0"}
+
+
+@pytest.mark.network
+def test_the_scan_side_takes_its_version_numbers_from_the_catalog_and_falls_back_to_the_id(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        await ModrinthDatabase().version_upsert_many([version_doc("v1", "P", "x").model_copy(update={"version_number": "0.9"})])
+        files = [scan_file("/mods/p.jar", "P", "v1"), scan_file("/mods/g.jar", "G", "unknown-id")]
+        server_id = await seed_server(files, [entry("P", "v2").model_copy(update={"version_number": "1.0"})])
+        api = FakeAPI({"v2": None})
+        preview = await service(api).server_change_preview(server_id, 1)
+        return preview, [c for c in api.calls if c != "v2"]
+
+    preview, extra_calls = mongo(scenario)
+    assert preview.numbers == {"v1": "0.9", "v2": "1.0"}  # "unknown-id" has no number: the page shows the id
+    assert extra_calls == []  # the numbers never go to Modrinth
+
+
+def test_the_page_prints_version_numbers_and_the_timeout_text() -> None:
+    from jinja2 import Environment, FileSystemLoader
+    from src.services.modpack import ChangePreview
+
+    env = Environment(loader=FileSystemLoader("src/web/templates"), autoescape=True)
+    changes = ChangeSet(added=[Change("A", None, "va")], removed=[Change("R", "vr", None)],
+                        changed=[Change("C", "v1", "v2")], unchanged=0)
+    preview = ChangePreview(changes=changes, changelogs={}, failed=set(), timed_out={"v2", "va"},
+                            numbers={"v1": "1.0", "v2": "1.1"})
+    text = env.get_template("modpacks/_changes.html").render(preview=preview, titles={})
+    assert "1.0 → 1.1" in text and "— → va" in text and "vr → —" in text  # the id when there is no number
+    assert text.count("tardó demasiado; vuelve a intentar") == 2 and "changelog no disponible" not in text

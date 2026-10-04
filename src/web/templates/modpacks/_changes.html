@@ -4,6 +4,7 @@
 {% import "_macros.html" as ui %}
 {% set CHANGELOG_MAX = 4000 %}
 {% set changes = preview.changes %}
+{% set numbers = preview.numbers %}
 
 {% macro change_item(change, show_changelog) %}
 {% set version = change.to_version %}
@@ -11,12 +12,14 @@
   <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
     <span class="min-w-0 font-medium break-words">{{ titles.get(change.project_id, change.project_id) }}</span>
     <span class="text-xs whitespace-nowrap tabular-nums text-zinc-500 dark:text-zinc-400">
-      {{ change.from_version or "—" }} → {{ change.to_version or "—" }}
+      {{ numbers.get(change.from_version, change.from_version) if change.from_version else "—" }} → {{ numbers.get(change.to_version, change.to_version) if change.to_version else "—" }}
     </span>
   </div>
   {% if show_changelog and version %}
   {% if version in preview.failed %}
   <p class="text-xs text-amber-700 dark:text-amber-300">changelog no disponible</p>
+  {% elif version in preview.timed_out %}
+  <p class="text-xs text-amber-700 dark:text-amber-300">tardó demasiado; vuelve a intentar</p>
   {% elif preview.changelogs.get(version) %}
   <pre class="max-h-60 overflow-auto rounded bg-zinc-50 p-2 font-sans text-xs break-words whitespace-pre-wrap text-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">{{ preview.changelogs[version][:CHANGELOG_MAX] }}{% if preview.changelogs[version] | length > CHANGELOG_MAX %}
 

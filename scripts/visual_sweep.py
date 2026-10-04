@@ -210,6 +210,7 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
                             response = page.goto(base + path)
                             if not page.url.split("?")[0].endswith(path.split("?")[0]):
                                 raise RuntimeError(f"{path} terminó en {page.url}: una redirección no es una página revisada")
+                            page.wait_for_load_state("networkidle")  # lazy fragments (change previews) swap in
                             page.wait_for_timeout(300)
                             overflow = page.evaluate(
                                 "document.documentElement.scrollWidth - document.documentElement.clientWidth")

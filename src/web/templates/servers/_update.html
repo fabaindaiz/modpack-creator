@@ -4,8 +4,7 @@
   build chosen here. Both fix the build number and its bundle, warn when a real update would
   discard a pending rollback (R17), and ask for the server's exact name. The route repeats the
   checks and the service the role; here the buttons only mirror it. Needs `server_id`, `server`,
-  `bundle`, `builds` (newest first), `preview`, `titles` or `preview_note` (what the default build
-  changes, loaded with the page; choosing another build asks for it) and `rollback` (JobService.rollback_state): after a done
+  `bundle`, `builds` (newest first), and `rollback` (JobService.rollback_state): after a done
   rollback A only B is left, confirmed by typing the server's name (d-7985ee-5445a0).
 #}
 {% import "_macros.html" as ui %}
@@ -38,7 +37,9 @@
       </option>
       {% endfor %}
     </select>
-    <div id="update-preview" class="space-y-2" aria-live="polite">{% include "servers/_preview_body.html" %}</div>
+    <div id="update-preview" class="space-y-2" aria-live="polite" hx-get="/servers/{{ server_id }}/update/preview?build={{ chosen }}" hx-trigger="load" hx-target="this" hx-swap="innerHTML">
+      <p class="text-sm text-zinc-500 dark:text-zinc-400">Cargando cambios…</p>
+    </div>
     <label for="{{ direct }}-confirm" class="block font-medium">Escribe el nombre exacto del servidor para confirmar: <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{{ server.name }}</code></label>
     <input id="{{ direct }}-confirm" name="confirm" type="text" required autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200"
       class="block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 focus-visible:outline-2 focus-visible:outline-red-600 dark:bg-zinc-900 dark:ring-zinc-700">

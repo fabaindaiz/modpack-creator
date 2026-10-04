@@ -45,6 +45,10 @@ class ChangePreview(BaseModel):
     changelogs: dict[str, Optional[str]]
     # Versions whose changelog could not be read (Modrinth down, or it does not know the version).
     failed: set[str]
+    # Versions whose changelog was not fetched before the deadline: asking again may work.
+    timed_out: set[str] = set()
+    # Version id -> version number, for the ids in `changes`; an id without one is shown as itself.
+    numbers: dict[str, str] = {}
 
 
 class ModpackService():
@@ -346,11 +350,21 @@ class ModpackService():
         `resolve`, it writes only to the catalog of Modrinth data.
         """
         return await self._preview({e.project_id: e.version_id for e in before.entries},
-                                   {e.project_id: e.version_id for e in after.entries})
+                                   {e.project_id: e.version_id for e in after.entries},
+                                   {e.version_id: e.version_number for e in [*before.entries, *after.entries]})
 
-    async def _preview(self, before: dict[str, str], after: dict[str, str]) -> ChangePreview:
-        """`change_preview` on maps of project id to version id."""
+    async def _preview(self, before: dict[str, str], after: dict[str, str],
+                       numbers: Optional[dict[str, str]] = None) -> ChangePreview:
+        """`change_preview` on maps of project id to version id; `numbers` are the version numbers
+        already known, the others are read from the catalog (never from Modrinth)."""
         changes = diff_entries(before, after)
+        shown = {v for c in [*changes.added, *changes.removed, *changes.changed] for v in (c.from_version, c.to_version) if v}
+        known = dict(numbers or {})
+        for version_id in sorted(shown - known.keys()):
+            stored = await self.modrinthDB.version_find_by_version_id(version_id)
+            if stored is not None:
+                known[version_id] = stored.version_number
+        known = {v: n for v, n in known.items() if v in shown}
         arriving = sorted({c.to_version for c in changes.added + changes.changed if c.to_version})
         gate = asyncio.Semaphore(CHANGELOG_CONCURRENCY)
 
@@ -369,12 +383,16 @@ class ModpackService():
         await asyncio.gather(*pending, return_exceptions=True)
         changelogs: dict[str, Optional[str]] = {}
         failed: set[str] = set()
+        timed_out: set[str] = set()
         for version_id, task in tasks.items():
-            if task in done and not task.cancelled() and not task.result()[2]:
-                changelogs[version_id] = task.result()[1]
+            if task not in done:
+                timed_out.add(version_id)
+            elif task.cancelled() or task.result()[2]:
+                failed.add(version_id)
             else:
-                failed.add(version_id)  # failed, or not fetched in time
-        return ChangePreview(changes=changes, changelogs=changelogs, failed=failed)
+                changelogs[version_id] = task.result()[1]
+        return ChangePreview(changes=changes, changelogs=changelogs, failed=failed, timed_out=timed_out,
+                             numbers=known)
 
     async def _changelog(self, version_id: str) -> Optional[str]:
         """The changelog of a version, None if it has none. The catalog first; else Modrinth, and
@@ -409,7 +427,7 @@ class ModpackService():
         before = {f.project_id: f.version_id for f in scan.files
                   if f.status == "identified" and f.project_id and f.version_id}
         after = {e.project_id: e.version_id for e in build.lock.entries if e.server == "include"}
-        return await self._preview(before, after)
+        return await self._preview(before, after, {e.version_id: e.version_number for e in build.lock.entries})
 
     # Global replacement rules (d-7985ee-86fffa).
 

@@ -379,30 +379,44 @@ def test_older_link_only_when_more_exist() -> None:
 
 
 @pytest.mark.parametrize("path", ["", "/row"])
-def test_a_finished_dry_run_shows_what_it_changes_under_the_plan(path: str) -> None:
+def test_a_finished_dry_run_loads_its_changes_lazily(path: str) -> None:
     client, jobs, *_ = setup(EDITOR)
     jobs.jobs = [finished_dry_run()]
     text = client.get(f"/jobs/{jobs.jobs[0].id}{path}").text
-    assert ("server_change_preview", str(SERVER_ID), 3) in MODPACK.calls  # the build the plan simulated
-    assert 'id="changes"' in text and "Arregla un crash" in text and "Sodium" in text
-    assert text.index("Se instalan") < text.index('id="changes"')
+    assert MODPACK.calls == []  # the page does not wait for Modrinth
+    assert f'hx-get="/jobs/{jobs.jobs[0].id}/preview"' in text and 'hx-trigger="load"' in text
+    assert "Cargando cambios" in text and 'id="changes"' not in text
+    assert text.index("Se instalan") < text.index("Cargando cambios")
 
 
-def test_a_finished_dry_run_without_a_scan_says_so_instead_of_the_changes() -> None:
+def test_the_preview_of_a_finished_dry_run_is_the_changes_of_the_build_it_simulated() -> None:
+    client, jobs, *_ = setup(EDITOR)  # a read: an editor loads it too
+    jobs.jobs = [finished_dry_run()]
+    response = client.get(f"/jobs/{jobs.jobs[0].id}/preview")
+    assert response.status_code == 200 and ("server_change_preview", str(SERVER_ID), 3) in MODPACK.calls
+    assert 'id="changes"' in response.text and "Arregla un crash" in response.text and "Sodium" in response.text
+    assert "<html" not in response.text
+
+
+def test_the_preview_of_a_dry_run_without_a_scan_says_so_instead_of_the_changes() -> None:
     from src.exceptions import HTTP_409_CONFLICT
 
     client, jobs, *_ = setup(EDITOR)
     MODPACK.preview_error = HTTP_409_CONFLICT("Escanea el servidor antes de comparar")
     jobs.jobs = [finished_dry_run()]
-    response = client.get(f"/jobs/{jobs.jobs[0].id}/row")
+    response = client.get(f"/jobs/{jobs.jobs[0].id}/preview")
     assert response.status_code == 200 and "Escanea el servidor antes de comparar" in response.text
     assert 'id="changes"' not in response.text
 
 
-def test_an_active_dry_run_and_a_scan_do_not_ask_for_the_preview() -> None:
+@pytest.mark.parametrize("make", [
+    lambda: make_job("server_update", payload={"server_id": str(SERVER_ID), "dry_run": True}),  # still active
+    lambda: make_job("server_scan", status="done", active=False, payload={"server_id": str(SERVER_ID)}),
+    lambda: make_job("server_update", status="done", active=False, payload={"server_id": str(SERVER_ID), "dry_run": False},
+                     checkpoint=PLAN),
+])
+def test_the_preview_of_anything_but_a_finished_dry_run_is_a_not_found_notice(make: Any) -> None:
     client, jobs, *_ = setup(EDITOR)
-    jobs.jobs = [make_job("server_update", payload={"server_id": str(SERVER_ID), "dry_run": True})]
-    client.get(f"/jobs/{jobs.jobs[0].id}/row")
-    jobs.jobs = [make_job("server_scan", status="done", active=False, payload={"server_id": str(SERVER_ID)})]
-    client.get(f"/jobs/{jobs.jobs[0].id}/row")
-    assert MODPACK.calls == []
+    jobs.jobs = [make()]
+    response = client.get(f"/jobs/{jobs.jobs[0].id}/preview")
+    assert response.status_code == 404 and "data-notice" in response.text and MODPACK.calls == []

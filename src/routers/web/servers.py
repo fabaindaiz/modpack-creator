@@ -137,14 +137,9 @@ async def server_detail(
     build_number = (bundle.recommended_build or bundle.latest_build) if bundle else None
     builds = sorted(await modpackService.build_find(str(bundle.id)), key=lambda b: b.number, reverse=True) \
         if bundle is not None else []
-    # The direct update dialog opens on the default build with its changes: only an operator can open it.
-    preview = await preview_context(modpackService, modrinthService, server_id, build_number) \
-        if actor.is_operator and bundle is not None and build_number is not None and builds else {}
-    titles = {**titles, **preview.pop("titles", {})}
     return render(request, "servers/detail.html", actor, server=server, server_id=server_id, bundles=bundles,
                   bundle=bundle, scan=scan, comparison=comparison, compare_note=compare_note, titles=titles,
-                  active_job=active, rollback=rollback, build_number=build_number, builds=builds, nav_active="servers",
-                  **preview)
+                  active_job=active, rollback=rollback, build_number=build_number, builds=builds, nav_active="servers")
 
 @router.post("/servers/{server_id}/refresh")
 @inject

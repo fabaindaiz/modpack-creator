@@ -852,28 +852,21 @@ def test_the_newest_failed_rollback_attempt_is_said(mode: str) -> None:
 
 # La vista previa de lo que cambia (N4).
 
-def test_the_direct_dialog_comes_with_the_preview_of_the_recommended_build() -> None:
+def test_the_direct_dialog_loads_its_preview_lazily_and_the_page_never_waits_for_it() -> None:
     client, fakes = setup(OPERATOR)
     text = client.get(f"/servers/{SERVER_ID}").text
-    assert ("server_change_preview", str(SERVER_ID), 2) in fakes.modpack.calls
-    assert 'id="update-preview"' in text and 'id="changes"' in text
-    assert "Arregla un crash" in text and "Sodium" in text and "Iris" in text
+    assert fakes.modpack.calls == []  # the page does not build the preview
+    assert 'id="update-preview"' in text and "Cargando cambios" in text and 'id="changes"' not in text
+    assert f'hx-get="/servers/{SERVER_ID}/update/preview?build=2"' in text and 'hx-trigger="load"' in text
     assert f'hx-get="/servers/{SERVER_ID}/update/preview"' in text and 'hx-trigger="change"' in text
     assert 'hx-target="#update-preview"' in text and 'hx-include="this"' in text
 
 
-def test_the_dialog_still_opens_without_a_scan_and_says_why() -> None:
+def test_the_lazy_load_asks_for_the_default_build() -> None:
     client, fakes = setup(OPERATOR)
-    fakes.modpack.preview_error = HTTP_409_CONFLICT("Escanea el servidor antes de comparar")
-    response = client.get(f"/servers/{SERVER_ID}")
-    assert response.status_code == 200 and 'id="update-preview"' in response.text
-    assert "Escanea el servidor antes de comparar" in response.text and 'id="changes"' not in response.text
-
-
-def test_an_editor_does_not_load_the_preview_for_a_dialog_that_is_not_there() -> None:
-    client, fakes = setup(EDITOR)
-    client.get(f"/servers/{SERVER_ID}")
-    assert fakes.modpack.calls == []
+    fakes.modpack.recommended = 4
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert f'hx-get="/servers/{SERVER_ID}/update/preview?build=4"' in text
 
 
 def test_changing_the_build_asks_for_its_preview_and_returns_the_fragment() -> None:
