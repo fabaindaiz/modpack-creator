@@ -21,7 +21,7 @@
     {{ ui.badge(label, tone, title=job.status) }}
     {% if job.status == "failed" and job.error %}<div class="mt-1 max-w-xs text-xs break-words text-red-700 dark:text-red-300">{{ job.error }}</div>{% endif %}
   </td>
-  <td class="font-mono text-xs">{{ job.step or "—" }}</td>
+  <td class="text-xs">{{ ui.JOB_STEP.get(job.step, job.step) if job.step else "—" }}</td>
   <td class="break-words">{{ job.requested_by.name if job.requested_by else "programado" }}</td>
   <td>{{ ui.when(job.created_at) }}</td>
 </tr>

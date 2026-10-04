@@ -50,9 +50,7 @@
     </div>
   </header>
 
-  <div class="mx-auto max-w-7xl px-4 sm:px-6">
-    <div id="notices" aria-live="polite" class="mt-4 space-y-2 empty:mt-0">{% block notices %}{% endblock %}</div>
-  </div>
+  <div id="notices" aria-live="polite" class="fixed inset-x-4 top-3 z-50 space-y-2 sm:left-auto sm:right-6 sm:w-96">{% block notices %}{% endblock %}</div>
 
   <main id="main" class="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6">
     {% block content %}{% endblock %}

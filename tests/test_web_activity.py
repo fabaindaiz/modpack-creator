@@ -420,3 +420,26 @@ def test_the_preview_of_anything_but_a_finished_dry_run_is_a_not_found_notice(ma
     jobs.jobs = [make()]
     response = client.get(f"/jobs/{jobs.jobs[0].id}/preview")
     assert response.status_code == 404 and "data-notice" in response.text and MODPACK.calls == []
+
+
+def test_job_steps_read_in_spanish() -> None:
+    client, jobs, *_ = setup()
+    jobs.jobs = [make_job(status="running", active=True)]
+    jobs.jobs[0].step = "drift"
+    text = client.get(f"/jobs/{jobs.jobs[0].id}/row").text
+    assert "Comparando" in text and ">drift<" not in text
+    tr = client.get(f"/jobs/{jobs.jobs[0].id}/tr").text
+    assert "Comparando" in tr and ">drift<" not in tr
+    jobs.jobs[0].step = "paso-raro"
+    assert "paso-raro" in client.get(f"/jobs/{jobs.jobs[0].id}/row").text
+
+
+def test_job_steps_cover_every_service_step() -> None:
+    import re
+    from pathlib import Path
+    from src.web import templates
+    steps = set()
+    for path in Path("src/services").glob("*.py"):
+        steps |= set(re.findall(r'step\("([a-z_]+)"', path.read_text()))
+    labels = getattr(templates.env.get_template("_macros.html").module, "JOB_STEP")
+    assert steps and steps <= set(labels)

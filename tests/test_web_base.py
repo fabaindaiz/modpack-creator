@@ -230,7 +230,7 @@ def test_app_js_shows_a_notice_for_every_other_client_error() -> None:
     assert "status >= 400 && status < 500" in handler
     assert "getResponseHeader('HX-Redirect')" in handler
     other = handler[handler.index("status >= 400 && status < 500"):]
-    assert "shouldSwap = false" in other and "showTemplate('notice-client-error')" in other
+    assert "shouldSwap = false" in other and "showTemplate('notice-client-error', null, elt)" in other
 
 
 def test_app_js_closes_a_dialog_only_for_its_own_form() -> None:
@@ -439,3 +439,32 @@ def test_sanitize_detail_cuts_queries_and_length() -> None:
 
     assert sanitize_detail("GET https://a.b/c?token=s&x=1 failed") == "GET https://a.b/c failed"
     assert len(sanitize_detail("x" * 900)) == 500
+
+
+def _render_macro(call: str) -> str:
+    from src.web import templates
+    return templates.env.from_string('{% import "_macros.html" as ui %}' + call).render()
+
+
+def test_htmx_buttons_disable_themselves_while_busy() -> None:
+    for verb in ("hx-post", "hx-put", "hx-delete"):
+        assert 'hx-disabled-elt="this"' in _render_macro('{{ ui.button("X", attrs={"%s": "/x"}) }}' % verb)
+    assert "hx-disabled-elt" not in _render_macro('{{ ui.button("Y", attrs={"href": "/y"}) }}')
+    assert "hx-disabled-elt" not in _render_macro('{{ ui.button("Z", attrs={"hx-get": "/z"}) }}')
+
+
+def test_success_notice_has_the_success_tone() -> None:
+    text = _render_macro('{{ ui.success("Listo <b>") }}')
+    assert 'data-notice-tone="success"' in text and "Listo &lt;b&gt;" in text
+
+
+def test_notices_container_is_fixed_and_outside_main() -> None:
+    text = client(EDITOR).get("/").text
+    tag = re.search(r'<div id="notices"[^>]*>', text)
+    assert tag and "fixed" in tag.group(0) and "z-50" in tag.group(0)
+    assert text.index('id="notices"') < text.index("<main")
+
+
+def test_app_js_places_notices_and_closes_successes() -> None:
+    text = client(None).get("/static/app.js").text
+    assert "data-form-notice" in text and "MutationObserver" in text and "5000" in text

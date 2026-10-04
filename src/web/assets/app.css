@@ -1,2 +1,9 @@
 @import "tailwindcss";
 @source "../templates";
+
+@layer components {
+  button.htmx-request {
+    opacity: .6;
+    cursor: progress;
+  }
+}

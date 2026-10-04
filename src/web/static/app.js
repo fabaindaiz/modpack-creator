@@ -10,9 +10,27 @@
     return document.getElementById('notices');
   }
 
-  // Put a copy of a <template> from base.html in #notices; `extra` is appended as text.
-  function showTemplate(id, extra) {
-    var target = notices();
+  // Where a notice about a request goes: the slot right after the form that sent it (made if
+  // missing), else the fixed corner. A form inside a <dialog> uses the corner: the dialog closes
+  // when the request is answered and would hide it.
+  function noticeTarget(elt) {
+    var form = elt instanceof Element ? elt.closest('form') : null;
+    if (!form || form.closest('dialog')) {
+      return notices();
+    }
+    var slot = form.nextElementSibling;
+    if (!slot || !slot.hasAttribute('data-form-notice')) {
+      slot = document.createElement('div');
+      slot.setAttribute('data-form-notice', '');
+      slot.className = 'mt-2 space-y-2';
+      form.insertAdjacentElement('afterend', slot);
+    }
+    return slot;
+  }
+
+  // Put a copy of a <template> from base.html where the request came from; `extra` is appended as text.
+  function showTemplate(id, extra, elt) {
+    var target = noticeTarget(elt);
     var template = document.getElementById(id);
     if (!target || !template) {
       return;
@@ -35,30 +53,53 @@
 
   document.addEventListener('htmx:beforeSwap', function (evt) {
     var status = evt.detail.xhr.status;
+    var elt = evt.detail.requestConfig ? evt.detail.requestConfig.elt : null;
     if (NOTICE_STATUSES.indexOf(status) !== -1 && !isHtml(evt.detail.xhr)) {
       evt.detail.shouldSwap = false;
-      showTemplate('notice-client-error');
-    } else if (NOTICE_STATUSES.indexOf(status) !== -1 && notices()) {
+      showTemplate('notice-client-error', null, elt);
+    } else if (NOTICE_STATUSES.indexOf(status) !== -1 && noticeTarget(elt)) {
       evt.detail.shouldSwap = true;
-      evt.detail.target = notices();
+      evt.detail.target = noticeTarget(elt);
       // The notice replaces the previous one, whatever the triggering element asked for.
       evt.detail.swapOverride = 'innerHTML';
       evt.detail.selectOverride = 'unset';
     } else if (status >= 500) {
       evt.detail.shouldSwap = false;
-      showTemplate('notice-server-error', evt.detail.xhr.getResponseHeader('X-Request-ID') || 'sin identificador');
+      showTemplate('notice-server-error', evt.detail.xhr.getResponseHeader('X-Request-ID') || 'sin identificador', elt);
     } else if (status >= 400 && status < 500 && !evt.detail.xhr.getResponseHeader('HX-Redirect')) {
       // Any other client error (a 429 or 400 passed through from Modrinth or Pterodactyl) has no
       // notice fragment: say something, or the click looks like a no-op. A 401 with HX-Redirect
       // is htmx's to follow (to the login).
       evt.detail.shouldSwap = false;
-      showTemplate('notice-client-error');
+      showTemplate('notice-client-error', null, elt);
     }
   });
 
-  document.addEventListener('htmx:sendError', function () {
-    showTemplate('notice-network-error');
+  document.addEventListener('htmx:sendError', function (evt) {
+    showTemplate('notice-network-error', null, evt.detail.elt);
   });
+
+  // A success notice closes itself after five seconds; errors and warnings stay until closed.
+  var CLOSE_AFTER_MS = 5000;
+  function scheduleClose(node) {
+    if (!(node instanceof Element)) {
+      return;
+    }
+    var found = node.matches('[data-notice-tone="success"]') ? [node] : [];
+    node.querySelectorAll('[data-notice-tone="success"]').forEach(function (n) {
+      found.push(n);
+    });
+    found.forEach(function (notice) {
+      window.setTimeout(function () {
+        notice.remove();
+      }, CLOSE_AFTER_MS);
+    });
+  }
+  new MutationObserver(function (records) {
+    records.forEach(function (record) {
+      record.addedNodes.forEach(scheduleClose);
+    });
+  }).observe(document.body, { childList: true, subtree: true });
 
   document.addEventListener('click', function (evt) {
     var element = evt.target instanceof Element ? evt.target : null;
