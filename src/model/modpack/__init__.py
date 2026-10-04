@@ -7,6 +7,7 @@ from src.model.modpack.project import (
     PackProject,
     ProjectOrigin,
 )
+from src.model.modpack.update_check import AvailableUpdate, UpdateCheck
 
 __all__ = [
     "ModpackBuild",
@@ -16,4 +17,6 @@ __all__ = [
     "ModpackReplacement",
     "PackProject",
     "ProjectOrigin",
+    "AvailableUpdate",
+    "UpdateCheck",
 ]

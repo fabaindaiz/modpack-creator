@@ -38,7 +38,8 @@ async def lifespan(app: FastAPI):
     stop = asyncio.Event()
     worker = None
     if getenv("JOBS_WORKER", "on").strip().lower() != "off":
-        handlers = {**container.jobService().handlers(), **container.updateService().handlers()}
+        handlers = {**container.jobService().handlers(), **container.updateService().handlers(),
+                    **container.updateCheckService().handlers()}
         container.workerBeat().expect()
         worker = asyncio.create_task(JobWorker(container.jobDatabase(), handlers,
                                                beat=container.workerBeat()).run_forever(stop))

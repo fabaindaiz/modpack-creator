@@ -124,14 +124,18 @@ class ModrinthAPI(HttpAPI):
         return ModrinthVersion.parse(**handler.json)
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=2)
-    async def files_update_hash_post_many(self, hashes: list[str], algorithm: str = "sha512", loaders: Sequence[str] = (), game_versions: Sequence[str] = ()) -> dict[str, ModrinthVersion]:
+    async def files_update_hash_post_many(self, hashes: list[str], algorithm: str = "sha512", loaders: Sequence[str] = (), game_versions: Sequence[str] = (), version_types: Sequence[str] = ()) -> dict[str, ModrinthVersion]:
+        # `version_types` (release, beta, alpha) is optional in openapi v2.7.0: sent only if given.
+        body: dict[str, Any] = {
+            "hashes": hashes,
+            "algorithm": algorithm,
+            "loaders": list(loaders),
+            "game_versions": list(game_versions)
+        }
+        if version_types:
+            body["version_types"] = list(version_types)
         handler: JsonResponse = await self._request(
             method=METHOD.POST,
             path='version_files/update',
-            json={
-                "hashes": hashes,
-                "algorithm": algorithm,
-                "loaders": list(loaders),
-                "game_versions": list(game_versions)
-            })
+            json=body)
         return {hash: ModrinthVersion.parse(**item) for hash, item in handler.json.items()}

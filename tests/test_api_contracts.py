@@ -139,6 +139,17 @@ def test_latest_versions_from_many_hashes_post_arrays_and_read_a_hash_map(mongo:
     assert {h: v.version_id for h, v in result.items()} == {"s512": "v1"}
 
 
+def test_update_by_hashes_sends_version_types_only_when_given(mongo: MongoRunner) -> None:
+    """openapi v2.7.0 `POST /version_files/update`: `loaders` y `game_versions` obligatorios,
+    `version_types` opcional (release, beta, alpha)."""
+    _, seen = mongo(lambda: serve({("POST", "/version_files/update"): json_reply({"s512": VERSION})},
+                                  lambda base: modrinth(base).files_update_hash_post_many(
+                                      ["s512"], "sha512", ["fabric"], ["1.21.1"], version_types=["release", "beta"])))
+    assert [s.json for s in seen] == [
+        {"hashes": ["s512"], "algorithm": "sha512", "loaders": ["fabric"], "game_versions": ["1.21.1"],
+         "version_types": ["release", "beta"]}]
+
+
 def test_project_versions_ask_for_all_versions_without_changelogs(mongo: MongoRunner) -> None:
     """`featured` filtra a solo destacadas o solo no destacadas: sin él, vienen todas. La spec
     recomienda include_changelog=false."""
