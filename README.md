@@ -32,7 +32,8 @@ Con `UPDATE_CHECK_AT` (`HH:MM`, hora local) cada modpack con un build se revisa 
 contra Modrinth, en la zona `UPDATE_CHECK_TZ` (por defecto `America/Santiago`). Solo mira: avisa
 por Discord, en `/modpacks/{id}/actualizaciones` y con una insignia en el tablero, y nunca aplica
 nada. Sin `UPDATE_CHECK_AT` no hay programación (el botón de la página sigue); un valor mal
-escrito impide arrancar. Ver [`docs/runbooks/desplegar-panel.md`](docs/runbooks/desplegar-panel.md).
+escrito impide arrancar. Los dos valores van entre comillas en `.env.yaml`
+(`UPDATE_CHECK_AT: "04:30"`): sin ellas YAML lee `10:30` como un número y la API no arranca. Ver [`docs/runbooks/desplegar-panel.md`](docs/runbooks/desplegar-panel.md).
 
 ## Desarrollar
 

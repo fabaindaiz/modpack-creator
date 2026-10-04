@@ -21,6 +21,7 @@ from src.database.update_check import UpdateCheckDatabase
 from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.resolution import Target
+from src.library import utils
 from src.library.utils import getenv, getenv_opt, utcnow
 from src.model.audit import AuditTarget
 from src.model.jobs import Job
@@ -43,16 +44,29 @@ def parse_check_at(value: str) -> time:
 
 def schedule_from_env() -> Optional[tuple[time, ZoneInfo]]:
     """The daily schedule from UPDATE_CHECK_AT and UPDATE_CHECK_TZ, None if UPDATE_CHECK_AT is not
-    set. A bad time or an unknown zone raises: the app must not start with a schedule that never runs."""
+    set. A bad time or an unknown zone raises: the app must not start with a schedule that never runs.
+    So does a value load_env ignored because YAML did not read it as text (N-R5): an unquoted 10:30
+    would otherwise leave the variable unset and the schedule off, without a word."""
+    _refuse_unquoted("UPDATE_CHECK_AT")
     raw = getenv_opt("UPDATE_CHECK_AT")
     if raw is None or not raw.strip():
         return None
     at = parse_check_at(raw)
+    _refuse_unquoted("UPDATE_CHECK_TZ")
     name = getenv("UPDATE_CHECK_TZ", DEFAULT_TZ).strip()
     try:
         return at, ZoneInfo(name)
     except (KeyError, ValueError, OSError) as error:  # ZoneInfoNotFoundError is a KeyError
         raise ValueError(f"UPDATE_CHECK_TZ is not a known time zone (got {name!r})") from error
+
+UNQUOTED = {
+    "UPDATE_CHECK_AT": 'UPDATE_CHECK_AT debe ir entre comillas en .env.yaml (p. ej. "04:30"): YAML lee 10:30 como un número',
+    "UPDATE_CHECK_TZ": 'UPDATE_CHECK_TZ debe ir entre comillas en .env.yaml (p. ej. "America/Santiago"): YAML no lo leyó como texto',
+}
+
+def _refuse_unquoted(name: str) -> None:
+    if name in utils.SKIPPED_NON_STRING:
+        raise ValueError(UNQUOTED[name])
 
 def due_today(now_utc: datetime, at: time, tz: tzinfo, last_checked_at: Optional[datetime]) -> bool:
     """True if the local time has passed `at` and the last check was on an earlier local date.

@@ -8,6 +8,10 @@ from typing import Any, Callable, Optional, TypeVar
 
 WRAP = TypeVar("WRAP", bound=Callable[..., Any])
 logger = logging.getLogger("EnvLogger")
+# The keys of the env file that load_env ignored because YAML did not read them as text (an
+# unquoted 10:30 is the base-60 number 630, an unquoted 8080 an int). Ignoring them is the old
+# behavior and stays; a setting that must not be lost silently checks here (schedule_from_env).
+SKIPPED_NON_STRING: set[str] = set()
 
 def load_env(path: str = ".env", verbose: bool = False):
     if not os.path.exists(path):
@@ -20,7 +24,11 @@ def load_env(path: str = ".env", verbose: bool = False):
             logger.info(f"key already in environ -> {key}: {value}")
             continue
         if not isinstance(value, str):
+            # The key only, never the value: it may be a secret.
+            SKIPPED_NON_STRING.add(key)
+            logger.warning(f"{key} in {path} is not a string and was ignored; quote its value")
             continue
+        SKIPPED_NON_STRING.discard(key)
         os.environ[key] = value
 
 def getenv(name: str, default: Optional[str] = None) -> str:

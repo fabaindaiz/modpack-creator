@@ -67,6 +67,20 @@ fuera de `.env.default`:
 - `UPDATE_CHECK_TZ`: la zona horaria, por defecto `America/Santiago`; una zona desconocida
   también impide arrancar.
 
+**Las dos van entre comillas** en `.env.yaml`:
+
+```yaml
+UPDATE_CHECK_AT: "04:30"
+UPDATE_CHECK_TZ: "America/Santiago"
+```
+
+Sin comillas, YAML (1.1, el que lee `.env.yaml`) toma `10:30` como el número 630 en base 60, y
+la API ignora todo valor de `.env.yaml` que no sea texto. Antes eso apagaba la programación sin decir nada;
+ahora la API **no arranca** y los logs dicen `UPDATE_CHECK_AT debe ir entre comillas en .env.yaml`
+(N-R5). `04:30` sin comillas sí queda como texto, por el cero inicial, pero no hay que contar con
+eso. Cualquier otra variable que YAML no lea como texto se sigue ignorando como antes, ahora con
+un aviso en los logs que nombra la variable (nunca su valor).
+
 Una revisión solo lee Modrinth y guarda el resultado; no toca ningún servidor. Avisa por Discord
 (si hay `DISCORD_WEBHOOK_URL`) solo cuando las actualizaciones sin pin difieren de las del último
 aviso. Para comprobarlo después de desplegar: poner `UPDATE_CHECK_AT` unos minutos adelante,
