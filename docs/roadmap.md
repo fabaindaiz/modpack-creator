@@ -8,9 +8,11 @@ este archivo en el mismo cambio que lo termina. Los ids se acuñan con
 
 ## Dónde estamos
 
-Al cierre de la sesión del panel web del 2026-10-02 (detalle en
-`.claude/logs/agent-changelog.md`, s-7985ee-aeb6be, y las entradas de abajo). **El panel está en la
-rama `feat/panel-web`; lo demás está en `main`; nada está desplegado.**
+Al cierre de la sesión del panel web (2026-10-02 a 2026-10-04; detalle en
+`.claude/logs/agent-changelog.md`, s-7985ee-aeb6be, y las entradas de abajo). **Todo está en
+`main` y empujado a `origin` (8b5e2ca..ae17269); nada está desplegado.** CI de ese push: el job
+`image` pasa; el job `gate` falla solo en el audit `env_template` (falta `OIDC_OPERATOR_GROUPS`
+en `.env.default`, que agrega el dueño).
 
 - **Panel web, hecho en código** (i-7985ee-50d411): páginas con Jinja2 y htmx, roles de editor y
   operador por grupos del IdP, auditoría, defensa CSRF por origen con CSP estricta, y el latido
@@ -41,8 +43,9 @@ rama `feat/panel-web`; lo demás está en `main`; nada está desplegado.**
   Sin eso el volumen nuevo arranca vacío y la API no arranca.
 - **Lo siguiente, todo del dueño, en orden:**
   0. agregar `OIDC_OPERATOR_GROUPS: ""` a `.env.default` (el gate de `audit` falla en
-     `env_template` hasta entonces) y crear el grupo de operadores en authentik;
-  1. desplegar con los runbooks (`migrar-mongo-a-volumen.md` y `desplegar-panel.md`);
+     `env_template`, y CI con él) y crear el grupo de operadores en authentik;
+  1. antes de desplegar, el conteo `dry_run` de `desplegar-panel.md` (debe dar 0); luego desplegar
+     con los runbooks (`migrar-mongo-a-volumen.md` y `desplegar-panel.md`);
   2. S7 operación: un usuario de servicio no admin, una clave `ptlc_` con `allowed_ips` y revocar
      la vieja (i-7985ee-63226e);
   3. un login real con una cuenta fuera del grupo, otro de editor y otro de operador (con una
@@ -66,6 +69,13 @@ rama `feat/panel-web`; lo demás está en `main`; nada está desplegado.**
   6. decir qué versión de MongoDB corre en producción y, si es menor que 8.0, migrar primero a esa versión y subirla después, con
      "Subir a MongoDB 8.0" de `migrar-mongo-a-volumen.md` (CI ya usa `mongo:8.0`).
 - **Pendiente de código:**
+  - `load_env` registra el valor de una clave ya presente en el entorno y vuelca todo con
+    `verbose` (Low, `src/library/utils/__init__.py`): registrar solo claves;
+  - un `UPDATE_CHECK_AT:` vacío o nulo debe significar "apagado" y no fallar con "ponlo entre
+    comillas";
+  - los menores diferidos del registro (consulta de títulos por fragmento, espera secuencial del
+    tablero, índices de auditoría por `target_id` y acción, un pin que sobrevive a quitar el
+    proyecto);
   - subir producción a MongoDB 8.0, si no lo está (d-7985ee-83eb5b);
   - packwiz, tras el punto de control de la fase 2.
 

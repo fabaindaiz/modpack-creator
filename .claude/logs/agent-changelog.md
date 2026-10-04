@@ -81,6 +81,25 @@ está al final del archivo, para que nada entre este párrafo y la primera entra
   [plan del panel](../../docs/superpowers/plans/2026-10-02-panel-web.md) y
   [plan del addendum](../../docs/superpowers/plans/2026-10-03-panel-web-addendum.md).
 
+**Estado final (2026-10-04).** Todo está en `main` y empujado a `origin` (8b5e2ca..ae17269, 73
+commits). CI de ese push: el job `image` pasa (primera imagen x64 construida en CI: la app
+importa, los assets del panel están y el compose valida); el job `gate` falla solo en el audit
+`env_template`, porque falta `OIDC_OPERATOR_GROUPS` en `.env.default` (los permisos del dueño
+bloquean a los agentes en ese archivo: la línea la agrega él).
+
+**Entorno.** El Mac del dueño corre contenedores con podman 6.1.3 (Homebrew, VM
+`podman-machine-default`) y `/opt/homebrew/bin/docker` es un enlace a podman, por elección suya.
+`./scripts/test-mongo.sh`, las construcciones de imagen y `docker compose config` funcionan en
+local (arm64 aquí, x64 en CI). Antes, los tests corrían contra un tarball descartable de MongoDB 8.0.
+
+**Proceso.** El trabajo fue tres planes (el panel; el addendum con las decisiones del recorrido
+del dueño, 18 dictámenes ya en `docs/decisions.md` y en los planes; y el lote siguiente a–d),
+cada uno por tareas con un subagente implementador nuevo, revisión de la tarea, rondas de
+correcciones y una revisión de toda la rama. Las revisiones encontraron, entre otras cosas: el
+redirect abierto de protocolo relativo, el rollback B inalcanzable tras un A fallido, un rollback
+ya hecho que se volvía a ofrecer, `UPDATE_CHECK_AT` sin comillas que apagaba la programación (YAML
+base 60), la vista previa ansiosa de 10 s, ids de versión opacos y `Sec-Fetch-Site: none` aceptado.
+
 **Por qué.** El dueño pidió un panel web para operar sin llamar a la API a mano, con dos niveles
 de permiso y un registro de quién hizo qué sobre servidores reales. Cada decisión se registró en
 `docs/decisions.md`; el roadmap cierra i-7985ee-50d411 y corrige tres entradas que habían quedado
@@ -178,18 +197,24 @@ sigue vacía. `AGENTS.md` suma dos invariantes (roles en los servicios, mismo or
   ronda final; no era el aviso sino MongoDB); una revisión manual antes de `UPDATE_CHECK_AT`
   cuenta como la de hoy (ahora documentado); las revisiones previas no tienen ids de versión (sin
   changelogs); un pin sobrevive a quitar el proyecto.
-- `load_env` escribe en el log, en nivel `info`, el **valor** de una clave que ya estaba en el
-  entorno (y todo el archivo con `verbose`): puede ser un secreto. No se tocó en esta ronda.
+- `load_env` (`src/library/utils/__init__.py`) escribe en el log, en nivel `info`, el **valor** de
+  una clave que ya estaba en el entorno (y todo el archivo con `verbose`): puede ser un secreto
+  (Low, ya existía). Debe registrar solo claves.
+- Un `UPDATE_CHECK_AT:` vacío o nulo debería significar "apagado" y hoy falla con el mensaje de
+  "ponlo entre comillas".
 - Una consulta de títulos de Modrinth por fragmento y la espera secuencial del tablero (menores).
 - Los índices por `target_id` y por acción en la auditoría (se escanea la colección; chica).
-- Desplegar, y las comprobaciones de `desplegar-panel.md`.
+- **Del dueño, en orden:** agregar `OIDC_OPERATOR_GROUPS: ""` a `.env.default` (pone CI en
+  verde); antes de desplegar, correr el conteo `dry_run` de `docs/runbooks/desplegar-panel.md`
+  (debe dar 0); desplegar con los runbooks; crear el grupo de operadores en authentik; un login real
+  de editor y de operador; la primera actualización real en el servidor de prueba.
+- **Limpieza:** las imágenes de podman bajadas (mongo 4.4, 5.0, 6.0, 8.0 y `modpack-creator-api:ci`)
+  se pueden borrar, y `.superpowers/sdd/2026-10-02-panel-web/` (fuera de git).
 
 **No verificado.**
-- **La imagen Docker, en parte.** Ya hay podman local (`docker` es un enlace a podman 6.1.3).
-  Verificado el 2026-10-03: la imagen arm64 construye, `main` importa dentro de ella, los assets
-  están, `node` no está en la imagen final, y el compose valida y se niega a arrancar sin
-  `MONGO_VERSION` o `FORWARDED_ALLOW_IPS`. Sin verificar: la imagen x64 (la construye CI) y el
-  despliegue real.
+- **La imagen, en parte.** Verificado: arm64 en local (2026-10-03) y x64 en CI (2026-10-04): la
+  app importa, los assets están, `node` no está en la imagen final y el compose valida y se niega
+  a arrancar sin `MONGO_VERSION` o `FORWARDED_ALLOW_IPS`. Sin verificar: el despliegue real.
 - **Un login real** de editor y de operador con authentik, y el claim `groups`.
 - **Pterodactyl y Modrinth reales:** nada de esto toca un servidor de juego; el flujo de
   actualización se probó con un panel simulado.
@@ -214,7 +239,8 @@ sigue vacía. `AGENTS.md` suma dos invariantes (roles en los servicios, mismo or
   Firefox ni Safari; el `mongosh` del chequeo de `payload.dry_run` se probó contra un MongoDB 8.0
   descartable, no contra producción; y qué `.env.yaml` de producción tiene valores sin comillas
   (desde ahora cada uno deja un aviso en el log al arrancar).
-- **Pendiente del dueño:** `OIDC_OPERATOR_GROUPS: ""` en `.env.default`.
+- **Del cierre:** Pterodactyl y Modrinth reales, un login OIDC real, los datos de producción y
+  `intersect once` en Firefox y Safari.
 
 ## 2026-10-01 · s-7985ee-2ab23b — Fase 3: importar servidores y actualizar con backup, verificación y rollback a pedido
 
