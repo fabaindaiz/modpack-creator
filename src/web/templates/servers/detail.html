@@ -6,6 +6,9 @@
 {% set NEEDS_OPERATOR = "requiere operador" %}
 {% set reason = None if actor.is_operator else NEEDS_OPERATOR %}
 
+{# A fixed text after linking or unlinking (the route's redirect says which, never with its own words). #}
+{% block notices %}{% if link_notice %}{{ ui.success(link_notice) }}{% endif %}{% endblock %}
+
 {% block content %}
 {% call ui.page_header(server.name, server.node ~ " · " ~ (server.status or "sin estado especial")) %}
 {{ ui.link_button("Servidores", "/servers") }}
@@ -50,35 +53,26 @@
       {% endcall %}
     </div>
 
+    {#
+      A server without a modpack has nothing to update yet: Modpack (link it, or create one) comes
+      first, then Actualizar, Escaneo and Importar. A linked server starts with Actualizar.
+    #}
+    {% set modpack_section %}
+      {% call ui.section("Modpack", id="modpack") %}
+      <div class="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+        {% with linked=bundle, linked_id=server.bundle_id, oob=False %}{% include "servers/_link_bundle.html" %}{% endwith %}
+        {% if not server.bundle_id %}{% include "servers/_new_modpack.html" %}{% endif %}
+      </div>
+      {% endcall %}
+    {% endset %}
     <div class="min-w-0 space-y-6">
+      {% if not server.bundle_id %}{{ modpack_section }}{% endif %}
+
       {% call ui.section("Actualizar", id="actualizar") %}
       {% include "servers/_update.html" %}
       {% endcall %}
 
-      {% call ui.section("Modpack", id="modpack") %}
-      <div class="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-        {% if bundle %}
-        <p><a href="/modpacks/{{ bundle.id }}" class="font-medium hover:underline">{{ bundle.name }}</a>
-          <span class="text-zinc-500 dark:text-zinc-400">{{ bundle.version }} · {{ bundle.loader.value }}</span></p>
-        <p class="text-zinc-600 dark:text-zinc-400">Build comparado: {% if build_number is not none %}<span class="tabular-nums">#{{ build_number }}</span>{% else %}ninguno{% endif %}</p>
-        {% elif server.bundle_id %}
-        <p class="text-zinc-500 dark:text-zinc-400">Modpack desconocido.</p>
-        {% else %}
-        <p class="text-zinc-500 dark:text-zinc-400">Sin modpack.</p>
-        {% endif %}
-        <form class="space-y-2"{% if actor.is_operator %} hx-put="/servers/{{ server_id }}/bundle"{% endif %}>
-          <label for="link-bundle" class="font-medium">Vincular a un modpack</label>
-          <select id="link-bundle" name="bundle_id" class="{{ FIELD }}"{% if not actor.is_operator %} disabled{% endif %}>
-            <option value=""{% if not server.bundle_id %} selected{% endif %}>Sin modpack</option>
-            {% for option in bundles %}
-            <option value="{{ option.id }}"{% if option.id | string == server.bundle_id %} selected{% endif %}>{{ option.name }} ({{ option.version }})</option>
-            {% endfor %}
-          </select>
-          {{ ui.button("Guardar", type="submit", small=True, disabled_reason=reason) }}
-        </form>
-        {% if not server.bundle_id %}{% include "servers/_new_modpack.html" %}{% endif %}
-      </div>
-      {% endcall %}
+      {% if server.bundle_id %}{{ modpack_section }}{% endif %}
 
       {% call ui.section("Último escaneo", id="escaneo") %}
       <div class="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">

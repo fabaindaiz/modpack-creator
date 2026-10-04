@@ -561,14 +561,35 @@ def test_refresh_updates_from_the_panel_with_the_actor() -> None:
 def test_link_bundle() -> None:
     client, fakes = setup(OPERATOR)
     response = client.put(f"/servers/{SERVER_ID}/bundle", headers=HTMX, data={"bundle_id": str(BUNDLE_ID)})
-    assert response.status_code == 200 and response.headers["HX-Redirect"] == f"/servers/{SERVER_ID}"
+    assert response.status_code == 200 and response.headers["HX-Redirect"] == f"/servers/{SERVER_ID}?vinculado=1"
     assert only(fakes.ptero.calls, "server_link_bundle")[1:] == (str(SERVER_ID), str(BUNDLE_ID), OPERATOR)
 
 
 def test_unlink_bundle_with_an_empty_choice() -> None:
     client, fakes = setup(OPERATOR)
-    client.put(f"/servers/{SERVER_ID}/bundle", headers=HTMX, data={"bundle_id": ""})
+    response = client.put(f"/servers/{SERVER_ID}/bundle", headers=HTMX, data={"bundle_id": ""})
     assert only(fakes.ptero.calls, "server_link_bundle")[2] is None
+    assert response.headers["HX-Redirect"] == f"/servers/{SERVER_ID}?desvinculado=1"
+
+
+def notices_of(text: str) -> str:
+    return text.split('id="notices"')[1].split("<main")[0]
+
+
+@pytest.mark.parametrize("query,message", [("vinculado=1", "Modpack vinculado"),
+                                           ("desvinculado=1", "Servidor desvinculado")])
+def test_the_page_after_linking_says_so_and_closes_it_by_itself(query: str, message: str) -> None:
+    client, _ = setup(OPERATOR)
+    text = client.get(f"/servers/{SERVER_ID}?{query}").text
+    corner = notices_of(text)
+    assert message in corner and "data-notice-autoclose" in corner
+
+
+@pytest.mark.parametrize("query", ["", "vinculado=0", "vinculado=%3Cscript%3E", "aviso=Modpack+vinculado"])
+def test_the_link_notice_is_a_fixed_text_never_the_query(query: str) -> None:
+    client, _ = setup(OPERATOR)
+    text = client.get(f"/servers/{SERVER_ID}?{query}").text
+    assert "data-notice-autoclose" not in notices_of(text) and "<script>" not in text
 
 
 def test_import_shows_added_local_too_large_and_candidates() -> None:
@@ -1221,6 +1242,82 @@ def test_a_failed_import_says_so_and_offers_importing_again() -> None:
     assert response.status_code == 200
     assert "la importación falló" in response.text
     assert f'hx-post="/servers/{SERVER_ID}/import"' in response.text
+    corner = response.text.split('id="notices" hx-swap-oob="beforeend"')[1]
+    assert 'data-notice-tone="success"' not in corner and 'data-notice-tone="warning"' in corner
+    assert "la importación falló" in corner
+
+
+def link_form(text: str) -> str:
+    tag = re.search(r'<form [^>]*id="link-bundle-form"[^>]*>', text)
+    assert tag, "no #link-bundle-form"
+    return text[tag.start():text.index("</form>", tag.start())]
+
+
+def test_creating_and_linking_updates_the_link_selector_out_of_band() -> None:
+    """The answer replaces only the form it came from: the selector above it would still say "Sin
+    modpack" (and saving it would unlink), so it comes redrawn out of band, with the new pack."""
+    client, fakes = setup(OPERATOR)
+    unlinked(fakes)
+
+    async def with_the_new_one() -> list[ModpackBundle]:
+        return [bundle(), new_bundle()]
+
+    fakes.modpack.bundle_find = with_the_new_one  # type: ignore[method-assign]
+    text = client.post(f"/servers/{SERVER_ID}/modpack", headers=HTMX, data=NEW_MODPACK).text
+    form = link_form(text)
+    box = text[text.index('<div id="modpack-link"'):]
+    assert 'hx-swap-oob="true"' in box.split(">")[0] and "Sin modpack." not in text_of(box.split("<form")[0])
+    assert re.search(rf'<option value="{NEW_BUNDLE_ID}" selected>', form)
+    assert not re.search(r'<option value="" selected>', form)
+    assert 'id="server-main"' not in text  # the import candidates stay on the page
+
+
+@pytest.mark.network
+def test_an_editor_creating_one_sees_it_in_the_selector_unselected(mongo: MongoRunner) -> None:
+    client, fakes = setup(EDITOR)
+    unlinked(fakes)
+
+    async def with_the_new_one() -> list[ModpackBundle]:
+        return [bundle(), new_bundle()]
+
+    fakes.modpack.bundle_find = with_the_new_one  # type: ignore[method-assign]
+
+    async def scenario() -> Any:  # init_beanie: crear el Document exige la base inicializada
+        return client.post(f"/servers/{SERVER_ID}/modpack/borrador", headers=HTMX, data=NEW_MODPACK)
+
+    form = link_form(mongo(scenario).text)
+    assert re.search(rf'<option value="{NEW_BUNDLE_ID}">', form) and re.search(r'<option value="" selected>', form)
+
+
+def test_the_detail_keeps_the_link_form() -> None:
+    client, _ = setup(OPERATOR)
+    form = link_form(client.get(f"/servers/{SERVER_ID}").text)
+    assert f'hx-put="/servers/{SERVER_ID}/bundle"' in form and "hx-swap-oob" not in form
+    assert re.search(rf'<option value="{BUNDLE_ID}" selected>', form)
+
+
+def section_order(text: str) -> list[str]:
+    return [m for m in re.findall(r'<section class="space-y-2" id="([a-z]+)"', text)
+            if m in ("actualizar", "modpack", "escaneo", "importar")]
+
+
+def test_without_a_modpack_the_modpack_section_comes_first() -> None:
+    client, fakes = setup(OPERATOR)
+    unlinked(fakes)
+    assert section_order(client.get(f"/servers/{SERVER_ID}").text) == ["modpack", "actualizar", "escaneo", "importar"]
+
+
+def test_with_a_modpack_actualizar_comes_first() -> None:
+    client, _ = setup(OPERATOR)
+    assert section_order(client.get(f"/servers/{SERVER_ID}").text) == ["actualizar", "modpack", "escaneo", "importar"]
+
+
+def test_the_in_sync_status_does_not_close_itself() -> None:
+    client, fakes = setup()
+    fakes.ptero.comparison = Comparison(matching=[scan_file("/mods/sodium.jar", "P1")], different_version=[],
+                                        missing=[], extra=[], unknown=[])
+    compare = client.get(f"/servers/{SERVER_ID}").text.split('id="compare"')[1]
+    assert "El servidor coincide con el build" in compare and "data-notice-autoclose" not in compare
 
 
 def test_a_new_modpack_needs_a_name_and_a_known_loader() -> None:

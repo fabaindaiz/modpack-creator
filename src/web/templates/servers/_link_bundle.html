@@ -1,0 +1,31 @@
+{#
+  The server's modpack and the form to link it to another one, or unlink it. Part of the Modpack
+  section of servers/detail.html. After "Nuevo modpack para este servidor" it comes again out of
+  band (`oob`), so it never says "Sin modpack" for a server just linked (saving that would unlink
+  it) and lists the pack just created.
+  Needs: linked (the bundle linked, or None), linked_id (the server's bundle_id), build_number,
+  bundles, server_id, actor, oob.
+#}
+{% import "_macros.html" as ui %}
+{% set FIELD = "block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm text-zinc-900 shadow-xs ring-1 ring-inset ring-zinc-300 placeholder:text-zinc-400 focus-visible:outline-2 focus-visible:outline-emerald-600 disabled:opacity-50 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-700" %}
+<div id="modpack-link" class="space-y-3"{% if oob %} hx-swap-oob="true"{% endif %}>
+  {% if linked %}
+  <p><a href="/modpacks/{{ linked.id }}" class="font-medium hover:underline">{{ linked.name }}</a>
+    <span class="text-zinc-500 dark:text-zinc-400">{{ linked.version }} · {{ linked.loader.value }}</span></p>
+  <p class="text-zinc-600 dark:text-zinc-400">Build comparado: {% if build_number is not none %}<span class="tabular-nums">#{{ build_number }}</span>{% else %}ninguno{% endif %}</p>
+  {% elif linked_id %}
+  <p class="text-zinc-500 dark:text-zinc-400">Modpack desconocido.</p>
+  {% else %}
+  <p class="text-zinc-500 dark:text-zinc-400">Sin modpack.</p>
+  {% endif %}
+  <form id="link-bundle-form" class="space-y-2"{% if actor.is_operator %} hx-put="/servers/{{ server_id }}/bundle"{% endif %}>
+    <label for="link-bundle" class="font-medium">Vincular a un modpack</label>
+    <select id="link-bundle" name="bundle_id" class="{{ FIELD }}"{% if not actor.is_operator %} disabled{% endif %}>
+      <option value=""{% if not linked_id %} selected{% endif %}>Sin modpack</option>
+      {% for option in bundles %}
+      <option value="{{ option.id }}"{% if option.id | string == linked_id %} selected{% endif %}>{{ option.name }} ({{ option.version }})</option>
+      {% endfor %}
+    </select>
+    {{ ui.button("Guardar", type="submit", small=True, disabled_reason=None if actor.is_operator else "requiere operador") }}
+  </form>
+</div>

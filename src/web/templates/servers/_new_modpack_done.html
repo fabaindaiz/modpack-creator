@@ -1,7 +1,7 @@
 {#
   The answer to "Nuevo modpack para este servidor": it replaces the form. `outcome` is what an
   operator's create, link and import did; None when an editor only created the bundle.
-  Needs: server_id, bundle, outcome, titles.
+  Needs: server_id, bundle, outcome, titles, bundles (for the link selector, redrawn out of band).
 #}
 {% import "_macros.html" as ui %}
 <div id="new-modpack" class="space-y-3 border-t border-zinc-200 pt-3 dark:border-zinc-800">
@@ -20,4 +20,10 @@
   {% endif %}
   <div>{{ ui.next_step("Resolver y crear build", "/modpacks/" ~ bundle.id) }}</div>
 </div>
-<div id="notices" hx-swap-oob="beforeend">{{ ui.success("Modpack creado y vinculado." if outcome else "Modpack creado.") }}</div>
+<div id="notices" hx-swap-oob="beforeend">
+  {%- if outcome and outcome.import_error %}{{ ui.notice("Modpack creado y vinculado, pero la importación falló: puedes importar de nuevo.", "warning") }}
+  {%- else %}{{ ui.success("Modpack creado y vinculado." if outcome else "Modpack creado.") }}{% endif -%}
+</div>
+{% with linked=(bundle if outcome else None), linked_id=((bundle.id | string) if outcome else None), build_number=None, oob=True %}
+{% include "servers/_link_bundle.html" %}
+{% endwith %}

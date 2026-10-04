@@ -1,5 +1,5 @@
 import logging
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Optional
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -25,9 +25,14 @@ NEW_MODPACK_FIELDS_MESSAGE = "Escribe el nombre del modpack y su versión de Min
 STALE_B_MESSAGE = ("La reversión con A ya terminó; vuelve a cargar la página para confirmar B con el nombre "
                    "del servidor.")
 
-def _back(request: Request, server_id: str) -> Response:
-    """Go to the server's page: htmx cannot follow a redirect to a page, it is told where to go."""
-    url = f"/servers/{server_id}"
+# The success the server's page says after a redirect, by its fixed query flag (`?vinculado=1`):
+# the page shows these texts, never anything taken from the query.
+LINK_NOTICES = {"vinculado": "Modpack vinculado", "desvinculado": "Servidor desvinculado"}
+
+def _back(request: Request, server_id: str, notice: Optional[str] = None) -> Response:
+    """Go to the server's page: htmx cannot follow a redirect to a page, it is told where to go.
+    `notice` is a key of LINK_NOTICES, for the page to say what was done."""
+    url = f"/servers/{server_id}" + (f"?{notice}=1" if notice in LINK_NOTICES else "")
     if request.headers.get("HX-Request"):
         return Response(status_code=200, headers={"HX-Redirect": url})
     return RedirectResponse(url, status_code=303)
@@ -153,10 +158,12 @@ async def server_detail(
     builds = sorted(await modpackService.build_find(str(bundle.id)), key=lambda b: b.number, reverse=True) \
         if bundle is not None else []
     deduction = await pterodactylService.deduction(server_id) if server.bundle_id is None else None
+    link_notice = next((text for flag, text in LINK_NOTICES.items() if request.query_params.get(flag) == "1"), None)
     return render(request, "servers/detail.html", actor, server=server, server_id=server_id, bundles=bundles,
                   bundle=bundle, scan=scan, comparison=comparison, compare_note=compare_note, titles=titles,
                   versions=versions, to_import=to_import, installed_build=installed_build, active_job=active,
-                  rollback=rollback, build_number=build_number, builds=builds, deduction=deduction, loaders=[l.value for l in MinecraftLoaders], nav_active="servers")
+                  rollback=rollback, build_number=build_number, builds=builds, deduction=deduction,
+                  loaders=[l.value for l in MinecraftLoaders], link_notice=link_notice, nav_active="servers")
 
 @router.post("/servers/{server_id}/refresh")
 @inject
@@ -192,9 +199,10 @@ async def server_bundle(
         actor: Actor = Depends(get_web_actor),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
         ):
-    """Link the server to the bundle it runs, or unlink it (empty). Operators only."""
+    """Link the server to the bundle it runs, or unlink it (empty), and go back to its page, which
+    says which one was done. Operators only."""
     await pterodactylService.server_link_bundle(server_id, bundle_id or None, actor)
-    return _back(request, server_id)
+    return _back(request, server_id, "vinculado" if bundle_id else "desvinculado")
 
 def _new_modpack_fields(name: str, version: str) -> tuple[str, str]:
     name, version = name.strip(), version.strip()
@@ -214,15 +222,17 @@ async def server_new_modpack(
         actor: Actor = Depends(get_web_actor),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
         modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         ):
     """A new bundle for a server without one (panel usability §2), created, linked and, if asked,
     with the server imported, in one step. Operators only: the service refuses an editor, whose
-    form posts to the draft route instead."""
+    form posts to the draft route instead. The link selector comes redrawn out of band, with the
+    new bundle chosen; the rest of the page stays (it would drop the import's candidates)."""
     name, version = _new_modpack_fields(name, version)
     outcome = await pterodactylService.bundle_for_server(server_id, name, version, loader, import_mods, actor)
     titles = await _import_titles(modrinthService, outcome.imported) if outcome.imported else {}
     return render(request, "servers/_new_modpack_done.html", actor, server_id=server_id,
-                  bundle=outcome.bundle, outcome=outcome, titles=titles)
+                  bundle=outcome.bundle, outcome=outcome, titles=titles, bundles=await modpackService.bundle_find())
 
 @router.post("/servers/{server_id}/modpack/borrador")
 @inject
@@ -237,7 +247,8 @@ async def server_new_modpack_draft(
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         ):
     """A new bundle for a server without one, only created: linking it and importing the server
-    need an operator, and this route has no way to ask for either."""
+    need an operator, and this route has no way to ask for either. The link selector comes redrawn
+    out of band with the new bundle listed, for an operator to choose later."""
     name, version = _new_modpack_fields(name, version)
     server: PterodactylServer = await pterodactylService.server_get(server_id)
     if server.bundle_id is not None:
@@ -245,7 +256,7 @@ async def server_new_modpack_draft(
     created = await modpackService.bundle_create(
         ModpackBundle(name=name, description="", version=version, loader=loader), actor)
     return render(request, "servers/_new_modpack_done.html", actor, server_id=server_id, bundle=created,
-                  outcome=None, titles={})
+                  outcome=None, titles={}, bundles=await modpackService.bundle_find())
 
 @router.post("/servers/{server_id}/import")
 @inject
