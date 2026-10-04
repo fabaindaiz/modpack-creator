@@ -5,8 +5,9 @@ from typing import Annotated, Any, Literal, Optional
 from urllib.parse import urlsplit
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Form, Query, Request
+from starlette.datastructures import FormData
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from src.exceptions import HTTP_422_UNPROCESSABLE_ENTITY, UpstreamError
+from src.exceptions import BuildBlocked, HTTP_422_UNPROCESSABLE_ENTITY, UpstreamError
 from src.dependences import Dependences, ModpackService, ModrinthService, PterodactylService, UpdateCheckService
 from src.model.modpack import ModpackBundle, ModpackBundleCreate, ModpackBundlePatch, ProjectOrigin
 from src.model.modrinth.project import ModrinthEnvironment
@@ -143,10 +144,17 @@ def human_size(size: int) -> str:
 def _channels(request: Request, actor: Actor, bundle: ModpackBundle, bundle_id: str) -> Response:
     return render(request, "modpacks/_channels.html", actor, bundle_id=bundle_id, bundle=bundle, channel_names=CHANNELS)
 
-async def _builds(request: Request, actor: Actor, modpackService: ModpackService, bundle_id: str) -> Response:
+def _has_pending(saved: Optional[tuple[Any, bool]]) -> bool:
+    """Whether the current (not stale) saved resolution has mods left to decide."""
+    return saved is not None and not saved[1] and bool(saved[0].lock.undecided)
+
+async def _builds(request: Request, actor: Actor, modpackService: ModpackService, bundle_id: str,
+                  success: Optional[str] = None, next_servers: Optional[list[Any]] = None) -> Response:
     bundle = await modpackService.bundle_get(bundle_id)
     builds = await modpackService.build_find(bundle_id)
-    return render(request, "modpacks/_builds.html", actor, bundle_id=bundle_id, bundle=bundle, builds=builds)
+    pending = _has_pending(await modpackService.resolution(bundle_id))
+    return render(request, "modpacks/_builds.html", actor, bundle_id=bundle_id, bundle=bundle, builds=builds,
+                  pending=pending, success=success, next_servers=next_servers)
 
 async def _replacements(request: Request, actor: Actor, modpackService: ModpackService,
                         modrinthService: ModrinthService, fragment: bool) -> Response:
@@ -154,6 +162,23 @@ async def _replacements(request: Request, actor: Actor, modpackService: ModpackS
     titles = await _titles(modrinthService, [r.project_id for r in rules] + [r.replacement for r in rules if r.replacement])
     name = "modpacks/_replacements.html" if fragment else "modpacks/replacements.html"
     return render(request, name, actor, rules=rules, titles=titles, nav_active="modpacks")
+
+def _parse_decisions(form: FormData) -> dict[str, bool]:
+    """The `decision.<id>` = `si` | `no` fields of a form as {project id: on the server}. An empty
+    value is a mod left undecided and is skipped; any other value or id refuses the whole form."""
+    decisions: dict[str, bool] = {}
+    for field, value in form.items():
+        if not field.startswith(DECISION_PREFIX):
+            continue
+        project_id = field[len(DECISION_PREFIX):]
+        if not re.fullmatch(MODRINTH_REF, project_id) or len(project_id) > 200:
+            raise HTTP_422_UNPROCESSABLE_ENTITY("Una decisión nombra un mod que no es un id de Modrinth")
+        if value == "":
+            continue
+        if value not in ("si", "no"):
+            raise HTTP_422_UNPROCESSABLE_ENTITY("Cada decisión es «sí» o «no»")
+        decisions[project_id] = value == "si"
+    return decisions
 
 @router.get("/modpacks")
 @inject
@@ -199,7 +224,9 @@ async def modpack_detail(
     builds = await modpackService.build_find(bundle_id)
     linked = str(context["bundle"].id)
     servers = [s for s in await pterodactylService.server_find() if s.bundle_id == linked]
+    saved = context["mods"].resolution
     return render(request, "modpacks/detail.html", actor, builds=builds, servers=servers, channel_names=CHANNELS,
+                  pending=_has_pending((saved, context["mods"].stale) if saved else None),
                   human_size=human_size, nav_active="modpacks", **context)
 
 @router.get("/modpacks/{bundle_id}/search")
@@ -375,18 +402,7 @@ async def modpack_decide_bulk(
         ):
     """Save every decision of the form at once, then resolve again (as for one decision). Fields are `decision.<id>` = `si` | `no`; a mod left
     undecided sends an empty value and is skipped. Any other value or id refuses the whole form."""
-    decisions: dict[str, bool] = {}
-    for field, value in (await request.form()).items():
-        if not field.startswith(DECISION_PREFIX):
-            continue
-        project_id = field[len(DECISION_PREFIX):]
-        if not re.fullmatch(MODRINTH_REF, project_id) or len(project_id) > 200:
-            raise HTTP_422_UNPROCESSABLE_ENTITY("Una decisión nombra un mod que no es un id de Modrinth")
-        if value == "":
-            continue
-        if value not in ("si", "no"):
-            raise HTTP_422_UNPROCESSABLE_ENTITY("Cada decisión es «sí» o «no»")
-        decisions[project_id] = value == "si"
+    decisions = _parse_decisions(await request.form())
     if not decisions:
         raise HTTP_422_UNPROCESSABLE_ENTITY("Elige al menos una decisión")
     await modpackService.decisions_set(bundle_id, decisions, actor)
@@ -401,10 +417,32 @@ async def build_create(
         request: Request,
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
+        pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
         ):
-    """Freeze the lock as the next build; a 409 (undecided mods, problems) is shown as a notice."""
-    await modpackService.build_create(bundle_id, actor)
-    return await _builds(request, actor, modpackService, bundle_id)
+    """Freeze the lock as the next build. With `decision.<id>` fields (from the dialog) they are saved
+    first. Blocked by undecided mods, or blocked again after deciding, it answers the dialog into
+    #build-dialog (the reason inside once decisions were sent); blocked by problems without
+    decisions, or any other 409, is a notice."""
+    decisions = _parse_decisions(await request.form())
+    try:
+        if decisions:
+            await modpackService.decisions_set(bundle_id, decisions, actor)
+        build = await modpackService.build_create(bundle_id, actor)
+    except BuildBlocked as blocked:
+        if not (blocked.only_undecided or decisions):
+            raise
+        undecided = blocked.lock.undecided if blocked.only_undecided else []
+        titles = await _titles(modrinthService, [e.project_id for e in undecided])
+        response = render(request, "modpacks/_decide_dialog.html", actor, bundle_id=bundle_id, undecided=undecided,
+                          titles=titles, reason=str(blocked.detail) if decisions else None)
+        response.headers["HX-Retarget"] = "#build-dialog"
+        response.headers["HX-Reswap"] = "innerHTML"
+        return response
+    linked = str((await modpackService.bundle_get(bundle_id)).id)
+    servers = [s for s in await pterodactylService.server_find() if s.bundle_id == linked]
+    return await _builds(request, actor, modpackService, bundle_id, success=f"Build {build.number} creado",
+                         next_servers=servers)
 
 def _builds_page(request: Request, bundle_id: str) -> Response:
     """Go to the builds of the modpack: htmx cannot follow a redirect to a page, it is told where to go."""

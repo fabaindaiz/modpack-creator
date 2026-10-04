@@ -14,7 +14,7 @@ from beanie import PydanticObjectId
 from dependency_injector import providers
 from fastapi.testclient import TestClient
 
-from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT, UpstreamError
+from src.exceptions import BuildBlocked, HTTP_404_NOT_FOUND, HTTP_409_CONFLICT, UpstreamError
 from src.library.resolution import Lock, LockEntry, Problem, Suggestion
 from src.library.scan import LocalFile
 from src.model.modpack import (AvailableUpdate, ModpackBuild, ModpackBundle, ModpackReplacement, ModpackResolution,
@@ -109,6 +109,7 @@ class FakeModpack:
         self.versions = [VersionOption("ver-new", "0.8.14", "release", datetime(2026, 10, 1, tzinfo=timezone.utc)),
                          VersionOption("ver-beta", "0.9.0-beta.1", "beta", datetime(2026, 10, 2, tzinfo=timezone.utc))]
         self.versions_error: Optional[Exception] = None
+        self.blocked: Optional[BuildBlocked] = None
 
     def _record(self, *call: Any) -> None:
         self.calls.append(call)
@@ -186,7 +187,12 @@ class FakeModpack:
 
     async def build_create(self, bundle_id: str, actor: Actor) -> ModpackBuild:
         self._record("build_create", bundle_id, actor)
+        if self.blocked is not None:
+            raise self.blocked
         return self.builds[0]
+
+    async def resolution(self, bundle_id: str) -> Optional[tuple[ModpackResolution, bool]]:
+        return (self.saved, self.stale) if self.saved else None
 
     async def build_find(self, bundle_id: str) -> list[ModpackBuild]:
         return self.builds
@@ -612,6 +618,93 @@ def test_build_conflict_shows_reason_as_notice() -> None:
     response = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX)
     assert response.status_code == 409 and "Mods sin decidir: x" in response.text
     assert 'data-notice' in response.text
+
+
+def undecided_block(*ids: str, only: bool = True, detail: str = "Mods sin decidir") -> BuildBlocked:
+    return BuildBlocked(detail, lock(*(entry(i, "admin") for i in ids)), only)
+
+
+def test_blocked_by_undecided_answers_a_dialog_with_titles() -> None:
+    client, modpack, _ = setup()
+    modpack.blocked = undecided_block("P2")
+    response = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX)
+    assert response.status_code == 200
+    assert response.headers["HX-Retarget"] == "#build-dialog" and response.headers["HX-Reswap"] == "innerHTML"
+    text = response.text
+    assert "<dialog" in text and " open" in text.split("<dialog")[1].split(">")[0]
+    assert "Lithium" in text and 'name="decision.P2"' in text and "Decidir y crear build" in text
+    assert "data-dialog-close" in text
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/builds"' in text
+    assert [c[0] for c in modpack.calls] == ["build_create"]
+
+
+def test_detail_has_the_dialog_container() -> None:
+    client, _, _ = setup()
+    assert 'id="build-dialog"' in client.get(f"/modpacks/{BUNDLE_ID}").text
+
+
+def test_dialog_submit_saves_decisions_then_builds() -> None:
+    client, modpack, _ = setup()
+    response = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX, data={"decision.P2": "si", "decision.P3": ""})
+    assert response.status_code == 200 and 'id="builds"' in response.text and "HX-Retarget" not in response.headers
+    assert [c[0] for c in modpack.calls] == ["decisions_set", "build_create"]
+    assert call(modpack, "decisions_set")[1:] == (str(BUNDLE_ID), {"P2": True}, EDITOR)
+
+
+def test_dialog_submit_with_bad_decisions_is_refused_before_saving() -> None:
+    client, modpack, _ = setup()
+    response = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX, data={"decision.P2": "quizá"})
+    assert response.status_code == 422 and modpack.calls == []
+
+
+def test_still_blocked_after_deciding_shows_the_reason_inside_the_dialog() -> None:
+    client, modpack, _ = setup()
+    modpack.blocked = undecided_block("P3", detail="Mods sin decidir: Otro")
+    modpack.titles["P3"] = "Otro"
+    response = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX, data={"decision.P2": "si"})
+    assert response.status_code == 200 and response.headers["HX-Retarget"] == "#build-dialog"
+    assert "Mods sin decidir: Otro" in response.text and 'name="decision.P3"' in response.text
+
+
+def test_blocked_by_problems_after_deciding_shows_the_reason_inside_the_dialog() -> None:
+    client, modpack, _ = setup()
+    modpack.blocked = undecided_block(only=False, detail="Problemas: no hay versión")
+    response = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX, data={"decision.P2": "si"})
+    assert response.status_code == 200 and "Problemas: no hay versión" in response.text
+    assert response.headers["HX-Retarget"] == "#build-dialog" and "Decidir y crear build" not in response.text
+
+
+def test_blocked_by_problems_is_a_notice_not_a_dialog() -> None:
+    client, modpack, _ = setup()
+    modpack.blocked = undecided_block(only=False, detail="Problemas: no hay versión")
+    response = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX)
+    assert response.status_code == 409 and "Problemas: no hay versión" in response.text
+    assert "<dialog" not in response.text and "data-notice" in response.text
+
+
+def test_the_update_page_build_keeps_the_notice_on_undecided() -> None:
+    client, modpack, _ = setup()
+    modpack.blocked = undecided_block("P2")
+    response = client.post(f"/modpacks/{BUNDLE_ID}/actualizaciones/build", headers=HTMX)
+    assert response.status_code == 409 and "<dialog" not in response.text
+
+
+def test_the_build_button_says_decide_when_the_saved_resolution_has_pending() -> None:
+    client, modpack, _ = setup()
+    modpack.saved = resolution(lock(entry("P2", "admin")))
+    assert "Decidir y crear build…" in client.get(f"/modpacks/{BUNDLE_ID}").text
+    modpack.saved = resolution(lock(entry("P1")))
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert "Decidir y crear build…" not in text and ">Crear build<" in text
+
+
+def test_a_new_build_offers_simulating_on_linked_servers() -> None:
+    client, modpack, _, _, ptero = setup_all()
+    ptero.servers = [PterodactylServer.model_construct(id="srv1", name="Survival", bundle_id=str(BUNDLE_ID)),
+                     PterodactylServer.model_construct(id="srv2", name="Otro", bundle_id="x")]
+    text = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX).text
+    assert 'id="notices" hx-swap-oob="beforeend"' in text and "Build 2 creado" in text
+    assert "Simular en Survival" in text and 'href="/servers/srv1#actualizar"' in text and "Otro" not in text
 
 
 def test_recommend_build_with_the_actor() -> None:
