@@ -762,7 +762,21 @@ sesión. Cualquier cuenta del proveedor opera los servidores de Pterodactyl.
 
 ## Proceso y herramientas
 
-Fricción vista al menos dos veces, con su costo. Vacío por ahora.
+Fricción vista al menos dos veces, con su costo.
+
+### Un deny global sobre la plantilla de configuración deja el gate en rojo — Planeada · i-7985ee-a900ec
+- **Qué pasa:** el deny de `~/.claude/settings.json` sobre `./.env.*` (pensado para `.env.yaml`)
+  también tapa `.env.default`, y el audit `env_template` exige que toda variable obligatoria esté
+  en esa plantilla. Cada cambio que suma una variable obligatoria deja el gate (y CI) en rojo
+  hasta que el dueño edita la plantilla a mano: del 2026-10-02 al 2026-10-04 con
+  `OIDC_OPERATOR_GROUPS`. Los agentes, como manda d-7985ee-794d11, no lo rodearon.
+- **Lo que cuesta:** un CI rojo que no dice nada nuevo durante días, y el riesgo de dejar de
+  mirarlo (cualquier otro fallo queda tapado por el que ya se conoce).
+- **Opciones, del dueño:** (a) un `allow` de lectura y edición de `./.env.default` en
+  `.claude/settings.json` del proyecto, si el deny global lo permite, o un deny global más
+  angosto (`./.env.yaml`); (b) dejarlo así y que el mensaje de `env_template` diga que la línea
+  la agrega el dueño. **Chequeo:** pedirle a un agente que lea `.env.default`.
+- Propuesto al bundle, en general, como `a-deny-for-secrets-catches-their-template`.
 
 ## Cerradas por medición
 
