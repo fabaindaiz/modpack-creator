@@ -1,6 +1,7 @@
 import logging
 from typing import Optional
 from fastapi import HTTPException, status
+from src.library.resolution import Lock
 
 logger = logging.getLogger("ExceptionsLogger")
 
@@ -38,6 +39,15 @@ class HTTP_409_CONFLICT(HTTPException):
     """Used when the request conflicts with the current state of the resource"""
     def __init__(self, detail: Optional[str] = None):
         super().__init__(status.HTTP_409_CONFLICT, detail)
+
+class BuildBlocked(HTTP_409_CONFLICT):
+    """A build refused because its lock is not ready. Carries the fresh `lock`, and whether the only
+    thing missing is the admin's decision on some mods (`only_undecided`), so the panel can show
+    them to decide instead of an error."""
+    def __init__(self, detail: str, lock: Lock, only_undecided: bool):
+        super().__init__(detail)
+        self.lock = lock
+        self.only_undecided = only_undecided
 
 class HTTP_422_UNPROCESSABLE_ENTITY(HTTPException):
     """Used when a value is well formed as a request but not acceptable"""

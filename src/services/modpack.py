@@ -10,8 +10,8 @@ from src.library.api.client.modrinth import ModrinthAPI
 from src.library.changes import ChangeSet, diff_entries
 from src.library.mrpack import mrpack_index, write_mrpack
 from src.services.jobs import NotificationSink
-from src.library.resolution import Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, resolve
-from src.model.modpack import AvailableUpdate, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, PackProject, ProjectOrigin
+from src.library.resolution import Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, request_digest, resolve
+from src.model.modpack import AvailableUpdate, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject, ModrinthVersion
 from src.model.audit import AuditTarget
 from src.model.users import Actor
@@ -210,13 +210,36 @@ class ModpackService():
         """
         Resolve a bundle into a lock, fetching from Modrinth what it needs.
 
-        The lock is computed, not stored: build_create freezes it. Every project and version
-        fetched is stored in the catalog.
+        The latest resolution is saved to show it, never as the input of a build: build_create
+        resolves again and freezes that lock. Every project and version fetched is stored in the
+        catalog.
 
         :param bundle_id: The ID of the bundle.
         :return: The lock; `complete` is False only if the dependency chain ran past RESOLVE_ROUNDS.
         """
-        return await self._resolve(await self._request(await self.modpackDB.bundle_get(bundle_id)))
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        request = await self._request(bundle)
+        lock = await self._resolve(request)
+        await self._resolution_save(bundle, request, lock)
+        return lock
+
+    async def resolution(self, bundle_id: str) -> Optional[tuple[ModpackResolution, bool]]:
+        """
+        The bundle's latest saved resolution and whether it is stale, or None if there is none.
+
+        Stale: the bundle's request now has another digest than the one that produced it. For
+        display only: no build reads it.
+        """
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        saved = await self.modpackDB.resolution_get(bundle.id)  # type: ignore[arg-type]
+        if saved is None:
+            return None
+        return saved, saved.request_digest != request_digest(await self._request(bundle))
+
+    async def _resolution_save(self, bundle: ModpackBundle, request: ResolveRequest, lock: Lock) -> None:
+        await self.modpackDB.resolution_save(ModpackResolution(
+            bundle_id=bundle.id, resolved_at=datetime.now(timezone.utc),  # type: ignore[arg-type]
+            request_digest=request_digest(request), lock=lock))
 
     async def _request(self, bundle: ModpackBundle) -> ResolveRequest:
         global_rules = {r.project_id: r.replacement for r in await self.modpackDB.replacement_find()}
@@ -278,12 +301,14 @@ class ModpackService():
         bundle = await self.modpackDB.bundle_get(bundle_id)
         request = await self._request(bundle)
         lock = await self._resolve(request)
+        await self._resolution_save(bundle, request, lock)
         if not lock.complete or lock.problems or lock.undecided:
             reasons = [p.detail for p in lock.problems]
             reasons += [f"{e.project_id}: falta decidir si va en el servidor" for e in lock.undecided]
             if not lock.complete:
                 reasons.append("la resolución no terminó")
-            raise HTTP_409_CONFLICT("No se puede congelar este lock: " + "; ".join(reasons))
+            raise BuildBlocked("No se puede congelar este lock: " + "; ".join(reasons), lock,
+                               only_undecided=lock.complete and not lock.problems and bool(lock.undecided))
         loader_version = bundle.loader_version or await self.loaderAPI.loader_version(
             str(bundle.loader.value), bundle.version)
         builds = await self.modpackDB.build_find(bundle_id)

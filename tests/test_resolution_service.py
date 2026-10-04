@@ -78,3 +78,28 @@ def test_bundles_stored_before_resolution_fields_still_load(mongo: MongoRunner) 
         return stored.replacements, stored.pins, stored.channels, stored.projects
 
     assert mongo(scenario) == ({}, {}, ["release"], [])
+
+
+def test_resolve_stores_the_latest_resolution_with_its_digest(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Any, Any, Any]:
+        service, bundle_id = await bundle(RecordedModrinthAPI(), "iris")
+        before = await service.resolution(bundle_id)
+        lock = await service.resolve(bundle_id)
+        return before, lock, await service.resolution(bundle_id)
+
+    before, lock, after = mongo(scenario)
+    assert before is None
+    saved, stale = after
+    assert saved.lock == lock and stale is False
+
+
+def test_a_change_to_the_pack_makes_the_resolution_stale(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[bool, bool]:
+        service, bundle_id = await bundle(RecordedModrinthAPI(), "iris")
+        await service.resolve(bundle_id)
+        await service.pin_set(bundle_id, IRIS, "bAdKrpw8", EDITOR)
+        stale = (await service.resolution(bundle_id))[1]  # type: ignore[index]
+        await service.resolve(bundle_id)
+        return stale, (await service.resolution(bundle_id))[1]  # type: ignore[index]
+
+    assert mongo(scenario) == (True, False)

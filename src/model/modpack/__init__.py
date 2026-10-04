@@ -4,6 +4,7 @@ from src.model.modpack.project import (
     ModpackBundleCreate,
     ModpackBundlePatch,
     ModpackReplacement,
+    ModpackResolution,
     PackProject,
     ProjectOrigin,
 )
@@ -15,6 +16,7 @@ __all__ = [
     "ModpackBundleCreate",
     "ModpackBundlePatch",
     "ModpackReplacement",
+    "ModpackResolution",
     "PackProject",
     "ProjectOrigin",
     "AvailableUpdate",

@@ -10,6 +10,7 @@ import asyncio
 import io
 import json
 import zipfile
+from datetime import datetime, timezone
 from typing import Any, cast
 
 import pytest
@@ -17,9 +18,11 @@ from fastapi import HTTPException
 
 from src.database.modpack import ModpackDatabase
 from src.database.modrinth import ModrinthDatabase
+from src.exceptions import BuildBlocked
 from src.library.mrpack import validate_index
-from src.model.modpack import ModpackBundle, ModpackBundlePatch, ProjectOrigin
+from src.model.modpack import ModpackBundle, ModpackBundlePatch, ModpackResolution, ProjectOrigin
 from src.model.utils import MinecraftLoaders
+from src.library.resolution import request_digest
 from src.services.modpack import ModpackService
 from tests._actors import EDITOR, RecordingAudit
 from tests._modrinth import FABRIC_API, IRIS, SODIUM, RecordedModrinthAPI
@@ -170,6 +173,60 @@ def test_a_lock_with_problems_is_not_built(mongo: MongoRunner) -> None:
         return refused.value.status_code, await service.build_find(bundle_id)
 
     assert mongo(scenario) == (409, [])
+
+
+def test_build_create_resolves_again_and_never_reads_the_saved_lock(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Any, Any, Any]:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        fresh = await service.resolve(bundle_id)
+        bundle = await service.modpackDB.bundle_get(bundle_id)
+        # A current resolution (same digest) whose lock holds nothing: a build must not use it.
+        await service.modpackDB.resolution_save(ModpackResolution(
+            bundle_id=bundle.id, resolved_at=datetime.now(timezone.utc),  # type: ignore[arg-type]
+            request_digest=request_digest(await service._request(bundle)), lock=fresh.model_copy(update={"entries": []})))
+        build = await service.build_create(bundle_id, actor=EDITOR)
+        return fresh, build, (await service.resolution(bundle_id))[0]  # type: ignore[index]
+
+    fresh, build, saved = mongo(scenario)
+    assert build.lock == fresh and build.lock.entries
+    assert saved.lock == build.lock
+
+
+def test_undecided_build_raises_build_blocked_still_a_409(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[int, bool, list[str], str, Any]:
+        api = RecordedModrinthAPI()
+        for version in api.versions:
+            if version["project_id"] == IRIS:
+                version["environment"] = "client_or_server"
+        service = ModpackService(modpackDB=ModpackDatabase(), modrinthDB=ModrinthDatabase(), modrinthAPI=cast(Any, api),
+                                 loaderAPI=cast(Any, FakeLoaders()), audit=RecordingAudit())
+        created = await service.bundle_create(ModpackBundle(
+            name="pack", description="", version="26.3", loader=MinecraftLoaders.fabric), actor=EDITOR)
+        bundle_id = str(created.id)
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        with pytest.raises(BuildBlocked) as caught:
+            await service.build_create(bundle_id, actor=EDITOR)
+        error = caught.value
+        saved = (await service.resolution(bundle_id))[0]  # type: ignore[index]
+        assert saved.lock == error.lock and await service.build_find(bundle_id) == []
+        return (error.status_code, error.only_undecided, [e.project_id for e in error.lock.undecided],
+                error.detail, saved.lock)
+
+    status, only_undecided, undecided, detail, _ = mongo(scenario)
+    assert status == 409 and only_undecided and undecided == [IRIS]
+    assert detail == f"No se puede congelar este lock: {IRIS}: falta decidir si va en el servidor"
+
+
+def test_a_lock_with_problems_is_blocked_but_not_only_undecided(mongo: MongoRunner) -> None:
+    async def scenario() -> bool:
+        service, bundle_id = await empty_bundle(pins={IRIS: "no-such-version"})
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        with pytest.raises(BuildBlocked) as caught:
+            await service.build_create(bundle_id, actor=EDITOR)
+        return caught.value.only_undecided
+
+    assert mongo(scenario) is False
 
 
 def test_two_builds_created_at_once_get_different_numbers(mongo: MongoRunner) -> None:

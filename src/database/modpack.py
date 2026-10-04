@@ -9,6 +9,7 @@ from src.model.modpack import (
     ModpackBundle,
     ModpackBundlePatch,
     ModpackReplacement,
+    ModpackResolution,
     PackProject,
     ProjectOrigin,
 )
@@ -207,6 +208,17 @@ class ModpackDatabase():
             return await ModpackBuild.insert(build)
         except DuplicateKeyError as error:
             raise HTTP_409_CONFLICT(f"Build {build.number} was just created by another request; try again") from error
+
+    async def resolution_save(self, resolution: ModpackResolution) -> None:
+        """Keep `resolution` as its bundle's latest, replacing the one there was (upsert by bundle)."""
+        await ModpackResolution.find_one(ModpackResolution.bundle_id == resolution.bundle_id).upsert(
+            {"$set": {"resolved_at": resolution.resolved_at, "request_digest": resolution.request_digest,
+                      "lock": resolution.lock.model_dump(mode="json")}},
+            on_insert=resolution)
+
+    async def resolution_get(self, bundle_id: PydanticObjectId) -> Optional[ModpackResolution]:
+        """A bundle's latest resolution; None if it was never resolved."""
+        return await ModpackResolution.find_one(ModpackResolution.bundle_id == bundle_id)
 
     @staticmethod
     def _bundle_oid(bundle_id: str) -> PydanticObjectId:

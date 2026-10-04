@@ -76,7 +76,7 @@ los dos, o una fila mal formada, hace fallar el test. El nombre del método no s
 | `ModpackService.project_add` | editor | Agrega mods al bundle. |
 | `ModpackService.pack_replace` | editor | Reemplaza la lista de mods del bundle. |
 | `ModpackService.project_remove` | editor | Quita un mod del bundle. |
-| `ModpackService.resolve` | editor | Calcula el lock del bundle sin guardarlo (lo congela `build_create`); solo guarda en el catálogo lo que trajo de Modrinth. No toca ningún servidor. |
+| `ModpackService.resolve` | editor | Calcula el lock del bundle y guarda la última resolución para mostrarla (nunca es entrada de un build); guarda en el catálogo lo que trajo de Modrinth. No toca ningún servidor. |
 | `ModpackService.build_create` | editor | Crea un build del bundle. |
 | `ModpackService.build_recommend` | editor | Marca un build como el recomendado. |
 | `ModpackService.replacement_set` | editor | Fija el reemplazo de un mod. |

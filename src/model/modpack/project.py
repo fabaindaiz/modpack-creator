@@ -95,6 +95,15 @@ class ModpackBuild(Document):
         # Two builds created at once cannot share a number: the second insert fails.
         indexes = [IndexModel([("bundle_id", ASCENDING), ("number", ASCENDING)], unique=True)]
 
+class ModpackResolution(Document):
+    """The latest resolution of a bundle, kept only to show it (spec §3): never the input of a
+    build, which always resolves again. `request_digest` says which request produced it, so the
+    page can tell when the pack has changed since."""
+    bundle_id: Annotated[PydanticObjectId, Indexed(unique=True)]
+    resolved_at: datetime
+    request_digest: str
+    lock: Lock
+
 class ModpackReplacement(Document):
     """A global replacement rule (d-7985ee-86fffa): wherever a dependency asks for project_id,
     use `replacement` instead, or nothing if it is None."""

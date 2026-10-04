@@ -230,15 +230,40 @@ def test_a_user_read_after_a_change_is_the_changed_user(mongo: MongoRunner) -> N
     assert mongo(scenario) == "After"
 
 
+def test_a_resolution_is_kept_once_per_bundle_and_replaced(mongo: MongoRunner) -> None:
+    from beanie import PydanticObjectId
+    from src.database.modpack import ModpackDatabase
+    from src.library.resolution import Lock
+    from src.model.modpack import ModpackResolution
+
+    def resolution(bundle_id: PydanticObjectId, digest: str) -> ModpackResolution:
+        return ModpackResolution(bundle_id=bundle_id, resolved_at=datetime.now(timezone.utc), request_digest=digest,
+                                 lock=Lock(entries=[], problems=[], suggestions=[], needs_projects=set(),
+                                      needs_types=set(), needs_versions=set()))
+
+    async def scenario() -> tuple[Any, list[str], int, Any]:
+        database = ModpackDatabase()
+        one, other = PydanticObjectId(), PydanticObjectId()
+        missing = await database.resolution_get(one)
+        await database.resolution_save(resolution(one, "a"))
+        await database.resolution_save(resolution(one, "b"))
+        await database.resolution_save(resolution(other, "c"))
+        got = await database.resolution_get(one)
+        return missing, [got.request_digest if got else ""], await ModpackResolution.count(), None
+
+    missing, digests, count, _ = mongo(scenario)
+    assert missing is None and digests == ["b"] and count == 2
+
+
 def test_every_collection_is_named_after_its_class(mongo: MongoRunner) -> None:
     """Las colecciones de producción se llaman como la clase (i-7985ee-c1de10): Beanie 2 ignora
     `Settings.collection`. Un `name` nuevo en un modelo dejaría sus datos huérfanos sin migrar."""
     from beanie import Document
-    from src.model.modpack import ModpackBuild, ModpackBundle, ModpackReplacement
+    from src.model.modpack import ModpackBuild, ModpackBundle, ModpackReplacement, ModpackResolution
     from src.model.pterodactyl import PterodactylInstance, ServerScan
 
     async def scenario() -> dict[str, str]:
-        models: list[type[Document]] = [ModpackBundle, ModpackBuild, ModpackReplacement, ModrinthProject,
+        models: list[type[Document]] = [ModpackBundle, ModpackBuild, ModpackReplacement, ModpackResolution, ModrinthProject,
                                         ModrinthVersion, PterodactylInstance, PterodactylServer, ServerScan,
                                         UsersInternal]
         return {m.__name__: m.get_collection_name() for m in models}
