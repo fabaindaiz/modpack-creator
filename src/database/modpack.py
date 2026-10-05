@@ -5,6 +5,8 @@ from typing import Iterable, Optional
 from pymongo.errors import DuplicateKeyError
 from src.library.scan import ClaimedFile, LocalFile
 from src.model.modpack import (
+    BUNDLE_KEYED_FIELDS,
+    BUNDLE_NULL_REMOVES,
     ModpackBuild,
     ModpackBundle,
     ModpackBundlePatch,
@@ -47,14 +49,44 @@ class ModpackDatabase():
     
     async def bundle_update(self, bundle_id: str, patch: ModpackBundlePatch) -> ModpackBundle:
         """
-        Update an existing modpack bundle.
-        
+        Update an existing modpack bundle in one update: the fields sent are set, and the maps
+        (pins, replacements, server_decisions) only at the keys sent, so a pin sent leaves the
+        others alone. A null removes a pin or a decision. Every key must be a plain Modrinth id
+        (the caller checks them): it becomes a key of a dotted path.
+
         :param bundle_id: The ID of the bundle to update.
         :param patch: The patch containing the updated fields.
         :return: The updated ModpackBundle object.
         """
-        document = await self.bundle_get(bundle_id)
-        return await document.set(patch.model_dump(exclude_unset=True))
+        to_set: dict[str, object] = {}
+        to_unset: dict[str, str] = {}
+        for name, value in patch.model_dump(exclude_unset=True, mode="json").items():
+            if name not in BUNDLE_KEYED_FIELDS:
+                to_set[name] = value
+                continue
+            for key, item in value.items():
+                if item is None and name in BUNDLE_NULL_REMOVES:
+                    to_unset[f"{name}.{key}"] = ""
+                else:
+                    to_set[f"{name}.{key}"] = item
+        update = {op: fields for op, fields in (("$set", to_set), ("$unset", to_unset)) if fields}
+        if update:
+            result = await ModpackBundle.get_pymongo_collection().update_one(
+                {"_id": self._bundle_oid(bundle_id)}, update)
+            if not result.matched_count:
+                raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' not found")
+        return await self.bundle_get(bundle_id)
+
+    async def bundle_replacement_unset(self, bundle_id: str, project_id: str) -> ModpackBundle:
+        """Remove the pack's own rule for one mod, touching only that key. `project_id` must be a
+        plain Modrinth id. 404 if the bundle or that rule does not exist."""
+        result = await ModpackBundle.get_pymongo_collection().update_one(
+            {"_id": self._bundle_oid(bundle_id), f"replacements.{project_id}": {"$exists": True}},
+            {"$unset": {f"replacements.{project_id}": ""}})
+        if not result.matched_count:
+            await self.bundle_get(bundle_id)
+            raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' has no rule for '{project_id}'")
+        return await self.bundle_get(bundle_id)
 
     async def bundle_insert(self, bundle: ModpackBundle) -> ModpackBundle:
         """

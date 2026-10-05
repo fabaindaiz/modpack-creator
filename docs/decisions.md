@@ -69,7 +69,8 @@ los dos, o una fila mal formada, hace fallar el test. El nombre del método no s
 | `PterodactylService.import_local` | operador | Registra un archivo local del servidor como parte del bundle. |
 | `PterodactylService.bundle_for_server` | operador | Crea un bundle para un servidor sin bundle, lo vincula y, si se pide, importa el servidor; si la importación falla, el bundle queda creado y vinculado (solo lee el panel). |
 | `ModpackService.bundle_create` | editor | Crea un bundle. |
-| `ModpackService.bundle_update` | editor | Cambia los datos de un bundle. |
+| `ModpackService.bundle_update` | editor | Cambia los datos de un bundle; los pins, reemplazos y decisiones, solo en las claves que manda. |
+| `ModpackService.bundle_replacement_delete` | editor | Borra la regla de reemplazo propia de un bundle para un mod. |
 | `ModpackService.decision_set` | editor | Decide si un mod va en el servidor o solo en el cliente. |
 | `ModpackService.decisions_set` | editor | Decide varios mods a la vez, en una sola escritura atómica. |
 | `ModpackService.pin_set` | editor | Fija un mod a una versión que es de ese proyecto. |

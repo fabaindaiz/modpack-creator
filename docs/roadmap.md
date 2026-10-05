@@ -80,10 +80,12 @@ Al cierre de la sesión de usabilidad del panel (2026-10-04 y 2026-10-05; detall
     tablero, índices de auditoría por `target_id` y acción, un pin que sobrevive a quitar el
     proyecto);
   - subir producción a MongoDB 8.0, si no lo está (d-7985ee-83eb5b);
-  - **el PATCH de `/v1` de un bundle reemplaza enteros los mapas anidados** (`pins`,
-    `replacements`, `server_decisions`; `ModpackDatabase.bundle_update` → `Document.set`): mandar
-    un pin borra los demás (medido por la cosecha) y ningún test lo cubre. Arreglo: actualizar
-    por clave, como `pin_set` y `decision_set`, con su test;
+  - ~~**el PATCH de `/v1` de un bundle reemplaza enteros los mapas anidados**~~: hecho el
+    2026-10-05 en `release-1-prep`. Cada clave se escribe sola en un solo `update_one`; en `pins`
+    y `server_decisions` un `null` borra la clave; en `replacements` `null` sigue siendo "quitar el
+    mod" y la regla se borra con `DELETE /v1/modpack/{id}/replacement/{project_id}` (decisión del
+    dueño). También da 422 un `null` en un campo que el bundle necesita (antes lo guardaba y el
+    bundle dejaba de cargar) y una clave que no es un id de Modrinth. `tests/test_bundle_patch.py`;
   - el docstring de `src/library/scan.py` exagera el punto ciego de la caché (un restore con otra
     hora sí se nota; solo se pierde una edición con el mismo tamaño y la misma hora al
     milisegundo): corregir el texto, el código no cambia;

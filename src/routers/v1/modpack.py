@@ -50,6 +50,18 @@ async def bundle_update(
     response = await modpack.bundle_update(bundle_id=id, patch=bundle, actor=actor)
     return response
 
+@router.delete("/modpack/{id}/replacement/{project_id}", response_model=ModpackBundle)
+@inject
+async def bundle_replacement_delete(
+        id: str,
+        project_id: str,
+        modpack: ModpackService = Depends(Provide[Dependences.modpackService]),
+        actor: Actor = Depends(get_current_actor)
+        ):
+    """Remove the pack's own replacement rule for one mod; the global rule, if any, applies again.
+    In the PATCH, a null replacement means "drop the mod", not "remove the rule"."""
+    return await modpack.bundle_replacement_delete(bundle_id=id, project_id=project_id, actor=actor)
+
 @router.get("/modpack/{id}/project", response_model=list[PackProject])
 @inject
 async def project_find(

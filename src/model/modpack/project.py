@@ -40,9 +40,16 @@ class ModpackBundlePatch(BaseModel):
     loader: Optional[MinecraftLoaders] = None
     loader_version: Optional[str] = None
     channels: Optional[list[str]] = None
-    pins: Optional[dict[str, str]] = None
+    # The maps change key by key: a key left out stays. In pins and server_decisions a null value
+    # removes the key (RFC 7396); in replacements null keeps its meaning, "drop the mod", so a
+    # pack's rule is removed with its own route.
+    pins: Optional[dict[str, Optional[str]]] = None
     replacements: Optional[dict[str, Optional[str]]] = None
-    server_decisions: Optional[dict[str, bool]] = None
+    server_decisions: Optional[dict[str, Optional[bool]]] = None
+
+# The fields of ModpackBundlePatch written key by key, and those where a null value removes the key.
+BUNDLE_KEYED_FIELDS = ("pins", "replacements", "server_decisions")
+BUNDLE_NULL_REMOVES = ("pins", "server_decisions")
 
 class ModpackBundle(Document):
     """A modpack definition: what to resolve. What gets deployed is a build of it."""

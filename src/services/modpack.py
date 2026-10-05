@@ -12,7 +12,7 @@ from src.library.changes import ChangeSet, diff_entries
 from src.library.mrpack import mrpack_index, write_mrpack
 from src.services.jobs import NotificationSink
 from src.library.resolution import Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, request_digest, resolve
-from src.model.modpack import AvailableUpdate, UpdateCheck, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, ProjectOrigin
+from src.model.modpack import BUNDLE_KEYED_FIELDS, AvailableUpdate, UpdateCheck, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject, ModrinthVersion
 from src.model.modrinth.version import ModrinthDependencyType
 from src.model.pterodactyl import PterodactylServer
@@ -30,6 +30,8 @@ RESOLVE_ROUNDS = 32
 MODRINTH_ID = re.compile(r"[A-Za-z0-9_-]+")
 # One request decides at most this many mods: a bigger one is a mistake or abuse.
 MAX_DECISIONS = 500
+# Fields of a bundle that a patch may leave out but never set to null: the bundle would not load.
+BUNDLE_NOT_NULL = ("name", "description", "version", "loader", "channels", *BUNDLE_KEYED_FIELDS)
 
 def candidate(version: ModrinthVersion) -> Candidate:
     return Candidate.from_modrinth({**version.model_dump(mode="json"), "id": version.version_id})
@@ -246,8 +248,30 @@ class ModpackService():
         return await self.modpackDB.bundle_get(bundle_id=bundle_id)
 
     async def bundle_update(self, bundle_id: str, patch: ModpackBundlePatch, actor: Actor) -> ModpackBundle:
+        """Change the fields sent, and the maps only at the keys sent (see ModpackBundlePatch).
+
+        422, with nothing written, for a null on a field the bundle needs (it would no longer
+        load) or a map key that is not a Modrinth id (it would become a nested key).
+        """
+        sent = patch.model_dump(exclude_unset=True)
+        for name in BUNDLE_NOT_NULL:
+            if name in sent and sent[name] is None:
+                raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{name}' no puede quedar vacío")
+        for name in BUNDLE_KEYED_FIELDS:
+            for key in sent.get(name) or {}:
+                if not MODRINTH_ID.fullmatch(key):
+                    raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{key}' no es un id de proyecto de Modrinth")
         updated = await self.modpackDB.bundle_update(bundle_id=bundle_id, patch=patch)
         await self.audit.record(actor, "bundle.update", _bundle(bundle_id))
+        return updated
+
+    async def bundle_replacement_delete(self, bundle_id: str, project_id: str, actor: Actor) -> ModpackBundle:
+        """Remove the pack's own replacement rule for one mod; the global rule, if any, applies
+        again. 422 for an id that is not a Modrinth id, 404 if the pack has no rule for it."""
+        if not MODRINTH_ID.fullmatch(project_id):
+            raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{project_id}' no es un id de proyecto de Modrinth")
+        updated = await self.modpackDB.bundle_replacement_unset(bundle_id, project_id)
+        await self.audit.record(actor, "bundle.replacement.delete", _bundle(bundle_id), {"project_id": project_id})
         return updated
 
     async def decision_set(self, bundle_id: str, project_id: str, server: bool, actor: Actor) -> ModpackBundle:
