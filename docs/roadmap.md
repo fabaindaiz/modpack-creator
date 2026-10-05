@@ -8,11 +8,14 @@ este archivo en el mismo cambio que lo termina. Los ids se acuñan con
 
 ## Dónde estamos
 
-Al cierre de la sesión del panel web (2026-10-02 a 2026-10-04; detalle en
-`.claude/logs/agent-changelog.md`, s-7985ee-aeb6be, y las entradas de abajo). **Todo está en
-`main` y empujado a `origin` (8b5e2ca..ae17269); nada está desplegado.** CI de ese push: el job
-`image` pasa; el job `gate` falla solo en el audit `env_template` (falta `OIDC_OPERATOR_GROUPS`
-en `.env.default`, que agrega el dueño).
+Al cierre de la sesión de usabilidad del panel (2026-10-04 y 2026-10-05; detalle en
+`.claude/logs/agent-changelog.md`, s-7985ee-aaa17f, y las entradas de abajo). **Todo está en
+`main` y empujado a `origin`; nada está desplegado.** `.env.default` ya trae
+`OIDC_OPERATOR_GROUPS` (entró en esa sesión), así que el audit `env_template` deja de fallar.
+
+- **Panel, usabilidad ronda 1, hecha en código** (i-7985ee-1bb2ea): ficha de mod, crear el modpack
+  desde un servidor, decidir los pendientes al crear un build, estado vivo y avisos donde se
+  actúa. La ronda 2 está listada en su entrada.
 
 - **Panel web, hecho en código** (i-7985ee-50d411): páginas con Jinja2 y htmx, roles de editor y
   operador por grupos del IdP, auditoría, defensa CSRF por origen con CSP estricta, y el latido
@@ -42,8 +45,8 @@ en `.env.default`, que agrega el dueño).
   `OIDC_OPERATOR_GROUPS` en `.env.yaml`, y restaurar.
   Sin eso el volumen nuevo arranca vacío y la API no arranca.
 - **Lo siguiente, todo del dueño, en orden:**
-  0. agregar `OIDC_OPERATOR_GROUPS: ""` a `.env.default` (el gate de `audit` falla en
-     `env_template`, y CI con él) y crear el grupo de operadores en authentik;
+  0. ~~agregar `OIDC_OPERATOR_GROUPS: ""` a `.env.default`~~ (hecho el 2026-10-05); crear el grupo
+     de operadores en authentik y revocar la key `ptla_` de la prueba local;
   1. decir qué versión de MongoDB corre en producción y, si es menor que 8.0, migrar primero a esa
      versión y subirla después, con "Subir a MongoDB 8.0" de `migrar-mongo-a-volumen.md`
      (d-7985ee-83eb5b: producción sube a 8.0 y CI se queda en 8.0);
@@ -714,8 +717,9 @@ JSON con `request_id` y `job_id`.
   - advertir bajas de versión (F27);
   - el diálogo de actualización directa que advierte lo que la simulación encontraría (F28);
   - enlazar URLs en changelogs (F29);
-  - repetir el recorrido con Modrinth real y medir de nuevo la tarea de F36 en la instancia local;
-  - desplegar.
+  - ~~repetir el recorrido con Modrinth real y medir de nuevo la tarea de F36~~: hecho el 2026-10-04 (ronda 2 del documento de hallazgos: de ~25 acciones a 11, de 6 cambios de página a 3);
+  - llevar al repositorio el arnés de la instancia de exploración (simulador de Pterodactyl con jars reales y los guiones de Playwright): hoy vive solo en el scratchpad de una sesión y se rehízo a mano; es la decisión pendiente del dueño sobre un comando del repositorio que reemplace los guiones sueltos;
+  - desplegar: antes, el dueño revoca la key `ptla_` de la prueba local, crea el grupo de operadores en authentik y hace un login real de editor y de operador.
 - **Pendientes menores que dejó la revisión de la ronda 1** (cada uno visto, ninguno bloquea):
   - un proyecto sin ícono en Modrinth (o que Modrinth no conoce) se vuelve a pedir en cada vista de
     la lista de mods; con Modrinth colgado cada vista espera los 5 s. Pide una marca "consultado, sin
@@ -848,9 +852,11 @@ Fricción vista al menos dos veces, con su costo.
 
 Salen de la evaluación del 2026-10-04 (`.agents/evaluation-2026-10-04-5e58c1.md`); ninguna se
 aplica sin su respuesta.
-1. Agregar `OIDC_OPERATOR_GROUPS` a `.env.default` (los agentes no lo leen ni lo editan).
+1. ~~Agregar `OIDC_OPERATOR_GROUPS` a `.env.default`~~: hecho por el dueño, en el repositorio desde el 2026-10-05.
 2. Los dictámenes como parte de la aprobación del diseño, antes de ejecutar un plan: cada opción
-   con ejemplos, una por vez. Se anota en `AGENTS.md` solo si el dueño lo aprueba.
+   con ejemplos, una por vez. Se anota en `AGENTS.md` solo si el dueño lo aprueba. (En la sesión
+   del 2026-10-04 el dueño pidió revisar la spec así, por temas; quedó en la rutina de
+   `docs/plan-de-trabajo.md`, paso 2. `AGENTS.md` no cambió.)
 3. Un comando del repositorio que reemplace los scripts de la sesión (un modo "solo tests" de
    `./scripts/test-mongo.sh`).
 4. Una revisión cruzada a mitad de plan después de las tareas que comparten una máquina de

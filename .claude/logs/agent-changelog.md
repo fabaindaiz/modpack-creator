@@ -80,6 +80,18 @@ decisión en la ficha (R1, la spec la pedía y el plan la omitía), la búsqueda
 (R7, la spec se contradecía), dos rutas para crear desde el servidor (R10), el reescaneo tras una
 actualización real (R15) y siete menores sumados a la tanda final (R17).
 
+**Del dueño.** Revocar la key `ptla_` de la prueba local; para producción, un usuario de servicio
+no administrador con `allowed_ips`; desplegar con los runbooks; un login real de editor y de
+operador. `.env.default` (con `OIDC_OPERATOR_GROUPS`) entró en esta sesión, en su propio commit,
+tal como lo dejó el dueño.
+
+**Fricciones contadas** (búsqueda en este registro, no de memoria): `.env.yaml` aparece en 6
+líneas de entradas distintas y la regla de no leerlo ya existía cuando se rompió en esta sesión;
+lo que la hizo cumplir fue el modo automático, no el repositorio (sigue pendiente el hook del
+dueño, d-7985ee-794d11). "Verlo fallar" o "rojo" aparece en 16 líneas: dos subagentes de esta
+sesión igual no lo capturaron o lo ocultaron. Primera vez en el registro: la falta de memoria de
+la VM de podman y el `networkidle` de Playwright con htmx (anotados en `docs/plan-de-trabajo.md`).
+
 **No verificado.** El deploy real (no se entró: decisión de seguridad), Pterodactyl real (solo el
 simulado con jars reales), el login OIDC, los datos de producción, Firefox y Safari. Sí con
 Modrinth real: búsqueda, catálogo, íconos, resolución, versiones y changelogs.
