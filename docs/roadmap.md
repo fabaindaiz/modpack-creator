@@ -16,10 +16,15 @@ Al cierre de la sesión de usabilidad del panel (2026-10-04 y 2026-10-05; detall
 - **Panel, usabilidad ronda 1, hecha en código** (i-7985ee-1bb2ea): ficha de mod, crear el modpack
   desde un servidor, decidir los pendientes al crear un build, estado vivo y avisos donde se
   actúa. La ronda 2 está listada en su entrada.
-- **En pausa (2026-10-05): acciones para problemas, ficha local de mod y pestañas**
-  (i-7985ee-593c92), ya en `main` (mergeado a pedido del dueño). Tareas 1 a 7 de 8 hechas y
-  revisadas una por una; faltan la revisión final del conjunto, la Tarea 8 y la ronda 3 de pruebas.
-  Cómo retomar: `docs/superpowers/plans/2026-10-05-panel-mods-ficha-problemas-estado.md`.
+- **Preparación del primer release (2026-10-05, rama `release-1-prep`, sin mergear):**
+  - la revisión final y la Tarea 8 de i-7985ee-593c92, con sus arreglos;
+  - el PATCH de un bundle, por clave (d-7985ee-65b34c);
+  - `load_env` sin valores en el log;
+  - la búsqueda sin llenar el catálogo en cada tecla;
+  - "Usar la beta" para una dependencia.
+
+  El primer release se propuso de solo lectura: `PTERODACTYL_WRITES` vacío hasta la primera
+  actualización real. Lo que falta para desplegarlo es la lista "Lo siguiente, todo del dueño".
 
 - **Panel web, hecho en código** (i-7985ee-50d411): páginas con Jinja2 y htmx, roles de editor y
   operador por grupos del IdP, auditoría, defensa CSRF por origen con CSP estricta, y el latido
@@ -755,7 +760,7 @@ JSON con `request_id` y `job_id`.
 - **Lo que choca:** el barrido no ve Modrinth ni Pterodactyl reales ni el login OIDC; la ficha pide
   las versiones de un mod a Modrinth al abrirse (una llamada por ficha, solo al abrirla).
 
-### Panel: acciones para problemas, ficha local de mod y pestañas, en pausa en la tarea 8 de 8 (2026-10-05) · i-7985ee-593c92
+### Panel: acciones para problemas, ficha local de mod y pestañas — Hecha en código (2026-10-05), sin desplegar · i-7985ee-593c92
 - **Pedido del dueño (2026-10-05):**
   - una acción sugerida para cada problema del build (usar la beta o quitar);
   - una ficha local para cada mod de la base, con todo nombre clicable;
@@ -763,21 +768,34 @@ JSON con `request_id` y `job_id`.
 - **Diseño:** spec `docs/superpowers/specs/2026-10-05-panel-mods-ficha-problemas-design.md` y plan
   `docs/superpowers/plans/2026-10-05-panel-mods-ficha-problemas.md`, los dos revisados por temas
   con el dueño.
-- **Estado:** en `main` (mergeado a pedido del dueño al cerrar el 2026-10-05), Tareas 1 a 7
-  hechas y revisadas una por una. Falta:
-  - la Tarea 8 (barrido visual, script del gate y documentos);
-  - la revisión final de todo el trabajo (no se hizo antes del merge);
-  - la ronda 3 de pruebas reales, con los mods de servidores reales del dueño (pedirle cuáles) y
-    móvil.
+- **Estado:** las 8 tareas hechas. Las Tareas 1 a 7 llegaron a `main` el 2026-10-05; la Tarea 8 y
+  la revisión final de todo el trabajo, en la rama `release-1-prep`:
+  - **revisión final:** 0 críticos, 1 importante (F1, arreglado) y 3 menores (F2 a F4,
+    arreglados); el triage de los menores diferidos está en el archivo de estado;
+  - **barrido visual:** cubre la ficha, el panel lateral, las pestañas, "Todos al servidor" sin
+    peticiones, el diálogo de build con sus acciones y cualquier violación de CSP. Dio "138
+    capturas; 0 con problemas";
+  - fuera del plan, decidido por el dueño al preparar el release: "Usar la beta" también para una
+    dependencia (d-7985ee-cec68c).
 
-  Todo, con las rulings y los menores diferidos, en
+  El detalle, con las rulings, está en
   `docs/superpowers/plans/2026-10-05-panel-mods-ficha-problemas-estado.md`.
+- **Lo que falta:**
+  - la ronda 3 de pruebas reales: Modrinth real, los mods de 2 o 3 servidores reales del dueño
+    (hay que pedirle cuáles) y móvil a 360 px;
+  - deuda que la revisión mandó al roadmap:
+    - el `#mods` detrás del diálogo se redibuja siempre en "Todos";
+    - partir en lotes de 100 los ids que van a `project_get_many`;
+    - `projects_by_id` y `project_version_update_filter` quedaron sin uso;
+    - el 404 del panel lateral va a `#notices`;
+  - la ficha de una dependencia que solo figura como problema dice "Ningún modpack lo usa"
+    (visto en el barrido): la consulta mira las dependencias resueltas, no los problemas.
 - **Investigaciones del mismo día** (`docs/research/2026-10-05-*.md`): versiones de MC y loaders
   (F09), bajas de versión (F27), caché del catálogo de Modrinth, diálogos accesibles con htmx y el
   tablero "necesita atención" (F38). Alimentan la ronda 2 de i-7985ee-1bb2ea.
-- **Entorno:** `./scripts/test-mongo.sh` muere a mitad de camino en la VM de podman de 2 GiB, con
-  el deploy local del dueño arriba. Con `--wiredTigerCacheSizeGB 0.25` el gate pasa (942). El
-  arreglo del script es parte de la Tarea 8.
+- **Entorno:** `./scripts/test-mongo.sh` moría a mitad de camino en la VM de podman de 2 GiB.
+  Arreglado en la Tarea 8 (R4): mongod con `--wiredTigerCacheSizeGB 0.25`, y la limpieza ya no pisa
+  el código de salida.
 
 ## Seguridad y despliegue
 

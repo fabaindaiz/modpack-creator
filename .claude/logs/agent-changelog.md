@@ -5,6 +5,71 @@ introducción. Los commits de este repositorio fueron `wip` sin cuerpo: el *por 
 no quedaba en ninguna parte, y una sesión no ve lo que otra aprendió. La referencia del formato
 está al final del archivo, para que nada entre este párrafo y la primera entrada capture texto.
 
+## 2026-10-05 · s-7985ee-bae4ac — Preparar el primer release: revisión final, PATCH por clave, load_env y Tarea 8
+
+**Qué.** Todo en la rama `release-1-prep`, sin mergear:
+- **Revisión final** de i-7985ee-593c92 (`8baecf7..ec48e37`), en un contexto limpio. Encontró 0
+  críticos, 1 importante y 3 menores, y todos quedaron arreglados:
+  - F1: una dependencia sin proyecto ni versión no ofrecía ninguna acción;
+  - F2: la tarjeta culpaba al pin del admin cuando la versión la pedía una dependencia
+    (`Problem.pinned`);
+  - F3: "Fijar otra" no hacía nada si la página ya estaba en `?vista=todos`;
+  - F4: la ficha hacía una consulta por servidor; ahora son dos en total.
+- **PATCH de `/v1/modpack/{id}` por clave** (d-7985ee-65b34c, decisión del dueño), más
+  `DELETE /v1/modpack/{id}/replacement/{project_id}`. Un `null` en un campo obligatorio ahora da
+  422 en vez de dejar un bundle que no carga.
+- **`load_env`** registra solo claves, nunca valores.
+- **La búsqueda en vivo** ya no completa el catálogo en cada tecla.
+- **"Usar la beta" para una dependencia** (decisión del dueño, "al release"): `pin_set` acepta un
+  proyecto que nombra la última resolución.
+- **Tarea 8:**
+  - R4: `test-mongo.sh` con la caché acotada y un código de salida honesto;
+  - R7: el test de tipado ya no depende de `FORCE_COLOR`;
+  - la relectura de los filtros de Modrinth en `docs/references.md`;
+  - cuatro decisiones nuevas en `docs/decisions.md`;
+  - el barrido visual extendido.
+
+**Áreas.** `src/database/{modpack,pterodactyl}.py`, `src/services/modpack.py`,
+`src/model/modpack/`, `src/library/{resolution,utils}`, `src/routers/{v1,web}/modpack*.py`,
+`src/web/`, `scripts/`, `tests/`, `docs/`.
+
+**Por qué.** El dueño preguntó qué falta para un primer release productivo. Se propuso un release
+de solo lectura, y estos eran los bloqueantes de código.
+
+**Arquitectura.** ✅ Cumple:
+- dos métodos de servicio nuevos o ampliados, con su fila en la tabla de roles
+  (`bundle_replacement_delete`, `pin_set`);
+- las capas en 0 y la CSP intacta;
+- ninguna escritura externa nueva.
+
+**Desvío de la spec.** La spec §2 pedía completar el catálogo con los resultados de la búsqueda.
+Se quitó, porque la ficha ya trae el proyecto que falta al abrirse (revisión final; el dueño
+aprobó el orden propuesto).
+
+**Qué salió mal en el camino.**
+- La VM de podman estaba apagada. Se arrancó, y se detuvo al terminar la primera parte.
+- El revisor escribió su informe con un heredoc canalizado a `cat`, y el agente del barrido usó
+  un heredoc hacia `python3`. Ninguno se colgó, pero los dos van contra la regla.
+- En el barrido, `wait_for_function` de Playwright evalúa código, y la CSP del panel lo rechaza.
+  La primera corrida dio un falso "Fijar otra no abrió la fila" y quedó registrada como violación
+  de CSP. Se cambió a `wait_for_selector`.
+- Varios commits se encadenaron al gate **sin** Mongo, con los tests de base saltados: los de
+  `load_env`, la búsqueda, F2, F3, R4/R7 y los documentos. El gate con Mongo corrió en
+  `fdf055c`, `d67e4c4`, `d93c830` y `d519e5b`, y `test-mongo.sh` completo en la punta.
+
+**Qué quedó sin hacer.**
+- La ronda 3 de pruebas reales.
+- La deuda que la revisión mandó al roadmap.
+- Los recomendables no bloqueantes: `sanitize_detail` con un token suelto, `UPDATE_CHECK_AT`
+  vacío, el doble envío y la carrera de `bundle_for_server`.
+- El merge a `main`, que espera el pedido del dueño.
+
+**No verificado.** Modrinth y Pterodactyl reales, el login OIDC y el despliegue. El barrido usa
+un Modrinth local con datos grabados.
+
+**Medido.** El gate en la punta con `./scripts/test-mongo.sh`: 976 aprobados. El
+barrido dio "138 capturas; 0 con problemas".
+
 ## 2026-10-05 · s-7985ee-9de18d — Panel: acciones para problemas, ficha local de mod y pestañas (en pausa en la tarea 8)
 
 **Qué.**

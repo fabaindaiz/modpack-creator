@@ -26,7 +26,7 @@ de 8**. Este archivo es lo que hace falta para retomar desde otra máquina: el l
 | 5. Nombres clicables, ningún mod sin ficha | hecha, revisada, 1 ronda de arreglo | `c5b8bf8`, `ec1d950` |
 | 6. Pestañas y tarjetas de problema | hecha, revisada | `1efa7e0` |
 | 7. Diálogo de build con problemas (modal) | hecha, revisada, 1 ronda de arreglo | `8bab64d`, `a1d32ab` |
-| 8. Barrido visual, script del gate y documentos | **pendiente**: se detuvo al empezar, sin cambios | — |
+| 8. Barrido visual, script del gate y documentos | hecha en `release-1-prep` (barrido: 138 capturas, 0 con problemas) | `a72690a`, `1bf8d69`, `58e35ba` |
 
 Fuera del plan, en la misma rama: las cinco investigaciones de `docs/research/2026-10-05-*.md`
 (`19eab09`).
@@ -88,18 +88,18 @@ Hecha sobre `8baecf7..ec48e37`, de solo lectura, en un contexto limpio. No encon
   daba un `Problem` sin `requested_by`: su tarjeta no ofrecía ninguna acción y el problema
   bloqueaba todo build. Ahora nombra a quien la pide y la tarjeta ofrece "Quitar A". Tests en
   `tests/test_resolution.py` y `tests/test_web_modpacks.py`.
-- **F2 (menor), pendiente.** Si una dependencia pide una versión exacta de un mod fijado, la
+- **F2 (menor), arreglado (`c3cd55d`).** Si una dependencia pide una versión exacta de un mod fijado, la
   tarjeta la presenta como problema del pin ("La versión fijada ya no está…"). Además ofrece solo
   acciones que no lo resuelven y no ofrece "Quitar A". El arreglo es una marca `pinned` en
   `Problem`, que solo pone la rama del pin de `_choose`.
-- **F3 (menor), pendiente.** "Fijar otra" no hace nada en el diálogo cuando la URL ya es
+- **F3 (menor), arreglado (`cdf5890`).** "Fijar otra" no hace nada en el diálogo cuando la URL ya es
   `?vista=todos`: solo cambia el hash y `app.js` escucha solo `load`. El arreglo es escuchar
   también `hashchange`.
-- **F4 (menor), pendiente.** Cada ficha hace un `scan_latest()` por servidor (N+1). El arreglo es
+- **F4 (menor), arreglado (`d93c830`).** Cada ficha hace un `scan_latest()` por servidor (N+1). El arreglo es
   una agregación o una proyección con `$elemMatch`.
 
 Triage de los menores diferidos:
-- **Antes del release:**
+- **Antes del release** (todos hechos en `release-1-prep`: `b9312cc`, `d519e5b`, `a72690a`, `58e35ba`):
   - la búsqueda deja de completar el catálogo en cada tecla (`modpack_search`): el resultado ya
     trae título e ícono;
   - "Usar la beta" para una dependencia, si el dueño lo confirma;
