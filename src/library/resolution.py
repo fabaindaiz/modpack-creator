@@ -441,7 +441,7 @@ class _Run:
                 return []
             return [(substitute, None, parent, f"reemplaza a {project_id}, requerida por {parent}")]
         if project_id is None and version_id is None:
-            self.problems.append(Problem(kind="unresolvable", project_id=None, detail=(
+            self.problems.append(Problem(kind="unresolvable", project_id=None, requested_by=_asked(parent), detail=(
                 f"{parent} requiere una dependencia sin proyecto ni versión ({dependency.file_name})")))
             return []
         return [(project_id, version_id, parent, f"requerida por {parent}")]

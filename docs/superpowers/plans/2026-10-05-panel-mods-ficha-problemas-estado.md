@@ -6,7 +6,7 @@ de 8**. Este archivo es lo que hace falta para retomar desde otra máquina: el l
 
 - **Rama:** el trabajo se hizo en `panel-mods-ficha` (sobre `8baecf7`) y, a pedido del dueño al
   cerrar, se **mergeó a `main` y se empujó**. Tenía las Tareas 1 a 7 revisadas una por una y el gate
-  verde (942), pero **sin la revisión final de toda la rama**: es el primer paso al retomar.
+  verde (942), pero sin la revisión final de toda la rama. **Esa revisión se hizo después, el 2026-10-05:** ver "Revisión final".
 - **Spec:** `docs/superpowers/specs/2026-10-05-panel-mods-ficha-problemas-design.md`, aprobada y
   revisada por temas con el dueño.
 - **Plan:** `docs/superpowers/plans/2026-10-05-panel-mods-ficha-problemas.md`, revisado con el
@@ -76,6 +76,42 @@ Fuera del plan, en la misma rama: las cinco investigaciones de `docs/research/20
    que rehacerlo con el método de la ronda 2 de ese documento, o decidir llevarlo al repo
    (pendiente del dueño).
 6. Cerrar: changelog y roadmap; el merge a `main` y el push, solo cuando el dueño lo pida.
+
+## Revisión final (2026-10-05, rama `release-1-prep`)
+
+Hecha sobre `8baecf7..ec48e37`, de solo lectura, en un contexto limpio. No encontró nada crítico:
+1 importante y 3 menores.
+
+- **Autorización, validación, escape, CSP y swaps OOB:** sin hallazgos. Toda ruta que escribe
+  llega a un método de editor con su fila, y las cadenas de Modrinth salen escapadas.
+- **F1 (importante), arreglado en esta rama.** Una dependencia requerida sin proyecto ni versión
+  daba un `Problem` sin `requested_by`: su tarjeta no ofrecía ninguna acción y el problema
+  bloqueaba todo build. Ahora nombra a quien la pide y la tarjeta ofrece "Quitar A". Tests en
+  `tests/test_resolution.py` y `tests/test_web_modpacks.py`.
+- **F2 (menor), pendiente.** Si una dependencia pide una versión exacta de un mod fijado, la
+  tarjeta la presenta como problema del pin ("La versión fijada ya no está…"). Además ofrece solo
+  acciones que no lo resuelven y no ofrece "Quitar A". El arreglo es una marca `pinned` en
+  `Problem`, que solo pone la rama del pin de `_choose`.
+- **F3 (menor), pendiente.** "Fijar otra" no hace nada en el diálogo cuando la URL ya es
+  `?vista=todos`: solo cambia el hash y `app.js` escucha solo `load`. El arreglo es escuchar
+  también `hashchange`.
+- **F4 (menor), pendiente.** Cada ficha hace un `scan_latest()` por servidor (N+1). El arreglo es
+  una agregación o una proyección con `$elemMatch`.
+
+Triage de los menores diferidos:
+- **Antes del release:**
+  - la búsqueda deja de completar el catálogo en cada tecla (`modpack_search`): el resultado ya
+    trae título e ícono;
+  - "Usar la beta" para una dependencia, si el dueño lo confirma;
+  - la línea de `docs/references.md` (Tarea 8);
+  - el barrido en Chromium (Tarea 8).
+- **Al roadmap:**
+  - el `#mods` que se redibuja en "Todos";
+  - partir en lotes de 100 los ids que van a `project_get_many`;
+  - el diseño `fetched_at` de la caché;
+  - `projects_by_id` y `project_version_update_filter`, que quedaron sin uso;
+  - el 404 del panel lateral, que va a `#notices`.
+- **Se descartan** los demás, cada uno con su razón en el informe de la sesión.
 
 ## Preguntas abiertas para el dueño
 

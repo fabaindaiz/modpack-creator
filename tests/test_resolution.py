@@ -364,6 +364,12 @@ def test_a_dependency_problem_names_who_asked() -> None:
     assert problem.project_id == "D" and problem.requested_by == ["A"]
 
 
+def test_a_dependency_without_project_nor_version_names_who_asked() -> None:
+    # Without it, its card offers nothing: the only fix is removing the mod that asks for it.
+    [problem] = resolve(request("A"), catalog(cand("A", "a", deps=((None, None, "required"),)))).problems
+    assert problem.project_id is None and problem.requested_by == ["A"]
+
+
 def test_a_pack_mod_problem_has_nobody_asking() -> None:
     [problem] = resolve(request("P"), catalog(cand("P", "old", game="1.21.11"))).problems
     assert problem.requested_by == []

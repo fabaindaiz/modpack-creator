@@ -1899,6 +1899,19 @@ def test_a_problem_saved_before_these_fields_shows_its_text_and_no_action_that_n
     assert "Con problemas 3" == said(tab(response.text, "problemas"))
 
 
+def test_a_dependency_without_project_nor_version_offers_removing_who_asked() -> None:
+    client, modpack, _ = setup()
+    modpack.saved = resolution(Lock.model_validate({
+        "entries": [entry("P1").model_dump(), entry("P2").model_dump()], "suggestions": [],
+        "needs_projects": [], "needs_types": [], "needs_versions": [], "problems": [
+            {"kind": "unresolvable", "project_id": None, "requested_by": ["P1"],
+             "detail": "P1 requiere una dependencia sin proyecto ni versión (a.jar)"}]}))
+    response = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "problemas"})
+    assert response.status_code == 200
+    card = problem_card(view(response.text, "problemas"), "")
+    assert "Quitar Sodium" in said(card) and f'/projects/P1?contexto=problemas"' in card
+
+
 # (A link to /replacements may stay: the note of a mod that came with the .mrpack has one.)
 REPLACE_OR_IGNORE = ("Crear un reemplazo", "Ignorar esta dependencia", 'hx-post="/replacements"')
 
