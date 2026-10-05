@@ -20,6 +20,24 @@ El dueño aprobó este diseño el 2026-10-05 en el chat. Se apoya en
 - la ficha local es **una página propia y también un panel lateral**;
 - lo pendiente va en **pestañas internas de Mods**.
 
+**Decisiones del dueño en la revisión por temas (2026-10-05):**
+- **Problemas:**
+  - la alternativa más estable (beta antes que alpha);
+  - tras una acción en el diálogo se recalcula la lista y **el build lo crea él**;
+  - una dependencia sin versiones ofrece "Quitar *el que la pide*", "Crear un reemplazo" e
+    **"Ignorar esta dependencia"** (reemplazo vacío global, con confirmación).
+- **Ficha:**
+  - las versiones salen del catálogo, con "Cargar todas desde Modrinth";
+  - en "dónde se usa", el build recomendado y el último por pack.
+- **Panel:**
+  - a la derecha;
+  - dentro del panel, un clic reemplaza el contenido y deja "← volver";
+  - **ningún mod sin ficha**: los que falten se cargan apenas se puede, en lote, y bajo pedido
+    junto con sus relacionados.
+- **Pestañas:**
+  - empieza en "Todos", con contadores destacados;
+  - atajos que marcan sin guardar.
+
 **Éxito:**
 - todo problema que bloquea un build se muestra con al menos una acción que lo resuelve en un
   clic, sin ids opacos;
@@ -56,7 +74,7 @@ usa `detail` si faltan los campos.
 |---|---|
 | `unresolvable` con `alternative` | **"Usar la {canal} {número}"** (`POST /modpacks/{id}/pins` con esa versión) · "Quitar del modpack" |
 | `unresolvable` sin alternativa, mod del pack | **"Quitar del modpack"** (`DELETE …/projects/{p}`) |
-| `unresolvable` sin alternativa, dependencia (`requested_by` no vacío) | "Quitar *{título del que la pide}*" (por cada solicitante que esté en el pack) · "Crear un reemplazo" (enlace a `/replacements`) |
+| `unresolvable` sin alternativa, dependencia (`requested_by` no vacío) | "Quitar *{título del que la pide}*" (por cada solicitante que esté en el pack) · "Crear un reemplazo" (enlace a `/replacements`) · **"Ignorar esta dependencia"** (`POST /replacements` con reemplazo vacío: la dependencia se descarta en **todos** los packs; pide confirmación con ese texto) |
 | `unresolvable` por una versión fijada que ya no existe, `pin_mismatch` y `pin_conflict` | "Quitar la fijación" (`DELETE …/pins/{p}`) · "Fijar otra" (abre la ficha en el pack, con su selector) |
 | `incompatible` | "Quitar *{A}*" · "Quitar *{B}*" (solo los que estén en el pack) |
 | tipo no soportado, `no_file` | "Quitar del modpack" |
@@ -70,15 +88,38 @@ a `/replacements`.
 
 **Al crear un build:** cuando `BuildBlocked` trae problemas (no solo pendientes), la ruta del panel
 responde con el **mismo diálogo** de la ronda 1, que ahora lista primero los problemas con sus
-acciones y después los mods por decidir. Las acciones del diálogo envían su formulario y el
-diálogo se vuelve a mostrar con lo que quede. Un problema resuelto desaparece al resolver de nuevo
-(cada acción de un problema responde con el diálogo recalculado por `build_create`, igual que hoy
-"Decidir y crear build"). `/v1` sigue viendo el 409 de siempre.
+acciones y después los mods por decidir. `/v1` sigue viendo el 409 de siempre.
+
+**Después de una acción en el diálogo (decisión del dueño): se recalcula la lista; el build lo creas
+tú.**
+- Las acciones de un problema del diálogo mandan además `dialog=1`. La ruta aplica la acción (la
+  misma de siempre), vuelve a **resolver** (`resolve`, no `build_create`) y responde el diálogo
+  recalculado (`HX-Retarget: #build-dialog`).
+- Cuando no queda nada pendiente ni con problemas, el diálogo dice "Todo resuelto" y muestra
+  **"Crear build"** destacado. Ninguna acción crea un build por sí sola.
+- "Decidir y crear build" de la ronda 1 se mantiene para las decisiones (decidir y construir en un
+  paso, como ya lo aprobó el dueño). Las acciones de problemas nunca construyen.
+
+**Alternativa beta o alpha (decisión del dueño):** se sugiere la más estable (beta antes que alpha;
+dentro del canal, la más nueva). Una alpha solo aparece si no hay beta que sirva.
 
 ## 2. Ficha local de cada mod
 
-**Página `GET /mods/{project_id}`** (editor, lectura): existe para todo `ModrinthProject` del
-catálogo; si no está, 404 (un aviso en español). Muestra:
+**Ningún mod sin ficha (decisión del dueño): se cargan apenas se pueda, en lote.**
+- Toda página o fragmento que muestra mods (lista, pestañas, problemas, sugerencias, resultados de
+  búsqueda, candidatos de importar, comparación del servidor, bloques de cambios, actualizaciones)
+  completa el catálogo con **una sola** llamada por lotes (`fill_catalog`, el tope de 5 s de la
+  ronda 1) para **todos** los proyectos que muestra y que faltan. Esa llamada se hace una vez por
+  render, juntando los ids de todas sus secciones.
+- La búsqueda también: los ~10 resultados se completan juntos, así que cada resultado tiene ficha.
+- Si al abrir `/mods/{id}` el proyecto todavía no está (Modrinth no respondió antes), la ficha lo
+  pide en ese momento **junto con sus relacionados que falten** (los proyectos de las dependencias
+  de sus versiones del catálogo), en una llamada. Solo si Modrinth no lo conoce, 404 con un aviso
+  en español; si Modrinth no responde, un aviso con "Reintentar".
+- Por eso `ui.mod_link` enlaza siempre a la ficha. Un nombre sin ficha solo queda como texto
+  cuando su id no es válido.
+
+**Página `GET /mods/{project_id}`** (editor, lectura; completa el catálogo como se dijo). Muestra:
 - **identidad:** ícono (solo `cdn.modrinth.com`), título, autor si el catálogo lo tiene,
   descripción, categorías, tipo, el lado según Modrinth ("cliente o servidor", etc.), loaders,
   versiones de MC (con la del pack marcada cuando se llega desde un pack) y enlaces (Modrinth,
@@ -86,20 +127,36 @@ catálogo; si no está, 404 (un aviso en español). Muestra:
 - **dónde se usa:**
   - packs que lo tienen como proyecto (con su origen);
   - packs cuya resolución guardada lo trae como dependencia ("dependencia de *X*");
-  - builds cuyo lock lo incluye (pack, número, versión);
+  - por cada pack, **el build recomendado y el último** que lo incluyen, con su versión
+    ("#5 recomendado, 0.8.13 · #7 último, 0.8.14"; decisión del dueño). No es el historial
+    completo;
   - servidores cuyo último escaneo lo identificó (con la versión).
 
   Cada uno enlaza a su página; el del pack, a la pestaña y la ficha de ese mod;
-- **versiones conocidas:** las del catálogo (`ModrinthVersion` del proyecto), con número, canal,
-  fecha, versiones de MC y loaders, las más nuevas primero (tope de 50 y un enlace a Modrinth).
+- **versiones conocidas** (decisión del dueño: el catálogo, más un botón para cargar todas):
+  - al abrir, solo las del catálogo (`ModrinthVersion` del proyecto), con número, canal, fecha,
+    versiones de MC y loaders, las más nuevas primero (tope de 50), y la nota "parcial: las que
+    se bajaron para tus packs". Abrir la ficha nunca espera a Modrinth;
+  - **"Cargar todas desde Modrinth"** (`hx-get` a `/mods/{id}/versiones`) pide todas las versiones
+    del proyecto con `GET /project/{id}/version` **sin filtros**, las guarda en el catálogo y
+    reemplaza la tabla. Tiene el tope de 5 s de la ronda 1; si Modrinth falla, aparece "Modrinth no
+    respondió" y "Reintentar". El cliente hoy manda `loaders=[]` y `game_versions=[]`: cuando
+    vienen vacíos se **omiten** los parámetros (contrastar con el openapi de Modrinth v2.7.0 y
+    probarlo en `tests/test_api_contracts.py`). El método de servicio que lo hace escribe el
+    catálogo, así que lleva su fila (editor) en la tabla de roles, como `projects_filled`.
 
 Es solo lectura. Quitar, fijar o decidir se hace desde el pack: la ficha lleva a él. Los datos
 salen de un método de servicio de lectura nuevo, `ModrinthService.mod_page(project_id) -> ModPage`
 (o donde encaje, sin que un router pida una base). Las consultas "dónde se usa" son de lectura
 sobre Mongo; si alguna necesita un índice, se agrega sin migración.
 
-**Panel lateral:** `GET /mods/{project_id}/panel` devuelve la misma ficha en versión compacta (sin
-la tabla de versiones; con "Abrir ficha completa").
+**Panel lateral (decisión del dueño: a la derecha):** `GET /mods/{project_id}/panel` devuelve la
+misma ficha en versión compacta (sin la tabla de versiones; con "Abrir ficha completa").
+- Ocupa el alto de la pantalla a la derecha (`w-[28rem]` en escritorio) y la pantalla completa en
+  móvil; la lista queda visible detrás en escritorio.
+- **Dentro del panel, un clic en otro mod reemplaza el contenido y aparece "← {mod anterior}"**
+  para volver (decisión del dueño). Basta un nivel de historia en el propio fragmento: el enlace
+  manda `?desde={id}` y el panel muestra el botón de volver a ese id.
 - Hay un `<dialog id="mod-drawer">` en `base.html`.
 - Un nombre de mod es `<a href="/mods/{id}" hx-get="/mods/{id}/panel" hx-target="#mod-drawer-body"
   hx-swap="innerHTML">`. `app.js` abre el diálogo (`showModal`) cuando el swap apunta a
@@ -108,14 +165,13 @@ la tabla de versiones; con "Abrir ficha completa").
   htmx no los respeta solo, `app.js` cancela la petición htmx en esos casos (`htmx:confirm` o
   `htmx:beforeRequest`). Se verifica en Chromium.
 
-**Macro `ui.mod_link(project_id, title)`:** enlaza solo si el proyecto está en el catálogo (el
-contexto pasa ese conjunto); si no, muestra el título como texto. Se usa en todos los lugares donde
-aparece el nombre de un mod:
+**Macro `ui.mod_link(project_id, title)`:** enlaza siempre a la ficha (ver "ningún mod sin ficha").
+Se usa en todos los lugares donde aparece el nombre de un mod:
 - la lista de mods, las pestañas y las decisiones;
 - los problemas y sus acciones, y las sugerencias;
 - la comparación del servidor, los bloques de cambios (vista previa, comparar builds, simulación),
   la página de actualizaciones y el resultado de importar;
-- los resultados de búsqueda que ya están en el pack ("Ya está").
+- todos los resultados de búsqueda.
 
 ## 3. Pestañas internas en Mods
 
@@ -133,13 +189,26 @@ pendiente").
   problema con títulos y sus acciones (§1).
 - **Todos:** la lista de la ronda 1.
 
+**Pestaña inicial (decisión del dueño):** siempre "Todos". Si hay pendientes o problemas, sus
+pestañas llevan el contador en color (ámbar para por decidir, rojo para problemas) y el panel del
+pack lo dice. La vista nunca cambia sola.
+
+**Atajos en "Por decidir" (decisión del dueño):** "Todos al servidor" y "Todos solo cliente"
+**marcan** todos los selectores del formulario, pero **no guardan**; se guarda con "Guardar las N
+decisiones". Lo hace `app.js` con un atributo genérico (`data-set-all="si|no"` sobre el botón, que
+marca los `select` de su formulario), sin código inline y sin petición.
+
 El panel de revisión del pack (estado de la resolución, sugerencias, builds) deja de listar
 pendientes y problemas: muestra "3 por decidir · 2 con problemas" con enlaces a la pestaña.
 
 ## Seguridad y datos
 
-- No hay escrituras nuevas: las acciones usan `pin_set`, `pin_unset`, `project_remove` y
-  `decisions_set`, que ya están en la tabla de roles. Las rutas nuevas (`/mods/{id}` y
+- Las páginas y fragmentos que muestran mods escriben el **catálogo** (datos de Modrinth, como ya
+  lo hacen la lista de mods y la comparación del servidor). Es la misma excepción aceptada en la
+  ronda 1 para un GET que llena una caché. No escriben nada del pack ni de un servidor.
+- No hay escrituras nuevas del pack: las acciones usan `pin_set`, `pin_unset`, `project_remove`,
+  `decisions_set` y `replacement_set` ("Ignorar esta dependencia"), que ya están en la tabla de
+  roles. Las rutas nuevas (`/mods/{id}` y
   `/mods/{id}/panel`) son de lectura y de editor. Los barridos de roles y de autenticación las
   cubren solos.
 - `project_id` en la URL se valida con `^[A-Za-z0-9_-]+$` (si no, 404).
@@ -178,4 +247,4 @@ pendientes y problemas: muestra "3 por decidir · 2 con problemas" con enlaces a
 - Editar un mod desde su ficha.
 - Sugerir otra versión de Minecraft.
 - Un canal propio por mod.
-- Buscar mods que no están en la base.
+- Una página de catálogo o de búsqueda de mods fuera de un pack.
