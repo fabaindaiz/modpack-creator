@@ -1794,6 +1794,23 @@ def test_a_mod_without_a_version_in_the_channels_offers_its_alternative_and_remo
     assert "1.21.1" in said(lithium) and number in said(lithium)
 
 
+def test_a_dependency_without_a_version_in_the_channels_offers_its_alternative() -> None:
+    # The owner's call (2026-10-05): a library only in beta is the common case.
+    client, modpack, _ = setup()
+    modpack.titles["X9"] = "Roto"
+    alternative = Alternative(version_id="ver-b", version_number="1.0-beta", channel="beta", published=T0)
+    shown = problems_page(modpack, client, Problem(kind="unresolvable", project_id="X9", requested_by=["P1"],
+                                                   alternative=alternative, detail="sin versión; pedido por P1"))
+    roto = problem_card(shown, "X9")
+    use = roto[roto.index(f'hx-post="/modpacks/{BUNDLE_ID}/pins"'):]
+    use = use[:use.index("</form>")]
+    assert 'name="project_id" value="X9"' in use and 'name="version_id" value="ver-b"' in use
+    assert "Usar la beta 1.0-beta" in use
+    assert "Quitar Sodium" in said(roto) and "Quitar del modpack" not in roto
+    for absent in (*REPLACE_OR_IGNORE, "Fijar otra"):
+        assert absent not in roto, absent
+
+
 def test_a_dependency_without_versions_offers_removing_who_asked_a_replacement_or_ignoring_it() -> None:
     client, modpack, _ = setup()
     modpack.titles.update(X9="Roto <b>", D5="Otra dependencia")

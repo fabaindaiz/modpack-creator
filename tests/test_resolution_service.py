@@ -4,6 +4,7 @@ respuestas grabadas de Modrinth (tests/_modrinth.py)."""
 from typing import Any, cast
 
 import pytest
+from fastapi import HTTPException
 
 from src.database.modpack import ModpackDatabase
 from src.database.modrinth import ModrinthDatabase
@@ -103,3 +104,18 @@ def test_a_change_to_the_pack_makes_the_resolution_stale(mongo: MongoRunner) -> 
         return stale, (await service.resolution(bundle_id))[1]  # type: ignore[index]
 
     assert mongo(scenario) == (True, False)
+
+
+def test_a_dependency_of_the_last_resolution_can_be_pinned(mongo: MongoRunner) -> None:
+    # "Usar la beta" on a dependency's card: the dependency is not in the pack, but the pack's last
+    # resolution names it. A project neither in the pack nor in that resolution is still refused.
+    async def scenario() -> tuple[dict[str, str], int]:
+        api = RecordedModrinthAPI()
+        service, bundle_id = await bundle(api, "iris")
+        with pytest.raises(HTTPException) as before:
+            await service.pin_set(bundle_id, SODIUM, "v4PSXean", EDITOR)  # nothing resolved yet
+        await service.resolve(bundle_id)
+        await service.pin_set(bundle_id, SODIUM, "v4PSXean", EDITOR)
+        return (await ModpackDatabase().bundle_get(bundle_id)).pins, before.value.status_code
+
+    assert mongo(scenario) == ({SODIUM: "v4PSXean"}, 422)

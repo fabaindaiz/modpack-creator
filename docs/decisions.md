@@ -73,7 +73,7 @@ los dos, o una fila mal formada, hace fallar el test. El nombre del método no s
 | `ModpackService.bundle_replacement_delete` | editor | Borra la regla de reemplazo propia de un bundle para un mod. |
 | `ModpackService.decision_set` | editor | Decide si un mod va en el servidor o solo en el cliente. |
 | `ModpackService.decisions_set` | editor | Decide varios mods a la vez, en una sola escritura atómica. |
-| `ModpackService.pin_set` | editor | Fija un mod a una versión que es de ese proyecto. |
+| `ModpackService.pin_set` | editor | Fija un mod del bundle, o una dependencia que nombra su última resolución, a una versión que es de ese proyecto. |
 | `ModpackService.pin_unset` | editor | Quita la versión fijada de un mod. |
 | `ModpackService.project_add` | editor | Agrega mods al bundle. |
 | `ModpackService.pack_replace` | editor | Reemplaza la lista de mods del bundle. |

@@ -34,7 +34,8 @@
    that fits) is replaced or ignored; a beta or alpha that fits is used instead; a mod without a
    file is only removed. #}
 {% set unserved = dependency and problem.kind == "unresolvable" and alternative is none and not pin_problem %}
-{% set usable = alternative and in_pack and problem.kind == "unresolvable" %}
+{# The pack's mod or a dependency: pin_set takes both (a dependency the last resolution names). #}
+{% set usable = alternative and pid is not none and problem.kind == "unresolvable" %}
 {% if alternative %}
 {% set choice = ("la " ~ alternative.channel ~ " " ~ alternative.version_number) if alternative.channel in ("beta", "alpha")
                 else ("la versión " ~ alternative.version_number ~ " (" ~ alternative.channel ~ ")") %}

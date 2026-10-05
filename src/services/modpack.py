@@ -301,22 +301,34 @@ class ModpackService():
     async def pin_set(self, bundle_id: str, project_id: str, version_id: str, actor: Actor) -> ModpackBundle:
         """Pin one mod of the bundle to a version, atomically; only that pin changes.
 
-        422 for an id that is not a Modrinth id (it would become a nested key), a project the
-        bundle does not have, or a version that is not of that project: the catalog is asked first,
-        Modrinth if the catalog does not have it. Nothing is written for a refused pin.
+        A dependency can be pinned too ("Usar la beta" on its card): a project the pack's last saved
+        resolution names, as an entry or as a problem.
+
+        422 for an id that is not a Modrinth id (it would become a nested key), a project that is
+        neither the bundle's nor one its last resolution names, or a version that is not of that
+        project: the catalog is asked first, Modrinth if the catalog does not have it. Nothing is
+        written for a refused pin.
         """
         for value in (project_id, version_id):
             if not MODRINTH_ID.fullmatch(value):
                 raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{value}' no es un id de Modrinth")
         bundle = await self.modpackDB.bundle_get(bundle_id)
-        if project_id not in {p.project_id for p in bundle.projects}:
-            raise HTTP_422_UNPROCESSABLE_ENTITY("Ese proyecto no está en el modpack")
+        if project_id not in {p.project_id for p in bundle.projects} and not await self._resolution_names(bundle, project_id):
+            raise HTTP_422_UNPROCESSABLE_ENTITY("Ese proyecto no está en el modpack ni es una de sus dependencias")
         if await self._version_project(version_id) != project_id:
             raise HTTP_422_UNPROCESSABLE_ENTITY("La versión no es de ese proyecto")
         updated = await self.modpackDB.bundle_pin_set(bundle_id, project_id, version_id)
         await self.audit.record(actor, "bundle.pin", _bundle(bundle_id),
                                 {"project_id": project_id, "version_id": version_id})
         return updated
+
+    async def _resolution_names(self, bundle: ModpackBundle, project_id: str) -> bool:
+        """Whether the bundle's last saved resolution names the project, as an entry or a problem."""
+        saved = await self.modpackDB.resolution_get(bundle.id) if bundle.id is not None else None
+        if saved is None:
+            return False
+        return any(e.project_id == project_id for e in saved.lock.entries) \
+            or any(p.project_id == project_id for p in saved.lock.problems)
 
     async def pin_unset(self, bundle_id: str, project_id: str, actor: Actor) -> ModpackBundle:
         """Remove the pin of one mod; only that pin changes. 422 for an id that is not a Modrinth id."""
