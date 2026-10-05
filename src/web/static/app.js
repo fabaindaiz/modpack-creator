@@ -271,17 +271,37 @@
 
   // "Fijar otra" (a problem's card) lands on the mod in the list, #mod-row-<id>: its card opens,
   // which loads its versions to pin. On load, once htmx has processed the page, so the card's
-  // toggle reaches it.
-  window.addEventListener('load', function () {
+  // toggle reaches it; on hashchange when the page is already the one linked (?vista=todos), and
+  // then the modal the link was clicked in closes, so the row is reachable.
+  function openLinkedMod() {
     if (location.hash.indexOf('#mod-row-') !== 0) {
       return;
     }
     var row = document.getElementById(location.hash.slice(1));
     var details = row ? row.querySelector('details') : null;
-    if (details) {
-      details.open = true;
+    if (!details) {
+      return;
     }
-  });
+    var reveal = function () {
+      details.open = true;
+      var summary = details.querySelector('summary');
+      if (summary) {
+        summary.focus();
+      }
+      row.scrollIntoView({ block: 'start' });
+    };
+    var dialog = document.querySelector('dialog[open]');
+    if (!dialog) {
+      reveal();
+      return;
+    }
+    // After the dialog's own close listener, which gives the focus back to its opener: the row
+    // takes it from there.
+    dialog.addEventListener('close', reveal, { once: true });
+    dialog.close();
+  }
+  window.addEventListener('load', openLinkedMod);
+  window.addEventListener('hashchange', openLinkedMod);
 
   // On a narrow screen the section nav scrolls sideways: keep the current section in view.
   var current = document.querySelector('nav[aria-label="Secciones"] [aria-current="page"]');

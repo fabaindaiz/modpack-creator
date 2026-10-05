@@ -2033,3 +2033,6 @@ def test_app_js_marks_every_select_of_the_form_and_opens_a_linked_mod() -> None:
     text = client.get("/static/app.js").text
     assert "[data-set-all]" in text and "closest('form')" in text and "querySelectorAll('select')" in text
     assert "mod-row-" in text and "details" in text
+    # Already on ?vista=todos, "Fijar otra" only changes the hash: no load, so hashchange too, and
+    # the build dialog it was clicked in closes (F3 of the final review).
+    assert "addEventListener('hashchange', openLinkedMod)" in text and "addEventListener('load', openLinkedMod)" in text
