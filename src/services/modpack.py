@@ -99,6 +99,9 @@ class ModList:
     # The pinned projects no row shows (they left the pack and are not a dependency), in pin order:
     # listed apart so their pin can still be removed. `titles` names them.
     orphan_pins: list[str] = field(default_factory=list)
+    # The card of each project a problem is about that no row shows (an unresolvable dependency),
+    # from the same fill: "Con problemas" shows every problem with its mod's card.
+    problem_cards: dict[str, ModRow] = field(default_factory=dict)
 
 
 @dataclass
@@ -370,8 +373,10 @@ class ModpackService():
         saved resolution (its entries without an origin) by title, each with its card data. Without a
         resolution, only the pack's projects. The pins no row shows are listed apart. The catalog is
         filled first, in one call within `icon_deadline` (best effort), for the missing icons and for
-        the projects the resolution's suggestions and problems and those pins name: a Modrinth that
-        is down gives the list without them, never an error. Writes the catalog.
+        the projects the resolution's suggestions and problems (with who asked and the other side
+        of an incompatibility) and those pins name; a problem's mod without a row gets its card
+        from that fill too. A Modrinth that is down gives the list without them, never an error.
+        Writes the catalog.
 
         :param check: The latest update check, for the newer versions; None shows none.
         """
@@ -394,6 +399,9 @@ class ModpackService():
             named += [x.project_id for x in resolution.lock.suggestions]
             named += [r for x in resolution.lock.suggestions for r in x.requested_by]
             named += [x.project_id for x in resolution.lock.problems if x.project_id]
+            # Who asked for a problem's mod and the other side of an incompatibility: its text names them.
+            named += [r for x in resolution.lock.problems for r in x.requested_by]
+            named += [x.conflict_with for x in resolution.lock.problems if x.conflict_with]
         catalog = await fill_catalog(self.modrinthDB, self.modrinthAPI,
                                      [*pack, *dependencies, *sorted(requesters), *named], self.icon_deadline)
         # The newer versions are against the build the check looked at: only shown next to that
@@ -426,8 +434,12 @@ class ModpackService():
         rows += sorted((row(i, None) for i in dependencies), key=lambda r: r.title)
         titles = {i: catalog[i].title if i in catalog else i for i in named}
         titles.update({r.project_id: r.title for r in rows})
+        shown = {r.project_id for r in rows}
+        problem_cards = {x.project_id: row(x.project_id, None) for x in (resolution.lock.problems if resolution else [])
+                         if x.project_id and x.project_id not in shown}
         return ModList(rows=rows, resolution=resolution, stale=stale,
-                       icons_missing=sum(1 for r in rows if r.icon_url is None), titles=titles, orphan_pins=orphan_pins)
+                       icons_missing=sum(1 for r in rows if r.icon_url is None), titles=titles, orphan_pins=orphan_pins,
+                       problem_cards=problem_cards)
 
     async def project_versions(self, bundle_id: str, project_id: str) -> list[VersionOption]:
         """

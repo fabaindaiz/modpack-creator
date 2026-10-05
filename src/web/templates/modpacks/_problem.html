@@ -1,0 +1,118 @@
+{# One problem of the resolution as a card (spec §1): its mod's card summary, what is wrong in words
+   with titles (never ids) and its actions, each through a route that already exists (spec §1, the
+   action table). Every action carries `contexto` ("problemas": the Mods tab), so the route applies
+   it, resolves again and answers where it was clicked; none creates a build. It receives `problem`,
+   `titles`, `pack` (the pack's project ids → origin) and `contexto`, plus the pack page's
+   `bundle_id`, `bundle`, `cards`, `icon` and `humanize`.
+
+   A problem saved before `requested_by`, `alternative` and `conflict_with` existed has them empty:
+   its own `detail` is shown (ids named by title) and only the actions that need no new field. #}
+{% import "_macros.html" as ui %}
+{% set KIND = {"unresolvable": "sin versión", "pin_mismatch": "versión fijada", "pin_conflict": "versión fijada",
+               "incompatible": "incompatible", "no_file": "sin archivo"} %}
+{% set target = "#mods" %}
+{% set pid = problem.project_id %}
+{% set card = cards.get(pid) if pid else none %}
+{% set image = icon(card.icon_url) if card else none %}
+{% set name = titles.get(pid, pid) if pid else "" %}
+{% set in_pack = pid is not none and pid in pack %}
+{% set alternative = problem.alternative %}
+{% set requesters = problem.requested_by %}
+{% set dependency = pid is not none and not in_pack %}
+{# A pin that no longer works: unpinning or pinning another solves it, not removing the mod. #}
+{% set pin_problem = pid is not none and pid in bundle.pins and alternative is none
+                     and problem.kind in ("unresolvable", "pin_mismatch", "pin_conflict") %}
+{% if alternative %}
+{% set choice = ("la " ~ alternative.channel ~ " " ~ alternative.version_number) if alternative.channel in ("beta", "alpha")
+                else ("la versión " ~ alternative.version_number ~ " (" ~ alternative.channel ~ ")") %}
+{% endif %}
+{# The pack's mods a "Quitar" button removes. #}
+{% if pin_problem %}
+{% set removals = [] %}
+{% elif problem.kind == "incompatible" %}
+{% set removals = [pid, problem.conflict_with] | select | select("in", pack) | list %}
+{% elif in_pack %}
+{% set removals = [pid] %}
+{% else %}
+{% set removals = requesters | select("in", pack) | list %}
+{% endif %}
+{# Those that came with the .mrpack come back if its content is replaced: the card says so. #}
+{% set mrpack = namespace(ids=[]) %}
+{% for removal in removals if pack[removal] == "pack" %}{% set mrpack.ids = mrpack.ids + [removal] %}{% endfor %}
+{% macro names(ids) %}{% for i in ids %}{{ ui.mod_link(i, titles.get(i, i), pack=bundle_id) }}{% if not loop.last %}, {% endif %}{% endfor %}{% endmacro %}
+<article data-problem="{{ pid or '' }}" class="space-y-2 rounded-lg border border-red-200 bg-white p-3 text-sm dark:border-red-500/30 dark:bg-zinc-900">
+  <div class="flex items-start gap-3">
+    {% if image %}
+    <img src="{{ image }}" alt="" width="40" height="40" loading="lazy" class="size-10 shrink-0 rounded-md bg-zinc-100 object-cover dark:bg-zinc-800">
+    {% else %}
+    <div class="size-10 shrink-0 rounded-md bg-zinc-100 dark:bg-zinc-800" aria-hidden="true"></div>
+    {% endif %}
+    <div class="min-w-0 flex-1 space-y-0.5">
+      <p class="flex flex-wrap items-center gap-x-2 gap-y-1">
+        {% if pid %}<span class="font-medium wrap-anywhere">{{ ui.mod_link(pid, name, pack=bundle_id) }}</span>{% endif %}
+        {{ ui.badge("versión fijada" if pin_problem else KIND.get(problem.kind, problem.kind), "danger") }}
+      </p>
+      {% if card and card.description %}<p class="truncate text-xs text-zinc-500 dark:text-zinc-400" title="{{ card.description }}">{{ card.description }}</p>{% endif %}
+      <p class="break-words text-zinc-800 dark:text-zinc-200">
+        {%- if problem.kind == "unresolvable" and alternative -%}
+        No tiene versión para {{ bundle.version }} con {{ bundle.loader.value }} en los canales del pack ({{ bundle.channels | join(", ") }}); sirve {{ choice }}.
+        {%- elif pin_problem and problem.kind == "unresolvable" -%}
+        La versión fijada ya no está en Modrinth.
+        {%- elif pin_problem and problem.kind == "pin_mismatch" -%}
+        La versión fijada no es para {{ bundle.version }} con {{ bundle.loader.value }}.
+        {%- elif pin_problem and requesters -%}
+        {{ names(requesters) }} pide otra versión que la fijada.
+        {%- elif pin_problem -%}
+        Otro mod pide una versión distinta de la fijada.
+        {%- elif problem.kind == "incompatible" and problem.conflict_with -%}
+        {{ names([problem.conflict_with]) }} es incompatible con {{ names([pid]) }}.
+        {%- elif problem.kind == "no_file" -%}
+        La versión elegida no tiene archivo para descargar.
+        {%- else -%}
+        {{ humanize(problem.detail, titles) }}
+        {%- endif -%}
+      </p>
+      {% if dependency and requesters %}<p class="text-xs break-words text-zinc-600 dark:text-zinc-400">dependencia de {{ names(requesters) }}</p>{% endif %}
+    </div>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-2">
+    {% if alternative and in_pack %}
+    <form hx-post="/modpacks/{{ bundle_id }}/pins" hx-target="{{ target }}" hx-swap="outerHTML">
+      <input type="hidden" name="project_id" value="{{ pid }}">
+      <input type="hidden" name="version_id" value="{{ alternative.version_id }}">
+      <input type="hidden" name="contexto" value="{{ contexto }}">
+      {{ ui.button("Usar " ~ choice, type="submit", small=True) }}
+    </form>
+    {% endif %}
+    {% if pin_problem %}
+    {{ ui.button("Quitar la fijación", kind="secondary", small=True, attrs={
+      "hx-delete": "/modpacks/" ~ bundle_id ~ "/pins/" ~ pid ~ "?contexto=" ~ contexto,
+      "hx-target": target, "hx-swap": "outerHTML"}) }}
+    {{ ui.link_button("Fijar otra", "/modpacks/" ~ bundle_id ~ "?vista=todos#mod-row-" ~ pid, small=True) }}
+    {% endif %}
+    {% for removal in removals %}
+    {% set removal_name = titles.get(removal, removal) %}
+    {{ ui.button("Quitar del modpack" if removal == pid and problem.kind != "incompatible" else "Quitar " ~ removal_name,
+      kind="secondary", small=True, attrs={
+      "hx-delete": "/modpacks/" ~ bundle_id ~ "/projects/" ~ removal ~ "?contexto=" ~ contexto,
+      "hx-target": target, "hx-swap": "outerHTML", "hx-confirm": "¿Quitar " ~ removal_name ~ " del modpack?"}) }}
+    {% endfor %}
+    {% if dependency and problem.kind != "incompatible" %}
+    {{ ui.link_button("Crear un reemplazo", "/replacements", small=True) }}
+    {% if requesters %}
+    {# Global: the dependency is dropped in every pack, so it asks first (spec §1). #}
+    <form hx-post="/replacements" hx-target="{{ target }}" hx-swap="outerHTML" hx-confirm="Se descarta {{ name }} en todos los packs. ¿Seguir?">
+      <input type="hidden" name="project_id" value="{{ pid }}">
+      <input type="hidden" name="replacement" value="">
+      <input type="hidden" name="bundle_id" value="{{ bundle_id }}">
+      <input type="hidden" name="contexto" value="{{ contexto }}">
+      {{ ui.button("Ignorar esta dependencia", type="submit", kind="ghost", small=True) }}
+    </form>
+    {% endif %}
+    {% endif %}
+  </div>
+  {% if mrpack.ids %}
+  <p class="text-xs break-words text-zinc-600 dark:text-zinc-400">{% set one = mrpack.ids | length == 1 %}{{ names(mrpack.ids) }} {{ "vino" if one else "vinieron" }} con el .mrpack: {{ "vuelve" if one else "vuelven" }} si se reemplaza el contenido del pack; para que no vuelva, crea un <a href="/replacements" class="font-medium text-emerald-700 hover:underline dark:text-emerald-300">reemplazo vacío</a>.</p>
+  {% endif %}
+</article>

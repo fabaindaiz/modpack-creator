@@ -1,9 +1,13 @@
-{# The pack's mods as one list (spec §1): the saved resolution on top, then a row per mod with its
-   card in a <details>. What changes together is in #mods, the fragment the resolve, decision,
-   project and pin routes answer. A route may add, after it, a success (or info) notice, the search
-   hit to mark as added and (after decisions, `builds_oob`) the builds section, all out of band.
-   `icon` and `https_url` only let through URLs that may be shown (an icon from Modrinth's CDN, an
-   https link); everything from Modrinth is escaped. Every mod name opens its card, from this pack. #}
+{# The pack's mods (spec §1, §3): the saved resolution on top, then the tabs and one view, `vista`:
+   "todos" is a row per mod with its card in a <details>; "decidir" the mods left to decide
+   (_pending.html); "problemas" each problem as a card with its actions (_problem.html). The tabs
+   count from the current resolution only (a stale or missing one asks to resolve), and the page
+   always starts on "Todos". What changes together is in #mods, the fragment the resolve, decision,
+   project, pin and tab requests answer. A route may add, after it, a success (or info) notice, the
+   search hit to mark as added and (after resolving again, `builds_oob`) the builds section, all out
+   of band. `icon` and `https_url` only let through URLs that may be shown (an icon from Modrinth's
+   CDN, an https link); everything from Modrinth is escaped. Every mod name opens its card, from
+   this pack. #}
 {% import "_macros.html" as ui %}
 {% set SIDE = {
   "include": ("En el servidor", "accent"),
@@ -11,11 +15,44 @@
   "admin": ("Sin decidir", "warning"),
 } %}
 {% set LINK = "font-medium text-emerald-700 hover:underline dark:text-emerald-300" %}
+{% set saved = mods.resolution.lock if mods.resolution is not none else none %}
+{% set current = saved is not none and not mods.stale %}
+{% set TABS = (
+  ("todos", "Todos", mods.rows | length, ""),
+  ("decidir", "Por decidir", (saved.undecided | length) if current else none, "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200"),
+  ("problemas", "Con problemas", (saved.problems | length) if current else none, "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-200"),
+) %}
 <div id="mods" class="space-y-4">
   {% include "modpacks/_resolution.html" %}
 
-  <div class="space-y-1">
-    <h3 class="text-xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">Mods <span class="font-normal tabular-nums">({{ mods.rows | length }})</span></h3>
+  <nav aria-label="Vistas de los mods" class="flex flex-wrap items-center gap-x-1 border-b border-zinc-200 dark:border-zinc-800">
+    {% for name, label, count, highlight in TABS %}
+    {% call ui.mods_view_link(bundle_id, name, "-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium " ~ ("border-emerald-600 text-emerald-800 dark:border-emerald-400 dark:text-emerald-200" if vista == name else "border-transparent text-zinc-600 hover:border-zinc-300 hover:text-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:text-zinc-100"), current=vista == name, attrs={"data-tab": name}) -%}
+      {{ label }}
+      {%- if count is not none %} <span class="rounded-full px-1.5 text-xs tabular-nums {{ highlight if highlight and count else 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300' }}">{{ count }}</span>{% endif %}
+    {%- endcall %}
+    {% endfor %}
+    {% if not current %}<span class="px-2 py-2 text-xs text-zinc-500 dark:text-zinc-400">Resuelve para ver lo pendiente</span>{% endif %}
+  </nav>
+
+  {% if vista == "decidir" %}
+  <div data-vista="decidir">{% include "modpacks/_pending.html" %}</div>
+  {% elif vista == "problemas" %}
+  <div data-vista="problemas" class="space-y-3">
+    {% if not current %}
+    <p class="text-sm text-zinc-600 dark:text-zinc-400">Resuelve para ver lo pendiente: {{ "todavía no se resolvió." if saved is none else "el pack cambió desde la última resolución." }}</p>
+    {% elif not saved.problems %}
+    <p class="text-sm text-zinc-600 dark:text-zinc-400">No hay problemas en la resolución vigente.</p>
+    {% else %}
+    <ul class="space-y-3">
+      {% for problem in saved.problems %}
+      <li>{% with pack=origins, contexto="problemas" %}{% include "modpacks/_problem.html" %}{% endwith %}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+  {% else %}
+  <div data-vista="todos" class="space-y-1">
     {% if not mods.rows %}
     <p class="text-sm text-zinc-500 dark:text-zinc-400">El modpack todavía no tiene mods: búscalos arriba o agrégalos por slug.</p>
     {% else %}
@@ -25,7 +62,7 @@
       {% set side = SIDE.get(row.side) %}
       {% set version = (row.build_version ~ (" → " ~ row.newer_version if row.newer_version else "")) if row.build_version else "" %}
       {% set in_pack = row.origin is not none %}
-      <li data-project="{{ row.project_id }}">
+      <li data-project="{{ row.project_id }}" id="mod-row-{{ row.project_id }}">
         <details class="group" hx-disinherit="*"
           {%- if in_pack %} hx-get="/modpacks/{{ bundle_id }}/projects/{{ row.project_id }}/versions" hx-trigger="toggle once" hx-target="#versions-{{ row.project_id }}" hx-swap="innerHTML"{% endif %}>
           <summary class="flex cursor-pointer items-start gap-3 px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800/60">
@@ -138,6 +175,7 @@
     </div>
     {% endif %}
   </div>
+  {% endif %}
 </div>
 {% if success is defined and success %}
 <div id="notices" hx-swap-oob="beforeend">{{ ui.success(success) }}</div>

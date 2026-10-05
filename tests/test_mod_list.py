@@ -289,6 +289,34 @@ def test_suggestion_and_problem_titles_come_from_the_same_single_fill(mongo: Mon
     assert titles == {"P1": "Sodium", "S1": "S1", "X1": "X1"}
 
 
+def test_problems_name_who_asked_and_the_other_side_and_have_a_card(mongo: MongoRunner) -> None:
+    # "Con problemas" shows each problem with its mod's card and its text with titles (spec §1, §3):
+    # who asked for it and the other side of an incompatibility are named from the same single fill,
+    # and a mod a problem names that no row shows (an unresolvable dependency) gets its card too.
+    from src.library.resolution import Problem
+
+    async def scenario() -> Any:
+        api = FakeModrinth([project("X1", "Roto"), project("Q1", "Quilted")])
+        s = Scenario(api)
+        await s.modrinthDB.project_upsert_many([project("P1", "Sodium"), project("P2", "Lithium"),
+                                                project("R1", "Requester")])
+        bundle_id = await s.bundle([("P1", ProjectOrigin.pack), ("P2", ProjectOrigin.admin)])
+        bundle = await s.modpackDB.bundle_get(bundle_id)
+        saved = lock(entry("P1", "1"), entry("P2", "1"))
+        saved.problems = [Problem(kind="unresolvable", project_id="X1", requested_by=["R1"], detail="sin versión"),
+                          Problem(kind="incompatible", project_id="P2", conflict_with="Q1", detail="incompatible")]
+        await s.modpackDB.resolution_save(ModpackResolution(
+            bundle_id=bundle.id, resolved_at=NOW, request_digest="d", lock=saved))  # type: ignore[arg-type]
+        listed = await s.service.mod_list(bundle_id, check=None)
+        cards = {i: (c.title, c.description, c.icon_url, c.origin) for i, c in listed.problem_cards.items()}
+        return listed.titles, cards, api.calls
+
+    titles, cards, calls = mongo(scenario)
+    assert [(c, sorted(ids)) for c, ids in calls] == [("project_get_many", ["Q1", "X1"])]  # one fill, names included
+    assert titles["X1"] == "Roto" and titles["R1"] == "Requester" and titles["Q1"] == "Quilted"
+    assert cards == {"X1": ("Roto", "About Roto", "https://cdn.modrinth.com/x.png", None)}  # P2 has its row
+
+
 def test_support_flags_follow_the_pack(mongo: MongoRunner) -> None:
     async def scenario() -> Any:
         s = Scenario(FakeModrinth())

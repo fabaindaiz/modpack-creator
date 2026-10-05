@@ -1,6 +1,7 @@
-{# The latest saved resolution above the mods: when it ran and whether the pack changed since, then
-   its problems, its suggestions and the undecided mods, each only when there are some. Part of
-   _mods.html; `titles` names every project it mentions, and each opens its card from this pack. #}
+{# The latest saved resolution above the mods: when it ran and whether the pack changed since, how
+   many mods are left to decide and how many problems it has (each a link to its tab, where they are
+   listed), and its suggestions, each only when there are some. Part of _mods.html; `titles` names
+   every project it mentions, and each opens its card from this pack. Resolving keeps the view. #}
 {% import "_macros.html" as ui %}
 {% set resolution = mods.resolution %}
 <div class="space-y-3">
@@ -13,7 +14,8 @@
       {% endif %}
     </p>
     {{ ui.button("Resolver" if resolution is none else "Resolver de nuevo", kind="secondary", attrs={
-      "hx-post": "/modpacks/" ~ bundle_id ~ "/resolve", "hx-target": "#mods", "hx-swap": "outerHTML"}) }}
+      "hx-post": "/modpacks/" ~ bundle_id ~ "/resolve" ~ ("" if vista == "todos" else "?vista=" ~ vista),
+      "hx-target": "#mods", "hx-swap": "outerHTML"}) }}
   </div>
 
   {% if resolution is not none %}
@@ -25,15 +27,14 @@
   {{ ui.notice("La resolución no terminó: la cadena de dependencias es demasiado larga.", "warning") }}
   {% endif %}
 
-  {% if saved.problems %}
-  <div class="space-y-1 rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-500/40 dark:bg-red-950/60 dark:text-red-200">
-    <h3 class="font-semibold">Problemas ({{ saved.problems | length }})</h3>
-    <ul class="list-disc space-y-0.5 pl-5">
-      {% for problem in saved.problems %}
-      <li class="break-words">{% if problem.project_id %}<span class="font-medium">{{ ui.mod_link(problem.project_id, titles.get(problem.project_id, problem.project_id), pack=bundle_id) }}</span>: {% endif %}{{ problem.detail }}</li>
-      {% endfor %}
-    </ul>
-  </div>
+  {# What is pending, counted, with links to its tab: the tabs list it (spec §3). Only from the
+     current resolution: a stale one says so above. #}
+  {% if not mods.stale and (saved.undecided or saved.problems) %}
+  <p data-pending-summary class="text-sm font-medium">
+    {%- if saved.undecided %}{% call ui.mods_view_link(bundle_id, "decidir", "text-amber-800 underline-offset-2 hover:underline dark:text-amber-300") %}{{ saved.undecided | length }} por decidir{% endcall %}{% endif %}
+    {%- if saved.undecided and saved.problems %} · {% endif %}
+    {%- if saved.problems %}{% call ui.mods_view_link(bundle_id, "problemas", "text-red-700 underline-offset-2 hover:underline dark:text-red-300") %}{{ saved.problems | length }} con problemas{% endcall %}{% endif -%}
+  </p>
   {% endif %}
 
   {% if saved.suggestions %}
@@ -54,29 +55,6 @@
       </li>
       {% endfor %}
     </ul>
-  </div>
-  {% endif %}
-
-  {% if saved.undecided %}
-  <div class="space-y-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-950/60 dark:text-amber-200">
-    <h3 class="font-semibold">Decidir varios ({{ saved.undecided | length }})</h3>
-    <p>Modrinth no dice si estos mods van en el servidor. Hasta que lo decidas no se puede crear un build.</p>
-    <form hx-post="/modpacks/{{ bundle_id }}/decisions/bulk" hx-target="#mods" hx-swap="outerHTML" class="space-y-2 border-t border-amber-300 pt-2 dark:border-amber-500/40">
-      <p class="text-xs">Los mods que dejes sin decidir no se guardan; puedes decidir uno solo o varios a la vez.</p>
-      <ul class="space-y-1">
-        {% for entry in saved.undecided %}
-        <li class="flex flex-wrap items-center gap-2">
-          <label for="bulk-{{ entry.project_id }}" class="min-w-0 flex-1 font-medium break-words">{{ ui.mod_link(entry.project_id, titles.get(entry.project_id, entry.project_id), pack=bundle_id) }}</label>
-          <select id="bulk-{{ entry.project_id }}" name="decision.{{ entry.project_id }}" class="rounded-md border-0 bg-white px-2 py-1 text-sm text-zinc-900 ring-1 ring-inset ring-amber-400 dark:bg-zinc-900 dark:text-zinc-100">
-            <option value="" selected>Sin decidir</option>
-            <option value="si">En el servidor</option>
-            <option value="no">Solo cliente</option>
-          </select>
-        </li>
-        {% endfor %}
-      </ul>
-      {{ ui.button("Guardar decisiones", type="submit") }}
-    </form>
   </div>
   {% endif %}
   {% endif %}

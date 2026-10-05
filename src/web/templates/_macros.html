@@ -178,6 +178,15 @@
 {%- endif %}
 {%- endmacro %}
 
+{# A link to one view of a pack's Mods (spec §3): htmx asks for the page, keeps only #mods and puts
+   the view in the URL, so it can be shared; without JS it is a plain link. The text is the call
+   block's. #}
+{% macro mods_view_link(bundle_id, vista, classes="", current=False, attrs={}) -%}
+{% set url = "/modpacks/" ~ bundle_id ~ "?vista=" ~ vista -%}
+<a href="{{ url }}" hx-get="{{ url }}" hx-select="#mods" hx-target="#mods" hx-swap="outerHTML" hx-push-url="true" class="{{ classes }}"
+  {%- if current %} aria-current="page"{% endif %}{{ attrs | xmlattr }}>{{ caller() }}</a>
+{%- endmacro %}
+
 {# Inside a real update's dialog: a pending rollback (JobService.rollback_state) stops being
    offered once a later real update runs (R17 of d-7985ee-5445a0), so the dialog says it first. #}
 {% macro discards_rollback(rollback) %}

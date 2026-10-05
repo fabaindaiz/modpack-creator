@@ -8,13 +8,13 @@ from fastapi import APIRouter, Depends, Form, Query, Request
 from starlette.datastructures import FormData
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from src.exceptions import BuildBlocked, HTTP_422_UNPROCESSABLE_ENTITY, UpstreamError
-from src.library.resolution import Lock
+from src.library.resolution import ADMIN, Lock
 from src.dependences import Dependences, ModpackService, ModrinthService, PterodactylService, UpdateCheckService
 from src.model.modpack import ModpackBundle, ModpackBundleCreate, ModpackBundlePatch, ProjectOrigin
 from src.model.modrinth.project import ModrinthEnvironment
 from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
-from src.web import MODRINTH_REF, WebRoute, get_web_actor, render
+from src.web import BUNDLE_REF, MODRINTH_REF, WebRoute, get_web_actor, render
 
 logger = logging.getLogger("modpack.web")
 router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
@@ -28,6 +28,12 @@ SEARCH_TEXT_MAX = 100
 # The only host the CSP lets an <img> load from besides ourselves (web_security.CSP).
 ICON_HOST = "cdn.modrinth.com"
 MRPACK_TYPE = "application/x-modrinth-modpack+zip"
+# The views of a pack's Mods (spec §3): every mod, the ones to decide, the problems. Any other value
+# is "todos": a stale or hand-written link still shows the pack.
+VISTAS = ("todos", "decidir", "problemas")
+# Where a problem's action was clicked: the route applies it, resolves again and answers that view
+# (spec §1). Without it, the route answers as it always did.
+Contexto = Literal["problemas"]
 
 @dataclass(frozen=True)
 class SearchHit:
@@ -110,6 +116,17 @@ def _https_url(url: Any) -> Optional[str]:
     parts = urlsplit(url)
     return url if parts.scheme == "https" and parts.hostname else None
 
+def _vista(value: str) -> str:
+    return value if value in VISTAS else "todos"
+
+_NAME_TOKEN = re.compile(r"[A-Za-z0-9_\-]+")
+
+def humanize(detail: str, titles: dict[str, str]) -> str:
+    """A problem's saved text with the projects it names by title (the ids `titles` knows) and the
+    admin in words: what the panel shows when the structured fields do not say it (old resolutions,
+    a dependency without versions)."""
+    return _NAME_TOKEN.sub(lambda m: titles.get(m.group(0), "el admin" if m.group(0) == ADMIN else m.group(0)), detail)
+
 async def _titles(modrinthService: ModrinthService, project_ids: list[str]) -> dict[str, str]:
     """Project id → title, from the catalog, filled first from Modrinth for what it lacks: one batch
     for every mod the render shows, within its deadline, so each has a card (spec §2, "ningún mod sin
@@ -118,21 +135,25 @@ async def _titles(modrinthService: ModrinthService, project_ids: list[str]) -> d
     return {project_id: found[project_id].title if project_id in found else project_id for project_id in project_ids}
 
 async def _mods_context(modpackService: ModpackService, updateCheckService: UpdateCheckService,
-                        bundle_id: str) -> dict[str, Any]:
+                        bundle_id: str, vista: str = "todos") -> dict[str, Any]:
     """What _mods.html needs: the bundle and its mod list, with the latest update check (for the
-    newer versions) and the titles of what the saved resolution names. Modrinth is asked at most
-    once, inside mod_list, within one deadline."""
+    newer versions) and the titles of what the saved resolution names, in one of its views. Modrinth
+    is asked at most once, inside mod_list, within one deadline. `cards` has a card for every row
+    and every problem's mod; `origins` is the pack's project ids → origin."""
     bundle = await modpackService.bundle_get(bundle_id)
     mods = await modpackService.mod_list(bundle_id, await updateCheckService.latest(bundle_id))
     return {"bundle": bundle, "bundle_id": bundle_id, "mods": mods, "titles": mods.titles, "icon": _icon,
-            "https_url": _https_url, "downloads": abbreviate_downloads}
+            "https_url": _https_url, "downloads": abbreviate_downloads, "vista": _vista(vista),
+            "cards": {r.project_id: r for r in mods.rows} | mods.problem_cards,
+            "origins": {p.project_id: p.origin.value for p in bundle.projects},
+            "humanize": humanize, "environment_label": environment_label}
 
 async def _mods(request: Request, actor: Actor, modpackService: ModpackService, updateCheckService: UpdateCheckService,
                 bundle_id: str, success: Optional[str] = None, info: Optional[str] = None,
-                hit: Optional[str] = None) -> Response:
+                hit: Optional[str] = None, vista: str = "todos") -> Response:
     """The #mods fragment; `success` or `info` and `hit` go after it, out of band (a notice, a search
     hit marked "Ya está")."""
-    context = await _mods_context(modpackService, updateCheckService, bundle_id)
+    context = await _mods_context(modpackService, updateCheckService, bundle_id, vista)
     return render(request, "modpacks/_mods.html", actor, success=success, info=info, hit=hit, **context)
 
 def human_size(size: int) -> str:
@@ -149,19 +170,37 @@ def _has_pending(saved: Optional[tuple[Any, bool]]) -> bool:
     """Whether the current (not stale) saved resolution has mods left to decide."""
     return saved is not None and not saved[1] and bool(saved[0].lock.undecided)
 
-async def _decided(request: Request, actor: Actor, modpackService: ModpackService,
-                   updateCheckService: UpdateCheckService, bundle_id: str) -> Response:
-    """#mods after saving decisions (and resolving again), with #builds redrawn out of band: its
-    button says whether something is still pending, and "Crear build" is the highlighted next step
-    when the current resolution has nothing left to decide and no problems (spec §2)."""
-    context = await _mods_context(modpackService, updateCheckService, bundle_id)
+async def _resolved(request: Request, actor: Actor, modpackService: ModpackService,
+                    updateCheckService: UpdateCheckService, bundle_id: str, success: str,
+                    vista: str = "todos") -> Response:
+    """#mods after an action that resolved again (decisions, a problem's action), with #builds
+    redrawn out of band: its button says whether something is still pending, and "Crear build" is
+    the highlighted next step when the current resolution has nothing left to decide and no
+    problems (spec §2). Nothing here creates a build."""
+    context = await _mods_context(modpackService, updateCheckService, bundle_id, vista)
     mods = context["mods"]
     saved = (mods.resolution, mods.stale) if mods.resolution else None
     pending = _has_pending(saved)
     lock = mods.resolution.lock if mods.resolution else None
     ready = lock is not None and not mods.stale and not pending and not lock.problems and lock.complete
-    return render(request, "modpacks/_mods.html", actor, success="Decisiones guardadas", builds_oob=True,
+    return render(request, "modpacks/_mods.html", actor, success=success, builds_oob=True,
                   builds=await modpackService.build_find(bundle_id), pending=pending, ready=ready, **context)
+
+async def _decided(request: Request, actor: Actor, modpackService: ModpackService,
+                   updateCheckService: UpdateCheckService, bundle_id: str, vista: str = "todos") -> Response:
+    """#mods after saving decisions (and resolving again), in the view they were saved from."""
+    return await _resolved(request, actor, modpackService, updateCheckService, bundle_id, "Decisiones guardadas", vista)
+
+async def _acted(request: Request, actor: Actor, modpackService: ModpackService,
+                 updateCheckService: UpdateCheckService, bundle_id: str, contexto: Optional[str],
+                 success: str) -> Response:
+    """The answer to an action on the pack's mods. Without `contexto`, #mods as always; from a
+    problem's card ("problemas"), the pack is resolved again (after every action, so what is left
+    is current) and #mods answers in that view."""
+    if contexto is None:
+        return await _mods(request, actor, modpackService, updateCheckService, bundle_id)
+    await modpackService.resolve(bundle_id)
+    return await _resolved(request, actor, modpackService, updateCheckService, bundle_id, success, vista="problemas")
 
 # What the decision dialog says when it is sent with every mod left "Sin decidir".
 NOTHING_DECIDED = "Elige «En el servidor» o «Solo cliente» para al menos un mod."
@@ -243,14 +282,17 @@ async def modpack_create(
 async def modpack_detail(
         bundle_id: str,
         request: Request,
+        vista: Annotated[str, Query()] = "todos",
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
         ):
-    """A bundle: its mods as one list under the saved resolution, the search to add more, and on the
-    side its builds, the servers linked to it, its channels and its local files."""
-    context = await _mods_context(modpackService, updateCheckService, bundle_id)
+    """A bundle: its mods under the saved resolution, in one of their views (`vista`: every mod, the
+    ones to decide, the problems; spec §3), the search to add more, and on the side its builds, the
+    servers linked to it, its channels and its local files. A tab asks for this page and keeps only
+    #mods."""
+    context = await _mods_context(modpackService, updateCheckService, bundle_id, vista)
     builds = await modpackService.build_find(bundle_id)
     linked = str(context["bundle"].id)
     servers = [s for s in await pterodactylService.server_find() if s.bundle_id == linked]
@@ -318,12 +360,14 @@ async def project_remove(
         bundle_id: str,
         project_id: str,
         request: Request,
+        contexto: Annotated[Optional[Contexto], Query()] = None,
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         ):
+    """Remove a project from the pack; from a problem's card (`contexto`), resolve again too."""
     await modpackService.project_remove(bundle_id, project_id, actor)
-    return await _mods(request, actor, modpackService, updateCheckService, bundle_id)
+    return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto, "Quitado del modpack")
 
 @router.get("/modpacks/{bundle_id}/projects/{project_id}/versions")
 @inject
@@ -374,13 +418,15 @@ async def pin_add(
         request: Request,
         project_id: Annotated[str, Form(min_length=1, max_length=200, pattern=MODRINTH_REF)],
         version_id: Annotated[str, Form(min_length=1, max_length=200, pattern=MODRINTH_REF)],
+        contexto: Annotated[Optional[Contexto], Form()] = None,
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         ):
-    """Pin a mod to a version of that mod: one key, written atomically by the service."""
+    """Pin a mod to a version of that mod: one key, written atomically by the service. From a
+    problem's card ("Usar la beta …", `contexto`), resolve again too."""
     await modpackService.pin_set(bundle_id, project_id, version_id, actor)
-    return await _mods(request, actor, modpackService, updateCheckService, bundle_id)
+    return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto, "Versión fijada")
 
 @router.delete("/modpacks/{bundle_id}/pins/{project_id}")
 @inject
@@ -388,26 +434,29 @@ async def pin_remove(
         bundle_id: str,
         project_id: str,
         request: Request,
+        contexto: Annotated[Optional[Contexto], Query()] = None,
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         ):
+    """Remove a mod's pin; from a problem's card (`contexto`), resolve again too."""
     await modpackService.pin_unset(bundle_id, project_id, actor)
-    return await _mods(request, actor, modpackService, updateCheckService, bundle_id)
+    return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto, "Fijación quitada")
 
 @router.post("/modpacks/{bundle_id}/resolve")
 @inject
 async def modpack_resolve(
         bundle_id: str,
         request: Request,
+        vista: Annotated[str, Query()] = "todos",
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         ):
     """Resolve the bundle now and show the mods under it. The resolution is kept only to show it:
-    a build resolves again and freezes that lock."""
+    a build resolves again and freezes that lock. The view it was asked from stays."""
     await modpackService.resolve(bundle_id)
-    return await _mods(request, actor, modpackService, updateCheckService, bundle_id)
+    return await _mods(request, actor, modpackService, updateCheckService, bundle_id, vista=vista)
 
 @router.post("/modpacks/{bundle_id}/decisions")
 @inject
@@ -431,6 +480,7 @@ async def modpack_decide(
 async def modpack_decide_bulk(
         bundle_id: str,
         request: Request,
+        vista: Annotated[str, Query()] = "todos",
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
@@ -442,7 +492,7 @@ async def modpack_decide_bulk(
         raise HTTP_422_UNPROCESSABLE_ENTITY("Elige al menos una decisión")
     await modpackService.decisions_set(bundle_id, decisions, actor)
     await modpackService.resolve(bundle_id)
-    return await _decided(request, actor, modpackService, updateCheckService, bundle_id)
+    return await _decided(request, actor, modpackService, updateCheckService, bundle_id, vista)
 
 @router.post("/modpacks/{bundle_id}/builds")
 @inject
@@ -607,12 +657,22 @@ async def replacement_set(
         request: Request,
         project_id: Annotated[str, Form(min_length=1, max_length=200, pattern=MODRINTH_REF)],
         replacement: Annotated[str, Form(max_length=200, pattern=r"^\s*[A-Za-z0-9_\-]*\s*$")] = "",
+        bundle_id: Annotated[Optional[str], Form(pattern=BUNDLE_REF)] = None,
+        contexto: Annotated[Optional[Contexto], Form()] = None,
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
+        updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         ):
-    """Set a rule; an empty replacement means the mod is dropped with nothing in its place."""
+    """Set a rule; an empty replacement means the mod is dropped with nothing in its place. From a
+    problem's card ("Ignorar esta dependencia": `bundle_id` and `contexto`, both or neither) the
+    rule is still global; that pack is resolved again and its #mods answers instead."""
+    if (bundle_id is None) != (contexto is None):
+        raise HTTP_422_UNPROCESSABLE_ENTITY("Ignorar una dependencia necesita el modpack y desde dónde se pidió")
     await modpackService.replacement_set(project_id.strip(), replacement.strip() or None, actor)
+    if bundle_id is not None:
+        return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto,
+                            "Dependencia descartada en todos los packs")
     return await _replacements(request, actor, modpackService, modrinthService, fragment=True)
 
 @router.delete("/replacements/{project_id}")

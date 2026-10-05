@@ -119,6 +119,18 @@
       }
       return;
     }
+    // "Todos al servidor" / "Todos solo cliente" (Por decidir): mark every select of the button's
+    // form with its value. Nothing is sent: the form's own button saves.
+    var setAll = element.closest('[data-set-all]');
+    if (setAll) {
+      var form = setAll.closest('form');
+      if (form) {
+        form.querySelectorAll('select').forEach(function (select) {
+          select.value = setAll.getAttribute('data-set-all');
+        });
+      }
+      return;
+    }
     var opener = element.closest('[data-dialog-open]');
     if (opener) {
       var dialog = document.getElementById(opener.getAttribute('data-dialog-open'));
@@ -192,6 +204,20 @@
     var dialog = elt instanceof HTMLFormElement ? elt.closest('dialog') : null;
     if (dialog && dialog.open) {
       dialog.close();
+    }
+  });
+
+  // "Fijar otra" (a problem's card) lands on the mod in the list, #mod-row-<id>: its card opens,
+  // which loads its versions to pin. On load, once htmx has processed the page, so the card's
+  // toggle reaches it.
+  window.addEventListener('load', function () {
+    if (location.hash.indexOf('#mod-row-') !== 0) {
+      return;
+    }
+    var row = document.getElementById(location.hash.slice(1));
+    var details = row ? row.querySelector('details') : null;
+    if (details) {
+      details.open = true;
     }
   });
 

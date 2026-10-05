@@ -15,7 +15,7 @@ from dependency_injector import providers
 from fastapi.testclient import TestClient
 
 from src.exceptions import BuildBlocked, HTTP_404_NOT_FOUND, HTTP_409_CONFLICT, UpstreamError
-from src.library.resolution import Lock, LockEntry, Problem, Suggestion
+from src.library.resolution import Alternative, Lock, LockEntry, Problem, Suggestion
 from src.library.scan import LocalFile
 from src.model.modpack import (AvailableUpdate, ModpackBuild, ModpackBundle, ModpackReplacement, ModpackResolution,
                                PackProject, ProjectOrigin, UpdateCheck)
@@ -103,6 +103,7 @@ class FakeModpack:
         # side and pin it has) and per entry of the saved resolution that is not in it.
         self.titles: dict[str, str] = {"P1": "Sodium", "P2": "Lithium"}
         self.rows: Optional[list[ModRow]] = None
+        self.cards: dict[str, ModRow] = {}
         self.saved: Optional[ModpackResolution] = None
         self.stale = False
         self.checks_seen: list[Optional[UpdateCheck]] = []
@@ -176,12 +177,18 @@ class FakeModpack:
                      for i, e in entries.items() if i not in pack]
         # Like the service: a title for each row, for what the resolution's suggestions and problems
         # name, and for the pins no row shows.
-        orphan_pins = [i for i in self.bundle.pins if i not in {r.project_id for r in rows}]
-        named = [s.project_id for s in self.saved.lock.suggestions] + [p.project_id for p in self.saved.lock.problems
-                                                                      if p.project_id] if self.saved else []
+        shown = {r.project_id for r in rows}
+        orphan_pins = [i for i in self.bundle.pins if i not in shown]
+        problems = self.saved.lock.problems if self.saved else []
+        named = [s.project_id for s in self.saved.lock.suggestions] if self.saved else []
+        named += [p.project_id for p in problems if p.project_id] + [r for p in problems for r in p.requested_by]
+        named += [p.conflict_with for p in problems if p.conflict_with]
         titles = {i: self.titles.get(i, i) for i in named + orphan_pins} | {r.project_id: r.title for r in rows}
+        # A card for each problem's mod without a row, as `cards` says (or a bare one).
+        problem_cards = {p.project_id: self.cards.get(p.project_id) or row(p.project_id, titles[p.project_id], None)
+                         for p in problems if p.project_id and p.project_id not in shown}
         return ModList(rows=rows, resolution=self.saved, stale=self.stale, icons_missing=0, titles=titles,
-                       orphan_pins=orphan_pins)
+                       orphan_pins=orphan_pins, problem_cards=problem_cards)
 
     async def project_versions(self, bundle_id: str, project_id: str) -> list[VersionOption]:
         self.calls.append(("project_versions", bundle_id, project_id))
@@ -539,15 +546,19 @@ def test_resolve_answers_the_mods_with_the_saved_resolution_on_top() -> None:
     assert response.status_code == 200 and response.text.lstrip().startswith('<div id="mods"')
     assert call(modpack, "resolve")[1] == str(BUNDLE_ID)
     assert "Sodium" in response.text and "Lithium" in response.text
-    assert f'hx-post="/modpacks/{BUNDLE_ID}/decisions/bulk"' in response.text
-    assert response.text.index("Resuelto") < response.text.index("Decidir varios") < response.text.index('data-project="P1"')
+    # The panel counts what is pending; deciding is in its own tab, not above the list (spec §3).
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/decisions/bulk' not in response.text
+    text = response.text
+    assert text.index("Resuelto") < text.index("1 por decidir") < text.index('data-tab="todos"') < text.index('data-project="P1"')
 
 
-def test_resolve_shows_problems() -> None:
+def test_resolve_keeps_the_view_it_was_asked_from() -> None:
     client, modpack, _ = setup()
-    modpack.lock = lock(entry("P1"), problems=[Problem(kind="incompatible", project_id="P1", detail="no corre en 1.21.1")])
-    response = client.post(f"/modpacks/{BUNDLE_ID}/resolve", headers=HTMX)
-    assert "no corre en 1.21.1" in response.text
+    modpack.lock = lock(entry("P1"), problems=[Problem(kind="no_file", project_id="P9", detail="v-P9 no tiene archivo")])
+    text = client.post(f"/modpacks/{BUNDLE_ID}/resolve", params={"vista": "problemas"}, headers=HTMX).text
+    assert 'aria-current="page"' in tab(text, "problemas") and 'data-problem="P9"' in view(text, "problemas")
+    text = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "problemas"}).text
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/resolve?vista=problemas"' in text
 
 
 def test_decision_is_one_key_with_the_actor() -> None:
@@ -575,11 +586,11 @@ def test_decision_must_be_yes_or_no() -> None:
 def test_lock_offers_one_form_with_every_undecided_mod() -> None:
     client, modpack, _ = setup()
     modpack.lock = lock(entry("P1"), entry("P2", "admin"), entry("P3", "admin"))
-    text = client.post(f"/modpacks/{BUNDLE_ID}/resolve", headers=HTMX).text
-    assert f'hx-post="/modpacks/{BUNDLE_ID}/decisions/bulk"' in text
+    text = client.post(f"/modpacks/{BUNDLE_ID}/resolve", params={"vista": "decidir"}, headers=HTMX).text
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/decisions/bulk?vista=decidir"' in text
     assert 'name="decision.P2"' in text and 'name="decision.P3"' in text and 'name="decision.P1"' not in text
-    assert "Guardar decisiones" in text
-    form = text[text.index(f'hx-post="/modpacks/{BUNDLE_ID}/decisions/bulk"'):]
+    assert "Guardar las 2 decisiones" in text
+    form = text[text.index(f'hx-post="/modpacks/{BUNDLE_ID}/decisions/bulk?vista=decidir"'):]
     form = form[:form.index("</form>")]
     for undecided in ("P2", "P3"):  # once each, inside the bulk form, by title
         assert text.count(f'name="decision.{undecided}"') == form.count(f'name="decision.{undecided}"') == 1
@@ -1304,7 +1315,9 @@ def test_suggestions_have_titles_and_an_add_button() -> None:
     suggestions = text[text.index("Sugerencias"):]
     assert "Mod Menu" in suggestions and "sugerida por Sodium" in " ".join(visible(suggestions).split())
     assert f'hx-post="/modpacks/{BUNDLE_ID}/projects"' in suggestions and 'name="ref" value="P7"' in suggestions
-    assert "Roto" in text and "sin versión" in text
+    assert "P7" not in visible(text)
+    text = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "problemas"}).text
+    assert "Roto" in text and "sin versión" in text and "Mod Menu" in text  # suggestions in every view
     assert "P7" not in visible(text) and "P6" not in visible(text)
     assert modrinth.filled == []
 
@@ -1385,13 +1398,12 @@ def test_problems_suggestions_and_undecided_mods_open_their_cards() -> None:
     modpack.saved = resolution(lock(entry("P1"), entry("P2", "admin"),
                                     suggestions=[Suggestion(project_id="P7", requested_by=["P1"])],
                                     problems=[Problem(kind="unresolvable", project_id="P6", detail="sin versión")]))
-    text = client.get(f"/modpacks/{BUNDLE_ID}").text
-    problems = text[text.index("Problemas ("):text.index("Sugerencias")]
-    suggestions = text[text.index("Sugerencias"):text.index("Decidir varios")]
-    undecided = text[text.index("Decidir varios"):text.index("Guardar decisiones")]
-    assert mod_link("P6") in problems
+    text = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "problemas"}).text
+    suggestions = text[text.index("Sugerencias"):text.index('data-tab="todos"')]
+    assert mod_link("P6") in view(text, "problemas")
     assert mod_link("P7") in suggestions and mod_link("P1") in suggestions  # sugerida por Sodium
-    assert mod_link("P2") in undecided
+    text = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "decidir"}).text
+    assert mod_link("P2") in view(text, "decidir")
 
 
 def test_the_decide_dialog_names_open_their_cards_with_one_fill() -> None:
@@ -1444,3 +1456,341 @@ def test_replacement_rules_open_their_cards_with_one_fill() -> None:
     for project_id in ("OLDMOD", "NEWMOD", "DROPPED"):
         assert mod_link(project_id, pack=False) in text  # a global page: no pack
     assert modrinth.filled == [["DROPPED", "NEWMOD", "OLDMOD"]]
+
+
+# Internal tabs of the Mods view (spec §3) and a problem as a card with its actions (spec §1).
+
+def tab(text: str, name: str) -> str:
+    """The link of one tab, up to its closing tag."""
+    start = text.rindex("<a", 0, text.index(f'data-tab="{name}"'))
+    return text[start:text.index("</a>", start)]
+
+
+def view(text: str, name: str) -> str:
+    """The content of the view the fragment shows, which must be `name`."""
+    assert f'data-vista="{name}"' in text, f"not the {name} view"
+    return text[text.index(f'data-vista="{name}"'):]
+
+
+def problem_card(text: str, project_id: str) -> str:
+    """The HTML of one problem's card, up to the next one's."""
+    return text.split(f'data-problem="{project_id}"')[1].split("data-problem=")[0]
+
+
+def pending_item(text: str, project_id: str) -> str:
+    return text.split(f'data-pending="{project_id}"')[1].split("data-pending=")[0]
+
+
+def said(text: str) -> str:
+    """The visible text with its whitespace collapsed."""
+    return " ".join(visible(text).split())
+
+
+def problems_page(modpack: FakeModpack, client: TestClient, *problems: Problem) -> str:
+    modpack.saved = resolution(lock(entry("P1"), entry("P2"), problems=list(problems)))
+    response = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "problemas"})
+    assert response.status_code == 200
+    return view(response.text, "problemas")
+
+
+def test_tabs_link_to_each_view_with_their_counts_and_colors() -> None:
+    client, modpack, _ = setup()
+    modpack.saved = resolution(lock(entry("P1"), entry("P2", "admin"), problems=[
+        Problem(kind="no_file", project_id="P1", detail="x"), Problem(kind="no_file", project_id="P2", detail="y")]))
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    for name in ("todos", "decidir", "problemas"):
+        link, url = tab(text, name), f"/modpacks/{BUNDLE_ID}?vista={name}"
+        assert f'href="{url}"' in link and f'hx-get="{url}"' in link and 'hx-push-url="true"' in link
+        assert 'hx-select="#mods"' in link and 'hx-target="#mods"' in link and 'hx-swap="outerHTML"' in link
+    # It starts on "Todos", with the pending counts highlighted (owner's decision).
+    assert 'aria-current="page"' in tab(text, "todos") and "aria-current" not in tab(text, "decidir")
+    assert said(tab(text, "todos")) == "Todos 2" and said(tab(text, "decidir")) == "Por decidir 1"
+    assert said(tab(text, "problemas")) == "Con problemas 2"
+    assert "bg-amber-" in tab(text, "decidir") and "bg-red-" in tab(text, "problemas")
+    assert 'data-vista="todos"' in text and 'data-project="P1"' in text
+    modpack.saved = resolution(lock(entry("P1")))
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert said(tab(text, "decidir")) == "Por decidir 0" and said(tab(text, "problemas")) == "Con problemas 0"
+    assert "bg-amber-" not in tab(text, "decidir") and "bg-red-" not in tab(text, "problemas")
+
+
+@pytest.mark.parametrize("vista", ["nada", "", "PROBLEMAS", "x" * 500])
+def test_an_unknown_view_is_todos(vista: str) -> None:
+    client, modpack, _ = setup()
+    modpack.saved = resolution(lock(entry("P1"), entry("P2", "admin")))
+    response = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": vista})
+    assert response.status_code == 200 and 'aria-current="page"' in tab(response.text, "todos")
+    assert 'data-project="P1"' in view(response.text, "todos")
+
+
+def test_the_selected_tab_is_marked_and_only_its_view_is_drawn() -> None:
+    client, modpack, _ = setup()
+    modpack.saved = resolution(lock(entry("P1"), entry("P2", "admin")))
+    text = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "decidir"}).text
+    assert 'aria-current="page"' in tab(text, "decidir") and "aria-current" not in tab(text, "todos")
+    assert 'data-project="P1"' not in text and 'data-vista="todos"' not in text
+
+
+def test_tabs_without_a_current_resolution_ask_to_resolve() -> None:
+    client, modpack, _ = setup()
+    for stale in (None, True):
+        if stale:
+            modpack.saved, modpack.stale = resolution(lock(entry("P1"), entry("P2", "admin"))), True
+        text = client.get(f"/modpacks/{BUNDLE_ID}").text
+        assert "resuelve para ver lo pendiente" in said(text).lower()
+        assert said(tab(text, "decidir")) == "Por decidir" and said(tab(text, "problemas")) == "Con problemas"
+        for name in ("decidir", "problemas"):
+            shown = view(client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": name}).text, name)
+            assert "resuelve para ver lo pendiente" in said(shown).lower() and 'name="decision.P2"' not in shown
+
+
+def test_the_pack_panel_counts_what_is_pending_with_links_to_the_tabs() -> None:
+    client, modpack, _ = setup()
+    modpack.saved = resolution(lock(entry("P1"), entry("P2", "admin"), problems=[
+        Problem(kind="no_file", project_id="P1", detail="x"), Problem(kind="no_file", project_id="P2", detail="y")]))
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    panel = text[text.index("Resuelto"):text.index('data-tab="todos"')]
+    assert "1 por decidir · 2 con problemas" in said(panel)
+    for name in ("decidir", "problemas"):
+        assert f'hx-get="/modpacks/{BUNDLE_ID}?vista={name}"' in panel
+    # It no longer lists the problems nor the bulk decisions: those are the tabs.
+    assert "Problemas (" not in text and "decisions/bulk" not in text and 'data-problem="P1"' not in text
+    modpack.saved = resolution(lock(entry("P1"), entry("P2")))
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert "por decidir ·" not in text and "con problemas" not in text.split('data-tab="todos"')[0]
+
+
+def test_pending_view_shows_each_undecided_mod_with_its_card_and_shortcuts() -> None:
+    client, modpack, _ = setup()
+    dependency = entry("D1", "admin").model_copy(update={
+        "origin": None, "requested_by": ["P1"], "environment": "client_or_server", "version_number": "2.3.4"})
+    modpack.saved = resolution(lock(entry("P1"), entry("P2", "admin"), dependency))
+    modpack.rows = [
+        row("P1", "Sodium", side="include"),
+        row("P2", "Lithium", "admin", side="admin", icon_url="https://cdn.modrinth.com/data/P2/icon.png",
+            description="Optimiza <todo>"),
+        row("D1", "Indium", None, side="admin", required_by=["Sodium"], requested_by=["P1"])]
+    text = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "decidir"}).text
+    pending = view(text, "decidir")
+    form = pending[pending.index(f'hx-post="/modpacks/{BUNDLE_ID}/decisions/bulk?vista=decidir"'):]
+    form = form[:form.index("</form>")]
+    assert 'hx-target="#mods"' in pending and 'hx-swap="outerHTML"' in pending
+    lithium, indium = pending_item(form, "P2"), pending_item(form, "D1")
+    assert '<img src="https://cdn.modrinth.com/data/P2/icon.png"' in lithium and mod_link("P2") in lithium
+    assert "Optimiza &lt;todo&gt;" in lithium and "<todo>" not in lithium
+    assert "Modrinth dice: cliente y servidor" in said(lithium) and "1.0" in said(lithium)
+    assert "Modrinth dice: cliente o servidor" in said(indium) and "2.3.4" in said(indium)
+    assert "dependencia de Sodium" in said(indium) and mod_link("P1") in indium
+    for undecided in ("P2", "D1"):
+        assert text.count(f'name="decision.{undecided}"') == form.count(f'name="decision.{undecided}"') == 1
+    assert 'name="decision.P1"' not in text
+    # The shortcuts mark every select without saving (app.js); saving is the form's button.
+    for value, label in (("si", "Todos al servidor"), ("no", "Todos solo cliente")):
+        button = form[form.rindex("<button", 0, form.index(f'data-set-all="{value}"')):]
+        button = button[:button.index("</button>")]
+        assert 'type="button"' in button and label in button and "hx-" not in button
+    assert "Guardar las 2 decisiones" in form
+
+
+def test_pending_view_without_mods_to_decide_says_so() -> None:
+    client, modpack, _ = setup()
+    modpack.saved = resolution(lock(entry("P1"), entry("P2")))
+    shown = view(client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "decidir"}).text, "decidir")
+    assert "No quedan mods por decidir" in shown and "decisions/bulk" not in shown
+
+
+def test_the_bulk_decisions_from_the_pending_view_stay_in_it() -> None:
+    client, modpack, _ = setup()
+    modpack.lock = lock(entry("P1"), entry("P2", "admin"), entry("P3", "admin"))
+    text = client.post(f"/modpacks/{BUNDLE_ID}/decisions/bulk", params={"vista": "decidir"}, headers=HTMX,
+                       data={"decision.P2": "si"}).text
+    assert 'aria-current="page"' in tab(text, "decidir") and 'name="decision.P3"' in view(text, "decidir")
+
+
+@pytest.mark.parametrize("channel,number,label", [("beta", "1.0-beta", "Usar la beta 1.0-beta"),
+                                                  ("alpha", "2.0-a", "Usar la alpha 2.0-a"),
+                                                  ("release", "1.0", "Usar la versión 1.0 (release)")])
+def test_a_mod_without_a_version_in_the_channels_offers_its_alternative_and_removal(
+        channel: str, number: str, label: str) -> None:
+    client, modpack, _ = setup()
+    alternative = Alternative(version_id="ver-b", version_number=number, channel=channel, published=T0)
+    shown = problems_page(modpack, client, Problem(kind="unresolvable", project_id="P2", alternative=alternative,
+                                                   detail="sin versión para 1.21.1 con fabric en los canales release"))
+    lithium = problem_card(shown, "P2")
+    assert mod_link("P2") in lithium and label in lithium
+    use = lithium[lithium.index(f'hx-post="/modpacks/{BUNDLE_ID}/pins"'):]
+    use = use[:use.index("</form>")]
+    assert 'name="project_id" value="P2"' in use and 'name="version_id" value="ver-b"' in use
+    assert 'name="contexto" value="problemas"' in use and 'hx-target="#mods"' in use and label in use
+    assert "Quitar del modpack" in lithium
+    assert f'hx-delete="/modpacks/{BUNDLE_ID}/projects/P2?contexto=problemas"' in lithium
+    assert "Ignorar esta dependencia" not in lithium and "P2" not in said(lithium)
+    assert "1.21.1" in said(lithium) and number in said(lithium)
+
+
+def test_a_dependency_without_versions_offers_removing_who_asked_a_replacement_or_ignoring_it() -> None:
+    client, modpack, _ = setup()
+    modpack.titles.update(X9="Roto <b>", D5="Otra dependencia")
+    modpack.cards["X9"] = row("X9", "Roto <b>", None, description="Un mod roto",
+                              icon_url="https://cdn.modrinth.com/data/X9/icon.png")
+    shown = problems_page(modpack, client, Problem(
+        kind="unresolvable", project_id="X9", requested_by=["P1", "D5"],
+        detail="sin versión para 1.21.1 con fabric en los canales release; pedido por P1"))
+    roto = problem_card(shown, "X9")
+    assert mod_link("X9") in roto and '<img src="https://cdn.modrinth.com/data/X9/icon.png"' in roto
+    assert "Un mod roto" in roto and "dependencia de Sodium" in said(roto) and mod_link("D5") in roto
+    assert "Quitar Sodium" in said(roto) and f'hx-delete="/modpacks/{BUNDLE_ID}/projects/P1?contexto=problemas"' in roto
+    assert "/projects/D5" not in roto  # not in the pack: nothing to remove
+    assert "Crear un reemplazo" in roto and 'href="/replacements"' in roto
+    start = roto.rindex("<form", 0, roto.index('hx-post="/replacements"'))
+    ignore = roto[start:roto.index("</form>", start)]
+    assert 'hx-confirm="Se descarta Roto &lt;b&gt; en todos los packs. ¿Seguir?"' in ignore
+    for name, value in (("project_id", "X9"), ("replacement", ""), ("bundle_id", str(BUNDLE_ID)),
+                        ("contexto", "problemas")):
+        assert f'name="{name}" value="{value}"' in ignore
+    assert "Ignorar esta dependencia" in ignore and 'hx-target="#mods"' in ignore
+    assert "Quitar del modpack" not in roto and "Usar la" not in roto
+    assert "X9" not in said(roto) and "P1" not in said(roto)
+
+
+def test_ignoring_is_only_for_a_dependency_and_a_pack_mod_is_removed() -> None:
+    client, modpack, _ = setup()
+    shown = problems_page(modpack, client, Problem(kind="unresolvable", project_id="P2", requested_by=["P1"],
+                                                   detail="sin versión"))
+    lithium = problem_card(shown, "P2")
+    assert "Quitar del modpack" in lithium and f'/projects/P2?contexto=problemas"' in lithium
+    assert "Ignorar esta dependencia" not in lithium and 'hx-post="/replacements"' not in lithium
+
+
+def test_removing_a_mod_of_the_mrpack_says_it_comes_back() -> None:
+    client, modpack, _ = setup()
+    shown = problems_page(modpack, client, Problem(kind="no_file", project_id="P1", detail="v-P1 no tiene archivo"),
+                          Problem(kind="no_file", project_id="P2", detail="v-P2 no tiene archivo"))
+    sodium, lithium = problem_card(shown, "P1"), problem_card(shown, "P2")  # P1 came with the .mrpack
+    assert "Quitar del modpack" in sodium and "Quitar del modpack" in lithium
+    assert "vuelve si se reemplaza el contenido del pack" in said(sodium) and 'href="/replacements"' in sodium
+    assert "vuelve si se reemplaza" not in said(lithium)
+    assert "no tiene archivo" in said(sodium) and "v-P1" not in said(sodium)
+
+
+@pytest.mark.parametrize("kind", ["unresolvable", "pin_mismatch", "pin_conflict"])
+def test_a_pinned_version_problem_offers_unpinning_or_pinning_another(kind: str) -> None:
+    client, modpack, _ = setup()  # P1 is pinned to ver-p1
+    shown = problems_page(modpack, client, Problem(kind=kind, project_id="P1",  # type: ignore[arg-type]
+                                                   detail="ver-p1, fijada por admin, ya no está en Modrinth"))
+    sodium = problem_card(shown, "P1")
+    assert "Quitar la fijación" in sodium and f'hx-delete="/modpacks/{BUNDLE_ID}/pins/P1?contexto=problemas"' in sodium
+    assert "Fijar otra" in sodium and f'href="/modpacks/{BUNDLE_ID}?vista=todos#mod-row-P1"' in sodium
+    assert "Quitar del modpack" not in sodium and "ver-p1" not in said(sodium) and "fijada" in said(sodium)
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert 'id="mod-row-P1"' in text  # where "Fijar otra" lands: the mod in the list, with its versions
+
+
+def test_an_incompatibility_offers_removing_either_side_in_the_pack() -> None:
+    client, modpack, _ = setup()
+    modpack.titles["Z1"] = "Fuera"
+    shown = problems_page(modpack, client,
+                          Problem(kind="incompatible", project_id="P2", conflict_with="P1", detail="P1 es incompatible con P2"),
+                          Problem(kind="incompatible", project_id="P1", conflict_with="Z1", detail="Z1 es incompatible con P1"))
+    lithium = problem_card(shown, "P2")
+    assert "Sodium es incompatible con Lithium" in said(lithium) and mod_link("P1") in lithium
+    assert "Quitar Lithium" in said(lithium) and f'/projects/P2?contexto=problemas"' in lithium
+    assert "Quitar Sodium" in said(lithium) and f'/projects/P1?contexto=problemas"' in lithium
+    sodium = problem_card(shown, "P1")
+    assert "Fuera es incompatible con Sodium" in said(sodium) and "Quitar Sodium" in said(sodium)
+    assert "/projects/Z1" not in sodium and "Quitar Fuera" not in said(sodium)
+
+
+def test_a_problem_saved_before_these_fields_shows_its_text_and_no_action_that_needs_them() -> None:
+    # A resolution saved before requested_by, alternative and conflict_with existed: as stored.
+    client, modpack, _ = setup()
+    modpack.titles["X9"] = "Roto"
+    stored = Lock.model_validate({
+        "entries": [entry("P1").model_dump(), entry("P2").model_dump()], "suggestions": [],
+        "needs_projects": [], "needs_types": [], "needs_versions": [], "problems": [
+            {"kind": "unresolvable", "project_id": "X9",
+             "detail": "sin versión para 1.21.1 con fabric en los canales release; pedido por P1"},
+            {"kind": "incompatible", "project_id": "P2", "detail": "P1 es incompatible con P2"},
+            {"kind": "unresolvable", "project_id": None, "detail": "P1 requiere una dependencia sin proyecto ni versión (a.jar)"}]})
+    modpack.saved = resolution(stored)
+    response = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "problemas"})
+    assert response.status_code == 200
+    shown = view(response.text, "problemas")
+    roto, lithium = problem_card(shown, "X9"), problem_card(shown, "P2")
+    assert "sin versión para 1.21.1 con fabric en los canales release; pedido por Sodium" in said(roto)
+    assert "Usar la" not in roto and "Ignorar esta dependencia" not in roto and "Quitar Sodium" not in said(roto)
+    assert "Sodium es incompatible con Lithium" in said(lithium) and "Quitar Sodium" not in said(lithium)
+    assert "Sodium requiere una dependencia sin proyecto ni versión (a.jar)" in said(shown)
+    assert "Con problemas 3" == said(tab(response.text, "problemas"))
+
+
+@pytest.mark.parametrize("method,path,data,action", [
+    ("POST", "pins", {"project_id": "P2", "version_id": "ver-b", "contexto": "problemas"}, "pin_set"),
+    ("DELETE", "pins/P1?contexto=problemas", None, "pin_unset"),
+    ("DELETE", "projects/P2?contexto=problemas", None, "project_remove"),
+])
+def test_a_problem_action_applies_then_resolves_and_answers_the_problems_view(
+        method: str, path: str, data: Optional[dict[str, str]], action: str) -> None:
+    client, modpack, _ = setup()
+    modpack.lock = lock(entry("P1"), problems=[Problem(kind="no_file", project_id="P1", detail="x")])
+    response = client.request(method, f"/modpacks/{BUNDLE_ID}/{path}", headers=HTMX, data=data)
+    assert response.status_code == 200 and response.text.lstrip().startswith('<div id="mods"')
+    assert [c[0] for c in modpack.calls] == [action, "resolve"]
+    assert call(modpack, action)[-1] == EDITOR and call(modpack, "resolve")[1] == str(BUNDLE_ID)
+    assert 'aria-current="page"' in tab(response.text, "problemas") and 'data-problem="P1"' in view(response.text, "problemas")
+    assert 'hx-swap-oob="true"' in re.search(r'<div id="builds"[^>]*>', response.text).group(0)  # type: ignore[union-attr]
+
+
+def test_a_problem_action_that_leaves_nothing_highlights_crear_build() -> None:
+    client, modpack, _ = setup()
+    modpack.lock = lock(entry("P1"))
+    text = client.delete(f"/modpacks/{BUNDLE_ID}/projects/P2", params={"contexto": "problemas"}, headers=HTMX).text
+    assert "No hay problemas" in view(text, "problemas") and "data-ready" in builds_part(text)
+
+
+@pytest.mark.parametrize("method,path,data", [
+    ("POST", "pins", {"project_id": "P2", "version_id": "ver-b"}),
+    ("DELETE", "pins/P1", None),
+    ("DELETE", "projects/P2", None),
+])
+def test_without_contexto_an_action_does_not_resolve(method: str, path: str, data: Optional[dict[str, str]]) -> None:
+    client, modpack, _ = setup()
+    response = client.request(method, f"/modpacks/{BUNDLE_ID}/{path}", headers=HTMX, data=data)
+    assert response.status_code == 200 and "resolve" not in [c[0] for c in modpack.calls]
+    assert 'aria-current="page"' in tab(response.text, "todos")
+
+
+@pytest.mark.parametrize("method,path,data", [
+    ("POST", "pins", {"project_id": "P2", "version_id": "ver-b", "contexto": "otro"}),
+    ("DELETE", "pins/P1?contexto=otro", None),
+    ("DELETE", "projects/P2?contexto=", None),
+])
+def test_an_unknown_contexto_is_refused_before_the_service(method: str, path: str, data: Optional[dict[str, str]]) -> None:
+    client, modpack, _ = setup()
+    response = client.request(method, f"/modpacks/{BUNDLE_ID}/{path}", headers=HTMX, data=data)
+    assert response.status_code == 422 and modpack.calls == []
+
+
+def test_ignoring_a_dependency_drops_it_everywhere_then_resolves_the_pack() -> None:
+    client, modpack, _ = setup()
+    response = client.post("/replacements", headers=HTMX, data={
+        "project_id": "X9", "replacement": "", "bundle_id": str(BUNDLE_ID), "contexto": "problemas"})
+    assert response.status_code == 200 and response.text.lstrip().startswith('<div id="mods"')
+    assert modpack.calls == [("replacement_set", "X9", None, EDITOR), ("resolve", str(BUNDLE_ID))]
+    assert 'aria-current="page"' in tab(response.text, "problemas")
+
+
+@pytest.mark.parametrize("extra", [{"bundle_id": str(BUNDLE_ID)}, {"contexto": "problemas"},
+                                   {"bundle_id": "nope", "contexto": "problemas"},
+                                   {"bundle_id": str(BUNDLE_ID), "contexto": "otro"}])
+def test_replacements_take_both_the_pack_and_the_context_or_neither(extra: dict[str, str]) -> None:
+    client, modpack, _ = setup()
+    response = client.post("/replacements", headers=HTMX, data={"project_id": "X9", "replacement": "", **extra})
+    assert response.status_code == 422 and modpack.calls == []
+
+
+def test_app_js_marks_every_select_of_the_form_and_opens_a_linked_mod() -> None:
+    client, _, _ = setup()
+    text = client.get("/static/app.js").text
+    assert "[data-set-all]" in text and "closest('form')" in text and "querySelectorAll('select')" in text
+    assert "mod-row-" in text and "details" in text
