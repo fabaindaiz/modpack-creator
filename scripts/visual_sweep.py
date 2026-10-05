@@ -4,9 +4,11 @@ No se corre a mano: lo hace `scripts/visual-sweep.sh`, que antes compila el CSS 
 MongoDB descartable. Corre desde un directorio temporal fuera del repositorio, con configuración
 falsa, para que `.env.yaml` nunca se cargue. Modrinth es un servidor local con el sodium grabado de
 `tests/fixtures/modrinth/` (ver `ModrinthStub`); Pterodactyl, OIDC y los loaders, un puerto muerto. Sale con 1 si alguna página no da 200, desborda en
-horizontal o escribe errores en la consola.
+horizontal, escribe errores en la consola o viola la CSP, o si falla una de sus verificaciones de
+interacción (la ficha en el panel, las pestañas de Mods, el diálogo de build y sus acciones).
 """
 import asyncio
+import hashlib
 import json
 import os
 import socket
@@ -19,7 +21,7 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from pymongo import AsyncMongoClient
 
@@ -38,6 +40,16 @@ from tests._session import session_cookie
 
 SECRET = "sweep-secret"
 WIDTHS = (360, 768, 1280)
+# Where the mod's card, the tabs and the build dialog with problems are checked and shot (the
+# operator): narrow and wide in light, wide in dark.
+MOD_CARD_CONTEXTS = {("light", 360), ("light", 1280), ("dark", 1280)}
+# On every page: a CSP violation (an inline style or script the panel must not have) is written as
+# a console error, so it fails the run like any other. Playwright adds it outside the page's CSP.
+# The sweep waits with selectors, never `wait_for_function`: Playwright polls that one with an eval
+# the panel's CSP refuses (a violation of the sweep's own, and a wait that never ends).
+CSP_LISTENER = """document.addEventListener('securitypolicyviolation', (e) => {
+    console.error('CSP: ' + e.violatedDirective + ' ' + (e.blockedURI || '') + ' ' + (e.sourceFile || '') + ':' + e.lineNumber);
+});"""
 LONG_NAME = ("Un nombre de servidor exageradamente largo para ver cómo se comporta la interfaz "
              "con textos de ciento veinte caracteres")
 OLGA = ActorRef(iss=OPERATOR.iss, sub=OPERATOR.sub, name=OPERATOR.name)
@@ -51,16 +63,54 @@ PNG = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001
                     "0005fe02fea7d6050e0000000049454e44ae426082")
 
 
+# Three made-up projects, built on sodium's recorded data, for the problems of a resolution:
+# NEEDS_BETA (a release that fits, side left open) requires BETA_DEP, which has only a beta that
+# fits (an `unresolvable` dependency with an alternative: "Usar la beta …"); PINNED_GONE is pinned
+# to GONE_VERSION, which Modrinth no longer has (the pin's problem: "Quitar la fijación", "Fijar otra").
+NEEDS_BETA, BETA_DEP, PINNED_GONE, GONE_VERSION = "needs-beta", "beta-dep", "pinned-gone", "pg-old"
+
+
+def _made_up(project: dict[str, Any], version: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """The made-up projects and their versions, in Modrinth's shape (sodium's, renamed)."""
+    def make_version(version_id: str, project_id: str, number: str, channel: str, environment: Optional[str],
+                     dependencies: list[dict[str, Any]]) -> dict[str, Any]:
+        filename = f"{project_id}-{number}.jar"
+        file = {**version["files"][0], "id": f"file-{version_id}", "filename": filename,
+                "url": f"https://cdn.modrinth.com/data/{project_id}/versions/{version_id}/{filename}",
+                "hashes": {"sha1": hashlib.sha1(version_id.encode()).hexdigest(),
+                           "sha512": hashlib.sha512(version_id.encode()).hexdigest()}}
+        return {**version, "id": version_id, "project_id": project_id, "name": f"{project_id} {number}",
+                "version_number": number, "version_type": channel, "environment": environment,
+                "dependencies": dependencies, "files": [file], "changelog": "", "game_versions": ["26.3"],
+                "loaders": ["fabric"]}
+
+    versions = [
+        make_version("nb-1", NEEDS_BETA, "1.4.0", "release", None,
+                     [{"project_id": BETA_DEP, "version_id": None, "file_name": None, "dependency_type": "required"}]),
+        make_version("bd-1b", BETA_DEP, "2.0.0-beta.1", "beta", "client_and_server", []),
+        make_version("pg-2", PINNED_GONE, "3.1.0", "release", "client_and_server", []),
+    ]
+    titles = {NEEDS_BETA: ("Necesita una beta", "Un mod que pide una dependencia que solo tiene beta."),
+              BETA_DEP: ("Dependencia solo en beta", "Solo publica betas para esta versión de Minecraft."),
+              PINNED_GONE: ("Fijado a una versión borrada", "Su versión fijada ya no está en Modrinth.")}
+    projects = [{**project, "id": project_id, "slug": project_id, "title": title, "description": description,
+                 "versions": [v["id"] for v in versions if v["project_id"] == project_id]}
+                for project_id, (title, description) in titles.items()]
+    return projects, versions
+
+
 class ModrinthStub:
-    """A tiny local Modrinth with the recorded sodium and nothing else, so the pages that need
-    Modrinth (a build, adding a mod) can be driven offline. `/projects` answers the known ones of
-    those asked (an unknown slug is simply absent, as in the API); `/project/<id>/version` answers
-    sodium's versions as listed, with no `environment` (so the mod is "Sin decidir"), and a 503 for
-    any other project: the version picker's retry fragment."""
+    """A tiny local Modrinth with the recorded sodium and the made-up projects (`_made_up`), so the
+    pages that need Modrinth (a build, adding a mod, a problem's actions) can be driven offline.
+    `/projects` and `/versions` answer the known ones of those asked (an unknown one is simply
+    absent, as in the API: GONE_VERSION is gone); `/project/<id>/version` answers sodium's versions
+    as listed, with no `environment` (so the mod is "Sin decidir"), the made-up ones' versions, and a
+    503 for any other project: the version picker's retry fragment."""
 
     def __init__(self) -> None:
         self.project = json.loads((FIXTURES / "project-sodium.json").read_text())
         self.versions = json.loads((FIXTURES / "versions-sodium.json").read_text())
+        self.extra_projects, self.extra_versions = _made_up(self.project, self.versions[0])
         stub = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -79,13 +129,26 @@ class ModrinthStub:
                 parts = urllib.parse.urlsplit(self.path)
                 query = urllib.parse.parse_qs(parts.query)
                 path = parts.path.removeprefix("/v2/")
+                ref = path.split("/")[1] if path.count("/") >= 1 else ""
+                made_up = [v for v in stub.extra_versions if v["project_id"] == ref]
                 if path == "projects":
-                    asked = json.loads(query.get("ids", ["[]"])[0])
-                    self._send(200, [stub.project] if {stub.project["id"], stub.project["slug"]} & set(asked) else [])
+                    asked = set(json.loads(query.get("ids", ["[]"])[0]))
+                    self._send(200, [p for p in [stub.project, *stub.extra_projects] if {p["id"], p["slug"]} & asked])
+                elif path == "versions":
+                    asked = set(json.loads(query.get("ids", ["[]"])[0]))
+                    self._send(200, [v for v in stub.extra_versions if v["id"] in asked])
+                elif path.startswith("version/"):
+                    found = [v for v in stub.extra_versions if v["id"] == ref]
+                    if found:
+                        self._send(200, found[0])
+                    else:
+                        self._send(404, {"error": "not_found"})
                 elif path.startswith("project/") and path.endswith("/version") and \
-                        path.split("/")[1] in (stub.project["id"], stub.project["slug"]):
+                        ref in (stub.project["id"], stub.project["slug"]):
                     self._send(200, [{**v, "environment": None, "version_type": "release"} for v in stub.versions
                                      if "fabric" in v["loaders"] and "26.3" in v["game_versions"]][:5])
+                elif path.startswith("project/") and path.endswith("/version") and made_up:
+                    self._send(200, made_up)
                 else:
                     self._send(503, {"error": "stub: unavailable"})
 
@@ -178,10 +241,21 @@ async def seed(mongo_uri: str) -> dict[str, str]:
     pending = ModpackBundle(name="Con pendientes", description="", version="26.3", loader=MinecraftLoaders.fabric,
                             projects=[PackProject(project_id=STUB_PROJECT, origin=ProjectOrigin.admin)])
     empty = ModpackBundle(name="Para agregar", description="", version="26.3", loader=MinecraftLoaders.fabric)
+    # Two packs with the problems of the made-up projects (ModrinthStub) and two mods to decide
+    # (sodium and NEEDS_BETA): one only looked at (the tabs, the cards, the dialog in every
+    # context), one whose problems are acted on (once).
+    def with_problems(name: str) -> ModpackBundle:
+        return ModpackBundle(name=name, description="", version="26.3", loader=MinecraftLoaders.fabric,
+                             projects=[PackProject(project_id=p, origin=ProjectOrigin.admin)
+                                       for p in (STUB_PROJECT, NEEDS_BETA, PINNED_GONE)],
+                             pins={PINNED_GONE: GONE_VERSION})
+    problems, fix = with_problems("Con problemas"), with_problems("Para arreglar")
     await big.insert()
     await small.insert()
     await pending.insert()
     await empty.insert()
+    await problems.insert()
+    await fix.insert()
     # The catalog knows the first mods of the big pack, with an icon (the sweep answers the CDN
     # itself) and a card: description, categories, loaders, versions and links.
     sodium = json.loads((FIXTURES / "project-sodium.json").read_text())
@@ -273,7 +347,8 @@ async def seed(mongo_uri: str) -> dict[str, str]:
                          request_id=f"req-{k:04d}").insert()
     await client.close()
     return {"server": survival, "server_new": str(bare.id), "bundle": str(big.id), "pending": str(pending.id),
-            "empty": str(empty.id), "job": str(failed.id), "dryrun": str(jobs[0].id)}
+            "empty": str(empty.id), "job": str(failed.id), "dryrun": str(jobs[0].id), "problems": str(problems.id),
+            "fix": str(fix.id)}
 
 
 def wait_ready(base: str, app: "subprocess.Popen[bytes]") -> None:
@@ -314,6 +389,7 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
                         # Icons come from Modrinth's CDN: answered here, nothing leaves the machine.
                         ctx.route("https://cdn.modrinth.com/**",
                                   lambda route: route.fulfill(status=200, content_type="image/png", body=PNG))
+                        ctx.add_init_script(CSP_LISTENER)
                         page = ctx.new_page()
                         errors: list[str] = []
                         page.on("console", lambda m, errors=errors: errors.append(m.text) if m.type == "error" else None)
@@ -335,9 +411,18 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
                         if who == "operator":
                             report.update(shoot_update_dialog(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                             report.update(shoot_build_dialog(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
+                            if (scheme, width) in MOD_CARD_CONTEXTS:
+                                prefix = f"{who}-{scheme}-{width}"
+                                # The tabs first: they resolve the pack, so the catalog has the
+                                # made-up projects the card and the dialog show.
+                                report.update(check_tabs(page, base, out, ids, prefix, errors))
+                                report.update(check_mod_drawer(page, base, out, ids, prefix, errors))
+                                report.update(shoot_mod_page(page, base, out, ids, prefix, errors))
+                                report.update(shoot_problem_dialog(page, base, out, ids, prefix, errors))
                             if scheme == "light" and width == 1280:
-                                # These change data (a mod is added): once, not in every context.
+                                # These change data (a mod is added, a pin is set): once, not in every context.
                                 report.update(check_notices(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
+                                report.update(check_problem_actions(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                         ctx.close()
         finally:
             browser.close()
@@ -474,6 +559,254 @@ def shoot_update_dialog(page: Any, base: str, out: Path, ids: dict[str, str], pr
              "problems": problems}
     errors.clear()
     return {key: entry}
+
+
+def _mods_swapped(page: Any) -> None:
+    """Mark #mods, so a wait for `#mods:not([data-old])` sees it drawn again."""
+    page.evaluate("document.getElementById('mods').dataset.old = '1'")
+
+
+def _overflow(page: Any) -> int:
+    return int(page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth"))
+
+
+def check_tabs(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
+               errors: list[str]) -> dict[str, dict[str, Any]]:
+    """The pack's three views (spec §3), after resolving it: each tab redraws #mods without
+    reloading the page and puts its `?vista=` in the URL. In "Por decidir", "Todos al servidor"
+    marks every select and sends nothing: the form's own button saves."""
+    response = page.goto(base + f"/modpacks/{ids['problems']}")
+    page.wait_for_load_state("networkidle")
+    _mods_swapped(page)
+    page.click('#mods [hx-post*="/resolve"]')
+    page.wait_for_selector("#mods:not([data-old]) [data-pending-summary]", timeout=15_000)
+    page.wait_for_load_state("networkidle")
+    page.evaluate("window.sweepSamePage = true")
+    problems: list[str] = []
+    for tab in ("decidir", "problemas", "todos"):
+        _mods_swapped(page)
+        page.click(f'#mods [data-tab="{tab}"]')
+        try:
+            page.wait_for_selector(f'#mods:not([data-old]) [data-vista="{tab}"]', timeout=10_000)
+        except Exception:
+            problems.append(f"la pestaña {tab} no redibujó #mods")
+            continue
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(200)
+        same_page, search = page.evaluate("[window.sweepSamePage === true, location.search]")
+        if not same_page:
+            problems.append(f"la pestaña {tab} recargó la página")
+        if f"vista={tab}" not in search:
+            problems.append(f"la pestaña {tab} no puso ?vista={tab} en la URL ({search or 'sin query'})")
+        if tab == "decidir":
+            problems += _set_all_sends_nothing(page)
+        page.screenshot(path=str(out / f"{prefix}-tab-{tab}.png"), full_page=True)
+        if _overflow(page) > 0:
+            problems.append(f"la pestaña {tab} desborda")
+    return {f"{prefix}-tabs": _report(response, errors, problems)}
+
+
+def _set_all_sends_nothing(page: Any) -> list[str]:
+    """"Todos al servidor" in "Por decidir": every select says "si" and no request leaves (an icon
+    scrolled into view aside)."""
+    sent: list[str] = []
+
+    def on_request(request: Any) -> None:
+        if request.resource_type != "image":
+            sent.append(f"{request.method} {request.url}")
+    page.on("request", on_request)
+    page.click('#mods [data-vista="decidir"] [data-set-all="si"]')
+    page.wait_for_timeout(500)
+    page.remove_listener("request", on_request)
+    values = page.evaluate("Array.from(document.querySelectorAll('#mods [data-vista=\"decidir\"] select'), s => s.value)")
+    problems = []
+    if len(values) < 2 or any(v != "si" for v in values):
+        problems.append(f"«Todos al servidor» no marcó los selectores: {values}")
+    if sent:
+        problems.append(f"«Todos al servidor» hizo peticiones: {sent}")
+    return problems
+
+
+def check_mod_drawer(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
+                     errors: list[str]) -> dict[str, dict[str, Any]]:
+    """A mod's name in the pack's list (spec §2): Ctrl/Cmd+click and the middle button open its
+    page in another tab and leave the panel closed; a plain click opens #mod-drawer as a modal with
+    its card; a mod clicked inside it replaces the card and offers "← {the first}"; Escape closes it
+    and the focus goes back to the name clicked."""
+    path = f"/modpacks/{ids['problems']}?vista=todos"
+    response = page.goto(base + path)
+    page.wait_for_load_state("networkidle")
+    link = page.locator(f'#mod-row-{NEEDS_BETA} summary a[data-mod-link]')
+    problems: list[str] = []
+    clicks: tuple[tuple[str, dict[str, Any]], ...] = (("Ctrl/Cmd+clic", {"modifiers": ["ControlOrMeta"]}),
+                                                      ("el clic central", {"button": "middle"}))
+    for label, options in clicks:
+        try:
+            with page.context.expect_page(timeout=10_000) as opened:
+                link.click(**options)
+            tab = opened.value
+            tab.wait_for_load_state()
+            if urllib.parse.urlsplit(tab.url).path != f"/mods/{NEEDS_BETA}" or \
+                    not tab.locator(f'[data-mod-card="{NEEDS_BETA}"]').count():
+                problems.append(f"{label} abrió {tab.url}, no la ficha de /mods/{NEEDS_BETA}")
+            tab.close()
+        except Exception:
+            problems.append(f"{label} no abrió /mods/{NEEDS_BETA} en otra pestaña")
+        page.wait_for_timeout(500)
+        if page.evaluate("document.getElementById('mod-drawer').open"):
+            problems.append(f"{label} abrió el panel")
+            page.keyboard.press("Escape")
+        if page.url != base + path:
+            problems.append(f"{label} cambió la página a {page.url}")
+
+    link.click()
+    page.wait_for_selector(f'#mod-drawer[open] [data-mod-card="{NEEDS_BETA}"]', timeout=10_000)
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(300)
+    if not page.evaluate("document.getElementById('mod-drawer').matches(':modal')"):
+        problems.append("el panel no se abrió como modal")
+    page.screenshot(path=str(out / f"{prefix}-mod-drawer.png"))
+
+    page.locator(f'#mod-drawer-body a[data-mod-link][href^="/mods/{BETA_DEP}"]').first.click()
+    try:
+        page.wait_for_selector(f'#mod-drawer[open] [data-mod-card="{BETA_DEP}"]', timeout=10_000)
+    except Exception:
+        problems.append("un mod abierto dentro del panel no reemplazó la ficha")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(300)
+    back = page.locator("#mod-drawer-body button", has_text="←")
+    if not back.count() or "Necesita una beta" not in back.first.inner_text():
+        problems.append("el panel no ofrece «← volver» a la ficha anterior")
+    page.screenshot(path=str(out / f"{prefix}-mod-drawer-back.png"))
+
+    page.keyboard.press("Escape")
+    try:
+        page.wait_for_selector("#mod-drawer[open]", state="detached", timeout=5_000)
+    except Exception:
+        problems.append("Escape no cerró el panel")
+    page.wait_for_timeout(200)
+    if not link.evaluate("el => el === document.activeElement"):
+        focused = page.evaluate("document.activeElement?.outerHTML.slice(0, 120)")
+        problems.append(f"al cerrar el panel el foco no volvió al nombre del mod (está en {focused})")
+    return {f"{prefix}-mod-drawer": _report(response, errors, problems)}
+
+
+def shoot_mod_page(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
+                   errors: list[str]) -> dict[str, dict[str, Any]]:
+    """A mod's own page, opened from a pack: its card, where it is used and its versions."""
+    response = page.goto(base + f"/mods/{NEEDS_BETA}?pack={ids['problems']}")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(300)
+    key = f"{prefix}-mod-page"
+    page.screenshot(path=str(out / f"{key}.png"), full_page=True)
+    problems = [p for p, bad in (("la ficha no se dibujó", not page.locator(f'[data-mod-card="{NEEDS_BETA}"]').count()),
+                                 ("la página desborda", _overflow(page) > 0)) if bad]
+    return {key: _report(response, errors, problems)}
+
+
+def _dialog_state(page: Any) -> dict[str, Any]:
+    return dict(page.evaluate("""() => {
+        const d = document.querySelector('#build-dialog dialog');
+        const beta = d?.querySelector('[data-problem="%s"]');
+        return {open: !!d && d.open, modal: !!d && d.matches(':modal'),
+                problems: d ? d.querySelectorAll('[data-problem]').length : 0,
+                beta: !!beta && Array.from(beta.querySelectorAll('button')).some(b => b.textContent.includes('Usar la beta')),
+                pinned: !!d?.querySelector('[data-problem="%s"]'), text: d ? d.textContent : ''};
+    }""" % (BETA_DEP, PINNED_GONE)))
+
+
+def _escape_to_build_create(page: Any, when: str) -> list[str]:
+    """Escape closes the build dialog and leaves the focus on "Crear build" (#build-create)."""
+    page.keyboard.press("Escape")
+    try:
+        page.wait_for_selector("#build-dialog dialog[open]", state="detached", timeout=5_000)
+    except Exception:
+        return [f"Escape no cerró el diálogo de build ({when})"]
+    page.wait_for_timeout(200)
+    focused = page.evaluate("document.activeElement?.id || document.activeElement?.tagName")
+    return [] if focused == "build-create" else [f"al cerrar el diálogo ({when}) el foco quedó en {focused}, no en #build-create"]
+
+
+def shoot_problem_dialog(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
+                         errors: list[str]) -> dict[str, dict[str, Any]]:
+    """"Crear build" on a pack with problems: the build dialog opens as a modal with each problem's
+    card, the dependency that only has a beta offering "Usar la beta …" and the pinned version that
+    is gone offering "Fijar otra"; Escape closes it with the focus on #build-create. Nothing is
+    changed here (see check_problem_actions)."""
+    response = page.goto(base + f"/modpacks/{ids['problems']}?vista=todos")
+    page.wait_for_load_state("networkidle")
+    page.click("#build-create")
+    page.wait_for_selector("#build-dialog dialog[open]", timeout=15_000)
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(300)
+    state = _dialog_state(page)
+    key = f"{prefix}-build-dialog-problems"
+    page.screenshot(path=str(out / f"{key}.png"))
+    problems = [p for p, bad in (("el diálogo de build no se abrió como modal", not state["modal"]),
+                                 ("la dependencia con beta no ofrece «Usar la beta …»", not state["beta"]),
+                                 ("falta la tarjeta de la versión fijada que ya no está", not state["pinned"]),
+                                 ("el diálogo no ofrece «Fijar otra»", "Fijar otra" not in state["text"])) if bad]
+    problems += _escape_to_build_create(page, "sin acciones")
+    return {key: _report(response, errors, problems)}
+
+
+def check_problem_actions(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
+                          errors: list[str]) -> dict[str, dict[str, Any]]:
+    """The build dialog's actions, on a pack of its own (they change it; once). "Usar la beta …"
+    pins the dependency: the dialog stays open as a modal, recalculated without that problem, with
+    #mods redrawn behind it, and Escape leaves the focus on the new #build-create. Then, on a page
+    that already is `?vista=todos`, "Fijar otra" closes the dialog and opens that mod's row
+    (#mod-row-<id>) with the focus on its summary (the fix of cdf5890: hashchange)."""
+    path = f"/modpacks/{ids['fix']}?vista=todos"
+    response = page.goto(base + path)
+    page.wait_for_load_state("networkidle")
+    problems: list[str] = []
+    page.click("#build-create")
+    page.wait_for_selector(f'#build-dialog dialog[open] [data-problem="{BETA_DEP}"]', timeout=15_000)
+    page.wait_for_load_state("networkidle")
+    before = _dialog_state(page)
+    _mods_swapped(page)
+    page.locator(f'#build-dialog [data-problem="{BETA_DEP}"] button', has_text="Usar la beta").click()
+    try:
+        page.wait_for_selector(f'#build-dialog [data-problem="{BETA_DEP}"]', state="detached", timeout=15_000)
+    except Exception:
+        problems.append("«Usar la beta …» no recalculó el diálogo (la dependencia sigue como problema)")
+    page.wait_for_load_state("networkidle")
+    after = _dialog_state(page)
+    page.screenshot(path=str(out / f"{prefix}-build-dialog-after-action.png"))
+    if not after["modal"]:
+        problems.append("después de la acción el diálogo no sigue abierto como modal")
+    if after["problems"] != before["problems"] - 1 or not after["pinned"]:
+        problems.append(f"el diálogo recalculado tiene {after['problems']} problemas (antes {before['problems']})")
+    if "Versión fijada" not in after["text"]:
+        problems.append("el diálogo recalculado no dice «Versión fijada»")
+    if page.locator("#mods[data-old]").count() or not page.locator("#mods").count():
+        problems.append("#mods no se redibujó detrás del diálogo")
+    problems += _escape_to_build_create(page, "después de «Usar la beta»")
+
+    page.click("#build-create")
+    page.wait_for_selector(f'#build-dialog dialog[open] [data-problem="{PINNED_GONE}"]', timeout=15_000)
+    page.wait_for_load_state("networkidle")
+    page.locator(f'#build-dialog [data-problem="{PINNED_GONE}"] a', has_text="Fijar otra").click()
+    try:
+        page.wait_for_selector(f"#mod-row-{PINNED_GONE} details[open]", timeout=10_000)
+    except Exception:
+        problems.append("«Fijar otra» no abrió la fila del mod")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(300)
+    state = page.evaluate(f"""() => ({{
+        dialog: !!document.querySelector('dialog[open]'),
+        focus: document.activeElement === document.querySelector('#mod-row-{PINNED_GONE} summary'),
+        focused: document.activeElement?.outerHTML.slice(0, 120),
+        url: location.pathname + location.search + location.hash}})""")
+    page.screenshot(path=str(out / f"{prefix}-fijar-otra.png"))
+    if state["dialog"]:
+        problems.append("«Fijar otra» dejó el diálogo abierto")
+    if not state["focus"]:
+        problems.append(f"«Fijar otra» no dejó el foco en la fila del mod (está en {state['focused']})")
+    if state["url"] != f"{path}#mod-row-{PINNED_GONE}":
+        problems.append(f"«Fijar otra» terminó en {state['url']}")
+    return {f"{prefix}-problem-actions": _report(response, errors, problems)}
 
 
 def main() -> int:

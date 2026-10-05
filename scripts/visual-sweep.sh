@@ -24,7 +24,8 @@ trap 'exit 130' INT TERM
 npm run build >&2
 py="$(hatch run visual:python -c 'import sys; print(sys.executable)' | tail -n 1)"
 port="$("$py" -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1])')"
-docker run -d --rm --name "$name" -p "127.0.0.1:$port:27017" docker.io/library/mongo:8.0 >/dev/null
+# Un tope a la caché de WiredTiger: la VM de podman tiene poca memoria y comparte con otros mongod.
+docker run -d --rm --name "$name" -p "127.0.0.1:$port:27017" docker.io/library/mongo:8.0 --wiredTigerCacheSizeGB 0.25 >/dev/null
 # Hasta 60 intentos, y se corta si el contenedor murió (un puerto ocupado, una imagen que no baja).
 ready=0
 for _ in $(seq 1 60); do
