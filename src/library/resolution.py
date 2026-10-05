@@ -206,10 +206,30 @@ class LockEntry(BaseModel):
     requested_by: list[str]
 
 
+def _asked(requester: str) -> list[str]:
+    return [] if requester == ADMIN else [requester]
+
+
+def _preference(candidate: Candidate) -> tuple[int, float]:
+    """Most stable channel first, then the newest."""
+    return (CHANNEL_RANK.get(candidate.version_type, 99), -candidate.date_published.timestamp())
+
+
+class Alternative(BaseModel):
+    """A version that fits the game version and loader but is not in the pack's channels."""
+    version_id: str
+    version_number: str
+    channel: str
+    published: datetime
+
+
 class Problem(BaseModel):
     kind: Literal["unresolvable", "pin_mismatch", "pin_conflict", "incompatible", "no_file"]
     project_id: Optional[str]
     detail: str
+    requested_by: list[str] = []
+    alternative: Optional[Alternative] = None
+    conflict_with: Optional[str] = None
 
 
 class Suggestion(BaseModel):
@@ -299,7 +319,8 @@ class _Run:
         if project_id in self.exact:
             pin = self.exact[project_id]
             if pin.version_id in self.catalog.gone:
-                self.problems.append(Problem(kind="unresolvable", project_id=project_id, detail=(
+                self.problems.append(Problem(kind="unresolvable", project_id=project_id,
+                    requested_by=_asked(requester), detail=(
                     f"{pin.version_id}, fijada por {', '.join(pin.requested_by)}, ya no está en Modrinth")))
                 return None
             candidate = self.catalog.by_id.get(pin.version_id)
@@ -310,7 +331,8 @@ class _Run:
                 self.needs_types.add(project_id)
                 return None
             if not self.request.target.fits(candidate, self.catalog.types[project_id]):
-                self.problems.append(Problem(kind="pin_mismatch", project_id=project_id, detail=(
+                self.problems.append(Problem(kind="pin_mismatch", project_id=project_id,
+                    requested_by=_asked(requester), detail=(
                     f"{pin.version_id}, fijada por {', '.join(pin.requested_by)}, no es para "
                     f"{self.request.target.game_version} con {self.request.target.loader}")))
                 return None
@@ -320,22 +342,32 @@ class _Run:
             return None
         project_type = self.catalog.types[project_id]
         if project_type not in SUPPORTED_TYPES:
-            self.problems.append(Problem(kind="unresolvable", project_id=project_id, detail=(
+            self.problems.append(Problem(kind="unresolvable", project_id=project_id,
+                requested_by=_asked(requester), detail=(
                 f"un proyecto de tipo {project_type} no entra en un modpack; pedido por {requester}")))
             return None
         allowed = [c for c in self.catalog.by_project[project_id] if self.request.target.allows(c, project_type)]
         if not allowed:
-            self.problems.append(Problem(kind="unresolvable", project_id=project_id, detail=(
-                f"sin versión para {self.request.target.game_version} con {self.request.target.loader} "
-                f"en los canales {', '.join(sorted(self.request.target.channels))}; pedido por {requester}")))
+            fitting = [c for c in self.catalog.by_project[project_id]
+                       if self.request.target.fits(c, project_type)]
+            best_fit = min(fitting, key=_preference) if fitting else None
+            alternative = None if best_fit is None else Alternative(
+                version_id=best_fit.version_id, version_number=best_fit.version_number,
+                channel=best_fit.version_type, published=best_fit.date_published)
+            self.problems.append(Problem(
+                kind="unresolvable", project_id=project_id, requested_by=_asked(requester),
+                alternative=alternative, detail=(
+                    f"sin versión para {self.request.target.game_version} con {self.request.target.loader} "
+                    f"en los canales {', '.join(sorted(self.request.target.channels))}; pedido por {requester}")))
             return None
-        best = min(allowed, key=lambda c: (CHANNEL_RANK.get(c.version_type, 99), -c.date_published.timestamp()))
+        best = min(allowed, key=_preference)
         return self._take(best, reason, requester, exact=False)
 
     def _choose_exact(self, project_id: Optional[str], version_id: str,
                       requester: str, reason: str) -> Optional[Candidate]:
         if version_id in self.catalog.gone:
-            self.problems.append(Problem(kind="unresolvable", project_id=project_id, detail=(
+            self.problems.append(Problem(kind="unresolvable", project_id=project_id,
+                requested_by=_asked(requester), detail=(
                 f"{requester} pide {version_id}, que Modrinth ya no tiene")))
             return None
         candidate = self.catalog.by_id.get(version_id)
@@ -347,13 +379,15 @@ class _Run:
             self.needs_types.add(project_id)
             return None
         if not self.request.target.fits(candidate, self.catalog.types[project_id]):
-            self.problems.append(Problem(kind="pin_mismatch", project_id=project_id, detail=(
+            self.problems.append(Problem(kind="pin_mismatch", project_id=project_id,
+                requested_by=_asked(requester), detail=(
                 f"{requester} pide {version_id}, que no es para "
                 f"{self.request.target.game_version} con {self.request.target.loader}")))
             return None
         pin = self.exact.get(project_id)
         if pin is not None and pin.version_id != version_id:
-            self.problems.append(Problem(kind="pin_conflict", project_id=project_id, detail=(
+            self.problems.append(Problem(kind="pin_conflict", project_id=project_id,
+                requested_by=_asked(requester), detail=(
                 f"{', '.join(pin.requested_by)} quiere {pin.version_id}; {requester} quiere {version_id}")))
             return None
         chosen = self.chosen.get(project_id)
@@ -373,6 +407,7 @@ class _Run:
             candidate, reason, [] if requester == ADMIN else [requester], exact)
         if candidate.file is None:
             self.problems.append(Problem(kind="no_file", project_id=candidate.project_id,
+                                         requested_by=_asked(requester),
                                          detail=f"{candidate.version_id} no tiene archivo"))
         return candidate
 
@@ -422,6 +457,7 @@ class _Run:
                 continue
             if dependency.version_id is None or chosen.candidate.version_id == dependency.version_id:
                 self.problems.append(Problem(kind="incompatible", project_id=target,
+                                             conflict_with=parent,
                                              detail=f"{parent} es incompatible con {target}"))
 
     def _lock(self) -> Lock:

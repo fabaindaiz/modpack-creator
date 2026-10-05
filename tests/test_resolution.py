@@ -17,6 +17,7 @@ from src.library.resolution import (
     CandidateDependency,
     CandidateFile,
     Catalog,
+    Problem,
     ResolveRequest,
     Target,
     merge_replacements,
@@ -332,3 +333,48 @@ def test_digest_ignores_channel_order() -> None:
     a = digest_request(channels=["release", "beta", "alpha"])
     b = digest_request(channels=["alpha", "beta", "release"])
     assert request_digest(a) == request_digest(b)
+
+
+# Datos de cada problema: quién lo pidió, la alternativa y el otro lado del conflicto.
+
+
+def test_only_a_beta_fits_offers_it_as_the_alternative() -> None:
+    versions = [cand("P", "beta-1", type="beta"), cand("P", "old", game="1.21.11")]
+    [problem] = resolve(request("P"), catalog(*versions)).problems
+    assert problem.kind == "unresolvable"
+    assert problem.alternative is not None
+    assert (problem.alternative.version_id, problem.alternative.channel) == ("beta-1", "beta")
+    assert problem.alternative.version_number == "beta-1" and problem.alternative.published == EPOCH
+
+
+def test_beta_wins_over_a_newer_alpha() -> None:
+    versions = [cand("P", "beta-1", type="beta", days=1), cand("P", "alpha-1", type="alpha", days=20)]
+    [problem] = resolve(request("P"), catalog(*versions)).problems
+    assert problem.alternative is not None and problem.alternative.channel == "beta"
+
+
+def test_no_fitting_version_has_no_alternative() -> None:
+    [problem] = resolve(request("P"), catalog(cand("P", "old", game="1.21.11"))).problems
+    assert problem.alternative is None
+
+
+def test_a_dependency_problem_names_who_asked() -> None:
+    versions = [cand("A", "a", deps=(("D", None, "required"),)), cand("D", "d", game="1.21.11")]
+    [problem] = resolve(request("A"), catalog(*versions)).problems
+    assert problem.project_id == "D" and problem.requested_by == ["A"]
+
+
+def test_a_pack_mod_problem_has_nobody_asking() -> None:
+    [problem] = resolve(request("P"), catalog(cand("P", "old", game="1.21.11"))).problems
+    assert problem.requested_by == []
+
+
+def test_incompatible_names_both_sides() -> None:
+    versions = [cand("A", "a", deps=(("B", None, "incompatible"),)), cand("B", "b")]
+    [problem] = resolve(request("A", "B"), catalog(*versions)).problems
+    assert (problem.project_id, problem.conflict_with) == ("B", "A")
+
+
+def test_a_problem_saved_before_these_fields_still_parses() -> None:
+    old = Problem.model_validate({"kind": "unresolvable", "project_id": "P", "detail": "x"})
+    assert (old.alternative, old.requested_by, old.conflict_with) == (None, [], None)
