@@ -29,7 +29,7 @@ def check(tmp_path: Path, args: str) -> list[str]:
     previous = Path.cwd()
     os.chdir(ROOT)
     try:
-        stdout, _, _ = api.run([str(snippet), "--config-file", ".mypy.ini", "--no-incremental"])
+        stdout, _, _ = api.run([str(snippet), "--config-file", ".mypy.ini", "--no-incremental", "--no-color-output"])
     finally:
         os.chdir(previous)
     return [line for line in stdout.splitlines() if line.startswith(str(snippet)) and ": error:" in line]
