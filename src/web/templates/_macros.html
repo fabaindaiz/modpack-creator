@@ -146,8 +146,8 @@
   form's fields come from the call block, and `form_attrs` says where it goes (hx-post...). The
   dialog closes when the form's htmx request is answered. The server repeats every check.
 #}
-{% macro confirm_dialog(id, title, confirm_label="Confirmar", kind="danger", form_attrs={}, open_now=False) %}
-<dialog id="{{ id }}" aria-labelledby="{{ id }}-title"{% if open_now %} open{% endif %}
+{% macro confirm_dialog(id, title, confirm_label="Confirmar", kind="danger", form_attrs={}) %}
+<dialog id="{{ id }}" aria-labelledby="{{ id }}-title"
   class="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-lg border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-zinc-950/50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
   <form class="space-y-4 p-5" {{- form_attrs | xmlattr }}>
     <h2 id="{{ id }}-title" class="text-base font-semibold">{{ title }}</h2>

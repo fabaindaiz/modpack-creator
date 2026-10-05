@@ -87,7 +87,8 @@ def visible(text: str) -> str:
 
 
 def project(project_id: str, title: str) -> ModrinthProject:
-    return ModrinthProject.model_construct(project_id=project_id, slug=project_id.lower(), title=title)
+    return ModrinthProject.model_construct(project_id=project_id, slug=project_id.lower(), title=title,
+                                           description="", icon_url=None)
 
 
 class FakeModpack:
@@ -649,7 +650,9 @@ def test_blocked_by_undecided_answers_a_dialog_with_titles() -> None:
     assert response.status_code == 200
     assert response.headers["HX-Retarget"] == "#build-dialog" and response.headers["HX-Reswap"] == "innerHTML"
     text = response.text
-    assert "<dialog" in text and " open" in text.split("<dialog")[1].split(">")[0]
+    # Drawn closed and marked: app.js opens it with showModal() (a modal, not a static `open`).
+    tag = text.split("<dialog")[1].split(">")[0]
+    assert " open" not in tag and "data-autoopen" in tag
     assert "Lithium" in text and 'name="decision.P2"' in text and "Decidir y crear build" in text
     assert "data-dialog-close" in text
     assert f'hx-post="/modpacks/{BUNDLE_ID}/builds"' in text
@@ -719,12 +722,151 @@ def test_blocked_by_problems_from_the_dialog_stays_in_the_dialog() -> None:
     assert "Lithium: sin versión" in response.text
 
 
-def test_blocked_by_problems_is_a_notice_not_a_dialog() -> None:
-    client, modpack, _ = setup()
-    modpack.blocked = undecided_block(only=False, detail="Problemas: no hay versión")
+def dialog_tag(text: str) -> str:
+    return text.split("<dialog")[1].split(">")[0]
+
+
+def assert_no_nested_forms(text: str) -> None:
+    depth = 0
+    for tag in re.finditer(r"<(/?)form\b", text):
+        depth += -1 if tag.group(1) else 1
+        assert depth in (0, 1), "a <form> inside another"
+    assert depth == 0
+
+
+def test_blocked_by_a_problem_and_a_pending_mod_opens_the_dialog_with_both() -> None:
+    """Spec §1, "Al crear un build": the button's click opens the build dialog, its problems first
+    (each a card with its actions, from the dialog) and then the mods to decide."""
+    client, modpack, modrinth = setup()
+    modrinth.titles["P3"] = "Iris"
+    modpack.blocked = BuildBlocked(OPAQUE, lock(entry("P1"), entry("P3", "admin"), problems=[
+        Problem(kind="no_file", project_id="P2", detail="v-P2 no tiene archivo")]), False)
     response = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX)
-    assert response.status_code == 409 and "Problemas: no hay versión" in response.text
-    assert "<dialog" not in response.text and "data-notice" in response.text
+    assert response.status_code == 200
+    assert response.headers["HX-Retarget"] == "#build-dialog" and response.headers["HX-Reswap"] == "innerHTML"
+    text = response.text
+    tag = dialog_tag(text)
+    assert " open" not in tag and "data-autoopen" in tag and 'aria-labelledby="decide-dialog-title"' in tag
+    title = re.search(r'<h2 id="decide-dialog-title"[^>]*>', text)
+    assert title and 'tabindex="-1"' in title.group(0) and "autofocus" in title.group(0)
+    lithium = problem_card(text, "P2")
+    assert mod_link("P2") in lithium and "Quitar del modpack" in lithium
+    assert f'hx-delete="/modpacks/{BUNDLE_ID}/projects/P2?contexto=dialogo"' in lithium
+    assert 'hx-target="#build-dialog"' in lithium and 'hx-swap="innerHTML"' in lithium
+    assert "contexto=problemas" not in text and 'hx-target="#mods"' not in text
+    assert text.index('data-problem="P2"') < text.index('name="decision.P3"')
+    assert "Iris" in text and "Decidir y crear build" in text and "P2:" not in text
+    assert_no_nested_forms(text)
+    assert [c[0] for c in modpack.calls] == ["build_create"]
+
+
+def test_blocked_by_problems_only_opens_the_dialog_with_their_actions() -> None:
+    client, modpack, _ = setup()
+    alternative = Alternative(version_id="ver-b", version_number="1.0-beta", channel="beta", published=T0)
+    modpack.blocked = BuildBlocked(OPAQUE, lock(entry("P1"), problems=[
+        Problem(kind="unresolvable", project_id="P2", alternative=alternative, detail="sin versión")]), False)
+    response = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX)
+    assert response.status_code == 200 and response.headers["HX-Retarget"] == "#build-dialog"
+    use = response.text[response.text.index(f'hx-post="/modpacks/{BUNDLE_ID}/pins"'):]
+    use = use[:use.index("</form>")]
+    assert 'name="contexto" value="dialogo"' in use and 'hx-target="#build-dialog"' in use
+    assert "Usar la beta 1.0-beta" in use
+    assert "Decidir y crear build" not in response.text and "Todo resuelto" not in response.text
+    assert "data-notice" not in response.text  # the button's click: the cards say it, no reason yet
+
+
+DIALOG_ACTIONS = [
+    ("POST", f"/modpacks/{BUNDLE_ID}/pins", {"project_id": "P2", "version_id": "ver-b", "contexto": "dialogo"}, "pin_set"),
+    ("DELETE", f"/modpacks/{BUNDLE_ID}/pins/P1?contexto=dialogo", None, "pin_unset"),
+    ("DELETE", f"/modpacks/{BUNDLE_ID}/projects/P2?contexto=dialogo", None, "project_remove"),
+    ("POST", "/replacements", {"project_id": "X9", "replacement": "", "bundle_id": str(BUNDLE_ID),
+                               "contexto": "dialogo"}, "replacement_set"),
+]
+
+
+@pytest.mark.parametrize("method,path,data,action", DIALOG_ACTIONS)
+def test_a_problem_action_in_the_dialog_resolves_and_answers_the_dialog_never_a_build(
+        method: str, path: str, data: Optional[dict[str, str]], action: str) -> None:
+    """Spec §1 (owner's decision): the action is applied, the pack resolved again and the dialog
+    recalculated from that lock; the build is the owner's to create."""
+    client, modpack, modrinth = setup()
+    modrinth.titles["P3"] = "Iris"
+    modpack.lock = lock(entry("P1"), entry("P3", "admin"), problems=[Problem(kind="no_file", project_id="P1", detail="x")])
+    response = client.request(method, path, headers=HTMX, data=data)
+    assert response.status_code == 200
+    assert response.headers["HX-Retarget"] == "#build-dialog" and response.headers["HX-Reswap"] == "innerHTML"
+    assert [c[0] for c in modpack.calls] == [action, "resolve"] and call(modpack, action)[-1] == EDITOR
+    text = response.text
+    assert "data-autoopen" in dialog_tag(text) and 'id="mods"' not in text
+    # What is left, from the fresh lock: P2's problem is gone, P1's is there, and P3 still to decide.
+    assert 'data-problem="P2"' not in text and 'data-problem="P1"' in text
+    assert f'/projects/P1?contexto=dialogo"' in problem_card(text, "P1") and 'name="decision.P3"' in text
+    assert "Iris" in text and "Todo resuelto" not in text
+    # One Modrinth call for the whole dialog, for every mod it names.
+    assert modrinth.filled == [["P1", "P3"]]
+
+
+@pytest.mark.parametrize("method,path,data,action", DIALOG_ACTIONS)
+def test_with_nothing_left_the_dialog_says_todo_resuelto_and_offers_crear_build(
+        method: str, path: str, data: Optional[dict[str, str]], action: str) -> None:
+    client, modpack, _ = setup()
+    modpack.lock = lock(entry("P1"))
+    response = client.request(method, path, headers=HTMX, data=data)
+    assert response.status_code == 200 and response.headers["HX-Retarget"] == "#build-dialog"
+    text = response.text
+    assert "Todo resuelto" in said(text) and "data-problem" not in text and "decision." not in text
+    create = text[text.rindex("<form", 0, text.index(f'hx-post="/modpacks/{BUNDLE_ID}/builds"')):]
+    create = create[:create.index("</form>")]
+    assert 'hx-target="#builds"' in create and 'hx-swap="outerHTML"' in create and ">Crear build<" in create
+    assert 'name="dialog"' not in create and "Decidir y crear build" not in text
+    assert "build_create" not in [c[0] for c in modpack.calls]
+
+
+def test_the_dialog_keeps_its_success_and_the_dialog_actions_refuse_a_bundle_less_replacement() -> None:
+    client, modpack, _ = setup()
+    modpack.lock = lock(entry("P1"))
+    text = client.delete(f"/modpacks/{BUNDLE_ID}/projects/P2", params={"contexto": "dialogo"}, headers=HTMX).text
+    assert "Quitado del modpack" in said(text)
+    response = client.post("/replacements", headers=HTMX, data={"project_id": "X9", "replacement": "", "contexto": "dialogo"})
+    assert response.status_code == 422 and [c[0] for c in modpack.calls] == ["project_remove", "resolve"]
+
+
+def test_v1_still_answers_a_blocked_build_with_the_same_409() -> None:
+    # main.py mounts /v1 in its lifespan (it opens MongoDB): here on an app of its own, as in
+    # tests/test_startup.py, with the same container (and its doubles) and the session's actor.
+    from fastapi import FastAPI
+    from src.dependences import get_current_actor
+    from src.routers.v1 import include_routers_v1
+
+    _, modpack, _ = setup()
+    modpack.blocked = BuildBlocked(OPAQUE, lock(entry("P3", "admin"), problems=[
+        Problem(kind="no_file", project_id="P2", detail="x")]), False)
+    app = FastAPI()
+    include_routers_v1(app)
+    app.dependency_overrides[get_current_actor] = lambda: EDITOR
+    response = TestClient(app, base_url="https://testserver").post(f"/v1/modpack/{BUNDLE_ID}/build")
+    assert response.status_code == 409 and response.json() == {"detail": OPAQUE}
+    assert "HX-Retarget" not in response.headers and [c[0] for c in modpack.calls] == ["build_create"]
+
+
+def test_the_builds_are_where_the_focus_goes_back_when_the_dialog_s_opener_is_gone() -> None:
+    client, modpack, _ = setup()
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert 'tabindex="-1"' in re.search(r'<div id="builds"[^>]*>', text).group(0)  # type: ignore[union-attr]
+    modpack.blocked = undecided_block("P2")
+    assert 'data-return-focus="builds"' in dialog_tag(client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX).text)
+
+
+def test_app_js_opens_a_swapped_in_dialog_as_a_modal_once() -> None:
+    client, _, _ = setup()
+    text = client.get("/static/app.js").text
+    assert "[data-autoopen]" in text and "removeAttribute('data-autoopen')" in text
+    assert "!dialog.open" in text and "showModal()" in text
+    # A dialog the answer replaced is not closed (its close would move the focus out of the new one).
+    assert "isConnected" in text and "data-return-focus" in text
+    # The sender of a request whose answer took it off the page: htmx re-fires afterRequest on a
+    # parent, with that parent as `elt` (checked in Chromium, see the task 7 report).
+    assert "requestConfig.elt" in text
 
 
 def test_the_update_page_build_keeps_the_notice_on_undecided() -> None:
@@ -1722,6 +1864,53 @@ def test_a_problem_saved_before_these_fields_shows_its_text_and_no_action_that_n
     assert "Sodium es incompatible con Lithium" in said(lithium) and "Quitar Sodium" not in said(lithium)
     assert "Sodium requiere una dependencia sin proyecto ni versión (a.jar)" in said(shown)
     assert "Con problemas 3" == said(tab(response.text, "problemas"))
+
+
+# (A link to /replacements may stay: the note of a mod that came with the .mrpack has one.)
+REPLACE_OR_IGNORE = ("Crear un reemplazo", "Ignorar esta dependencia", 'hx-post="/replacements"')
+
+
+def test_a_dependency_with_an_alternative_is_not_replaced_nor_ignored() -> None:
+    """Spec §1 table: "Crear un reemplazo" and "Ignorar esta dependencia" are only for a dependency
+    without versions and without an alternative."""
+    client, modpack, _ = setup()
+    modpack.titles["X9"] = "Roto"
+    alternative = Alternative(version_id="ver-b", version_number="1.0-beta", channel="beta", published=T0)
+    shown = problems_page(modpack, client, Problem(kind="unresolvable", project_id="X9", requested_by=["P1"],
+                                                   alternative=alternative, detail="sin versión"))
+    roto = problem_card(shown, "X9")
+    assert "Quitar Sodium" in said(roto)
+    for absent in REPLACE_OR_IGNORE:
+        assert absent not in roto, absent
+
+
+@pytest.mark.parametrize("project_id,requested_by", [("P2", []), ("X9", ["P1"])])
+def test_a_mod_without_a_file_is_only_removed(project_id: str, requested_by: list[str]) -> None:
+    """Spec §1 table: `no_file` → "Quitar del modpack" (for a dependency, who asked for it), nothing else."""
+    client, modpack, _ = setup()
+    modpack.titles["X9"] = "Roto"
+    alternative = Alternative(version_id="ver-b", version_number="1.0-beta", channel="beta", published=T0)
+    shown = problems_page(modpack, client, Problem(kind="no_file", project_id=project_id, requested_by=requested_by,
+                                                   alternative=alternative, detail="sin archivo"))
+    found = problem_card(shown, project_id)
+    assert ("Quitar del modpack" if project_id == "P2" else "Quitar Sodium") in said(found)
+    for absent in (*REPLACE_OR_IGNORE, "Usar la", "Quitar la fijación", "Fijar otra", "/pins"):
+        assert absent not in found, absent
+
+
+def test_pinning_another_is_only_for_a_mod_of_the_pack() -> None:
+    """Spec §1 table: "Fijar otra" opens the mod in the pack's list; a pinned dependency has no row
+    there, so it only offers unpinning."""
+    client, modpack, _ = setup()
+    modpack.titles["X9"] = "Roto"
+    modpack.bundle.pins = {**modpack.bundle.pins, "X9": "ver-x9"}
+    shown = problems_page(modpack, client, Problem(kind="pin_mismatch", project_id="X9", requested_by=["P1"],
+                                                   detail="ver-x9 no es para 1.21.1"))
+    roto = problem_card(shown, "X9")
+    assert "Quitar la fijación" in roto and f'/pins/X9?contexto=problemas"' in roto
+    assert "Fijar otra" not in roto and "#mod-row-X9" not in roto
+    for absent in REPLACE_OR_IGNORE:
+        assert absent not in roto, absent
 
 
 @pytest.mark.parametrize("method,path,data,action", [

@@ -196,15 +196,72 @@
     });
   }
 
-  // A form inside a confirmation dialog closes it once its request is answered, also on an
-  // error: the modal would otherwise hide the notice that explains it. Only the form: what the
-  // dialog loads for itself (the update preview when it opens, the build select) leaves it open.
-  document.addEventListener('htmx:afterRequest', function (evt) {
-    var elt = evt.detail.elt;
-    var dialog = elt instanceof HTMLFormElement ? elt.closest('dialog') : null;
-    if (dialog && dialog.open) {
-      dialog.close();
+  // A dialog the server sends to be opened (data-autoopen; the build dialog) comes drawn closed:
+  // it opens here as a modal, with showModal() (the page inert, Escape, the focus inside, on its
+  // autofocus title). The mark is taken off so a later swap does not open it again, and an open
+  // dialog is left as it is (showModal() on it throws). When it closes, the focus goes back to what
+  // opened it, or to its data-return-focus element when that is gone (the "Crear build" button,
+  // replaced with the builds). A dialog that replaces another (an action inside the build dialog,
+  // answered with the dialog recalculated) keeps the first one's opener.
+  var openers = new WeakMap();
+
+  function returnFocus(dialog) {
+    var opener = openers.get(dialog);
+    var target = opener && opener.isConnected ? opener
+      : document.getElementById(dialog.getAttribute('data-return-focus') || '');
+    if (target) {
+      target.focus();
     }
+  }
+
+  document.addEventListener('htmx:afterSwap', function (evt) {
+    var target = evt.detail.target;
+    if (!(target instanceof Element)) {
+      return;
+    }
+    var found = Array.prototype.slice.call(target.querySelectorAll('dialog[data-autoopen]'));
+    if (target.matches('dialog[data-autoopen]')) {
+      found.unshift(target);
+    }
+    // afterSwap's own `elt` is the target: the element that sent the request is the config's.
+    var requester = evt.detail.requestConfig ? evt.detail.requestConfig.elt : null;
+    var replaced = requester instanceof Element ? requester.closest('dialog') : null;
+    found.forEach(function (dialog) {
+      dialog.removeAttribute('data-autoopen');
+      if (!dialog.open && typeof dialog.showModal === 'function') {
+        openers.set(dialog, replaced && openers.has(replaced) ? openers.get(replaced) : requester);
+        dialog.addEventListener('close', function () {
+          returnFocus(dialog);
+        });
+        dialog.showModal();
+      }
+    });
+  });
+
+  // A form inside a dialog closes it once its request is answered, also on an error: the modal
+  // would otherwise hide the notice that explains it. Any other element closes it only on an
+  // error (a problem's "Quitar" in the build dialog); what a dialog loads for itself (the update
+  // preview when it opens, the build select) leaves it open. htmx swaps before this runs: a
+  // dialog the answer replaced (the build dialog, recalculated) or took away (the build was
+  // created) is no longer on the page and is not closed, since its close would take the focus
+  // out of the new one; taken away, the focus goes back as on a close. A sender the answer took
+  // off the page gets no event here (it does not bubble from outside the document): htmx fires it
+  // again on its closest parent still on the page, with that parent as `elt`, so the sender is
+  // the config's.
+  document.addEventListener('htmx:afterRequest', function (evt) {
+    var elt = evt.detail.requestConfig ? evt.detail.requestConfig.elt : evt.detail.elt;
+    var dialog = elt instanceof Element ? elt.closest('dialog') : null;
+    if (!dialog || !dialog.open || !(elt instanceof HTMLFormElement || evt.detail.failed)) {
+      return;
+    }
+    if (!dialog.isConnected) {
+      var current = dialog.id ? document.getElementById(dialog.id) : null;
+      if (!current || !current.open) {
+        returnFocus(dialog);
+      }
+      return;
+    }
+    dialog.close();
   });
 
   // "Fijar otra" (a problem's card) lands on the mod in the list, #mod-row-<id>: its card opens,

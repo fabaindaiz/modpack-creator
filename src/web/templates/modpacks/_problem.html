@@ -1,7 +1,8 @@
 {# One problem of the resolution as a card (spec §1): its mod's card summary, what is wrong in words
    with titles (never ids) and its actions, each through a route that already exists (spec §1, the
-   action table). Every action carries `contexto` ("problemas": the Mods tab), so the route applies
-   it, resolves again and answers where it was clicked; none creates a build. It receives `problem`,
+   action table). Every action carries `contexto` ("problemas": the Mods tab, #mods; "dialogo": the
+   build dialog, #build-dialog), so the route applies it, resolves again and answers where it was
+   clicked; none creates a build. It receives `problem`,
    `titles`, `pack` (the pack's project ids → origin) and `contexto`, plus the pack page's
    `bundle_id`, `bundle`, `cards`, `icon` and `humanize`.
 
@@ -10,7 +11,7 @@
 {% import "_macros.html" as ui %}
 {% set KIND = {"unresolvable": "sin versión", "pin_mismatch": "versión fijada", "pin_conflict": "versión fijada",
                "incompatible": "incompatible", "no_file": "sin archivo"} %}
-{% set target = "#mods" %}
+{% set target, swap = ("#build-dialog", "innerHTML") if contexto == "dialogo" else ("#mods", "outerHTML") %}
 {% set pid = problem.project_id %}
 {% set card = cards.get(pid) if pid else none %}
 {% set image = icon(card.icon_url) if card else none %}
@@ -22,6 +23,11 @@
 {# A pin that no longer works: unpinning or pinning another solves it, not removing the mod. #}
 {% set pin_problem = pid is not none and pid in bundle.pins and alternative is none
                      and problem.kind in ("unresolvable", "pin_mismatch", "pin_conflict") %}
+{# The spec's action table: only a dependency Modrinth has nothing for (no version in any channel
+   that fits) is replaced or ignored; a beta or alpha that fits is used instead; a mod without a
+   file is only removed. #}
+{% set unserved = dependency and problem.kind == "unresolvable" and alternative is none and not pin_problem %}
+{% set usable = alternative and in_pack and problem.kind == "unresolvable" %}
 {% if alternative %}
 {% set choice = ("la " ~ alternative.channel ~ " " ~ alternative.version_number) if alternative.channel in ("beta", "alpha")
                 else ("la versión " ~ alternative.version_number ~ " (" ~ alternative.channel ~ ")") %}
@@ -77,8 +83,8 @@
   </div>
 
   <div class="flex flex-wrap items-center gap-2">
-    {% if alternative and in_pack %}
-    <form hx-post="/modpacks/{{ bundle_id }}/pins" hx-target="{{ target }}" hx-swap="outerHTML">
+    {% if usable %}
+    <form hx-post="/modpacks/{{ bundle_id }}/pins" hx-target="{{ target }}" hx-swap="{{ swap }}">
       <input type="hidden" name="project_id" value="{{ pid }}">
       <input type="hidden" name="version_id" value="{{ alternative.version_id }}">
       <input type="hidden" name="contexto" value="{{ contexto }}">
@@ -88,21 +94,21 @@
     {% if pin_problem %}
     {{ ui.button("Quitar la fijación", kind="secondary", small=True, attrs={
       "hx-delete": "/modpacks/" ~ bundle_id ~ "/pins/" ~ pid ~ "?contexto=" ~ contexto,
-      "hx-target": target, "hx-swap": "outerHTML"}) }}
-    {{ ui.link_button("Fijar otra", "/modpacks/" ~ bundle_id ~ "?vista=todos#mod-row-" ~ pid, small=True) }}
+      "hx-target": target, "hx-swap": swap}) }}
+    {% if in_pack %}{{ ui.link_button("Fijar otra", "/modpacks/" ~ bundle_id ~ "?vista=todos#mod-row-" ~ pid, small=True) }}{% endif %}
     {% endif %}
     {% for removal in removals %}
     {% set removal_name = titles.get(removal, removal) %}
     {{ ui.button("Quitar del modpack" if removal == pid and problem.kind != "incompatible" else "Quitar " ~ removal_name,
       kind="secondary", small=True, attrs={
       "hx-delete": "/modpacks/" ~ bundle_id ~ "/projects/" ~ removal ~ "?contexto=" ~ contexto,
-      "hx-target": target, "hx-swap": "outerHTML", "hx-confirm": "¿Quitar " ~ removal_name ~ " del modpack?"}) }}
+      "hx-target": target, "hx-swap": swap, "hx-confirm": "¿Quitar " ~ removal_name ~ " del modpack?"}) }}
     {% endfor %}
-    {% if dependency and problem.kind != "incompatible" %}
+    {% if unserved %}
     {{ ui.link_button("Crear un reemplazo", "/replacements", small=True) }}
     {% if requesters %}
     {# Global: the dependency is dropped in every pack, so it asks first (spec §1). #}
-    <form hx-post="/replacements" hx-target="{{ target }}" hx-swap="outerHTML" hx-confirm="Se descarta {{ name }} en todos los packs. ¿Seguir?">
+    <form hx-post="/replacements" hx-target="{{ target }}" hx-swap="{{ swap }}" hx-confirm="Se descarta {{ name }} en todos los packs. ¿Seguir?">
       <input type="hidden" name="project_id" value="{{ pid }}">
       <input type="hidden" name="replacement" value="">
       <input type="hidden" name="bundle_id" value="{{ bundle_id }}">
