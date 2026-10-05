@@ -1,7 +1,8 @@
 {# A server's files against its build, by category. Needs `comparison`, `titles` (project id →
-   title) and `versions` (version id → what a person reads: PterodactylService.compare_names). #}
+   title) and `versions` (version id → what a person reads: PterodactylService.compare_names). Each
+   mod opens its card. #}
 {% import "_macros.html" as ui %}
-{% macro name(project_id) %}{{ titles.get(project_id, project_id) if project_id else "—" }}{% endmacro %}
+{% macro name(project_id) %}{{ ui.mod_link(project_id, titles.get(project_id, project_id)) if project_id else "—" }}{% endmacro %}
 {% macro version(version_id) %}{{ versions.get(version_id, version_id) if version_id else "—" }}{% endmacro %}
 <div id="compare" class="space-y-3">
   {% if comparison.in_sync %}

@@ -1,6 +1,7 @@
 """La ficha de un mod en el panel (spec §2): la página `/mods/{id}`, el panel compacto y la tabla
 con todas las versiones. `ModpackService` se sustituye con un doble en el contenedor, como en
 `tests/test_web_servers.py`; el doble anota qué le pidieron."""
+import re
 from datetime import datetime, timezone
 from typing import Any, Optional, Sequence
 
@@ -13,7 +14,7 @@ from src.exceptions import HTTP_404_NOT_FOUND, UpstreamError
 from src.model.modrinth import ModrinthProject
 from src.model.modrinth.project import ModrinthEnvironment, ModrinthProjectType
 from src.model.users import Actor
-from src.services.modpack import ModPage, ModUse, ServerUse, VersionRow
+from src.services.modpack import ModPage, ModUse, PackMark, ServerUse, VersionRow
 from tests._actors import EDITOR, session_for
 from tests._session import session_cookie
 
@@ -33,6 +34,11 @@ def modrinth_project(title: str = "Sodium", **changes: Any) -> ModrinthProject:
     return ModrinthProject.model_construct(**{**fields, **changes})
 
 
+def visible(html: str) -> str:
+    """What the page shows as text: tags removed and whitespace collapsed."""
+    return " ".join(re.sub(r"<[^>]+>", " ", html).split())
+
+
 def version_row(number: str, day: int, channel: str = "release") -> VersionRow:
     return VersionRow(version_id=f"v-{number}", version_number=number, channel=channel,
                       published=datetime(2026, 9, day, tzinfo=timezone.utc), game_versions=["1.21.1"],
@@ -45,7 +51,7 @@ def mod_page(title: str = "Sodium", **changes: Any) -> ModPage:
         uses=[ModUse(bundle_id=str(BUNDLE_A), bundle_name="Pack A", origin="admin", dependency_of=[],
                      recommended=(5, "0.8.13"), latest=(7, "0.8.14")),
               ModUse(bundle_id=str(BUNDLE_B), bundle_name="Pack B", origin=None, dependency_of=["Iris"],
-                     recommended=None, latest=None)],
+                     recommended=None, latest=None, requested_by=["YL57xq9U"])],
         servers=[ServerUse(server_id=str(SERVER), server_name="Survival", version="0.8.13", scanned_at=T0)],
         versions=[version_row("0.8.14", 20), version_row("0.8.13", 10, "beta")], versions_partial=True,
         titles={"AANobbMI": title, "P7dR8mSH": "Fabric API", "PREV": "Lithium"}, dependencies=["P7dR8mSH"])
@@ -58,9 +64,11 @@ class FakeModpack:
         self.all_versions = [version_row("0.9.0", 25), version_row("0.8.14", 20), version_row("0.1.0", 1)]
         self.error: Optional[Exception] = None
         self.calls: list[tuple[Any, ...]] = []
+        self.packs: list[Optional[str]] = []
 
-    async def mod_page(self, project_id: str, named: Sequence[str] = ()) -> ModPage:
+    async def mod_page(self, project_id: str, named: Sequence[str] = (), pack: Optional[str] = None) -> ModPage:
         self.calls.append(("mod_page", project_id, list(named)))
+        self.packs.append(pack)
         if self.error is not None:
             raise self.error
         return self.page
@@ -106,7 +114,7 @@ def test_page_shows_identity_uses_and_partial_versions() -> None:
     assert "Fabric API" in text  # its dependencies, by title
     # Where it is used, with links.
     assert f'href="/modpacks/{BUNDLE_A}"' in text and "Pack A" in text and f'href="/modpacks/{BUNDLE_B}"' in text
-    assert "dependencia de Iris" in text
+    assert "dependencia de Iris" in visible(text)
     assert "#5 recomendado, 0.8.13" in text and "#7 último, 0.8.14" in text
     assert f'href="/servers/{SERVER}"' in text and "Survival" in text
     # Versions from the catalog, newest first, said to be partial, and the button to load them all.
@@ -171,7 +179,9 @@ def test_modrinth_down_is_a_notice_with_retry_never_a_500(error: Exception, path
     client, fake = setup()
     fake.error = error
     response = client.get(path, headers=HTMX if htmx else {})
-    assert response.status_code < 500 or response.status_code in (502, 504)
+    # The page is a page about the failure; the panel and the table answer 200 with the notice in place.
+    expected = (504 if isinstance(error, TimeoutError) else 502) if not htmx else 200
+    assert response.status_code == expected
     text = response.text
     assert "Modrinth no respondió" in text and "Reintentar" in text
     assert f'hx-get="{path}"' in text or f'href="{path}"' in text
@@ -215,3 +225,68 @@ def test_without_a_session_the_page_goes_to_login() -> None:
     client, _ = setup(actor=None)
     response = client.get("/mods/AANobbMI")
     assert response.status_code == 303 and response.headers["location"].startswith("/v1/login")
+
+
+# Every mod name of the card opens its card (Task 5), and a page opened from a pack marks its version.
+
+PACK = str(BUNDLE_A)
+
+
+def test_the_card_links_its_dependencies_and_who_asked_for_it() -> None:
+    client, fake = setup()
+    page = client.get("/mods/AANobbMI").text
+    assert '<a href="/mods/P7dR8mSH" hx-get="/mods/P7dR8mSH/panel"' in page  # Fabric API, a dependency
+    assert '<a href="/mods/YL57xq9U" hx-get="/mods/YL57xq9U/panel"' in page  # Iris asked for it
+    # Inside the panel, a link to another mod keeps the way back to this one.
+    panel = client.get("/mods/AANobbMI/panel", headers=HTMX).text
+    assert 'hx-get="/mods/P7dR8mSH/panel?desde=AANobbMI"' in panel
+    assert 'hx-get="/mods/YL57xq9U/panel?desde=AANobbMI"' in panel
+
+
+def test_a_requester_without_an_id_stays_text() -> None:
+    client, fake = setup()
+    fake.page = mod_page(uses=[ModUse(bundle_id=str(BUNDLE_B), bundle_name="Pack B", origin=None,
+                                      dependency_of=["Iris"], recommended=None, latest=None)])
+    text = client.get("/mods/AANobbMI").text
+    assert "dependencia de Iris" in text and 'href="/mods/YL57xq9U"' not in text
+
+
+def pack_mark(supports: bool = True) -> PackMark:
+    return PackMark(bundle_id=PACK, name="Pack A", game_version="1.21.1" if supports else "1.12.2",
+                    loader="fabric" if supports else "forge", supports_version=supports, supports_loader=supports)
+
+
+def test_a_page_from_a_pack_marks_its_minecraft_version_and_loader() -> None:
+    client, fake = setup()
+    fake.page = mod_page(pack=pack_mark())
+    text = client.get(f"/mods/AANobbMI?pack={PACK}").text
+    assert fake.packs == [PACK]
+    assert "1.21.1 ✓" in text and "fabric ✓" in text and "Pack A" in text
+    fake.page = mod_page(pack=pack_mark(supports=False))
+    text = client.get(f"/mods/AANobbMI?pack={PACK}").text
+    assert "no soporta 1.12.2" in text and "no soporta forge" in text
+
+
+def test_the_panel_from_a_pack_marks_it_and_keeps_it_in_its_links() -> None:
+    client, fake = setup()
+    fake.page = mod_page(pack=pack_mark())
+    text = client.get(f"/mods/AANobbMI/panel?pack={PACK}&desde=PREV", headers=HTMX).text
+    assert fake.packs == [PACK] and "1.21.1 ✓" in text
+    assert f'href="/mods/AANobbMI?pack={PACK}"' in text  # "Abrir ficha completa"
+    assert f'hx-get="/mods/P7dR8mSH/panel?desde=AANobbMI&amp;pack={PACK}"' in text
+    assert f'hx-get="/mods/PREV/panel?pack={PACK}"' in text  # the way back, still from the pack
+
+
+@pytest.mark.parametrize("pack", ["zzz", "0123456789abcdef0123456", "0123456789abcdef012345678", "%3Cscript%3E"])
+def test_an_invalid_pack_is_ignored_never_an_error(pack: str) -> None:
+    client, fake = setup()
+    for path in (f"/mods/AANobbMI?pack={pack}", f"/mods/AANobbMI/panel?pack={pack}"):
+        response = client.get(path, headers=HTMX)
+        assert response.status_code == 200 and "pack=" not in response.text
+    assert fake.packs == [None, None]
+
+
+def test_a_page_without_a_pack_marks_nothing() -> None:
+    client, fake = setup()
+    text = client.get("/mods/AANobbMI").text
+    assert fake.packs == [None] and "✓" not in text and "no soporta" not in text

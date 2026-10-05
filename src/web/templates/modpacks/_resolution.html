@@ -1,6 +1,6 @@
 {# The latest saved resolution above the mods: when it ran and whether the pack changed since, then
    its problems, its suggestions and the undecided mods, each only when there are some. Part of
-   _mods.html; `titles` names every project it mentions. #}
+   _mods.html; `titles` names every project it mentions, and each opens its card from this pack. #}
 {% import "_macros.html" as ui %}
 {% set resolution = mods.resolution %}
 <div class="space-y-3">
@@ -30,7 +30,7 @@
     <h3 class="font-semibold">Problemas ({{ saved.problems | length }})</h3>
     <ul class="list-disc space-y-0.5 pl-5">
       {% for problem in saved.problems %}
-      <li class="break-words">{% if problem.project_id %}<span class="font-medium">{{ titles.get(problem.project_id, problem.project_id) }}</span>: {% endif %}{{ problem.detail }}</li>
+      <li class="break-words">{% if problem.project_id %}<span class="font-medium">{{ ui.mod_link(problem.project_id, titles.get(problem.project_id, problem.project_id), pack=bundle_id) }}</span>: {% endif %}{{ problem.detail }}</li>
       {% endfor %}
     </ul>
   </div>
@@ -44,8 +44,8 @@
       {% for suggestion in saved.suggestions %}
       <li class="flex flex-wrap items-center gap-2">
         <div class="min-w-0 flex-1 break-words">
-          <span class="font-medium">{{ titles.get(suggestion.project_id, suggestion.project_id) }}</span>
-          {% if suggestion.requested_by %}<span class="text-xs">sugerida por {% for requester in suggestion.requested_by %}{{ titles.get(requester, requester) }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
+          <span class="font-medium">{{ ui.mod_link(suggestion.project_id, titles.get(suggestion.project_id, suggestion.project_id), pack=bundle_id) }}</span>
+          {% if suggestion.requested_by %}<span class="text-xs">sugerida por {% for requester in suggestion.requested_by %}{{ ui.mod_link(requester, titles.get(requester, requester), pack=bundle_id) }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
         </div>
         <form hx-post="/modpacks/{{ bundle_id }}/projects" hx-target="#mods" hx-swap="outerHTML">
           <input type="hidden" name="ref" value="{{ suggestion.project_id }}">
@@ -66,7 +66,7 @@
       <ul class="space-y-1">
         {% for entry in saved.undecided %}
         <li class="flex flex-wrap items-center gap-2">
-          <label for="bulk-{{ entry.project_id }}" class="min-w-0 flex-1 font-medium break-words">{{ titles.get(entry.project_id, entry.project_id) }}</label>
+          <label for="bulk-{{ entry.project_id }}" class="min-w-0 flex-1 font-medium break-words">{{ ui.mod_link(entry.project_id, titles.get(entry.project_id, entry.project_id), pack=bundle_id) }}</label>
           <select id="bulk-{{ entry.project_id }}" name="decision.{{ entry.project_id }}" class="rounded-md border-0 bg-white px-2 py-1 text-sm text-zinc-900 ring-1 ring-inset ring-amber-400 dark:bg-zinc-900 dark:text-zinc-100">
             <option value="" selected>Sin decidir</option>
             <option value="si">En el servidor</option>

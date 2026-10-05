@@ -82,6 +82,8 @@ class ModRow:
     pinned: bool
     source_url: Optional[str] = None
     issues_url: Optional[str] = None
+    # The ids of the projects in `required_by`, in its order: each name opens its card.
+    requested_by: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -123,6 +125,24 @@ class ModUse:
     dependency_of: list[str]
     recommended: Optional[tuple[int, str]]
     latest: Optional[tuple[int, str]]
+    # The ids of the projects in `dependency_of`, in its order: each name opens its card.
+    requested_by: list[str] = field(default_factory=list)
+
+
+# What a bundle id looks like (a MongoDB ObjectId): anything else names no pack.
+BUNDLE_ID = re.compile(r"[0-9a-fA-F]{24}")
+
+
+@dataclass(frozen=True)
+class PackMark:
+    """The pack a mod's page was opened from (spec §2): its Minecraft version and loader, and whether
+    the project, as the catalog has it, supports them."""
+    bundle_id: str
+    name: str
+    game_version: str
+    loader: str
+    supports_version: bool
+    supports_loader: bool
 
 
 @dataclass(frozen=True)
@@ -158,6 +178,8 @@ class ModPage:
     versions_partial: bool
     titles: dict[str, str]
     dependencies: list[str] = field(default_factory=list)
+    # The pack the page was opened from, with its version and loader marked; None without one.
+    pack: Optional[PackMark] = None
 
 
 @dataclass
@@ -173,6 +195,12 @@ class _ModLocal:
     # (server, scanned at, identified version id), by server name.
     servers: list[tuple[PterodactylServer, datetime, Optional[str]]]
     numbers: dict[str, str]
+
+
+def _related(project_id: str, local: _ModLocal, named: Sequence[str]) -> list[str]:
+    """The other projects a mod's page names: its dependencies, who asked for it and `named`."""
+    requesters = (r for ids in local.requested.values() for r in ids)
+    return [i for i in dict.fromkeys([*local.dependencies, *requesters, *named]) if i != project_id]
 
 
 def _version_row(version: ModrinthVersion) -> VersionRow:
@@ -389,6 +417,7 @@ class ModpackService():
                 loaders=list(found.loaders) if found else [], game_versions=list(found.game_versions) if found else [],
                 supports_loader=supports_loader, supports_version=supports_version, origin=origin,
                 required_by=[catalog[r].title if r in catalog else r for r in (entry.requested_by if entry else [])],
+                requested_by=list(entry.requested_by) if entry else [],
                 side=entry.server if entry else None, build_version=in_build.get(project_id),
                 newer_version=None if pinned else newer.get(project_id), pinned=pinned,
                 source_url=found.source_url if found else None, issues_url=found.issues_url if found else None)
@@ -423,35 +452,40 @@ class ModpackService():
 
     # A mod's local page (spec §2, "Ficha local de cada mod").
 
-    async def mod_page(self, project_id: str, named: Sequence[str] = ()) -> ModPage:
+    async def mod_page(self, project_id: str, named: Sequence[str] = (), pack: Optional[str] = None) -> ModPage:
         """
         Everything a mod's page shows: the project, the packs that use it (as a project or as a
         dependency of their saved resolution, with their recommended and latest builds that include
         it), the servers whose latest scan identified it, and its versions from the catalog. Never
-        waits for Modrinth for the versions.
+        waits for Modrinth for the versions. Opened from a pack (`pack`, its bundle id), the page
+        marks the pack's Minecraft version and loader; an id that is not a bundle's is ignored.
 
-        Modrinth is asked at most once, within `icon_deadline`, for every project the page names that
-        the catalog lacks (or has without an icon): its dependencies, who asked for it and `named`
-        (e.g. the mod the panel came from). A stored project is filled best effort: Modrinth failing
-        leaves those names as ids. A project the catalog does not have is fetched with them in a call
-        whose failure is raised (UpstreamError, TimeoutError): the panel shows it with a retry. Writes
-        the catalog.
+        Modrinth is asked once, within `icon_deadline`, for every project the page names that the
+        catalog lacks (or has without an icon): its dependencies, who asked for it and `named` (e.g.
+        the mod the panel came from). A stored project is filled best effort: Modrinth failing leaves
+        those names as ids. A project the catalog does not have is fetched with them in a call whose
+        failure is raised (UpstreamError, TimeoutError): the panel shows it with a retry. Fetched by
+        slug, its relatives are only known once Modrinth gives its id: they are filled after it, best
+        effort, within what is left of the same deadline. Writes the catalog.
 
         :param project_id: A Modrinth project id, or a slug.
         :param named: More project ids whose titles the page shows.
+        :param pack: The bundle id of the pack the page was opened from, if any.
         :return: The page; 404 if the id is not a Modrinth id or Modrinth does not know the project.
         """
         if not MODRINTH_ID.fullmatch(project_id):
             raise HTTP_404_NOT_FOUND(f"«{project_id}» no es un id de Modrinth")
+        bundle = await self._pack(pack)
         stored = await self.modrinthDB.project_find_by_ref(project_id)
         key = stored.project_id if stored is not None else project_id
         local = await self._mod_local(key)
-        others = [i for i in dict.fromkeys([*local.dependencies, *(r for ids in local.requested.values() for r in ids),
-                                            *named]) if i != key]
+        others = _related(key, local, named)
         if stored is not None:
             catalog = await fill_catalog(self.modrinthDB, self.modrinthAPI, [key, *others], self.icon_deadline)
             project = catalog.get(key, stored)
         else:
+            loop = asyncio.get_running_loop()
+            started = loop.time()
             known = {p.project_id: p for p in await self.modrinthDB.project_find_by_modrinth_id(others)}
             missing = [i for i in others if i not in known or not known[i].icon_url]
             fetched = list(await asyncio.wait_for(self.modrinthAPI.project_get_many([key, *missing]),
@@ -462,10 +496,22 @@ class ModpackService():
             catalog = {**known, **{p.project_id: p for p in await self.modrinthDB.project_upsert_many(fetched)}}
             project = catalog[found.project_id]
             if found.project_id != key:
-                # It was a slug: what MongoDB has about the project is under its id.
+                # It was a slug: what MongoDB has about the project is under its id, and so are the
+                # relatives the page names.
                 key = found.project_id
                 local = await self._mod_local(key)
-        return self._mod_page(project, local, catalog, named)
+                relatives = [i for i in _related(key, local, named) if i not in catalog]
+                if relatives:
+                    left = max(self.icon_deadline - (loop.time() - started), 0.0)
+                    catalog.update(await fill_catalog(self.modrinthDB, self.modrinthAPI, relatives, left))
+        return self._mod_page(project, local, catalog, named, bundle)
+
+    async def _pack(self, bundle_id: Optional[str]) -> Optional[ModpackBundle]:
+        """The bundle a mod's page was opened from; None when the id is not a bundle's."""
+        if not bundle_id or not BUNDLE_ID.fullmatch(bundle_id):
+            return None
+        found = await self.modpackDB.bundle_find([bundle_id]).to_list()
+        return found[0] if found else None
 
     async def _mod_local(self, project_id: str) -> _ModLocal:
         """The reads of mod_page, all on MongoDB: the catalog's versions and their required
@@ -507,7 +553,7 @@ class ModpackService():
 
     @staticmethod
     def _mod_page(project: ModrinthProject, local: _ModLocal, catalog: dict[str, ModrinthProject],
-                  named: Sequence[str]) -> ModPage:
+                  named: Sequence[str], bundle: Optional[ModpackBundle] = None) -> ModPage:
         def title(project_id: str) -> str:
             return catalog[project_id].title if project_id in catalog else project_id
 
@@ -516,20 +562,27 @@ class ModpackService():
             return (number, version) if number is not None and version is not None else None
 
         uses: list[ModUse] = []
-        for bundle in sorted(local.bundles, key=lambda b: (b.name.casefold(), str(b.id))):
-            bundle_id = str(bundle.id)
-            origin = next((p.origin.value for p in bundle.projects if p.project_id == project.project_id), None)
-            uses.append(ModUse(bundle_id=bundle_id, bundle_name=bundle.name, origin=origin,
+        for using in sorted(local.bundles, key=lambda b: (b.name.casefold(), str(b.id))):
+            bundle_id = str(using.id)
+            origin = next((p.origin.value for p in using.projects if p.project_id == project.project_id), None)
+            uses.append(ModUse(bundle_id=bundle_id, bundle_name=using.name, origin=origin,
                                dependency_of=[title(r) for r in local.requested.get(bundle_id, [])],
-                               recommended=built(bundle_id, bundle.recommended_build),
-                               latest=built(bundle_id, bundle.latest_build)))
+                               recommended=built(bundle_id, using.recommended_build),
+                               latest=built(bundle_id, using.latest_build),
+                               requested_by=list(local.requested.get(bundle_id, []))))
         servers = [ServerUse(server_id=str(server.id), server_name=server.name,
                              version=local.numbers.get(version_id) if version_id else None, scanned_at=scanned_at)
                    for server, scanned_at, version_id in local.servers]
+        mark = None
+        if bundle is not None:
+            target = Target(game_version=bundle.version, loader=str(bundle.loader.value))
+            mark = PackMark(bundle_id=str(bundle.id), name=bundle.name, game_version=bundle.version,
+                            loader=str(bundle.loader.value), supports_version=bundle.version in project.game_versions,
+                            supports_loader=bool(target.loaders(project.project_type.value) & set(project.loaders)))
         shown = [project.project_id, *local.dependencies, *named]
         return ModPage(project=project, uses=uses, servers=servers,
                        versions=[_version_row(v) for v in local.versions], versions_partial=True,
-                       titles={i: title(i) for i in shown}, dependencies=local.dependencies)
+                       titles={i: title(i) for i in shown}, dependencies=local.dependencies, pack=mark)
 
     async def mod_versions_all(self, project_id: str) -> list[VersionRow]:
         """

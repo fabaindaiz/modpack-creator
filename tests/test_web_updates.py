@@ -101,6 +101,18 @@ class FakePtero:
         return []
 
 
+class FakeModrinth:
+    """The catalog fill of the page: counts its calls (one per render) and knows no project, so the
+    titles are the check's."""
+
+    def __init__(self) -> None:
+        self.filled: list[list[str]] = []
+
+    async def projects_filled(self, project_ids: list[str]) -> dict[str, Any]:
+        self.filled.append(list(project_ids))
+        return {}
+
+
 class FakeJobs:
     async def recent(self, limit: int = 10) -> list[Job]:
         return []
@@ -112,7 +124,7 @@ def reset_overrides() -> Any:
     import main
 
     for provider in (main.container.modpackService, main.container.updateCheckService, main.container.jobService,
-                     main.container.pterodactylService):
+                     main.container.pterodactylService, main.container.modrinthService):
         provider.reset_override()
 
 
@@ -124,6 +136,7 @@ def setup(actor: Optional[Actor] = EDITOR) -> tuple[TestClient, FakeModpack, Fak
     main.container.updateCheckService.override(providers.Object(checks))
     main.container.jobService.override(providers.Object(FakeJobs()))
     main.container.pterodactylService.override(providers.Object(FakePtero()))
+    main.container.modrinthService.override(providers.Object(FakeModrinth()))
     client = TestClient(main.app, base_url="https://testserver", follow_redirects=False)
     if actor is not None:
         client.cookies.set("session", session_cookie(session_for(actor)))
@@ -258,3 +271,30 @@ def test_the_dashboard_has_no_badge_when_only_pinned_ones_or_no_check() -> None:
     assert "actualizacion" not in client.get("/").text
     checks.latest_check = check([update("A", "Sodium")])
     assert "1 actualización" in client.get("/").text and "1 actualizaciones" not in client.get("/").text
+
+
+def test_every_update_opens_its_card_from_the_pack_with_one_fill() -> None:
+    import main
+
+    client, _, checks = setup()
+    modrinth = FakeModrinth()
+    main.container.modrinthService.override(providers.Object(modrinth))
+    checks.latest_check = check([update("A", "Sodium"), update("C", "Lithium", pinned=True)])
+    text = client.get(f"/modpacks/{BUNDLE_ID}/actualizaciones").text
+    for project_id, title in (("A", "Sodium"), ("C", "Lithium")):
+        query = f"?pack={BUNDLE_ID}"
+        assert f'<a href="/mods/{project_id}{query}" hx-get="/mods/{project_id}/panel{query}"' in text
+        assert title in text  # the check's title when the catalog has none
+    assert modrinth.filled == [["A", "C"]]
+
+
+def test_the_page_without_updates_does_not_ask_modrinth() -> None:
+    import main
+
+    client, _, checks = setup()
+    modrinth = FakeModrinth()
+    main.container.modrinthService.override(providers.Object(modrinth))
+    client.get(f"/modpacks/{BUNDLE_ID}/actualizaciones")
+    checks.latest_check = check([])
+    client.get(f"/modpacks/{BUNDLE_ID}/actualizaciones")
+    assert modrinth.filled == []

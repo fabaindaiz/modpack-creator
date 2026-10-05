@@ -19,7 +19,6 @@ from src.web import MODRINTH_REF, WebRoute, get_web_actor, render
 logger = logging.getLogger("modpack.web")
 router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
 
-# A Modrinth id or slug: what a path or an attribute may carry unescaped.
 # The prefix of a bulk-decision field: `decision.<project id>`.
 DECISION_PREFIX = "decision."
 # The channels a modpack may allow, most stable first (Modrinth's version types).
@@ -112,8 +111,10 @@ def _https_url(url: Any) -> Optional[str]:
     return url if parts.scheme == "https" and parts.hostname else None
 
 async def _titles(modrinthService: ModrinthService, project_ids: list[str]) -> dict[str, str]:
-    """Project id → title, for what the catalog knows; an id it does not know shows as itself."""
-    found = await modrinthService.projects_by_id(sorted(set(project_ids)))
+    """Project id → title, from the catalog, filled first from Modrinth for what it lacks: one batch
+    for every mod the render shows, within its deadline, so each has a card (spec §2, "ningún mod sin
+    ficha"). An id still unknown shows as itself."""
+    found = await modrinthService.projects_filled(sorted(set(project_ids))) if project_ids else {}
     return {project_id: found[project_id].title if project_id in found else project_id for project_id in project_ids}
 
 async def _mods_context(modpackService: ModpackService, updateCheckService: UpdateCheckService,
@@ -281,6 +282,12 @@ async def modpack_search(
         return render(request, "modpacks/_search.html", actor, bundle_id=bundle_id, hits=[], failed=True, searched=True)
     owned = {p.project_id for p in bundle.projects}
     hits = [hit for hit in (_hit(item, owned) for item in raw if isinstance(item, dict)) if hit is not None]
+    if hits:
+        # Every hit gets its card: the catalog is filled for all of them in one call (spec §2).
+        try:
+            await modrinthService.projects_filled([hit.project_id for hit in hits])
+        except Exception:
+            logger.warning("catalog fill of the search hits failed for bundle %s", bundle_id, exc_info=True)
     return render(request, "modpacks/_search.html", actor, bundle_id=bundle_id, hits=hits, failed=False, searched=True)
 
 @router.post("/modpacks/{bundle_id}/projects")
@@ -496,14 +503,19 @@ async def update_page(
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
+        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         ):
     """The latest check of the modpack's recommended build: what has a newer version, with the
-    changelogs. A read: Modrinth failing shows as "changelog no disponible", never as an error."""
+    changelogs. A read: Modrinth failing shows as "changelog no disponible", never as an error. Every
+    mod it lists has its card: the catalog is filled once for all of them (the titles are the
+    check's)."""
     bundle = await modpackService.bundle_get(bundle_id)
     check = await updateCheckService.latest(bundle_id)
     counted = [u for u in check.updates if not u.pinned] if check else []
     pinned = [u for u in check.updates if u.pinned] if check else []
     preview = await modpackService.update_preview(counted) if counted else None
+    if counted or pinned:
+        await modrinthService.projects_filled([u.project_id for u in counted + pinned])
     return render(request, "modpacks/updates.html", actor, bundle=bundle, bundle_id=bundle_id, check=check,
                   preview=preview, pinned=pinned, titles={u.project_id: u.title for u in counted},
                   nav_active="modpacks")

@@ -213,6 +213,65 @@ def test_a_slug_finds_the_project_and_what_is_stored_under_its_id(mongo: MongoRu
     assert calls == [("project_get_many", ["sodium"])]
 
 
+def test_a_slug_fetches_the_relatives_stored_under_its_id(mongo: MongoRunner) -> None:
+    # By slug, the relatives are only known once Modrinth says the project's id: they are filled
+    # after it, best effort, so they show by title and never as ids.
+    async def scenario() -> Any:
+        api = FakeModrinth(projects=[project("P", "Sodium"), project("D1", "D1 title"), project("X", "X title")])
+        s = Scenario(api)
+        await s.modrinthDB.version_upsert_many([requiring(version("v1", "P", "1.0", 1), "D1")])
+        b = await s.bundle("B", [("X", ProjectOrigin.pack)])
+        await s.resolved(b, entry("X", "1"), entry("P", "1.0", origin=None, requested_by=["X"]))
+        page = await s.service.mod_page("sodium")
+        return page, api.calls
+
+    page, calls = mongo(scenario)
+    assert page.project.project_id == "P" and page.dependencies == ["D1"]
+    assert page.titles["D1"] == "D1 title" and page.uses[0].dependency_of == ["X title"]
+    assert page.uses[0].requested_by == ["X"]
+    assert calls == [("project_get_many", ["sodium"]), ("project_get_many", ["D1", "X"])]
+
+
+def test_a_slug_with_modrinth_down_for_the_relatives_still_shows_the_project(mongo: MongoRunner) -> None:
+    class FirstOnly(FakeModrinth):
+        async def project_get_many(self, slugs: list[str]) -> list[ModrinthProject]:
+            if self.calls:
+                self.calls.append(("project_get_many", list(slugs)))
+                raise UpstreamError("Modrinth", 502, raw="down")
+            return await super().project_get_many(slugs)
+
+    async def scenario() -> Any:
+        s = Scenario(FirstOnly(projects=[project("P", "Sodium")]))
+        await s.modrinthDB.version_upsert_many([requiring(version("v1", "P", "1.0", 1), "D1")])
+        return await s.service.mod_page("sodium")
+
+    page = mongo(scenario)
+    assert page.project.title == "Sodium" and page.titles["D1"] == "D1"  # by id, never an error
+
+
+def test_from_a_pack_the_page_marks_its_version_and_loader(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        s = Scenario(FakeModrinth())
+        await s.modrinthDB.project_upsert_many([project("P", "P title", loaders=("fabric",),
+                                                        game_versions=("1.20.1", "1.21.1"))])
+        a = await s.bundle("A")  # 1.21.1, fabric; it does not need to have the mod
+        other = await s.modpackDB.bundle_insert(ModpackBundle(
+            name="Viejo", description="", version="1.12.2", loader=MinecraftLoaders.forge, projects=[]))
+        marked = await s.service.mod_page("P", pack=a)
+        unsupported = await s.service.mod_page("P", pack=str(other.id))
+        unknown = await s.service.mod_page("P", pack="0123456789abcdef01234567")
+        invalid = await s.service.mod_page("P", pack="not-an-id")
+        return a, marked, unsupported, unknown, invalid
+
+    a, marked, unsupported, unknown, invalid = mongo(scenario)
+    assert marked.pack is not None and marked.pack.bundle_id == a and marked.pack.name == "A"
+    assert (marked.pack.game_version, marked.pack.loader) == ("1.21.1", "fabric")
+    assert marked.pack.supports_version is True and marked.pack.supports_loader is True
+    assert unsupported.pack is not None and unsupported.pack.game_version == "1.12.2"
+    assert unsupported.pack.supports_version is False and unsupported.pack.supports_loader is False
+    assert unknown.pack is None and invalid.pack is None  # ignored, never an error
+
+
 def test_unknown_to_modrinth_is_a_404(mongo: MongoRunner) -> None:
     async def scenario() -> Any:
         s = Scenario(FakeModrinth())

@@ -1,22 +1,26 @@
 {# A mod's card for the side panel (#mod-drawer-body): compact, without the versions, with the way to
-   its full page. `back` is the mod shown before it (one level of history): "← {title}" goes back. #}
+   its full page. `back` is the mod shown before it (one level of history): "← {title}" goes back.
+   `pack` (the pack it was opened from, or None) stays in every way out of it. #}
 {% import "_macros.html" as ui %}
+{% set from_pack = "pack=" ~ pack if pack else "" %}
+{% set retry_query = ["desde=" ~ back if back else "", from_pack] | select | join("&") %}
 <div class="space-y-4">
   {% if back %}
   {{ ui.button("← " ~ (page.titles.get(back, back) if page else "volver"), kind="ghost", small=True,
-               attrs={"hx-get": "/mods/" ~ back ~ "/panel", "hx-target": "#mod-drawer-body", "hx-swap": "innerHTML"}) }}
+               attrs={"hx-get": "/mods/" ~ back ~ "/panel" ~ ("?" ~ from_pack if from_pack else ""),
+                      "hx-target": "#mod-drawer-body", "hx-swap": "innerHTML"}) }}
   {% endif %}
   {% if failure %}
   <div class="space-y-2 text-sm" role="alert">
     <p class="text-amber-800 dark:text-amber-300">{{ failure }}</p>
     {% if detail %}<p class="font-mono text-xs break-words text-zinc-500 dark:text-zinc-400">{{ detail }}</p>{% endif %}
     {{ ui.button("Reintentar", kind="secondary", small=True,
-                 attrs={"hx-get": "/mods/" ~ project_id ~ "/panel" ~ ("?desde=" ~ back if back else ""),
+                 attrs={"hx-get": "/mods/" ~ project_id ~ "/panel" ~ ("?" ~ retry_query if retry_query else ""),
                         "hx-target": "#mod-drawer-body", "hx-swap": "innerHTML"}) }}
   </div>
   {% else %}
   {% set compact = True %}
   {% include "mods/_card.html" %}
-  <p>{{ ui.link_button("Abrir ficha completa", "/mods/" ~ project_id) }}</p>
+  <p>{{ ui.link_button("Abrir ficha completa", "/mods/" ~ project_id ~ ("?" ~ from_pack if from_pack else "")) }}</p>
   {% endif %}
 </div>

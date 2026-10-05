@@ -1220,7 +1220,7 @@ def test_operator_post_shows_the_result_and_next_step() -> None:
         (str(SERVER_ID), "Creativo", "1.21.1", MinecraftLoaders.fabric, True, OPERATOR)
     assert fakes.modpack.calls == []
     text = text_of(response.text)
-    assert "Mods agregados: 3 (JEI, AppleSkin, FerriteCore)" in text
+    assert "Mods agregados: 3 ( JEI , AppleSkin , FerriteCore )" in text  # each name is a link to its card
     assert "Archivo local: /mods/local.jar" in text
     assert "Resolver y crear build" in text and f'href="/modpacks/{NEW_BUNDLE_ID}"' in response.text
     assert 'id="notices" hx-swap-oob="beforeend"' in response.text
@@ -1328,3 +1328,45 @@ def test_a_new_modpack_needs_a_name_and_a_known_loader() -> None:
                      {**NEW_MODPACK, "name": "x" * 121}):
             assert client.post(f"/servers/{SERVER_ID}/{route}", headers=HTMX, data=data).status_code == 422
     assert fakes.ptero.calls == [] and fakes.modpack.calls == []
+
+
+# Every mod name opens its card (spec §2, "Macro ui.mod_link"), and a render fills the catalog once.
+
+def mod_link(project_id: str) -> str:
+    return f'<a href="/mods/{project_id}" hx-get="/mods/{project_id}/panel"'
+
+
+def test_the_comparison_names_open_their_cards_with_one_fill() -> None:
+    client, fakes = setup()
+    text = client.get(f"/servers/{SERVER_ID}").text
+    compare = text[text.index('id="compare"'):]
+    for project_id in ("P1", "P2", "P3", "P4"):
+        assert mod_link(project_id) in compare
+    assert fakes.modrinth.filled == [["P1", "P2", "P3", "P4"]]
+
+
+def test_the_import_result_names_and_candidates_open_their_cards_with_one_fill() -> None:
+    client, fakes = setup(OPERATOR)
+    text = client.post(f"/servers/{SERVER_ID}/import", headers=HTMX).text
+    assert mod_link("P5") in text and mod_link("C1") in text
+    assert 'name="project_id" value="C1"' in text  # confirming the candidate still sends its id
+    assert fakes.modrinth.filled == [["C1", "P5"]]
+
+
+def test_the_new_modpacks_imported_mods_open_their_cards() -> None:
+    client, fakes = setup(OPERATOR)
+    unlinked(fakes)
+    fakes.ptero.for_server = BundleForServer(
+        bundle=new_bundle(), import_error=None,
+        imported=ImportResult(added=["J1", "A1"], local=[], candidates=[], too_large=[]))
+    text = client.post(f"/servers/{SERVER_ID}/modpack", headers=HTMX, data={**NEW_MODPACK, "import_mods": "1"}).text
+    assert mod_link("J1") in text and mod_link("A1") in text
+    assert fakes.modrinth.filled == [["A1", "J1"]]
+
+
+def test_the_update_preview_names_open_their_cards_with_one_fill() -> None:
+    client, fakes = setup()
+    text = client.get(f"/servers/{SERVER_ID}/update/preview", params={"build": 3}, headers=HTMX).text
+    for project_id in ("P1", "P2", "P3"):
+        assert mod_link(project_id) in text
+    assert fakes.modrinth.filled == [["P1", "P2", "P3"]]

@@ -47,7 +47,7 @@
   <ul class="divide-y divide-zinc-100 rounded-lg border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
     {% for u in pinned %}
     <li class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-3 py-2">
-      <span class="min-w-0 font-medium break-words">{{ u.title }} {{ ui.badge("fijado", "neutral") }}</span>
+      <span class="min-w-0 font-medium break-words">{{ ui.mod_link(u.project_id, u.title, pack=bundle_id) }} {{ ui.badge("fijado", "neutral") }}</span>
       <span class="text-xs whitespace-nowrap tabular-nums text-zinc-500 dark:text-zinc-400">{{ u.from_version }} → {{ u.to_version }}</span>
     </li>
     {% endfor %}

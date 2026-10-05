@@ -7,7 +7,7 @@
 {% if failure %}
 {{ ui.page_header("No se pudo mostrar el mod") }}
 {{ ui.notice(failure, "error", detail=detail) }}
-<p>{{ ui.link_button("Reintentar", "/mods/" ~ project_id) }}</p>
+<p>{{ ui.link_button("Reintentar", "/mods/" ~ project_id ~ ("?pack=" ~ pack if pack else "")) }}</p>
 {% else %}
 {% set compact = False %}
 {% include "mods/_card.html" %}

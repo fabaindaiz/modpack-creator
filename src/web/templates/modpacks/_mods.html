@@ -3,7 +3,7 @@
    project and pin routes answer. A route may add, after it, a success (or info) notice, the search
    hit to mark as added and (after decisions, `builds_oob`) the builds section, all out of band.
    `icon` and `https_url` only let through URLs that may be shown (an icon from Modrinth's CDN, an
-   https link); everything from Modrinth is escaped. #}
+   https link); everything from Modrinth is escaped. Every mod name opens its card, from this pack. #}
 {% import "_macros.html" as ui %}
 {% set SIDE = {
   "include": ("En el servidor", "accent"),
@@ -37,13 +37,15 @@
             {% endif %}
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span class="min-w-0 font-medium wrap-anywhere">{{ row.title }}</span>
+                <span class="min-w-0 font-medium wrap-anywhere">{{ ui.mod_link(row.project_id, row.title, pack=bundle_id) }}</span>
                 {% if row.origin == "admin" %}{{ ui.badge("agregado") }}{% elif row.origin == "pack" %}{{ ui.badge("del .mrpack") }}{% endif %}
                 {% if side %}{{ ui.badge(side[0], side[1]) }}{% endif %}
                 {% if row.pinned %}{{ ui.badge("fijado", "info") }}{% endif %}
               </div>
               <p class="text-xs break-words text-zinc-500 dark:text-zinc-400">
-                {%- if not in_pack %}dependencia de {{ row.required_by | join(", ") if row.required_by else "otro mod" }}{% if row.downloads %} · {% endif %}{% endif %}
+                {%- if not in_pack %}dependencia de
+                  {%- for name in row.required_by %} {{ ui.mod_link(row.requested_by[loop.index0] if loop.index0 < row.requested_by | length else None, name, pack=bundle_id) }}{% if not loop.last %},{% endif %}{% else %} otro mod{% endfor %}
+                  {%- if row.downloads %} · {% endif %}{% endif %}
                 {%- if row.downloads %}{{ downloads(row.downloads) }} descargas{% endif -%}
               </p>
             </div>
@@ -126,7 +128,7 @@
       {% for project_id in mods.orphan_pins %}
       {% set name = titles.get(project_id, project_id) %}
       <span class="inline-flex items-center gap-1">
-        <span class="break-words">{{ name }}</span>
+        <span class="break-words">{{ ui.mod_link(project_id, name, pack=bundle_id) }}</span>
         {{ ui.button("Quitar fijación", kind="ghost", small=True, attrs={
           "hx-delete": "/modpacks/" ~ bundle_id ~ "/pins/" ~ project_id,
           "hx-target": "#mods", "hx-swap": "outerHTML",

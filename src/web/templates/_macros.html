@@ -163,12 +163,16 @@
 {#
   A mod's name as a link to its card. A plain click opens the card in the side panel
   (#mod-drawer, base.html); ctrl, cmd, shift and the middle button follow the href (app.js). Inside
-  the panel pass `desde` (the id of the card shown) so the next card offers "← volver". An id that
-  is not a Modrinth id has no card: only the name.
+  the panel pass `desde` (the id of the card shown) so the next card offers "← volver". Inside a
+  pack's pages pass `pack` (its bundle id): the card marks the pack's Minecraft version and loader.
+  An id that is not a Modrinth id has no card: only the name; a `desde` or `pack` that is not valid
+  is dropped.
 #}
-{% macro mod_link(project_id, title, desde=None) -%}
+{% macro mod_link(project_id, title, desde=None, pack=None) -%}
 {% if project_id is modrinth_ref -%}
-<a href="/mods/{{ project_id }}" hx-get="/mods/{{ project_id }}/panel{{ '?desde=' ~ desde if desde is modrinth_ref else '' }}" hx-target="#mod-drawer-body" hx-swap="innerHTML" data-mod-link class="font-medium underline-offset-2 hover:underline">{{ title }}</a>
+{% set from_pack = 'pack=' ~ pack if pack is bundle_ref else '' -%}
+{% set panel_query = ['desde=' ~ desde if desde is modrinth_ref else '', from_pack] | select | join('&') -%}
+<a href="/mods/{{ project_id }}{{ '?' ~ from_pack if from_pack else '' }}" hx-get="/mods/{{ project_id }}/panel{{ '?' ~ panel_query if panel_query else '' }}" hx-target="#mod-drawer-body" hx-swap="innerHTML" data-mod-link class="font-medium underline-offset-2 hover:underline">{{ title }}</a>
 {%- else -%}
 {{ title }}
 {%- endif %}

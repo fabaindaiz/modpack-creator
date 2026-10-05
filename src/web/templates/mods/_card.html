@@ -1,13 +1,19 @@
 {# A mod's card (spec §2): who it is and where it is used. Shared by its page and by the side panel
    (`compact`); the versions are the page's alone. Everything from Modrinth is escaped; `icon` and
    `https_url` only let through URLs that may be shown (an icon from Modrinth's CDN, an https link).
-   Mod names are plain text here: a later change turns them into links to their cards. #}
+   Every other mod it names opens its card; in the panel (`compact`) with the way back to this one.
+   `pack` is the pack the card was opened from (page.pack marks its version and loader), kept in its
+   links. #}
 {% import "_macros.html" as ui %}
 {% set LINK = "font-medium text-emerald-700 hover:underline dark:text-emerald-300" %}
 {% set TYPES = {"mod": "Mod", "modpack": "Modpack", "resourcepack": "Paquete de recursos", "shader": "Shader"} %}
 {% set project = page.project %}
 {% set image = icon(project.icon_url) %}
 {% set side = side_label(project.environment) %}
+{% set back = project.project_id if compact else None %}
+{% set mark = page.pack %}
+{% set OK = "text-emerald-700 dark:text-emerald-300" %}
+{% set NO = "text-red-700 dark:text-red-300" %}
 <article class="space-y-4" data-mod-card="{{ project.project_id }}">
   <header class="flex items-start gap-3">
     {% if image %}
@@ -37,17 +43,25 @@
     <dt class="font-medium">Lado</dt>
     <dd class="break-words">{{ side if side else "Modrinth no lo dice" }}</dd>
     <dt class="font-medium">Loaders</dt>
-    <dd class="break-words">{{ project.loaders | join(", ") if project.loaders else "—" }}</dd>
+    <dd class="break-words">
+      {{- project.loaders | join(", ") if project.loaders else "—" }}
+      {%- if mark %} · <span class="{{ OK if mark.supports_loader else NO }}">{{ (mark.loader ~ " ✓") if mark.supports_loader else ("no soporta " ~ mark.loader) }}</span>{% endif -%}
+    </dd>
     <dt class="font-medium">Minecraft</dt>
     <dd class="break-words">
       {%- set shown = 8 if compact else 16 %}
       {%- if project.game_versions %}{% if project.game_versions | length > shown %}…, {% endif %}{{ project.game_versions[-shown:] | join(", ") }}{% else %}—{% endif -%}
+      {%- if mark %} · <span class="{{ OK if mark.supports_version else NO }}">{{ (mark.game_version ~ " ✓") if mark.supports_version else ("no soporta " ~ mark.game_version) }}</span>{% endif -%}
     </dd>
+    {% if mark %}
+    <dt class="font-medium">Pack</dt>
+    <dd class="break-words"><a href="/modpacks/{{ mark.bundle_id }}" class="{{ LINK }}">{{ mark.name }}</a></dd>
+    {% endif %}
     <dt class="font-medium">Descargas</dt>
     <dd class="tabular-nums">{{ downloads(project.downloads) }}</dd>
     {% if page.dependencies %}
     <dt class="font-medium">Dependencias</dt>
-    <dd class="break-words">{% for dependency in page.dependencies %}{{ page.titles.get(dependency, dependency) }}{% if not loop.last %}, {% endif %}{% endfor %}</dd>
+    <dd class="break-words">{% for dependency in page.dependencies %}{{ ui.mod_link(dependency, page.titles.get(dependency, dependency), desde=back, pack=pack) }}{% if not loop.last %}, {% endif %}{% endfor %}</dd>
     {% endif %}
   </dl>
 
@@ -68,7 +82,9 @@
           {% if use.origin == "admin" %}{{ ui.badge("agregado") }}{% elif use.origin == "pack" %}{{ ui.badge("del .mrpack") }}{% endif %}
         </div>
         {% if use.origin is none %}
-        <p class="text-xs break-words text-zinc-500 dark:text-zinc-400">dependencia de {{ use.dependency_of | join(", ") if use.dependency_of else "otro mod" }}</p>
+        <p class="text-xs break-words text-zinc-500 dark:text-zinc-400">dependencia de
+          {%- for name in use.dependency_of %} {{ ui.mod_link(use.requested_by[loop.index0] if loop.index0 < use.requested_by | length else None, name, desde=back, pack=pack) }}{% if not loop.last %},{% endif %}{% else %} otro mod{% endfor -%}
+        </p>
         {% endif %}
         {% if use.recommended or use.latest %}
         <p class="text-xs break-words text-zinc-600 dark:text-zinc-400">

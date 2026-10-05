@@ -1,4 +1,5 @@
-{# The global replacement rules and the form to set one; the fragment htmx swaps into #replacements. #}
+{# The global replacement rules and the form to set one; the fragment htmx swaps into #replacements.
+   Each mod opens its card (no pack: the rules are global). #}
 {% import "_macros.html" as ui %}
 <div id="replacements" class="space-y-4">
   <form hx-post="/replacements" hx-target="#replacements" hx-swap="outerHTML" class="flex flex-wrap items-end gap-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
@@ -19,12 +20,12 @@
   {% for rule in rules %}
   <tr data-rule="{{ rule.project_id }}">
     <td class="max-w-[16rem] break-words">
-      <span class="font-medium">{{ titles.get(rule.project_id, rule.project_id) }}</span>
+      <span class="font-medium">{{ ui.mod_link(rule.project_id, titles.get(rule.project_id, rule.project_id)) }}</span>
       <div class="font-mono text-xs text-zinc-500 dark:text-zinc-400">{{ rule.project_id }}</div>
     </td>
     <td class="max-w-[16rem] break-words">
       {% if rule.replacement %}
-      <span class="font-medium">{{ titles.get(rule.replacement, rule.replacement) }}</span>
+      <span class="font-medium">{{ ui.mod_link(rule.replacement, titles.get(rule.replacement, rule.replacement)) }}</span>
       <div class="font-mono text-xs text-zinc-500 dark:text-zinc-400">{{ rule.replacement }}</div>
       {% else %}
       {{ ui.badge("Se quita", "warning") }}

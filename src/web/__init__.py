@@ -85,6 +85,9 @@ templates = Jinja2Templates(env=jinja2.Environment(
 MODRINTH_REF = r"^[A-Za-z0-9_\-]+$"
 templates.env.tests["modrinth_ref"] = lambda value: (
     isinstance(value, str) and len(value) <= 200 and re.fullmatch(MODRINTH_REF, value) is not None)
+# A bundle's id (a MongoDB ObjectId): what `?pack=` may carry to a mod's card.
+BUNDLE_REF = r"^[0-9a-fA-F]{24}$"
+templates.env.tests["bundle_ref"] = lambda value: isinstance(value, str) and re.fullmatch(BUNDLE_REF, value) is not None
 templates.env.globals["asset_url"] = asset_url
 templates.env.globals["static_url"] = static_url
 

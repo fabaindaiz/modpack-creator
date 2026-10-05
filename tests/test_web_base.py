@@ -510,6 +510,17 @@ def test_mod_link_inside_the_panel_asks_to_go_back() -> None:
     assert "desde" not in _render_macro('{{ ui.mod_link("AANobbMI", "Sodium", desde="a/b") }}')
 
 
+def test_mod_link_from_a_pack_carries_it_to_the_page_and_the_panel() -> None:
+    pack = "0123456789abcdef01234567"
+    text = _render_macro('{{ ui.mod_link("AANobbMI", "Sodium", pack="%s") }}' % pack)
+    assert f'href="/mods/AANobbMI?pack={pack}"' in text and f'hx-get="/mods/AANobbMI/panel?pack={pack}"' in text
+    both = _render_macro('{{ ui.mod_link("AANobbMI", "Sodium", desde="PREV", pack="%s") }}' % pack)
+    assert f'hx-get="/mods/AANobbMI/panel?desde=PREV&amp;pack={pack}"' in both
+    # Anything but an ObjectId is dropped, not written into the URL.
+    for bad in ("zzz", pack + "0", "a\"><script>", ""):
+        assert "pack" not in _render_macro('{{ ui.mod_link("AANobbMI", "Sodium", pack=%s) }}' % json.dumps(bad)), bad
+
+
 def test_mod_link_with_an_invalid_id_is_plain_text() -> None:
     for bad in ("a/b", "", "x" * 201, "a b\"><script>"):
         text = _render_macro('{{ ui.mod_link(%s, "Sodium") }}' % json.dumps(bad))

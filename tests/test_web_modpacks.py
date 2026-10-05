@@ -229,6 +229,7 @@ class FakeModrinth:
              "author": "coderbot", "downloads": 1234, "icon_url": "https://cdn.modrinth.com/data/P3/icon.png"}]
         self.error: Optional[Exception] = None
         self.searches: list[tuple[Any, ...]] = []
+        self.filled: list[list[str]] = []
 
     async def search(self, query: str, game_version: Optional[str], loader: Optional[str], limit: int = 10) -> list[dict[str, Any]]:
         self.searches.append((query, game_version, loader, limit))
@@ -236,7 +237,9 @@ class FakeModrinth:
             raise self.error
         return self.hits
 
-    async def projects_by_id(self, project_ids: list[str]) -> dict[str, ModrinthProject]:
+    async def projects_filled(self, project_ids: list[str]) -> dict[str, ModrinthProject]:
+        """Counts its calls: a render fills the catalog once, for every mod it shows."""
+        self.filled.append(list(project_ids))
         return {i: project(i, self.titles[i]) for i in project_ids if i in self.titles}
 
 
@@ -1292,18 +1295,18 @@ def test_saved_resolution_shows_with_time_and_stale_notice() -> None:
 
 
 def test_suggestions_have_titles_and_an_add_button() -> None:
-    # The titles come with the mod list (one Modrinth fill per render): the fake Modrinth has no
-    # projects_filled, so a second fill from the route would fail here.
-    client, modpack, _ = setup()
+    # The titles come with the mod list (one Modrinth fill per render): the route fills nothing more.
+    client, modpack, modrinth = setup()
     modpack.titles.update(P7="Mod Menu", P6="Roto")
     modpack.saved = resolution(lock(entry("P1"), suggestions=[Suggestion(project_id="P7", requested_by=["P1"])],
                                     problems=[Problem(kind="unresolvable", project_id="P6", detail="sin versión")]))
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
     suggestions = text[text.index("Sugerencias"):]
-    assert "Mod Menu" in suggestions and "sugerida por Sodium" in suggestions
+    assert "Mod Menu" in suggestions and "sugerida por Sodium" in " ".join(visible(suggestions).split())
     assert f'hx-post="/modpacks/{BUNDLE_ID}/projects"' in suggestions and 'name="ref" value="P7"' in suggestions
     assert "Roto" in text and "sin versión" in text
     assert "P7" not in visible(text) and "P6" not in visible(text)
+    assert modrinth.filled == []
 
 
 def test_add_from_search_marks_the_hit_out_of_band() -> None:
@@ -1355,3 +1358,89 @@ def test_empty_sections_fold_to_one_line() -> None:
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
     assert "Archivos locales: ninguno" in text and "sha512" not in text.lower()
     assert "Servidores vinculados: ninguno" in text
+
+
+# Every mod name opens its card (spec §2, "Macro ui.mod_link"), and a render fills the catalog once.
+
+def mod_link(project_id: str, pack: bool = True) -> str:
+    """The start of `ui.mod_link` for a mod; inside a pack's pages it carries the pack."""
+    query = f"?pack={BUNDLE_ID}" if pack else ""
+    return f'<a href="/mods/{project_id}{query}" hx-get="/mods/{project_id}/panel{query}"'
+
+
+def test_every_mod_of_the_list_and_who_asked_for_it_opens_its_card() -> None:
+    client, modpack, modrinth = setup()
+    modpack.bundle.pins = {"GONE": "v-gone"}
+    modpack.rows = [row("P1", "Sodium"), row("D1", "Indium", None, required_by=["Sodium"], requested_by=["P1"])]
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert mod_link("P1") in card(text, "P1") and mod_link("D1") in card(text, "D1")
+    assert mod_link("P1") in card(text, "D1")  # "dependencia de Sodium"
+    assert mod_link("GONE") in text  # a pin of a mod that left the pack
+    assert modrinth.filled == []  # mod_list filled the catalog: the route does not fill again
+
+
+def test_problems_suggestions_and_undecided_mods_open_their_cards() -> None:
+    client, modpack, _ = setup()
+    modpack.titles.update(P7="Mod Menu", P6="Roto")
+    modpack.saved = resolution(lock(entry("P1"), entry("P2", "admin"),
+                                    suggestions=[Suggestion(project_id="P7", requested_by=["P1"])],
+                                    problems=[Problem(kind="unresolvable", project_id="P6", detail="sin versión")]))
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    problems = text[text.index("Problemas ("):text.index("Sugerencias")]
+    suggestions = text[text.index("Sugerencias"):text.index("Decidir varios")]
+    undecided = text[text.index("Decidir varios"):text.index("Guardar decisiones")]
+    assert mod_link("P6") in problems
+    assert mod_link("P7") in suggestions and mod_link("P1") in suggestions  # sugerida por Sodium
+    assert mod_link("P2") in undecided
+
+
+def test_the_decide_dialog_names_open_their_cards_with_one_fill() -> None:
+    client, modpack, modrinth = setup()
+    modpack.blocked = undecided_block("P2", "P3")
+    text = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX).text
+    assert mod_link("P2") in text and mod_link("P3") in text
+    assert modrinth.filled == [["P2", "P3"]]
+
+
+def test_search_fills_its_ten_hits_in_one_call_and_each_opens_its_card() -> None:
+    client, _, modrinth = setup()
+    ids = [f"H{i}" for i in range(10)]
+    modrinth.hits = [{"project_id": i, "title": f"Hit {i}", "project_type": "mod"} for i in ids]
+    text = client.get(f"/modpacks/{BUNDLE_ID}/search", params={"q": "hit"}, headers=HTMX).text
+    assert modrinth.filled == [ids]
+    for i in ids:
+        assert mod_link(i) in text
+
+
+def test_search_still_answers_when_the_fill_fails() -> None:
+    client, _, modrinth = setup()
+
+    async def down(project_ids: list[str]) -> dict[str, ModrinthProject]:
+        raise RuntimeError("mongo down")
+
+    modrinth.projects_filled = down  # type: ignore[method-assign]
+    response = client.get(f"/modpacks/{BUNDLE_ID}/search", params={"q": "iris"}, headers=HTMX)
+    assert response.status_code == 200 and mod_link("P3") in response.text
+
+
+def test_compare_names_open_their_cards_with_one_fill() -> None:
+    client, modpack, modrinth = setup()
+
+    async def compare(bundle_id: str, de: int, a: int) -> Any:
+        return preview()
+
+    modpack.compare_builds = compare  # type: ignore[attr-defined]
+    text = client.get(f"/modpacks/{BUNDLE_ID}/builds/compare", params={"de": 1, "a": 2}).text
+    changes = preview().changes
+    shown = [c.project_id for c in changes.added + changes.removed + changes.changed]
+    for project_id in shown:
+        assert mod_link(project_id) in text
+    assert len(modrinth.filled) == 1 and sorted(modrinth.filled[0]) == sorted(set(shown))
+
+
+def test_replacement_rules_open_their_cards_with_one_fill() -> None:
+    client, _, modrinth = setup()
+    text = client.get("/replacements").text
+    for project_id in ("OLDMOD", "NEWMOD", "DROPPED"):
+        assert mod_link(project_id, pack=False) in text  # a global page: no pack
+    assert modrinth.filled == [["DROPPED", "NEWMOD", "OLDMOD"]]

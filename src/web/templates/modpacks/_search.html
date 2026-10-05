@@ -1,4 +1,5 @@
-{# Search hits for the live search; htmx swaps it into #search-results. #}
+{# Search hits for the live search; htmx swaps it into #search-results. Each hit opens its card:
+   the route fills the catalog for all of them first. #}
 {% import "_macros.html" as ui %}
 {% if failed %}
 {{ ui.notice("Modrinth no respondió; intenta de nuevo", "warning") }}
@@ -15,7 +16,7 @@
     {% endif %}
     <div class="min-w-0 flex-1">
       <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-        <span class="font-medium break-words">{{ hit.title }}</span>
+        <span class="font-medium break-words">{{ ui.mod_link(hit.project_id, hit.title, pack=bundle_id) }}</span>
         {% if hit.project_type %}{{ ui.badge(hit.project_type) }}{% endif %}
         {% if hit.side %}{{ ui.badge(hit.side) }}{% endif %}
       </div>

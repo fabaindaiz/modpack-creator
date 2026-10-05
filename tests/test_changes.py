@@ -312,10 +312,10 @@ def test_the_scan_side_takes_its_version_numbers_from_the_catalog_and_falls_back
 
 
 def test_the_page_prints_version_numbers_and_the_timeout_text() -> None:
-    from jinja2 import Environment, FileSystemLoader
     from src.services.modpack import ChangePreview
+    from src.web import templates
 
-    env = Environment(loader=FileSystemLoader("src/web/templates"), autoescape=True)
+    env = templates.env  # the panel's: its tests and globals (ui.mod_link) are there
     changes = ChangeSet(added=[Change("A", None, "va")], removed=[Change("R", "vr", None)],
                         changed=[Change("C", "v1", "v2")], unchanged=0)
     preview = ChangePreview(changes=changes, changelogs={}, failed=set(), timed_out={"v2", "va"},

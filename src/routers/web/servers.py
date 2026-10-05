@@ -11,13 +11,11 @@ from src.model.modpack import ModpackBundle
 from src.model.pterodactyl import ImportResult, PterodactylServer
 from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
-from src.web import WebRoute, get_web_actor, render
+from src.web import MODRINTH_REF, WebRoute, get_web_actor, render
 
 logger = logging.getLogger("modpack.web")
 router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
 
-# A Modrinth id or slug: what an attribute may carry.
-MODRINTH_REF = r"^[A-Za-z0-9_\-]+$"
 CONFIRM_MESSAGE = "Escribe el nombre exacto del servidor"
 RELINKED_MESSAGE = "El servidor cambió de modpack; vuelve a cargar la página"
 ALREADY_LINKED_MESSAGE = "Este servidor ya tiene modpack: vuelve a cargar la página"
