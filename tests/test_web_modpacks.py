@@ -790,20 +790,21 @@ def test_a_problem_action_in_the_dialog_resolves_and_answers_the_dialog_never_a_
     """Spec §1 (owner's decision): the action is applied, the pack resolved again and the dialog
     recalculated from that lock; the build is the owner's to create."""
     client, modpack, modrinth = setup()
-    modrinth.titles["P3"] = "Iris"
+    modpack.titles["P3"] = "Iris"
     modpack.lock = lock(entry("P1"), entry("P3", "admin"), problems=[Problem(kind="no_file", project_id="P1", detail="x")])
     response = client.request(method, path, headers=HTMX, data=data)
     assert response.status_code == 200
     assert response.headers["HX-Retarget"] == "#build-dialog" and response.headers["HX-Reswap"] == "innerHTML"
     assert [c[0] for c in modpack.calls] == [action, "resolve"] and call(modpack, action)[-1] == EDITOR
     text = response.text
-    assert "data-autoopen" in dialog_tag(text) and 'id="mods"' not in text
+    assert "data-autoopen" in dialog_tag(text)
     # What is left, from the fresh lock: P2's problem is gone, P1's is there, and P3 still to decide.
     assert 'data-problem="P2"' not in text and 'data-problem="P1"' in text
     assert f'/projects/P1?contexto=dialogo"' in problem_card(text, "P1") and 'name="decision.P3"' in text
     assert "Iris" in text and "Todo resuelto" not in text
-    # One Modrinth call for the whole dialog, for every mod it names.
-    assert modrinth.filled == [["P1", "P3"]]
+    # The titles and cards come from mod_list, which fills the catalog once for the dialog and
+    # #mods behind it: the route asks Modrinth for nothing of its own.
+    assert modrinth.filled == []
 
 
 @pytest.mark.parametrize("method,path,data,action", DIALOG_ACTIONS)
@@ -820,6 +821,34 @@ def test_with_nothing_left_the_dialog_says_todo_resuelto_and_offers_crear_build(
     assert 'hx-target="#builds"' in create and 'hx-swap="outerHTML"' in create and ">Crear build<" in create
     assert 'name="dialog"' not in create and "Decidir y crear build" not in text
     assert "build_create" not in [c[0] for c in modpack.calls]
+
+
+def dialog_part(text: str) -> str:
+    """The build dialog of an answer, without what comes out of band after it."""
+    return text[:text.index("</dialog>")]
+
+
+def test_a_dialog_action_also_redraws_the_mods_and_builds_behind_it() -> None:
+    """Closing the dialog after an action shows the pack as it now is: #mods (in "Todos") and
+    #builds go out of band in the same answer, from the same resolution."""
+    client, modpack, _ = setup()
+    modpack.lock = lock(entry("P1"), entry("P3", "admin"), problems=[Problem(kind="no_file", project_id="P1", detail="x")])
+    text = client.delete(f"/modpacks/{BUNDLE_ID}/projects/P2", params={"contexto": "dialogo"}, headers=HTMX).text
+    mods_tag = re.search(r'<div id="mods"[^>]*>', text)
+    assert mods_tag and 'hx-swap-oob="true"' in mods_tag.group(0)
+    behind = text[mods_tag.start():]
+    assert text.index("</dialog>") < mods_tag.start() and 'id="mods"' not in dialog_part(text)
+    assert 'data-project="P2"' not in behind and 'data-project="P1"' in behind  # P2 was removed
+    assert 'aria-current="page"' in tab(behind, "todos")
+    assert said(tab(behind, "decidir")) == "Por decidir 1" and said(tab(behind, "problemas")) == "Con problemas 1"
+    builds = builds_part(behind)
+    assert 'hx-swap-oob="true"' in builds[:builds.index(">")] and "Decidir y crear build…" in builds
+    # Only the dialog says what was done: no second success notice behind it.
+    assert text.count("Quitado del modpack") == 1 and "Quitado del modpack" in dialog_part(text)
+    # With nothing left, the builds behind it say so too.
+    modpack.lock = lock(entry("P1"))
+    text = client.delete(f"/modpacks/{BUNDLE_ID}/projects/P1", params={"contexto": "dialogo"}, headers=HTMX).text
+    assert "Todo resuelto" in said(dialog_part(text)) and "data-ready" in builds_part(text[text.index("</dialog>"):])
 
 
 def test_the_dialog_keeps_its_success_and_the_dialog_actions_refuse_a_bundle_less_replacement() -> None:
@@ -849,12 +878,12 @@ def test_v1_still_answers_a_blocked_build_with_the_same_409() -> None:
     assert "HX-Retarget" not in response.headers and [c[0] for c in modpack.calls] == ["build_create"]
 
 
-def test_the_builds_are_where_the_focus_goes_back_when_the_dialog_s_opener_is_gone() -> None:
+def test_the_build_button_is_where_the_focus_goes_back_when_the_dialog_s_opener_is_gone() -> None:
     client, modpack, _ = setup()
-    text = client.get(f"/modpacks/{BUNDLE_ID}").text
-    assert 'tabindex="-1"' in re.search(r'<div id="builds"[^>]*>', text).group(0)  # type: ignore[union-attr]
+    button = re.search(r'<button[^>]*id="build-create"[^>]*>', builds_part(client.get(f"/modpacks/{BUNDLE_ID}").text))
+    assert button and f'hx-post="/modpacks/{BUNDLE_ID}/builds"' in button.group(0)
     modpack.blocked = undecided_block("P2")
-    assert 'data-return-focus="builds"' in dialog_tag(client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX).text)
+    assert 'data-return-focus="build-create"' in dialog_tag(client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX).text)
 
 
 def test_app_js_opens_a_swapped_in_dialog_as_a_modal_once() -> None:
@@ -864,6 +893,10 @@ def test_app_js_opens_a_swapped_in_dialog_as_a_modal_once() -> None:
     assert "!dialog.open" in text and "showModal()" in text
     # A dialog the answer replaced is not closed (its close would move the focus out of the new one).
     assert "isConnected" in text and "data-return-focus" in text
+    # Only a failed write closes it (not a card's read opened from it, which keeps its choices),
+    # and the drawer remembers the link that opened it, not the swap target.
+    assert "requestConfig.verb" in text and "verb !== 'get'" in text
+    assert "drawerOpener = link instanceof HTMLElement" in text
     # The sender of a request whose answer took it off the page: htmx re-fires afterRequest on a
     # parent, with that parent as `elt` (checked in Chromium, see the task 7 report).
     assert "requestConfig.elt" in text

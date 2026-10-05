@@ -5,7 +5,7 @@
    always starts on "Todos". What changes together is in #mods, the fragment the resolve, decision,
    project, pin and tab requests answer. A route may add, after it, a success (or info) notice, the
    search hit to mark as added and (after resolving again, `builds_oob`) the builds section, all out
-   of band. `icon` and `https_url` only let through URLs that may be shown (an icon from Modrinth's
+   of band. `mods_oob` sends #mods itself out of band (behind the build dialog, which answers). `icon` and `https_url` only let through URLs that may be shown (an icon from Modrinth's
    CDN, an https link); everything from Modrinth is escaped. Every mod name opens its card, from
    this pack. #}
 {% import "_macros.html" as ui %}
@@ -22,7 +22,7 @@
   ("decidir", "Por decidir", (saved.undecided | length) if current else none, "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200"),
   ("problemas", "Con problemas", (saved.problems | length) if current else none, "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-200"),
 ) %}
-<div id="mods" class="space-y-4">
+<div id="mods" class="space-y-4"{% if mods_oob is defined and mods_oob %} hx-swap-oob="true"{% endif %}>
   {% include "modpacks/_resolution.html" %}
 
   <nav aria-label="Vistas de los mods" class="flex flex-wrap items-center gap-x-1 border-b border-zinc-200 dark:border-zinc-800">

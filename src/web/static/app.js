@@ -172,8 +172,10 @@
       }
       if (!drawer.open) {
         // Only the first link remembers: a click inside the panel replaces the card, and the
-        // link it came from is gone with it.
-        drawerOpener = evt.detail.elt instanceof HTMLElement ? evt.detail.elt : null;
+        // link it came from is gone with it. afterSwap's own `elt` is the target (the panel's
+        // body): the link is the request config's.
+        var link = evt.detail.requestConfig ? evt.detail.requestConfig.elt : null;
+        drawerOpener = link instanceof HTMLElement ? link : null;
         drawer.showModal();
       }
       evt.detail.target.scrollTop = 0;
@@ -201,7 +203,7 @@
   // autofocus title). The mark is taken off so a later swap does not open it again, and an open
   // dialog is left as it is (showModal() on it throws). When it closes, the focus goes back to what
   // opened it, or to its data-return-focus element when that is gone (the "Crear build" button,
-  // replaced with the builds). A dialog that replaces another (an action inside the build dialog,
+  // redrawn with the builds: the new one, by its id). A dialog that replaces another (an action inside the build dialog,
   // answered with the dialog recalculated) keeps the first one's opener.
   var openers = new WeakMap();
 
@@ -239,9 +241,10 @@
   });
 
   // A form inside a dialog closes it once its request is answered, also on an error: the modal
-  // would otherwise hide the notice that explains it. Any other element closes it only on an
-  // error (a problem's "Quitar" in the build dialog); what a dialog loads for itself (the update
-  // preview when it opens, the build select) leaves it open. htmx swaps before this runs: a
+  // would otherwise hide the notice that explains it. Any other element closes it only when a
+  // write it sent fails (a problem's "Quitar", hx-delete, in the build dialog); a read leaves it
+  // open, failed or not: what a dialog loads for itself (the update preview when it opens, the
+  // build select) and a mod's card opened from it (the drawer), so the choices in it stay. htmx swaps before this runs: a
   // dialog the answer replaced (the build dialog, recalculated) or took away (the build was
   // created) is no longer on the page and is not closed, since its close would take the focus
   // out of the new one; taken away, the focus goes back as on a close. A sender the answer took
@@ -251,7 +254,9 @@
   document.addEventListener('htmx:afterRequest', function (evt) {
     var elt = evt.detail.requestConfig ? evt.detail.requestConfig.elt : evt.detail.elt;
     var dialog = elt instanceof Element ? elt.closest('dialog') : null;
-    if (!dialog || !dialog.open || !(elt instanceof HTMLFormElement || evt.detail.failed)) {
+    var verb = evt.detail.requestConfig ? evt.detail.requestConfig.verb : 'get';
+    var failedWrite = evt.detail.failed && verb !== 'get';
+    if (!dialog || !dialog.open || !(elt instanceof HTMLFormElement || failedWrite)) {
       return;
     }
     if (!dialog.isConnected) {

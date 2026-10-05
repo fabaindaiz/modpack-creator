@@ -193,30 +193,49 @@ async def _decided(request: Request, actor: Actor, modpackService: ModpackServic
     return await _resolved(request, actor, modpackService, updateCheckService, bundle_id, "Decisiones guardadas", vista)
 
 async def _acted(request: Request, actor: Actor, modpackService: ModpackService,
-                 updateCheckService: UpdateCheckService, modrinthService: ModrinthService, bundle_id: str,
-                 contexto: Optional[str], success: str) -> Response:
+                 updateCheckService: UpdateCheckService, bundle_id: str, contexto: Optional[str],
+                 success: str) -> Response:
     """The answer to an action on the pack's mods. Without `contexto`, #mods as always; from a
     problem's card the pack is resolved again (after every action, so what is left is current):
     from the Mods tab ("problemas") #mods answers in that view, from the build dialog ("dialogo")
-    the dialog answers, recalculated from that lock. Never a build: that is the owner's click."""
+    the dialog answers, recalculated from that lock, with #mods ("todos") and #builds behind it
+    redrawn out of band. Never a build: that is the owner's click."""
     if contexto is None:
         return await _mods(request, actor, modpackService, updateCheckService, bundle_id)
     lock = await modpackService.resolve(bundle_id)
     if contexto == "dialogo":
-        return await _build_dialog(request, actor, modpackService, modrinthService, bundle_id, lock, success=success)
+        # mod_list (inside) fills the catalog once for every mod the page and the dialog name: the
+        # resolution it reads is the one just saved, this lock.
+        context = await _mods_context(modpackService, updateCheckService, bundle_id)
+        mods = context["mods"]
+        return _dialog(request, actor, lock, done=success, mods_oob=True, builds_oob=True,
+                       builds=await modpackService.build_find(bundle_id),
+                       pending=_has_pending((mods.resolution, mods.stale) if mods.resolution else None), **context)
     return await _resolved(request, actor, modpackService, updateCheckService, bundle_id, success, vista="problemas")
 
 # What the decision dialog says when it is sent with every mod left "Sin decidir".
 NOTHING_DECIDED = "Elige «En el servidor» o «Solo cliente» para al menos un mod."
 
-async def _build_dialog(request: Request, actor: Actor, modpackService: ModpackService,
-                        modrinthService: ModrinthService, bundle_id: str, lock: Lock, reason: Optional[str] = None,
-                        explain: bool = False, success: Optional[str] = None) -> Response:
+def _dialog(request: Request, actor: Actor, lock: Lock, **context: Any) -> Response:
     """The build dialog, into #build-dialog, from a fresh lock (spec §1): its problems first, each a
     card with its actions (`contexto` "dialogo"), then the mods to decide; with nothing left, "Todo
-    resuelto" and "Crear build". Every mod it names gets its card in one Modrinth call. `explain`
-    adds why the build was refused (unless a `reason` is given), naming the mods by title."""
-    bundle = await modpackService.bundle_get(bundle_id)
+    resuelto" and "Crear build". `context` has the `bundle`, `bundle_id`, `titles` and `cards` of
+    the mods it names, and what else the template shows (a `reason`, `done`, #mods out of band)."""
+    bundle = context["bundle"]
+    response = render(request, "modpacks/_decide_dialog.html", actor, **({"icon": _icon, "humanize": humanize, "reason": None, "done": None} | context | {
+        "problems": lock.problems, "undecided": lock.undecided, "complete": lock.complete,
+        "ready": lock.complete and not lock.problems and not lock.undecided, "contexto": "dialogo",
+        "pack": {p.project_id: p.origin.value for p in bundle.projects}}))
+    response.headers["HX-Retarget"] = "#build-dialog"
+    response.headers["HX-Reswap"] = "innerHTML"
+    return response
+
+async def _build_dialog(request: Request, actor: Actor, modpackService: ModpackService,
+                        modrinthService: ModrinthService, bundle_id: str, lock: Lock, reason: Optional[str] = None,
+                        explain: bool = False) -> Response:
+    """The build dialog for a refused build (`_dialog`). Every mod it names gets its card in one
+    Modrinth call. `explain` adds why the build was refused (unless a `reason` is given), naming the
+    mods by title."""
     named = [e.project_id for e in lock.undecided]
     for problem in lock.problems:
         named += [problem.project_id] if problem.project_id else []
@@ -225,14 +244,8 @@ async def _build_dialog(request: Request, actor: Actor, modpackService: ModpackS
     titles = {i: cards[i].title if i in cards else i for i in named}
     if explain and reason is None:
         reason = _blocked_reason(lock, titles)
-    response = render(request, "modpacks/_decide_dialog.html", actor, bundle_id=bundle_id, bundle=bundle,
-                      problems=lock.problems, undecided=lock.undecided, complete=lock.complete,
-                      ready=lock.complete and not lock.problems and not lock.undecided, titles=titles, cards=cards,
-                      pack={p.project_id: p.origin.value for p in bundle.projects}, icon=_icon, humanize=humanize,
-                      contexto="dialogo", reason=reason, done=success)
-    response.headers["HX-Retarget"] = "#build-dialog"
-    response.headers["HX-Reswap"] = "innerHTML"
-    return response
+    return _dialog(request, actor, lock, bundle=await modpackService.bundle_get(bundle_id), bundle_id=bundle_id,
+                   titles=titles, cards=cards, reason=reason)
 
 def _blocked_reason(lock: Lock, titles: dict[str, str]) -> str:
     """Why a build was refused, from its fresh lock, naming mods by title (never by id): each
@@ -393,11 +406,10 @@ async def project_remove(
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
-        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         ):
     """Remove a project from the pack; from a problem's card (`contexto`), resolve again too."""
     await modpackService.project_remove(bundle_id, project_id, actor)
-    return await _acted(request, actor, modpackService, updateCheckService, modrinthService, bundle_id, contexto, "Quitado del modpack")
+    return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto, "Quitado del modpack")
 
 @router.get("/modpacks/{bundle_id}/projects/{project_id}/versions")
 @inject
@@ -452,12 +464,11 @@ async def pin_add(
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
-        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         ):
     """Pin a mod to a version of that mod: one key, written atomically by the service. From a
     problem's card ("Usar la beta …", `contexto`), resolve again too."""
     await modpackService.pin_set(bundle_id, project_id, version_id, actor)
-    return await _acted(request, actor, modpackService, updateCheckService, modrinthService, bundle_id, contexto, "Versión fijada")
+    return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto, "Versión fijada")
 
 @router.delete("/modpacks/{bundle_id}/pins/{project_id}")
 @inject
@@ -469,11 +480,10 @@ async def pin_remove(
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
-        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         ):
     """Remove a mod's pin; from a problem's card (`contexto`), resolve again too."""
     await modpackService.pin_unset(bundle_id, project_id, actor)
-    return await _acted(request, actor, modpackService, updateCheckService, modrinthService, bundle_id, contexto, "Fijación quitada")
+    return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto, "Fijación quitada")
 
 @router.post("/modpacks/{bundle_id}/resolve")
 @inject
@@ -692,7 +702,7 @@ async def replacement_set(
         raise HTTP_422_UNPROCESSABLE_ENTITY("Ignorar una dependencia necesita el modpack y desde dónde se pidió")
     await modpackService.replacement_set(project_id.strip(), replacement.strip() or None, actor)
     if bundle_id is not None:
-        return await _acted(request, actor, modpackService, updateCheckService, modrinthService, bundle_id, contexto,
+        return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto,
                             "Dependencia descartada en todos los packs")
     return await _replacements(request, actor, modpackService, modrinthService, fragment=True)
 
