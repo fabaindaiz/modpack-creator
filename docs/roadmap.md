@@ -16,6 +16,10 @@ Al cierre de la sesión de usabilidad del panel (2026-10-04 y 2026-10-05; detall
 - **Panel, usabilidad ronda 1, hecha en código** (i-7985ee-1bb2ea): ficha de mod, crear el modpack
   desde un servidor, decidir los pendientes al crear un build, estado vivo y avisos donde se
   actúa. La ronda 2 está listada en su entrada.
+- **En pausa (2026-10-05): acciones para problemas, ficha local de mod y pestañas**
+  (i-7985ee-593c92), en la rama `panel-mods-ficha` (empujada, sin merge). Tareas 1 a 7 de 8
+  hechas y revisadas; faltan la Tarea 8, la revisión final de la rama y la ronda 3 de pruebas.
+  Cómo retomar: `docs/superpowers/plans/2026-10-05-panel-mods-ficha-problemas-estado.md`.
 
 - **Panel web, hecho en código** (i-7985ee-50d411): páginas con Jinja2 y htmx, roles de editor y
   operador por grupos del IdP, auditoría, defensa CSRF por origen con CSP estricta, y el latido
@@ -745,6 +749,29 @@ JSON con `request_id` y `job_id`.
     `maxlength`, y enviarlo da un 422 sin explicación.
 - **Lo que choca:** el barrido no ve Modrinth ni Pterodactyl reales ni el login OIDC; la ficha pide
   las versiones de un mod a Modrinth al abrirse (una llamada por ficha, solo al abrirla).
+
+### Panel: acciones para problemas, ficha local de mod y pestañas, en pausa en la tarea 8 de 8 (2026-10-05) · i-7985ee-593c92
+- **Pedido del dueño (2026-10-05):**
+  - una acción sugerida para cada problema del build (usar la beta o quitar);
+  - una ficha local para cada mod de la base, con todo nombre clicable;
+  - lo pendiente en pestañas, separado del panel de revisión del pack.
+- **Diseño:** spec `docs/superpowers/specs/2026-10-05-panel-mods-ficha-problemas-design.md` y plan
+  `docs/superpowers/plans/2026-10-05-panel-mods-ficha-problemas.md`, los dos revisados por temas
+  con el dueño.
+- **Estado:** rama `panel-mods-ficha`, Tareas 1 a 7 hechas y revisadas. Falta:
+  - la Tarea 8 (barrido visual, script del gate y documentos);
+  - la revisión final de la rama;
+  - la ronda 3 de pruebas reales, con los mods de servidores reales del dueño (pedirle cuáles) y
+    móvil.
+
+  Todo, con las rulings y los menores diferidos, en
+  `docs/superpowers/plans/2026-10-05-panel-mods-ficha-problemas-estado.md`.
+- **Investigaciones del mismo día** (`docs/research/2026-10-05-*.md`): versiones de MC y loaders
+  (F09), bajas de versión (F27), caché del catálogo de Modrinth, diálogos accesibles con htmx y el
+  tablero "necesita atención" (F38). Alimentan la ronda 2 de i-7985ee-1bb2ea.
+- **Entorno:** `./scripts/test-mongo.sh` muere a mitad de camino en la VM de podman de 2 GiB, con
+  el deploy local del dueño arriba. Con `--wiredTigerCacheSizeGB 0.25` el gate pasa (942). El
+  arreglo del script es parte de la Tarea 8.
 
 ## Seguridad y despliegue
 

@@ -5,6 +5,62 @@ introducción. Los commits de este repositorio fueron `wip` sin cuerpo: el *por 
 no quedaba en ninguna parte, y una sesión no ve lo que otra aprendió. La referencia del formato
 está al final del archivo, para que nada entre este párrafo y la primera entrada capture texto.
 
+## 2026-10-05 · s-7985ee-9de18d — Panel: acciones para problemas, ficha local de mod y pestañas (en pausa en la tarea 8)
+
+**Qué.**
+- Deploy local de `main` (la ronda 1 de usabilidad).
+- Diseño y plan nuevos (i-7985ee-593c92), revisados por temas con el dueño.
+- Tareas 1 a 7 de 8 en la rama `panel-mods-ficha`:
+  - `Problem` con `requested_by`, `alternative` y `conflict_with`;
+  - el cliente pide todas las versiones de Modrinth sin filtros vacíos;
+  - la ficha local `/mods/{id}` con su panel lateral y "dónde se usa";
+  - `ui.mod_link` en todo nombre de mod y ningún mod sin ficha, más `?pack=` para marcar la
+    versión del pack;
+  - las pestañas Todos / Por decidir / Con problemas, con una acción para cada problema;
+  - el diálogo de build con problemas, ahora modal.
+- Cinco investigaciones en `docs/research/2026-10-05-*.md`.
+
+**Áreas.** `src/library/resolution.py`, `src/library/api/client/modrinth.py`,
+`src/services/modpack.py`, `src/routers/web/{mods,modpacks,servers}.py`, `src/web/`, `tests/`,
+`docs/`.
+
+**Por qué.** Pedido del dueño del 2026-10-05: sugerir acciones para los problemas de un build,
+fichas locales de cada mod con nombres clicables, y lo pendiente en pestañas.
+
+**Arquitectura.** ✅ Cumple:
+- sin escrituras nuevas al pack (las acciones usan rutas que ya existían);
+- dos métodos nuevos que escriben solo el catálogo, con su fila en la tabla de roles;
+- los barridos de roles y de autenticación sin cambios (salvo el placeholder de Enum de la ronda
+  anterior);
+- CSP intacta.
+
+**Qué salió mal en el camino.**
+- **Agentes trabados:** el modelo más capaz se trabó tres veces (dos implementadores y un revisor,
+  sin avanzar en 10 minutos). Se retomaron o se reemplazaron por un revisor que trabaja por
+  partes y escribe sus hallazgos a medida que avanza.
+- **Memoria de la VM de podman:** el Mongo del gate murió una y otra vez, ya fuera con fallos de
+  conexión o con salida 125 aunque todos los tests habían pasado, y el healthcheck del Mongo del
+  dueño falló por un momento. Se verificó cada tarea con un Mongo con la caché limitada a 0,25 GB.
+  El arreglo del script quedó para la Tarea 8 (R4).
+- **`FORCE_COLOR`:** la terminal de la sesión retomada traía `FORCE_COLOR=3`, que rompe
+  `tests/test_operator_typing.py` (R7).
+- **"Investigaciones pendientes":** el dueño pidió lanzarlas, pero el repositorio no tenía una
+  lista. Se tomaron las preguntas abiertas de la ronda 2.
+
+**Qué quedó sin hacer.** La Tarea 8, la revisión final de la rama, la ronda 3 de pruebas reales y
+el merge. Detalle, rulings R1–R8 y menores diferidos en
+`docs/superpowers/plans/2026-10-05-panel-mods-ficha-problemas-estado.md`.
+
+**Desvío del plan.** Ver las rulings R1–R8 en el archivo de estado. Las principales: marcar la
+versión del pack pasó a la Tarea 5 (R3), y el diálogo de build pasó a modal según la investigación
+(R6).
+
+**No verificado.** El aspecto y los clics en un navegador de las Tareas 3 a 7 (solo un guion
+descartable en Chromium del implementador de la Tarea 7; el barrido es la Tarea 8), Modrinth real
+para la ficha y las acciones, el deploy y el login OIDC.
+
+**Medido.** El gate en la punta, con el Mongo limitado: 942 aprobados.
+
 ## 2026-10-04 · s-7985ee-aaa17f — Panel: usabilidad ronda 1 (ficha de mod, crear en el momento, estado vivo, avisos)
 
 **Qué.**
