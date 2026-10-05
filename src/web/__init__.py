@@ -81,6 +81,10 @@ templates = Jinja2Templates(env=jinja2.Environment(
     trim_blocks=True,
     lstrip_blocks=True,
 ))
+# What a Modrinth project id or slug may look like; the routes and the templates share it.
+MODRINTH_REF = r"^[A-Za-z0-9_\-]+$"
+templates.env.tests["modrinth_ref"] = lambda value: (
+    isinstance(value, str) and len(value) <= 200 and re.fullmatch(MODRINTH_REF, value) is not None)
 templates.env.globals["asset_url"] = asset_url
 templates.env.globals["static_url"] = static_url
 

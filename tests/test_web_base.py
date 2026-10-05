@@ -493,3 +493,46 @@ def test_app_js_places_notices_and_closes_successes() -> None:
     assert "[data-notice-autoclose]" in text and 'data-notice-tone="success"' not in text
     # Also the ones the page is drawn with (a notice after a redirect): no mutation brings them in.
     assert "scheduleClose(document.body)" in text
+
+
+def test_mod_link_points_to_the_card_and_opens_the_panel() -> None:
+    text = _render_macro('{{ ui.mod_link("AANobbMI", "Sodium <b>") }}')
+    assert 'href="/mods/AANobbMI"' in text and 'hx-get="/mods/AANobbMI/panel"' in text
+    assert 'hx-target="#mod-drawer-body"' in text and 'hx-swap="innerHTML"' in text
+    assert "data-mod-link" in text and "Sodium &lt;b&gt;" in text and "?desde" not in text
+
+
+def test_mod_link_inside_the_panel_asks_to_go_back() -> None:
+    text = _render_macro('{{ ui.mod_link("AANobbMI", "Sodium", desde="P7dR8mSH") }}')
+    assert 'hx-get="/mods/AANobbMI/panel?desde=P7dR8mSH"' in text
+    assert 'href="/mods/AANobbMI"' in text
+    # an invalid back id is dropped, not written into the URL
+    assert "desde" not in _render_macro('{{ ui.mod_link("AANobbMI", "Sodium", desde="a/b") }}')
+
+
+def test_mod_link_with_an_invalid_id_is_plain_text() -> None:
+    for bad in ("a/b", "", "x" * 201, "a b\"><script>"):
+        text = _render_macro('{{ ui.mod_link(%s, "Sodium") }}' % json.dumps(bad))
+        assert "<a" not in text and "Sodium" in text, bad
+
+
+def test_base_has_the_empty_side_panel_with_a_labelled_close_button() -> None:
+    text = client(EDITOR).get("/").text
+    dialog = text[text.index('<dialog id="mod-drawer"'):]
+    dialog = dialog[:dialog.index("</dialog>")]
+    assert 'aria-label="Ficha del mod"' in dialog and "ml-auto" in dialog and "h-dvh" in dialog
+    assert 'data-dialog-close' in dialog and "Cerrar" in dialog and "aria-label=\"Cerrar" in dialog
+    body = re.search(r'<div id="mod-drawer-body"[^>]*>(.*?)</div>', dialog, re.S)
+    assert body and body.group(1).strip() == "" and "overflow-y-auto" in dialog
+
+
+def test_app_js_opens_the_panel_and_leaves_modified_clicks_to_the_browser() -> None:
+    text = client(None).get("/static/app.js").text
+    assert "mod-drawer" in text and "showModal" in text and "htmx:afterSwap" in text
+    # htmx only ignores ctrl/cmd on boosted links and cancels the click of any other link, so a
+    # ctrl, cmd or shift click, and the middle button, are stopped before htmx sees them: the
+    # browser then follows the href itself.
+    assert "data-mod-link" in text and "stopImmediatePropagation" in text
+    for marker in ("ctrlKey", "metaKey", "shiftKey", "button"):
+        assert marker in text, marker
+    assert "focus()" in text

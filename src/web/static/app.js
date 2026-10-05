@@ -136,6 +136,54 @@
     }
   });
 
+  // The side panel (base.html) for a mod's card. A swap into its body opens it; whatever opened it
+  // gets the focus back when it closes (Escape and Cerrar both close it, natively and above).
+  var drawer = document.getElementById('mod-drawer');
+  var drawerOpener = null;
+
+  // A ctrl, cmd or shift click on a mod link, or a click with another button, is for the browser:
+  // follow the href (a new tab or window). htmx cancels the click of any link it drives, and only
+  // skips ctrl/cmd on boosted ones, so this stops the click in the capture phase, before htmx's
+  // listener on the link runs, and leaves the default action alone. The middle button fires
+  // auxclick, which htmx does not listen to: it needs nothing here.
+  document.addEventListener('click', function (evt) {
+    var link = evt.target instanceof Element ? evt.target.closest('[data-mod-link]') : null;
+    if (link && (evt.ctrlKey || evt.metaKey || evt.shiftKey || evt.button !== 0)) {
+      evt.stopImmediatePropagation();
+    }
+  }, true);
+
+  if (drawer) {
+    document.addEventListener('htmx:afterSwap', function (evt) {
+      if (!evt.detail.target || evt.detail.target.id !== 'mod-drawer-body') {
+        return;
+      }
+      if (!drawer.open) {
+        // Only the first link remembers: a click inside the panel replaces the card, and the
+        // link it came from is gone with it.
+        drawerOpener = evt.detail.elt instanceof HTMLElement ? evt.detail.elt : null;
+        drawer.showModal();
+      }
+      evt.detail.target.scrollTop = 0;
+    });
+    // A click on the backdrop (the dialog itself, outside its content) closes it.
+    drawer.addEventListener('click', function (evt) {
+      if (evt.target === drawer) {
+        drawer.close();
+      }
+    });
+    drawer.addEventListener('close', function () {
+      var body = document.getElementById('mod-drawer-body');
+      if (body) {
+        body.replaceChildren();
+      }
+      if (drawerOpener && document.body.contains(drawerOpener)) {
+        drawerOpener.focus();
+      }
+      drawerOpener = null;
+    });
+  }
+
   // A form inside a confirmation dialog closes it once its request is answered, also on an
   // error: the modal would otherwise hide the notice that explains it. Only the form: what the
   // dialog loads for itself (the update preview when it opens, the build select) leaves it open.

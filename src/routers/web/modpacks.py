@@ -14,13 +14,12 @@ from src.model.modpack import ModpackBundle, ModpackBundleCreate, ModpackBundleP
 from src.model.modrinth.project import ModrinthEnvironment
 from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
-from src.web import WebRoute, get_web_actor, render
+from src.web import MODRINTH_REF, WebRoute, get_web_actor, render
 
 logger = logging.getLogger("modpack.web")
 router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
 
 # A Modrinth id or slug: what a path or an attribute may carry unescaped.
-MODRINTH_REF = r"^[A-Za-z0-9_\-]+$"
 # The prefix of a bulk-decision field: `decision.<project id>`.
 DECISION_PREFIX = "decision."
 # The channels a modpack may allow, most stable first (Modrinth's version types).
