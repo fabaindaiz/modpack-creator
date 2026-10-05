@@ -20,9 +20,16 @@
 {% set alternative = problem.alternative %}
 {% set requesters = problem.requested_by %}
 {% set dependency = pid is not none and not in_pack %}
-{# A pin that no longer works: unpinning or pinning another solves it, not removing the mod. #}
+{# A pin that no longer works: unpinning or pinning another solves it, not removing the mod. The
+   resolver says so (`pinned`); a problem stored before that field is guessed from the bundle's pins.
+   `pinned` false: a dependency asks for an exact version, and only removing it helps. #}
+{% set asked_exact = problem.pinned is sameas false %}
+{% if problem.pinned is none %}
 {% set pin_problem = pid is not none and pid in bundle.pins and alternative is none
                      and problem.kind in ("unresolvable", "pin_mismatch", "pin_conflict") %}
+{% else %}
+{% set pin_problem = problem.pinned and alternative is none %}
+{% endif %}
 {# The spec's action table: only a dependency Modrinth has nothing for (no version in any channel
    that fits) is replaced or ignored; a beta or alpha that fits is used instead; a mod without a
    file is only removed. #}
@@ -35,6 +42,8 @@
 {# The pack's mods a "Quitar" button removes. #}
 {% if pin_problem %}
 {% set removals = [] %}
+{% elif asked_exact %}
+{% set removals = requesters | select("in", pack) | list %}
 {% elif problem.kind == "incompatible" %}
 {% set removals = [pid, problem.conflict_with] | select | select("in", pack) | list %}
 {% elif in_pack %}
@@ -56,7 +65,7 @@
     <div class="min-w-0 flex-1 space-y-0.5">
       <p class="flex flex-wrap items-center gap-x-2 gap-y-1">
         {% if pid %}<span class="font-medium wrap-anywhere">{{ ui.mod_link(pid, name, pack=bundle_id) }}</span>{% endif %}
-        {{ ui.badge("versión fijada" if pin_problem else KIND.get(problem.kind, problem.kind), "danger") }}
+        {{ ui.badge("versión fijada" if pin_problem else "versión pedida" if asked_exact else KIND.get(problem.kind, problem.kind), "danger") }}
       </p>
       {% if card and card.description %}<p class="truncate text-xs text-zinc-500 dark:text-zinc-400" title="{{ card.description }}">{{ card.description }}</p>{% endif %}
       <p class="break-words text-zinc-800 dark:text-zinc-200">

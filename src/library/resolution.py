@@ -230,6 +230,9 @@ class Problem(BaseModel):
     requested_by: list[str] = []
     alternative: Optional[Alternative] = None
     conflict_with: Optional[str] = None
+    # About a fixed version: True if the admin's pin is at fault, False if a dependency asks for an
+    # exact version; None otherwise, and in problems stored before this field.
+    pinned: Optional[bool] = None
 
 
 class Suggestion(BaseModel):
@@ -320,7 +323,7 @@ class _Run:
             pin = self.exact[project_id]
             if pin.version_id in self.catalog.gone:
                 self.problems.append(Problem(kind="unresolvable", project_id=project_id,
-                    requested_by=_asked(requester), detail=(
+                    requested_by=_asked(requester), pinned=ADMIN in pin.requested_by, detail=(
                     f"{pin.version_id}, fijada por {', '.join(pin.requested_by)}, ya no está en Modrinth")))
                 return None
             candidate = self.catalog.by_id.get(pin.version_id)
@@ -332,7 +335,7 @@ class _Run:
                 return None
             if not self.request.target.fits(candidate, self.catalog.types[project_id]):
                 self.problems.append(Problem(kind="pin_mismatch", project_id=project_id,
-                    requested_by=_asked(requester), detail=(
+                    requested_by=_asked(requester), pinned=ADMIN in pin.requested_by, detail=(
                     f"{pin.version_id}, fijada por {', '.join(pin.requested_by)}, no es para "
                     f"{self.request.target.game_version} con {self.request.target.loader}")))
                 return None
@@ -367,7 +370,7 @@ class _Run:
                       requester: str, reason: str) -> Optional[Candidate]:
         if version_id in self.catalog.gone:
             self.problems.append(Problem(kind="unresolvable", project_id=project_id,
-                requested_by=_asked(requester), detail=(
+                requested_by=_asked(requester), pinned=False, detail=(
                 f"{requester} pide {version_id}, que Modrinth ya no tiene")))
             return None
         candidate = self.catalog.by_id.get(version_id)
@@ -380,14 +383,14 @@ class _Run:
             return None
         if not self.request.target.fits(candidate, self.catalog.types[project_id]):
             self.problems.append(Problem(kind="pin_mismatch", project_id=project_id,
-                requested_by=_asked(requester), detail=(
+                requested_by=_asked(requester), pinned=False, detail=(
                 f"{requester} pide {version_id}, que no es para "
                 f"{self.request.target.game_version} con {self.request.target.loader}")))
             return None
         pin = self.exact.get(project_id)
         if pin is not None and pin.version_id != version_id:
             self.problems.append(Problem(kind="pin_conflict", project_id=project_id,
-                requested_by=_asked(requester), detail=(
+                requested_by=_asked(requester), pinned=ADMIN in pin.requested_by, detail=(
                 f"{', '.join(pin.requested_by)} quiere {pin.version_id}; {requester} quiere {version_id}")))
             return None
         chosen = self.chosen.get(project_id)

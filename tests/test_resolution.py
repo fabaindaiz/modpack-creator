@@ -142,7 +142,7 @@ def test_an_admin_pin_wins_over_the_best_candidate() -> None:
 
 def test_a_pin_that_does_not_fit_the_target_is_a_problem() -> None:
     lock = resolve(request("a", pins={"a": "old"}), catalog(cand("a", "old", game="1.21.11"), cand("a", "new")))
-    assert [(p.kind, p.project_id) for p in lock.problems] == [("pin_mismatch", "a")]
+    assert [(p.kind, p.project_id, p.pinned) for p in lock.problems] == [("pin_mismatch", "a", True)]
 
 
 def test_two_exact_requirements_that_differ_are_reported_not_solved() -> None:
@@ -150,7 +150,7 @@ def test_two_exact_requirements_that_differ_are_reported_not_solved() -> None:
                 cand("dep", "v1", days=1), cand("dep", "v2", days=2)]
     lock = resolve(request("b", "c"), catalog(*versions))
     [problem] = lock.problems
-    assert (problem.kind, problem.project_id) == ("pin_conflict", "dep")
+    assert (problem.kind, problem.project_id, problem.pinned) == ("pin_conflict", "dep", False)
     assert "v1" in problem.detail and "v2" in problem.detail and "b" in problem.detail and "c" in problem.detail
 
 
@@ -166,7 +166,24 @@ def test_an_admin_pin_against_an_exact_requirement_is_a_conflict() -> None:
     versions = [cand("dep", "v1", days=1), cand("dep", "v2", days=2),
                 cand("b", "b", deps=(("dep", "v1", "required"),))]
     lock = resolve(request("dep", "b", pins={"dep": "v2"}), catalog(*versions))
-    assert [(p.kind, p.project_id) for p in lock.problems] == [("pin_conflict", "dep")]
+    assert [(p.kind, p.project_id, p.pinned) for p in lock.problems] == [("pin_conflict", "dep", True)]
+
+
+def test_an_admin_pin_modrinth_no_longer_has_is_the_pins_problem() -> None:
+    versions = catalog(cand("a", "new"))
+    versions.gone.add("deleted")
+    lock = resolve(request("a", pins={"a": "deleted"}), versions)
+    assert [(p.kind, p.project_id, p.pinned) for p in lock.problems] == [("unresolvable", "a", True)]
+
+
+def test_a_dependency_asking_for_a_version_that_does_not_fit_is_not_the_pins_problem() -> None:
+    # The admin pinned dep to a version that works; b asks for another that does not fit. Fixing
+    # the pin does not help: the card must not blame it (F2 of the final review).
+    versions = [cand("dep", "new"), cand("dep", "old", game="1.21.11"),
+                cand("b", "b", deps=(("dep", "old", "required"),))]
+    lock = resolve(request("dep", "b", pins={"dep": "new"}), catalog(*versions))
+    assert [(p.kind, p.project_id, p.pinned, p.requested_by) for p in lock.problems] == [
+        ("pin_mismatch", "dep", False, ["b"])]
 
 
 # Dependencias.
@@ -248,7 +265,7 @@ def test_a_version_modrinth_no_longer_has_is_unresolvable_not_asked_for_again() 
     versions.gone.add("deleted")
     lock = resolve(request("a"), versions)
     assert lock.complete
-    assert [(p.kind, p.project_id) for p in lock.problems] == [("unresolvable", "dep")]
+    assert [(p.kind, p.project_id, p.pinned) for p in lock.problems] == [("unresolvable", "dep", False)]
 
 
 # Tipos de proyecto (d-7985ee-9170b8).
@@ -355,7 +372,7 @@ def test_beta_wins_over_a_newer_alpha() -> None:
 
 def test_no_fitting_version_has_no_alternative() -> None:
     [problem] = resolve(request("P"), catalog(cand("P", "old", game="1.21.11"))).problems
-    assert problem.alternative is None
+    assert problem.alternative is None and problem.pinned is None
 
 
 def test_a_dependency_problem_names_who_asked() -> None:

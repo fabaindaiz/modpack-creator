@@ -1839,10 +1839,11 @@ def test_removing_a_mod_of_the_mrpack_says_it_comes_back() -> None:
     assert "no tiene archivo" in said(sodium) and "v-P1" not in said(sodium)
 
 
+@pytest.mark.parametrize("pinned", [True, None])  # None: a problem stored before `pinned`
 @pytest.mark.parametrize("kind", ["unresolvable", "pin_mismatch", "pin_conflict"])
-def test_a_pinned_version_problem_offers_unpinning_or_pinning_another(kind: str) -> None:
+def test_a_pinned_version_problem_offers_unpinning_or_pinning_another(kind: str, pinned: Optional[bool]) -> None:
     client, modpack, _ = setup()  # P1 is pinned to ver-p1
-    shown = problems_page(modpack, client, Problem(kind=kind, project_id="P1",  # type: ignore[arg-type]
+    shown = problems_page(modpack, client, Problem(kind=kind, project_id="P1", pinned=pinned,  # type: ignore[arg-type]
                                                    detail="ver-p1, fijada por admin, ya no está en Modrinth"))
     sodium = problem_card(shown, "P1")
     assert "Quitar la fijación" in sodium and f'hx-delete="/modpacks/{BUNDLE_ID}/pins/P1?contexto=problemas"' in sodium
@@ -1850,6 +1851,18 @@ def test_a_pinned_version_problem_offers_unpinning_or_pinning_another(kind: str)
     assert "Quitar del modpack" not in sodium and "ver-p1" not in said(sodium) and "fijada" in said(sodium)
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
     assert 'id="mod-row-P1"' in text  # where "Fijar otra" lands: the mod in the list, with its versions
+
+
+@pytest.mark.parametrize("kind", ["unresolvable", "pin_mismatch"])
+def test_a_dependency_asking_for_another_version_of_a_pinned_mod_does_not_blame_the_pin(kind: str) -> None:
+    # Lithium asks for a version of Sodium that is gone or does not fit; Sodium's own pin is fine.
+    client, modpack, _ = setup()  # P1 is pinned to ver-p1
+    shown = problems_page(modpack, client, Problem(kind=kind, project_id="P1", pinned=False,  # type: ignore[arg-type]
+                                                   requested_by=["P2"], detail="P2 pide v-old, que Modrinth ya no tiene"))
+    sodium = problem_card(shown, "P1")
+    assert "fijada" not in said(sodium) and "Quitar la fijación" not in sodium and "Fijar otra" not in sodium
+    assert "Lithium pide v-old, que Modrinth ya no tiene" in said(sodium)
+    assert "Quitar Lithium" in said(sodium) and f'/projects/P2?contexto=problemas"' in sodium
 
 
 def test_an_incompatibility_offers_removing_either_side_in_the_pack() -> None:
