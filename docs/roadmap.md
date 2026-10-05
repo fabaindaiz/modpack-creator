@@ -17,8 +17,8 @@ Al cierre de la sesión de usabilidad del panel (2026-10-04 y 2026-10-05; detall
   desde un servidor, decidir los pendientes al crear un build, estado vivo y avisos donde se
   actúa. La ronda 2 está listada en su entrada.
 - **En pausa (2026-10-05): acciones para problemas, ficha local de mod y pestañas**
-  (i-7985ee-593c92), en la rama `panel-mods-ficha` (empujada, sin merge). Tareas 1 a 7 de 8
-  hechas y revisadas; faltan la Tarea 8, la revisión final de la rama y la ronda 3 de pruebas.
+  (i-7985ee-593c92), ya en `main` (mergeado a pedido del dueño). Tareas 1 a 7 de 8 hechas y
+  revisadas una por una; faltan la revisión final del conjunto, la Tarea 8 y la ronda 3 de pruebas.
   Cómo retomar: `docs/superpowers/plans/2026-10-05-panel-mods-ficha-problemas-estado.md`.
 
 - **Panel web, hecho en código** (i-7985ee-50d411): páginas con Jinja2 y htmx, roles de editor y
@@ -758,9 +758,10 @@ JSON con `request_id` y `job_id`.
 - **Diseño:** spec `docs/superpowers/specs/2026-10-05-panel-mods-ficha-problemas-design.md` y plan
   `docs/superpowers/plans/2026-10-05-panel-mods-ficha-problemas.md`, los dos revisados por temas
   con el dueño.
-- **Estado:** rama `panel-mods-ficha`, Tareas 1 a 7 hechas y revisadas. Falta:
+- **Estado:** en `main` (mergeado a pedido del dueño al cerrar el 2026-10-05), Tareas 1 a 7
+  hechas y revisadas una por una. Falta:
   - la Tarea 8 (barrido visual, script del gate y documentos);
-  - la revisión final de la rama;
+  - la revisión final de todo el trabajo (no se hizo antes del merge);
   - la ronda 3 de pruebas reales, con los mods de servidores reales del dueño (pedirle cuáles) y
     móvil.
 

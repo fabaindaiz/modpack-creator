@@ -47,8 +47,10 @@ fichas locales de cada mod con nombres clicables, y lo pendiente en pestañas.
 - **"Investigaciones pendientes":** el dueño pidió lanzarlas, pero el repositorio no tenía una
   lista. Se tomaron las preguntas abiertas de la ronda 2.
 
-**Qué quedó sin hacer.** La Tarea 8, la revisión final de la rama, la ronda 3 de pruebas reales y
-el merge. Detalle, rulings R1–R8 y menores diferidos en
+**Qué quedó sin hacer.** La Tarea 8, la **revisión final de todo el trabajo** y la ronda 3 de
+pruebas reales. El merge a `main` se hizo a pedido explícito del dueño al cerrar, **sin esa
+revisión final**: cada tarea tuvo la suya y el gate estaba verde (942). Eso va contra su regla
+general ("un cierre no salta una revisión"), y se anota para que sea lo primero al retomar. Detalle, rulings R1–R8 y menores diferidos en
 `docs/superpowers/plans/2026-10-05-panel-mods-ficha-problemas-estado.md`.
 
 **Desvío del plan.** Ver las rulings R1–R8 en el archivo de estado. Las principales: marcar la

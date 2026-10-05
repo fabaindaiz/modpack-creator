@@ -4,8 +4,9 @@ La sesión se pausó a pedido del dueño ("cerrar la sesión para actualizar el 
 de 8**. Este archivo es lo que hace falta para retomar desde otra máquina: el ledger de la ejecución
 (`.superpowers/sdd/…`) está ignorado por git y no viaja; su contenido va copiado al final.
 
-- **Rama:** `panel-mods-ficha`, sobre `main` en `8baecf7`. Empujada a `origin` al pausar. Sin
-  merge a `main`.
+- **Rama:** el trabajo se hizo en `panel-mods-ficha` (sobre `8baecf7`) y, a pedido del dueño al
+  cerrar, se **mergeó a `main` y se empujó**. Tenía las Tareas 1 a 7 revisadas una por una y el gate
+  verde (942), pero **sin la revisión final de toda la rama**: es el primer paso al retomar.
 - **Spec:** `docs/superpowers/specs/2026-10-05-panel-mods-ficha-problemas-design.md`, aprobada y
   revisada por temas con el dueño.
 - **Plan:** `docs/superpowers/plans/2026-10-05-panel-mods-ficha-problemas.md`, revisado con el
@@ -32,7 +33,8 @@ Fuera del plan, en la misma rama: las cinco investigaciones de `docs/research/20
 
 ## Cómo retomar
 
-1. `git switch panel-mods-ficha` y `git pull`.
+1. `git switch main && git pull` y crear una rama nueva para seguir (por ejemplo
+   `panel-mods-ficha-cierre`).
 2. Recrear el espacio de trabajo con la skill subagent-driven-development, con este plan. Las
    Tareas 1 a 7 están hechas (no se vuelven a despachar). El brief de la Tarea 8 sale del plan.
 3. **Tarea 8.** Además de su brief, lleva lo que las rulings le asignaron:
@@ -58,7 +60,8 @@ Fuera del plan, en la misma rama: las cinco investigaciones de `docs/research/20
        sus tests;
      - en el roadmap, i-7985ee-593c92 con lo hecho, y la ronda 2 (i-7985ee-1bb2ea) apuntando a
        cada investigación nueva.
-4. **Revisión final de toda la rama** con el modelo más capaz y una sola tanda de arreglos. Hay
+4. **Revisión final de todo el trabajo** (`8baecf7..` hasta la punta, ya en `main`) con el
+   modelo más capaz y una sola tanda de arreglos. Se puede hacer antes de la Tarea 8. Hay
    que triar los menores diferidos (lista abajo). Uno pesa más: la búsqueda completa el catálogo
    en cada tecla (Tarea 5), y la investigación de caché recomienda usar los datos del propio
    resultado.
@@ -72,7 +75,7 @@ Fuera del plan, en la misma rama: las cinco investigaciones de `docs/research/20
    exploración (simulador de Pterodactyl y guiones de Playwright) no está en el repositorio: hay
    que rehacerlo con el método de la ronda 2 de ese documento, o decidir llevarlo al repo
    (pendiente del dueño).
-6. Cerrar: changelog, roadmap, y merge a `main` y push solo cuando el dueño lo pida.
+6. Cerrar: changelog y roadmap; el merge a `main` y el push, solo cuando el dueño lo pida.
 
 ## Preguntas abiertas para el dueño
 
