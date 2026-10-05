@@ -44,7 +44,10 @@ git checkout v0.1.0
 ## 2. authentik
 
 1. Crear una aplicación con un proveedor **OAuth2/OpenID**:
-   - **Redirect URI:** `https://panel.example/v1/login/callback`;
+   - **Redirect URI, en modo Regex:**
+     `^https://panel\.example/v1/login/callback(\?redirect=[^&#]*)?$`. La app agrega a la URI
+     la página a la que vuelve después del login (`?redirect=…`, `src/routers/v1/auth.py`), así
+     que una URI en modo Strict sin la query no coincide. Los puntos van escapados;
    - scopes: `openid`, `email`, `profile`, y que el token lleve el claim `groups`.
 2. Crear dos grupos:
    - el de **usuarios** del panel (por ejemplo `modpack-users`): van a `OIDC_ALLOWED_GROUPS`;
@@ -82,7 +85,7 @@ como números, y la API ignora lo que no es texto (o no arranca, en `UPDATE_CHEC
 
 | Variable | Qué poner |
 |---|---|
-| `MONGODB_URI` | `"mongodb://mongoadmin:<MONGODB_PASSWORD>@mongodb:27017/"`, con la misma contraseña que `docker/.env` (paso 5) |
+| `MONGODB_URI` | `"mongodb://mongoadmin:<MONGODB_PASSWORD>@mongodb:27017/"`, con la misma contraseña que `docker/.env` (paso 5). Generarla con `openssl rand -hex 24`: solo `0-9a-f`, así no hay que escaparla en la URI (una `/` sería `%2F`) y mongo-express, que la pone tal cual en su URL, no se rompe |
 | `SESSION_SECRET` | un secreto largo y aleatorio: `python3 -c "import secrets; print(secrets.token_urlsafe(48))"`. Rotarlo cierra todas las sesiones |
 | `OIDC_METADATA_URL` | la URL de metadatos del paso 2 |
 | `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` | los del paso 2 |
@@ -151,6 +154,33 @@ server {
 }
 ```
 
+**Traefik** (proveedor de archivos; el entrypoint y el TLS, los de tu instalación). Un solo router
+sirve el panel y la API: son la misma app en el mismo origen, sin separar rutas ni quitar prefijos:
+
+```yaml
+http:
+  routers:
+    modpack:
+      entryPoints:
+      - web
+      service: modpack@file
+      rule: Host(`panel.example`)
+  services:
+    modpack:
+      loadBalancer:
+        passHostHeader: true          # el default, explícito: el chequeo de origen compara contra este Host
+        healthCheck:
+          path: /health/live          # live: si Mongo cae, el panel muestra el error en vez de un 503 de Traefik
+          interval: 30s
+          timeout: 5s
+        servers:
+        - url: http://<API_BIND_IP>:8000
+```
+
+La app tiene que recibir `X-Forwarded-Proto: https`. Si el TLS termina antes de Traefik, su
+entrypoint tiene que confiar en esa capa (`forwardedHeaders.trustedIPs`). Sin un forward-auth
+delante: la app hace su propio login OIDC.
+
 **Caddy** manda `Host`, `X-Forwarded-Proto` y `X-Forwarded-For` por defecto:
 
 ```caddyfile
@@ -166,10 +196,14 @@ cifrar. En una LAN propia es aceptable; si no lo es, el proxy llega a la API por
 ## 7. El firewall de este servidor
 
 Solo el proxy debería llegar al puerto 8000. Docker publica los puertos con sus propias reglas de
-iptables, y esas reglas **saltan ufw**. La restricción va en la cadena `DOCKER-USER`:
+iptables, y esas reglas **saltan ufw**. La restricción va en la cadena `DOCKER-USER`, que ve el
+paquete **después** del DNAT: por eso el puerto se compara con conntrack (`--ctorigdstport`), y
+la interfaz de entrada (`-i`) evita bloquear las conexiones que salen de los contenedores hacia
+otro puerto 8000 (https://docs.docker.com/engine/network/firewall-iptables/):
 
 ```bash
-sudo iptables -I DOCKER-USER -p tcp --dport 8000 ! -s <IP del proxy> -j DROP
+ip -o -4 addr show | grep <API_BIND_IP>      # el nombre de la interfaz, p. ej. eth0
+sudo iptables -I DOCKER-USER -i <interfaz> -p tcp -m conntrack --ctorigdstport 8000 --ctdir ORIGINAL ! -s <IP del proxy> -j DROP
 ```
 
 Para que sobreviva a un reinicio, guardarla con la herramienta de la distribución (por ejemplo

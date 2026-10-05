@@ -34,6 +34,14 @@ Al cierre de la sesión de usabilidad del panel (2026-10-04 y 2026-10-05; detall
   Cómo instalar: `docs/guia-instalacion.md`. Además de la lista de abajo, el dueño pone
   `API_BIND_IP` en `docker/.env` (en local, `127.0.0.1`) y la regla de `DOCKER-USER` en el
   servidor.
+  **Deploy en curso (2026-10-05):** instalación nueva, guiada, con el proxy Traefik en otra
+  máquina. Falta verlo funcionar:
+  - `/health/ready` a través del proxy;
+  - `/docs` con `0.1.0+…`;
+  - los tres logins;
+  - el POST de otro origen que da 403;
+  - la regla de `DOCKER-USER`;
+  - el punto de control en solo lectura.
 
 - **Panel web, hecho en código** (i-7985ee-50d411): páginas con Jinja2 y htmx, roles de editor y
   operador por grupos del IdP, auditoría, defensa CSRF por origen con CSP estricta, y el latido

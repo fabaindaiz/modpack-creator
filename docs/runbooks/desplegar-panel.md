@@ -35,9 +35,10 @@ Antes de empezar, si el servidor aún corre la versión anterior a la fase 0, se
    Además, ya que la API queda en la LAN:
    - **firewall:** solo el proxy debería llegar a `API_BIND_IP:8000`. Docker publica los puertos
      con sus propias reglas de iptables, que **saltan ufw**. La restricción va en la cadena
-     `DOCKER-USER`, por ejemplo
-     `iptables -I DOCKER-USER -p tcp --dport 8000 ! -s <ip del proxy> -j DROP`. Sin eso, cualquier
-     equipo de la LAN entra por HTTP sin pasar por el proxy;
+     `DOCKER-USER`, con la interfaz de entrada y conntrack (el paquete ya pasó el DNAT):
+     `iptables -I DOCKER-USER -i <interfaz> -p tcp -m conntrack --ctorigdstport 8000 --ctdir ORIGINAL ! -s <ip del proxy> -j DROP`
+     (`docs/guia-instalacion.md` §7). Sin eso, cualquier equipo de la LAN entra por HTTP sin pasar
+     por el proxy;
    - **entre el proxy y la API el tráfico va en HTTP plano:** la cookie de sesión cruza la LAN sin
      cifrar. Es aceptable en una LAN propia; si no lo es, el proxy tiene que llegar por un túnel
      (WireGuard, Tailscale).

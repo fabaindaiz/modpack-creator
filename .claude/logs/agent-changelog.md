@@ -100,6 +100,19 @@ barrido dio "138 capturas; 0 con problemas".
   - el proxy en otra máquina y `FORWARDED_ALLOW_IPS` con una IP de LAN real;
   - la regla de `DOCKER-USER`;
   - el login OIDC.
+- **Acompañamiento del deploy** (el dueño ejecuta y el agente guía; instalación nueva, proxy
+  Traefik en otra máquina): definición del router de Traefik, el redirect URI y la contraseña de
+  Mongo. Dos errores propios corregidos en `docs/deploy-fixes`:
+  - la regla de firewall de la guía (`--dport 8000` sin interfaz) también habría cortado las
+    conexiones salientes de los contenedores hacia un puerto 8000. Ahora va por interfaz y
+    conntrack, como indica la documentación de Docker;
+  - el redirect URI de la guía no llevaba la query `?redirect=` que la app agrega. Ahora es una
+    regex.
+  
+  La guía suma también un ejemplo de Traefik. Una contraseña pegada en el chat se dio por expuesta
+  y se recomendó generar otra con `openssl rand -hex 24`, que tampoco necesita escape.
+- **Sin ver todavía:** ninguna salida del servidor llegó a la conversación (ni la del chequeo,
+  ni la del build, ni la de las comprobaciones de la §9). El deploy no está verificado.
 
 ## 2026-10-05 · s-7985ee-9de18d — Panel: acciones para problemas, ficha local de mod y pestañas (en pausa en la tarea 8)
 
