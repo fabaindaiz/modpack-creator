@@ -574,13 +574,10 @@ class ModpackService():
         in_builds = {(str(build.bundle_id), build.number): e.version_number
                      for build in await self.modpackDB.build_find_numbers(wanted)
                      for e in build.lock.entries if e.project_id == project_id}
-        servers: list[tuple[PterodactylServer, datetime, Optional[str]]] = []
-        for server in await self.pterodactylDB.server_find().to_list():
-            scan = await self.pterodactylDB.scan_latest(str(server.id), SCAN_DIRECTORY)
-            hit = next((f for f in scan.files if f.status == "identified" and f.project_id == project_id),
-                       None) if scan else None
-            if scan is not None and hit is not None:
-                servers.append((server, scan.scanned_at, hit.version_id))
+        hits = await self.pterodactylDB.scan_latest_identifying(project_id, SCAN_DIRECTORY)
+        by_id = {server.id: server for server in await self.pterodactylDB.server_find().to_list()} if hits else {}
+        servers: list[tuple[PterodactylServer, datetime, Optional[str]]] = [
+            (by_id[server_id], scanned_at, version_id) for server_id, scanned_at, version_id in hits if server_id in by_id]
         servers.sort(key=lambda s: (s[0].name.casefold(), str(s[0].id)))
         identified = [v for _, _, v in servers if v]
         numbers = {v.version_id: v.version_number for v in await self.modrinthDB.version_find_by_version_ids(identified)}

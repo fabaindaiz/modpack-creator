@@ -1,6 +1,7 @@
 from beanie import PydanticObjectId, SortDirection
 from beanie.operators import In
 from beanie.odm.documents import FindMany
+from datetime import datetime
 from typing import Iterable, Optional
 from src.model.pterodactyl import (
     PterodactylServer,
@@ -90,6 +91,25 @@ class PterodactylDatabase():
                                       ServerScan.directory == directory) \
             .sort(("scanned_at", SortDirection.DESCENDING)).limit(1).to_list()
         return scans[0] if scans else None
+
+    async def scan_latest_identifying(self, project_id: str, directory: str) -> list[tuple[PydanticObjectId, datetime, Optional[str]]]:
+        """The servers whose latest scan of `directory` identified `project_id`: (server id, scanned
+        at, version id). Two queries for all servers: which scan is each one's latest (ids and dates
+        only), then those scans that identified the project, with only its file."""
+        collection = ServerScan.get_pymongo_collection()
+        latest = [row["scan"] async for row in await collection.aggregate([
+            {"$match": {"directory": directory}},
+            {"$project": {"server_id": 1, "scanned_at": 1}},
+            {"$sort": {"scanned_at": -1}},
+            {"$group": {"_id": "$server_id", "scan": {"$first": "$_id"}}},
+        ])]
+        if not latest:
+            return []
+        found = collection.find(
+            {"_id": {"$in": latest},
+             "files": {"$elemMatch": {"project_id": project_id, "status": "identified"}}},
+            {"server_id": 1, "scanned_at": 1, "files.$": 1})
+        return [(doc["server_id"], doc["scanned_at"], doc["files"][0].get("version_id")) async for doc in found]
 
     async def scan_set_drift(self, server_id: str, drift: Optional[str]) -> None:
         """Record on the latest scan how it compared with the server's build."""

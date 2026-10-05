@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, Sequence, cast
 
 import pytest
+from beanie import PydanticObjectId
 from fastapi import HTTPException
 
 from src.database.modpack import ModpackDatabase
@@ -137,6 +138,35 @@ def test_page_lists_packs_dependency_builds_and_servers(mongo: MongoRunner) -> N
     assert [(s.server_name, s.version, s.scanned_at.replace(tzinfo=timezone.utc)) for s in page.servers] == [
         ("S", "0.8.13", NOW)]
     assert calls == []  # everything shown was in the catalog, with an icon
+
+
+def test_only_each_servers_latest_scan_counts_and_one_query_finds_them(mongo: MongoRunner) -> None:
+    # F4 of the final review: the page read every server's latest scan, one query each.
+    async def scenario() -> Any:
+        s = Scenario(FakeModrinth())
+        await s.modrinthDB.project_upsert_many([project("P", "P title")])
+        await s.modrinthDB.version_upsert_many([version("v-old", "P", "1.0", 1), version("v-new", "P", "2.0", 2)])
+        later = NOW + timedelta(hours=1)
+        moved = await s.server("Moved", jar("/mods/p.jar", "P", "v-old"))
+        await s.pterodactylDB.scan_insert(ServerScan(server_id=PydanticObjectId(moved), directory=SCAN_DIRECTORY,
+                                                     scanned_at=later, full=False, files=[jar("/mods/p.jar", "P", "v-new")]))
+        gone = await s.server("Gone", jar("/mods/p.jar", "P", "v-old"), uuid="u-2")
+        await s.pterodactylDB.scan_insert(ServerScan(server_id=PydanticObjectId(gone), directory=SCAN_DIRECTORY,
+                                                     scanned_at=later, full=False, files=[jar("/mods/x.jar", "X", "v-X")]))
+        await s.pterodactylDB.scan_insert(ServerScan(server_id=PydanticObjectId(gone), directory="/plugins",
+                                                     scanned_at=later + timedelta(hours=1), full=False,
+                                                     files=[jar("/plugins/p.jar", "P", "v-new")]))
+        await s.server("Unknown", jar("/mods/p.jar", None, None, status="unknown"), uuid="u-3")
+
+        async def per_server(*args: Any) -> Any:
+            raise AssertionError("one query per server")
+
+        s.pterodactylDB.scan_latest = per_server  # type: ignore[method-assign,assignment]
+        return await s.service.mod_page("P")
+
+    page = mongo(scenario)
+    assert [(s.server_name, s.version, s.scanned_at.replace(tzinfo=timezone.utc)) for s in page.servers] == [
+        ("Moved", "2.0", NOW + timedelta(hours=1))]
 
 
 def test_a_build_without_the_mod_is_not_named(mongo: MongoRunner) -> None:
