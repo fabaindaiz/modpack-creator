@@ -17,6 +17,10 @@ bien escrita. Todas se leyeron en la fuente primaria el 2026-10-01.
   `GET /version/{id}` devuelve `Version`, con `changelog` (string, `nullable`) siempre presente.
   Releído en la spec v2.7.0 el 2026-10-04.
 
+  `loaders` y `game_versions` de `GET /project/{id|slug}/version` son **opcionales** (según la
+  documentación publicada; no hay copia del openapi en el repositorio y no se pudo releer sin
+  red): para pedir todas las versiones de un proyecto se omiten, no se manda `[]`.
+
   **Lo que confirma:** `project_versions` en `src/library/api/client/modrinth.py`, que pide
   `include_changelog=false`: una versión del listado llega **sin** `changelog`, y la vista previa
   de cambios lo pide con `GET /version/{id}` (`version_get`). `files_update_hash_post_many` manda

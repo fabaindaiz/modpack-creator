@@ -64,11 +64,12 @@ class ModrinthAPI(HttpAPI):
     async def project_versions(self, slug: str, loaders: Sequence[str] = (), game_versions: Sequence[str] = (), featured: Optional[bool] = None) -> Generator[ModrinthVersion, None, None]:
         # `featured` filters to featured-only or non-featured-only: omitted, every version comes.
         # The spec recommends include_changelog=false unless the changelog is used.
-        query = {
-            "loaders": json.dumps(list(loaders)),
-            "game_versions": json.dumps(list(game_versions)),
-            "include_changelog": "false",
-        }
+        # `loaders` and `game_versions` are optional: an empty filter is left out, not sent as [].
+        query = {"include_changelog": "false"}
+        if loaders:
+            query["loaders"] = json.dumps(list(loaders))
+        if game_versions:
+            query["game_versions"] = json.dumps(list(game_versions))
         if featured is not None:
             query["featured"] = boolToStr(featured, int_format=False)
         handler: JsonResponse = await self._request(

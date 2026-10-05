@@ -161,6 +161,20 @@ def test_project_versions_ask_for_all_versions_without_changelogs(mongo: MongoRu
     assert [v.version_id for v in result] == ["v1"]
 
 
+def test_project_versions_without_filters_sends_no_filter_params(mongo: MongoRunner) -> None:
+    """`loaders` y `game_versions` son opcionales en la query: sin filtro se omiten, no se manda `[]`."""
+    _, seen = mongo(lambda: serve({("GET", "/project/sodium/version"): json_reply([VERSION])},
+                                  lambda base: modrinth(base).project_versions("sodium")))
+    assert [(s.method, s.path, s.query) for s in seen] == [
+        ("GET", "/project/sodium/version", {"include_changelog": "false"})]
+
+
+def test_project_versions_with_filters_still_sends_them(mongo: MongoRunner) -> None:
+    _, seen = mongo(lambda: serve({("GET", "/project/sodium/version"): json_reply([VERSION])},
+                                  lambda base: modrinth(base).project_versions("sodium", ["fabric"], ["1.21.1"])))
+    assert seen[0].query["loaders"] == '["fabric"]' and seen[0].query["game_versions"] == '["1.21.1"]'
+
+
 def test_a_version_is_read_by_id_with_its_changelog(mongo: MongoRunner) -> None:
     """openapi v2.7.0: `GET /version/{id}` devuelve el Version completo; `changelog` es Markdown y
     puede ser null."""
