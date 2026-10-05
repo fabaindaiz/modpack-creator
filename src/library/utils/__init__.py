@@ -3,7 +3,6 @@ import yaml
 import logging
 import urllib.parse
 from datetime import datetime, timezone
-from pprint import pformat
 from typing import Any, Callable, Optional, TypeVar
 
 WRAP = TypeVar("WRAP", bound=Callable[..., Any])
@@ -17,11 +16,12 @@ def load_env(path: str = ".env", verbose: bool = False):
     if not os.path.exists(path):
         return
     envvars: dict[str, Any] = load_yaml(path)
+    # Keys only, never values: the file holds secrets, and the log leaves the process.
     if verbose:
-        logger.info(pformat(envvars))
+        logger.info(f"keys in {path}: {sorted(envvars)}")
     for key,value in envvars.items():
         if key in os.environ:
-            logger.info(f"key already in environ -> {key}: {value}")
+            logger.info(f"key already in environ, {path} ignored for it: {key}")
             continue
         if not isinstance(value, str):
             # The key only, never the value: it may be a secret.

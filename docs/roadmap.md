@@ -72,8 +72,8 @@ Al cierre de la sesión de usabilidad del panel (2026-10-04 y 2026-10-05; detall
   Antes, después del primer cierre: `.mrpack`, logs JSON, trabajos, avisos por Discord,
   servidor-bundle y `httpx2`.
 - **Pendiente de código:**
-  - `load_env` registra el valor de una clave ya presente en el entorno y vuelca todo con
-    `verbose` (Low, `src/library/utils/__init__.py`): registrar solo claves;
+  - ~~`load_env` registra el valor de una clave ya presente en el entorno y vuelca todo con
+    `verbose`~~: hecho el 2026-10-05 en `release-1-prep`, solo claves (`tests/test_load_env.py`);
   - un `UPDATE_CHECK_AT:` vacío o nulo debe significar "apagado" y no fallar con "ponlo entre
     comillas";
   - los menores diferidos del registro (consulta de títulos por fragmento, espera secuencial del
