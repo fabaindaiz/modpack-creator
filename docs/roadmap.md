@@ -717,10 +717,12 @@ JSON con `request_id` y `job_id`.
   recarga de `#server-main` al terminar un trabajo sin un error de consola (la CSP rechazaba el
   `style` que htmx copiaba al asentar; `attributesToSettle` ya no lo incluye).
 - **Lo que falta (ronda 2, fuera de alcance de la ronda 1):**
-  - el tablero "necesita atención";
+  - el tablero "necesita atención" (investigado: `docs/research/2026-10-05-tablero-necesita-atencion.md`,
+    con 4 preguntas para el dueño al final);
   - móvil: navegación compacta y tablas como tarjetas;
-  - selectores de la versión de Minecraft y del loader al crear un pack (F09);
-  - advertir bajas de versión (F27);
+  - selectores de la versión de Minecraft y del loader al crear un pack (F09; investigado:
+    `docs/research/2026-10-05-versiones-mc-y-loaders.md`);
+  - advertir bajas de versión (F27; investigado: `docs/research/2026-10-05-bajas-de-version.md`);
   - el diálogo de actualización directa que advierte lo que la simulación encontraría (F28);
   - enlazar URLs en changelogs (F29);
   - ~~repetir el recorrido con Modrinth real y medir de nuevo la tarea de F36~~: hecho el 2026-10-04 (ronda 2 del documento de hallazgos: de ~25 acciones a 11, de 6 cambios de página a 3);
@@ -729,9 +731,10 @@ JSON con `request_id` y `job_id`.
 - **Pendientes menores que dejó la revisión de la ronda 1** (cada uno visto, ninguno bloquea):
   - un proyecto sin ícono en Modrinth (o que Modrinth no conoce) se vuelve a pedir en cada vista de
     la lista de mods; con Modrinth colgado cada vista espera los 5 s. Pide una marca "consultado, sin
-    ícono" con su vigencia, y eso es una enmienda a la spec;
-  - el diálogo de decisiones del build no es modal (`open`, sin fondo, sin atrapar el foco ni cerrar
-    con Escape): abrirlo con `showModal` desde `app.js` al llegar;
+    ícono" con su vigencia (el diseño `fetched_at` de
+    `docs/research/2026-10-05-cache-catalogo-modrinth.md`), y eso es una enmienda a la spec;
+  - ~~el diálogo de decisiones del build no es modal~~: hecho en i-7985ee-593c92 (R6, con
+    `docs/research/2026-10-05-dialogos-accesibles-htmx.md`);
   - los botones de envío de un formulario (no los `ui.button` con `hx-post`) no muestran estado
     ocupado ni se deshabilitan: un doble envío es posible;
   - `sanitize_detail` solo quita la consulta de las URLs: un `Bearer x` o un `token=` sueltos, fuera
