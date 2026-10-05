@@ -435,5 +435,14 @@ async def test_all_versions_are_fetched_without_filters_and_stored() -> None:
      1.21.1);
    - un pack con una dependencia sin versiones;
    - medir los clics para dejar el pack construible.
-2. Detener la instancia antes de correr el gate.
-3. Agregar los hallazgos al documento de usabilidad como ronda 3.
+2. **Con los mods de servidores reales del dueño** (decisión del dueño, 2026-10-05): el simulador
+   de Pterodactyl sirve los `/mods` de 2 o 3 de sus servidores, rearmados a partir de los nombres o
+   slugs que él indique. Los jars se bajan de Modrinth; de su panel no se lee nada.
+3. **Móvil a 360 px** (decisión del dueño): el panel lateral a pantalla completa, las pestañas y la
+   ficha.
+4. Detener la instancia antes de correr el gate.
+5. Agregar los hallazgos al documento de usabilidad como ronda 3.
+
+**Decisiones del dueño en la revisión del plan (2026-10-05):** en "Con problemas" se resuelve de
+nuevo después de cada acción; ejecución con subagentes y revisión por tarea; la ronda 3 incluye los
+mods de sus servidores reales y el móvil a 360 px.
