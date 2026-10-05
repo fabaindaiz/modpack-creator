@@ -1,5 +1,5 @@
-{# Search hits for the live search; htmx swaps it into #search-results. Each hit opens its card:
-   the route fills the catalog for all of them first. #}
+{# Search hits for the live search; htmx swaps it into #search-results. Each hit opens its card,
+   which fetches the project from Modrinth if the catalog lacks it. #}
 {% import "_macros.html" as ui %}
 {% if failed %}
 {{ ui.notice("Modrinth no respondió; intenta de nuevo", "warning") }}

@@ -1589,25 +1589,16 @@ def test_the_decide_dialog_names_open_their_cards_with_one_fill() -> None:
     assert modrinth.filled == [["P2", "P3"]]
 
 
-def test_search_fills_its_ten_hits_in_one_call_and_each_opens_its_card() -> None:
+def test_search_asks_modrinth_once_per_keystroke_and_each_hit_opens_its_card() -> None:
+    # The hit already carries its title and icon; a card the catalog lacks fetches its own project
+    # when opened (mod_page). Filling the catalog here doubled the calls on every keystroke.
     client, _, modrinth = setup()
     ids = [f"H{i}" for i in range(10)]
     modrinth.hits = [{"project_id": i, "title": f"Hit {i}", "project_type": "mod"} for i in ids]
     text = client.get(f"/modpacks/{BUNDLE_ID}/search", params={"q": "hit"}, headers=HTMX).text
-    assert modrinth.filled == [ids]
+    assert modrinth.filled == []
     for i in ids:
         assert mod_link(i) in text
-
-
-def test_search_still_answers_when_the_fill_fails() -> None:
-    client, _, modrinth = setup()
-
-    async def down(project_ids: list[str]) -> dict[str, ModrinthProject]:
-        raise RuntimeError("mongo down")
-
-    modrinth.projects_filled = down  # type: ignore[method-assign]
-    response = client.get(f"/modpacks/{BUNDLE_ID}/search", params={"q": "iris"}, headers=HTMX)
-    assert response.status_code == 200 and mod_link("P3") in response.text
 
 
 def test_compare_names_open_their_cards_with_one_fill() -> None:

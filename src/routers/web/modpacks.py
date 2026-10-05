@@ -365,13 +365,9 @@ async def modpack_search(
         logger.warning("Modrinth search failed for bundle %s", bundle_id, exc_info=True)
         return render(request, "modpacks/_search.html", actor, bundle_id=bundle_id, hits=[], failed=True, searched=True)
     owned = {p.project_id for p in bundle.projects}
+    # No catalog fill: the hit carries its title and icon, and a card the catalog lacks fetches
+    # its own project when opened. Filling here doubled the Modrinth calls on every keystroke.
     hits = [hit for hit in (_hit(item, owned) for item in raw if isinstance(item, dict)) if hit is not None]
-    if hits:
-        # Every hit gets its card: the catalog is filled for all of them in one call (spec §2).
-        try:
-            await modrinthService.projects_filled([hit.project_id for hit in hits])
-        except Exception:
-            logger.warning("catalog fill of the search hits failed for bundle %s", bundle_id, exc_info=True)
     return render(request, "modpacks/_search.html", actor, bundle_id=bundle_id, hits=hits, failed=False, searched=True)
 
 @router.post("/modpacks/{bundle_id}/projects")
