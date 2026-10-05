@@ -21,14 +21,28 @@ Antes de empezar, si el servidor aún corre la versión anterior a la fase 0, se
 2. **`.env.yaml`:** agregar `OIDC_OPERATOR_GROUPS` (obligatoria, como `OIDC_ALLOWED_GROUPS`). Vacía
    (`""`) significa que nadie opera: es la forma de desplegar el panel sin habilitar operadores
    todavía. Sin la variable, la API no arranca.
-3. **`docker/.env`:** agregar `FORWARDED_ALLOW_IPS` con la IP o red **del proxy inverso tal como la
-   ve el contenedor**. Es obligatoria: sin ella, el compose se niega a arrancar. Con un valor
-   equivocado uvicorn ignora `X-Forwarded-Proto`, la API cree que habla en `http` y el chequeo de
-   origen rechaza con 403 cada acción del panel.
+3. **`docker/.env`:** el proxy inverso corre **en otra máquina** de la red (decisión del dueño,
+   2026-10-05). Dos variables obligatorias; sin cualquiera de ellas el compose se niega a arrancar:
+   - `API_BIND_IP`: la IP de LAN de este servidor por la que llega el proxy. La API se publica
+     solo en ella (`API_BIND_IP:8000`), nunca en todas las interfaces;
+   - `FORWARDED_ALLOW_IPS`: la IP del proxy **tal como la ve el contenedor**. Con Docker y el
+     puerto publicado, el contenedor ve la IP de LAN del proxy. Con un valor equivocado uvicorn
+     ignora `X-Forwarded-Proto`, la API cree que habla en `http` y el chequeo de origen rechaza
+     con 403 cada acción del panel. Si pasa, `docker logs modpack-api` muestra la IP de origen de
+     cada petición: esa es la que va aquí.
 
-   ```bash
-   docker network inspect bridge --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'   # si el proxy corre en el host
-   ```
+   Además, ya que la API queda en la LAN:
+   - **firewall:** solo el proxy debería llegar a `API_BIND_IP:8000`. Docker publica los puertos
+     con sus propias reglas de iptables, que **saltan ufw**. La restricción va en la cadena
+     `DOCKER-USER`, por ejemplo
+     `iptables -I DOCKER-USER -p tcp --dport 8000 ! -s <ip del proxy> -j DROP`. Sin eso, cualquier
+     equipo de la LAN entra por HTTP sin pasar por el proxy;
+   - **entre el proxy y la API el tráfico va en HTTP plano:** la cookie de sesión cruza la LAN sin
+     cifrar. Es aceptable en una LAN propia; si no lo es, el proxy tiene que llegar por un túnel
+     (WireGuard, Tailscale).
+   - **`PTERODACTYL_WRITES`** (en `.env.yaml`) **vacía o ausente** para el primer release, que es
+     de solo lectura: se habilita recién con
+     [`primera-actualizacion-real.md`](primera-actualizacion-real.md) (d-7985ee-5739fc).
 
 4. **El proxy inverso** tiene que:
    - reenviar `Host` tal como lo mandó el navegador (en nginx, `proxy_set_header Host $host;`);
@@ -119,6 +133,15 @@ git pull
 docker ps --format '{{.Names}} {{.Status}}'   # modpack-api y modpack-mongodb en (healthy)
 ```
 
+`build.sh` etiqueta la imagen dos veces: `modpack-creator-api:latest`, la que levanta el compose, y
+`modpack-creator-api:<commit>`. **Anotar el commit que corría antes de desplegar**
+(`docker images modpack-creator-api`): es el de "Volver atrás". La versión que corre se ve en
+`/docs` (por ejemplo `0.1.0+57ed2e0`).
+
+mongo-express ya no arranca con `run.sh`: se levanta solo a pedido, con
+`docker compose -f docker/docker-compose.yaml up -d mongoweb`, y `./scripts/stop.sh` lo apaga.
+Sigue en `127.0.0.1:8081` (un túnel SSH para mirarlo desde otro equipo).
+
 La imagen se construye por primera vez en CI al empujar: si `build.sh` falla en la etapa `assets`,
 se ve aquí. Los usuarios que ya tenían sesión **tienen que volver a entrar**: su sesión no trae
 `groups` y cuenta como editor hasta entonces.
@@ -174,7 +197,14 @@ sesiones: todos vuelven a entrar, y los que ya no están en el grupo entran como
 
 ## Volver atrás
 
-Los datos no cambian, así que volver es el código: `git checkout` del commit anterior,
+Los datos no cambian, así que volver es la imagen anterior, sin recompilar:
+
+```bash
+docker tag modpack-creator-api:<commit anterior> modpack-creator-api:latest
+./scripts/run.sh          # el compose ve otra imagen detrás de :latest y recrea la API
+```
+
+Si esa imagen ya no existe, desde git: `git checkout <commit anterior>`,
 `./scripts/build.sh && ./scripts/run.sh`. La colección `audit` y los índices nuevos quedan en
 Mongo sin que nadie los lea; las sesiones nuevas siguen siendo válidas para el código viejo
 (`get_current_user` las lee igual). `FORWARDED_ALLOW_IPS` sobra pero no estorba.

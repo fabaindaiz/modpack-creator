@@ -7,16 +7,28 @@
 #   FORWARDED_ALLOW_IPS  la IP o red del proxy inverso: uvicorn solo confía en X-Forwarded-Proto
 #                      de ella, y el chequeo de origen del panel lo necesita (d-7985ee-491c83;
 #                      docs/runbooks/desplegar-panel.md)
-# Nunca correr `down -v`: borra el volumen con los datos.
+#   API_BIND_IP        la IP de LAN de este servidor por la que llega el proxy, que corre en otra
+#                      máquina: la API se publica solo ahí, nunca en todas las interfaces
+# Plantilla sin secretos: docker/.env.example. Nunca correr `down -v`: borra el volumen con los datos.
+
+# Los logs de cada contenedor rotan: sin tope, json-file crece hasta llenar el disco.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   api:
     container_name: modpack-api
     image: modpack-creator-api:latest
     restart: "always"
+    logging: *logging
+    # Solo en la IP de LAN por la que llega el proxy (otra máquina). Sin default: publicar en
+    # 0.0.0.0 dejaría entrar por HTTP, sin el proxy, desde cualquier red que alcance el host.
     ports:
-      - "8000:8000"
+      - "${API_BIND_IP:?API_BIND_IP sin definir: la IP de LAN de este servidor por la que llega el proxy}:8000:8000"
     environment:
-      ENVIRONMENT: "DEV"
       # La IP o red del proxy inverso, para que uvicorn confíe en X-Forwarded-Proto: el redirect
       # del login sale en https y el chequeo de origen del panel compara con el esquema real. Sin
       # default: uno equivocado rechazaría al propio panel sin avisar.
@@ -46,6 +58,7 @@ services:
     container_name: modpack-mongodb
     image: "mongo:${MONGO_VERSION:?MONGO_VERSION sin definir: ver docs/runbooks/migrar-mongo-a-volumen.md}"
     restart: "always"
+    logging: *logging
     # Solo desde el propio host: la API llega por la red de Compose (mongodb:27017).
     ports:
       - "127.0.0.1:27017:27017"
@@ -62,10 +75,15 @@ services:
       retries: 5
       start_period: 20s
 
+  # Solo a pedido (perfil admin): `run.sh` no lo levanta. Para mirar la base:
+  #   docker compose -f docker/docker-compose.yaml up -d mongoweb    (y `stop.sh` lo apaga)
+  # Versión fija: mongo-express no publica una nueva desde 1.0.2 (2024).
   mongoweb:
     container_name: modpack-mongoweb
-    image: mongo-express:latest
+    image: mongo-express:1.0.2-20-alpine3.19
+    profiles: ["admin"]
     restart: always
+    logging: *logging
     ports:
       - "127.0.0.1:8081:8081"
     environment:

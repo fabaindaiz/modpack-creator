@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
 
 DOCS_PATH = getenv("DOCS_PATH", "/docs")
 app = FastAPI(title="Modpack Creator API",
-              version=getenv("VERSION", "1.0.0"),
+              version=getenv("VERSION", "dev"),
               docs_url=DOCS_PATH,
               redoc_url=getenv_opt("REDOCS_PATH"),
               openapi_tags=tags_metadata,

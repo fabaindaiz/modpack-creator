@@ -13,8 +13,8 @@ servidores de un panel de Pterodactyl propio.
 > opera). Para el panel web, además: [`docs/runbooks/desplegar-panel.md`](docs/runbooks/desplegar-panel.md).
 
 1. Copia `.env.default` a `.env.yaml` y completa los valores (nunca se versiona).
-2. Crea `docker/.env` con `MONGO_VERSION`, `MONGODB_PASSWORD`, `MONGOWEB_PASSWORD` y `FORWARDED_ALLOW_IPS` (ver el runbook).
-3. `./scripts/build.sh` y `./scripts/run.sh` levantan la API, MongoDB y mongo-express con Docker.
+2. Crea `docker/.env` con `MONGO_VERSION`, `MONGODB_PASSWORD`, `MONGOWEB_PASSWORD`, `FORWARDED_ALLOW_IPS` y `API_BIND_IP` (la lista comentada está en `docs/runbooks/migrar-mongo-a-volumen.md` §3; en local, `API_BIND_IP=127.0.0.1`).
+3. `./scripts/build.sh` y `./scripts/run.sh` levantan la API y MongoDB con Docker. mongo-express solo a pedido: `docker compose -f docker/docker-compose.yaml up -d mongoweb`; `./scripts/stop.sh` lo apaga también.
 
 ### Con podman
 
@@ -22,8 +22,8 @@ En un Mac (u otra máquina sin Docker) sirve podman: `docker` como enlace a `pod
 (`ln -s "$(command -v podman)" /usr/local/bin/docker`, o la ruta de tu `PATH`) y su máquina
 iniciada (`podman machine init && podman machine start`, una vez). Con eso los scripts funcionan sin
 cambios: `./scripts/build.sh` construye la imagen (en un Mac con Apple Silicon sale arm64; la x64
-la construye CI), `./scripts/run.sh` levanta el compose (rechaza arrancar sin `MONGO_VERSION` ni
-`FORWARDED_ALLOW_IPS` en `docker/.env`), y `./scripts/test-mongo.sh` corre el gate con un MongoDB
+la construye CI), `./scripts/run.sh` levanta el compose (rechaza arrancar sin `MONGO_VERSION`,
+`FORWARDED_ALLOW_IPS` ni `API_BIND_IP` en `docker/.env`), y `./scripts/test-mongo.sh` corre el gate con un MongoDB
 descartable, para que los tests de base no se salten.
 
 ### Revisión diaria de actualizaciones (opcional)

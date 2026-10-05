@@ -142,11 +142,12 @@ Crear `docker/.env`, que no se versiona (`.gitignore` ya cubre `.env`):
 ```bash
 MONGO_VERSION=8.0          # la que leíste en el paso 1 (si era 6.0, aquí 6.0)
 MONGODB_PASSWORD=…
-MONGOWEB_PASSWORD=…
-FORWARDED_ALLOW_IPS=…      # la IP o red del proxy inverso (para uvicorn: confiar en X-Forwarded-Proto)
+MONGOWEB_PASSWORD=…        # mongo-express, que solo se levanta a pedido (perfil admin)
+FORWARDED_ALLOW_IPS=…      # la IP del proxy inverso (para uvicorn: confiar en X-Forwarded-Proto)
+API_BIND_IP=…              # la IP de LAN de este servidor por la que llega el proxy; en local, 127.0.0.1
 ```
 
-Sin `MONGO_VERSION` o sin `FORWARDED_ALLOW_IPS`, el compose se niega a arrancar. Es a propósito
+Sin `MONGO_VERSION`, `FORWARDED_ALLOW_IPS` o `API_BIND_IP`, el compose se niega a arrancar. Es a propósito
 (d-7985ee-398653, d-7985ee-491c83). El panel y su proxy se detallan en
 [`desplegar-panel.md`](desplegar-panel.md).
 

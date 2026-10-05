@@ -29,5 +29,9 @@ COPY src ./src
 # The compiled panel assets are not in git: they come from the assets stage.
 COPY --from=assets /build/src/web/static/dist ./src/web/static/dist
 
+# The version the OpenAPI page shows: build.sh passes the project's version and the commit.
+ARG VERSION=dev
+ENV VERSION=${VERSION}
+
 # --no-access-log: RequestIdMiddleware writes one JSON line per request, with its id.
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--no-access-log"]

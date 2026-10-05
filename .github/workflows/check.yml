@@ -57,13 +57,27 @@ jobs:
         env:
           MONGO_VERSION: "8.0"
           FORWARDED_ALLOW_IPS: 127.0.0.1
+          API_BIND_IP: 127.0.0.1
           MONGODB_PASSWORD: ci
           MONGOWEB_PASSWORD: ci
         run: |
           touch .env.yaml
           docker compose -f docker/docker-compose.yaml config --quiet
+          # mongo-express only on demand: not among the services `up` starts.
+          ! docker compose -f docker/docker-compose.yaml config --services | grep -qx mongoweb
+          docker compose -f docker/docker-compose.yaml --profile admin config --services | grep -qx mongoweb
       - name: The compose file refuses to run without MONGO_VERSION
         env:
+          FORWARDED_ALLOW_IPS: 127.0.0.1
+          API_BIND_IP: 127.0.0.1
+          MONGODB_PASSWORD: ci
+          MONGOWEB_PASSWORD: ci
+        run: |
+          touch .env.yaml
+          ! docker compose -f docker/docker-compose.yaml config --quiet
+      - name: The compose file refuses to publish the API without API_BIND_IP
+        env:
+          MONGO_VERSION: "8.0"
           FORWARDED_ALLOW_IPS: 127.0.0.1
           MONGODB_PASSWORD: ci
           MONGOWEB_PASSWORD: ci
