@@ -25,6 +25,15 @@ Al cierre de la sesión de usabilidad del panel (2026-10-04 y 2026-10-05; detall
 
   El primer release se propuso de solo lectura: `PTERODACTYL_WRITES` vacío hasta la primera
   actualización real. Lo que falta para desplegarlo es la lista "Lo siguiente, todo del dueño".
+- **Release 0.1.0 (2026-10-05), en `main` con el tag `v0.1.0`; sin desplegar:**
+  - el compose publica la API solo en `API_BIND_IP` (d-7985ee-c1dea4);
+  - mongo-express corre a pedido (d-7985ee-6e298e);
+  - los logs rotan;
+  - la imagen se etiqueta por commit (d-7985ee-884072).
+
+  Cómo instalar: `docs/guia-instalacion.md`. Además de la lista de abajo, el dueño pone
+  `API_BIND_IP` en `docker/.env` (en local, `127.0.0.1`) y la regla de `DOCKER-USER` en el
+  servidor.
 
 - **Panel web, hecho en código** (i-7985ee-50d411): páginas con Jinja2 y htmx, roles de editor y
   operador por grupos del IdP, auditoría, defensa CSRF por origen con CSP estricta, y el latido
@@ -50,7 +59,7 @@ Al cierre de la sesión de usabilidad del panel (2026-10-04 y 2026-10-05; detall
   - escaneo por hash (i-7985ee-43df2f, opción 1) y comparación con un build (i-7985ee-4364a3);
   - el manifiesto, solo en Mongo (i-7985ee-5c7506 a medias).
 - **Lo que bloquea desplegar:** seguir `docs/runbooks/migrar-mongo-a-volumen.md`. Hace falta
-  respaldo, `docker/.env` con `MONGO_VERSION` y `FORWARDED_ALLOW_IPS`, `OIDC_ALLOWED_GROUPS` y
+  respaldo, `docker/.env` con `MONGO_VERSION`, `FORWARDED_ALLOW_IPS` y `API_BIND_IP`, `OIDC_ALLOWED_GROUPS` y
   `OIDC_OPERATOR_GROUPS` en `.env.yaml`, y restaurar.
   Sin eso el volumen nuevo arranca vacío y la API no arranca.
 - **Lo siguiente, todo del dueño, en orden:**

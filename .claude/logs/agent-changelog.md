@@ -70,6 +70,37 @@ un Modrinth local con datos grabados.
 **Medido.** El gate en la punta con `./scripts/test-mongo.sh`: 976 aprobados. El
 barrido dio "138 capturas; 0 con problemas".
 
+**Despliegue y release 0.1.0** (segunda parte de la misma sesión, a pedido del dueño):
+- **Merge:** `release-1-prep` se mergeó a `main` (fast-forward) y se empujó.
+- **Compose** (rama `deploy-compose`), según tres decisiones del dueño:
+  - la API solo en `API_BIND_IP`, porque el proxy corre en otra máquina (d-7985ee-c1dea4);
+  - mongo-express a pedido y con versión fija (d-7985ee-6e298e);
+  - v0.1.0 con la imagen etiquetada por commit (d-7985ee-884072).
+- **Además:** los logs rotan, se quitó `ENVIRONMENT`, que nada leía, `stop.sh` apaga también el
+  perfil `admin`, y CI comprueba `API_BIND_IP` y el perfil.
+- **Documentación:**
+  - `docs/guia-instalacion.md` (nueva), enlazada desde el README y `AGENTS.md`;
+  - `desplegar-panel.md`, con el proxy, el firewall y cómo volver atrás;
+  - `migrar-mongo-a-volumen.md` §3.
+- **`docker/.env.example`:** lo creó el dueño con el contenido propuesto, porque la regla deny
+  sobre `.env*` impide escribirlo. Va en su propio commit, sin leerlo.
+- **Qué salió mal:**
+  - la VM de podman se trabó en "Currently starting" y hubo que detener el arranque y repetirlo;
+  - `timeout` no existe en macOS;
+  - el runbook y la guía afirmaban que el log de la API muestra la IP de origen, y no la muestra:
+    la prueba de humo lo desmintió y se corrigió (`conntrack`).
+- **Verificado:**
+  - el compose, con podman-compose (CI lo valida con Docker Compose v2): los servicios sin perfil
+    y con él, el rechazo sin `API_BIND_IP`, el puerto solo en la IP dada y la rotación;
+  - `build.sh` dio las etiquetas `:latest` y `:d614478` y la versión `0.1.0+d614478`;
+  - la imagen contra un MongoDB descartable: `/health/ready` da 200, el healthcheck funciona,
+    sale la CSP, un POST de otro origen da 403 y `/docs` muestra la versión.
+- **No verificado:**
+  - el compose en el servidor real y con Docker Compose v2 local;
+  - el proxy en otra máquina y `FORWARDED_ALLOW_IPS` con una IP de LAN real;
+  - la regla de `DOCKER-USER`;
+  - el login OIDC.
+
 ## 2026-10-05 · s-7985ee-9de18d — Panel: acciones para problemas, ficha local de mod y pestañas (en pausa en la tarea 8)
 
 **Qué.**

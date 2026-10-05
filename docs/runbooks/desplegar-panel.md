@@ -28,8 +28,9 @@ Antes de empezar, si el servidor aún corre la versión anterior a la fase 0, se
    - `FORWARDED_ALLOW_IPS`: la IP del proxy **tal como la ve el contenedor**. Con Docker y el
      puerto publicado, el contenedor ve la IP de LAN del proxy. Con un valor equivocado uvicorn
      ignora `X-Forwarded-Proto`, la API cree que habla en `http` y el chequeo de origen rechaza
-     con 403 cada acción del panel. Si pasa, `docker logs modpack-api` muestra la IP de origen de
-     cada petición: esa es la que va aquí.
+     con 403 cada acción del panel. El log de la API no registra la IP de origen; si hay dudas,
+     en el host `sudo conntrack -L -p tcp --dport 8000` (paquete `conntrack`) muestra con qué IP
+     llegan las conexiones al contenedor.
 
    Además, ya que la API queda en la LAN:
    - **firewall:** solo el proxy debería llegar a `API_BIND_IP:8000`. Docker publica los puertos

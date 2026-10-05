@@ -6,6 +6,8 @@ servidores de un panel de Pterodactyl propio.
 
 ## Correr
 
+**Instalación nueva:** [`docs/guia-instalacion.md`](docs/guia-instalacion.md), de cero a un panel que funciona.
+
 > **Antes del próximo `./scripts/update.sh` en un servidor que ya corría:** seguir
 > [`docs/runbooks/migrar-mongo-a-volumen.md`](docs/runbooks/migrar-mongo-a-volumen.md). Desde
 > 2026-10-01 MongoDB guarda sus datos en un volumen nuevo que arranca vacío, y la API exige
