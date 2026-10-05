@@ -1,5 +1,5 @@
 import asyncio
-from beanie import PydanticObjectId
+from beanie import PydanticObjectId, SortDirection
 from beanie.operators import In
 from beanie.odm.queries.find import FindOne
 from beanie import Document
@@ -48,6 +48,12 @@ class ModrinthDatabase():
         if not project_ids:
             return []
         return await ModrinthProject.find(In(ModrinthProject.project_id, project_ids)).to_list()
+
+    async def project_find_by_ref(self, ref: str) -> Optional[ModrinthProject]:
+        """The stored project with this Modrinth project id or, failing that, this slug; None if the
+        catalog has neither. The id goes first: a slug may look like another project's id."""
+        found = await ModrinthProject.find_one(ModrinthProject.project_id == ref)
+        return found if found is not None else await ModrinthProject.find_one(ModrinthProject.slug == ref)
 
     async def project_get(self, project_id: str) -> ModrinthProject:
         """
@@ -128,6 +134,11 @@ class ModrinthDatabase():
         if not version_ids:
             return []
         return await ModrinthVersion.find(In(ModrinthVersion.version_id, version_ids)).to_list()
+
+    async def version_find_by_project(self, project_id: str, limit: int) -> list[ModrinthVersion]:
+        """The stored versions of a project, newest first, at most `limit` (by the project_id index)."""
+        return await ModrinthVersion.find(ModrinthVersion.project_id == project_id) \
+            .sort(("date_published", SortDirection.DESCENDING)).limit(limit).to_list()
 
     async def version_insert(self, version: ModrinthVersion) -> ModrinthVersion:
         """

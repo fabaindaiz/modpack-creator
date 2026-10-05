@@ -80,6 +80,8 @@ los dos, o una fila mal formada, hace fallar el test. El nombre del método no s
 | `ModpackService.resolve` | editor | Calcula el lock del bundle y guarda la última resolución para mostrarla (nunca es entrada de un build); guarda en el catálogo lo que trajo de Modrinth. No toca ningún servidor. |
 | `ModpackService.mod_list` | editor | Arma la lista de mods del bundle; guarda en el catálogo los proyectos (íconos) que trajo de Modrinth en una llamada por lotes. No toca ningún servidor. |
 | `ModpackService.project_versions` | editor | Lista las versiones que un mod puede fijar; guarda en el catálogo las versiones que trajo de Modrinth. |
+| `ModpackService.mod_page` | editor | Arma la ficha local de un mod (identidad, dónde se usa, versiones del catálogo); guarda en el catálogo los proyectos que trajo de Modrinth en una llamada por lotes. No toca ningún bundle ni servidor. |
+| `ModpackService.mod_versions_all` | editor | Lista todas las versiones de un mod, pedidas a Modrinth sin filtros; las guarda en el catálogo. |
 | `ModpackService.build_create` | editor | Crea un build del bundle. |
 | `ModpackService.build_recommend` | editor | Marca un build como el recomendado. |
 | `ModpackService.replacement_set` | editor | Fija el reemplazo de un mod. |

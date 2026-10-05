@@ -1,0 +1,35 @@
+{# A mod's versions, in #mod-versions: the catalog's (`partial`, with the button to load them all)
+   or all of Modrinth's, which replace it. Modrinth failing is said here, with a retry. #}
+{% import "_macros.html" as ui %}
+<div id="mod-versions" class="space-y-2" aria-live="polite">
+  {% set load_all = {"hx-get": "/mods/" ~ project_id ~ "/versiones", "hx-target": "#mod-versions", "hx-swap": "outerHTML"} %}
+  {% if failure %}
+  <div class="flex flex-wrap items-center gap-2 text-sm text-amber-800 dark:text-amber-300" role="alert">
+    <span>{{ failure }}</span>
+    {{ ui.button("Reintentar", kind="secondary", small=True, attrs=load_all) }}
+  </div>
+  {% if detail %}<p class="font-mono text-xs break-words text-zinc-500 dark:text-zinc-400">{{ detail }}</p>{% endif %}
+  {% else %}
+  <div class="flex flex-wrap items-center justify-between gap-2">
+    {% if partial %}
+    <p class="text-xs text-zinc-500 dark:text-zinc-400">Lista parcial: las que se bajaron para tus packs, las más nuevas primero (hasta 50).</p>
+    {{ ui.button("Cargar todas desde Modrinth", kind="secondary", small=True, attrs=load_all) }}
+    {% else %}
+    <p class="text-xs text-zinc-500 dark:text-zinc-400">Todas las de Modrinth: {{ versions | length }} versiones, las más nuevas primero.</p>
+    {% endif %}
+  </div>
+  {% call ui.table(["Versión", "Canal", "Publicada", "Minecraft", "Loaders"],
+                   empty="El catálogo no tiene versiones de este mod." if partial else "Modrinth no tiene versiones de este mod.",
+                   caption="Versiones del mod") %}
+  {% for version in versions %}
+  <tr>
+    <td class="font-mono text-xs break-all">{{ version.version_number }}</td>
+    <td>{{ version.channel }}</td>
+    <td class="text-xs">{{ ui.when(version.published) }}</td>
+    <td class="text-xs break-words">{{ version.game_versions | join(", ") }}</td>
+    <td class="text-xs break-words">{{ version.loaders | join(", ") }}</td>
+  </tr>
+  {% endfor %}
+  {% endcall %}
+  {% endif %}
+</div>

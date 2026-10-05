@@ -3,7 +3,7 @@ import logging
 import re
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Sequence
 from pydantic import BaseModel
 from src.database import ModpackDatabase, ModrinthDatabase, PterodactylDatabase
 from src.library.api.client.loaders import LoaderMetaAPI
@@ -14,6 +14,8 @@ from src.services.jobs import NotificationSink
 from src.library.resolution import Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, request_digest, resolve
 from src.model.modpack import AvailableUpdate, UpdateCheck, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject, ModrinthVersion
+from src.model.modrinth.version import ModrinthDependencyType
+from src.model.pterodactyl import PterodactylServer
 from src.model.audit import AuditTarget
 from src.model.users import Actor
 from src.services.audit import AuditSink
@@ -103,6 +105,80 @@ class VersionOption:
     version_number: str
     channel: str
     published: datetime
+
+
+# How many of a project's catalog versions its page shows; "Cargar todas" asks Modrinth for the rest.
+MOD_PAGE_VERSIONS = 50
+
+
+@dataclass(frozen=True)
+class ModUse:
+    """A pack that uses a mod (spec §2, "dónde se usa"): as one of its projects (`origin` "admin" or
+    "pack") or as a dependency its saved resolution brought in (`origin` None, `dependency_of` the
+    titles of who asked for it), with the recommended and latest builds that include the mod, as
+    (build number, version number); None when that build does not include it or there is none."""
+    bundle_id: str
+    bundle_name: str
+    origin: Optional[str]
+    dependency_of: list[str]
+    recommended: Optional[tuple[int, str]]
+    latest: Optional[tuple[int, str]]
+
+
+@dataclass(frozen=True)
+class ServerUse:
+    """A server whose latest scan identified the mod; `version` is the version number, None when the
+    catalog does not know the identified version."""
+    server_id: str
+    server_name: str
+    version: Optional[str]
+    scanned_at: datetime
+
+
+@dataclass(frozen=True)
+class VersionRow:
+    version_id: str
+    version_number: str
+    channel: str
+    published: datetime
+    game_versions: list[str]
+    loaders: list[str]
+
+
+@dataclass
+class ModPage:
+    """What a mod's local page shows: the project, where it is used, and its versions from the
+    catalog (newest first, at most MOD_PAGE_VERSIONS; `versions_partial` says they are only the ones
+    fetched for the packs, not all of Modrinth's). `dependencies` are the projects its catalog versions
+    require; `titles` names them and every other project the page names (the id when unknown)."""
+    project: ModrinthProject
+    uses: list[ModUse]
+    servers: list[ServerUse]
+    versions: list[VersionRow]
+    versions_partial: bool
+    titles: dict[str, str]
+    dependencies: list[str] = field(default_factory=list)
+
+
+@dataclass
+class _ModLocal:
+    """What MongoDB says about a project, read before asking Modrinth anything (mod_page)."""
+    versions: list[ModrinthVersion]
+    dependencies: list[str]
+    bundles: list[ModpackBundle]
+    # Bundle id -> the ids of the projects that asked for the mod, in the bundle's saved resolution.
+    requested: dict[str, list[str]]
+    # (bundle id, build number) -> version number of the mod in that build.
+    in_builds: dict[tuple[str, int], str]
+    # (server, scanned at, identified version id), by server name.
+    servers: list[tuple[PterodactylServer, datetime, Optional[str]]]
+    numbers: dict[str, str]
+
+
+def _version_row(version: ModrinthVersion) -> VersionRow:
+    return VersionRow(version_id=version.version_id, version_number=version.version_number,
+                      channel=version.version_type.value, published=version.date_published,
+                      game_versions=list(version.game_versions), loaders=list(version.loaders))
 
 
 class ModpackService():
@@ -344,6 +420,130 @@ class ModpackService():
         allowed.sort(key=lambda v: v.date_published, reverse=True)
         return [VersionOption(version_id=v.version_id, version_number=v.version_number,
                               channel=v.version_type.value, published=v.date_published) for v in allowed]
+
+    # A mod's local page (spec §2, "Ficha local de cada mod").
+
+    async def mod_page(self, project_id: str, named: Sequence[str] = ()) -> ModPage:
+        """
+        Everything a mod's page shows: the project, the packs that use it (as a project or as a
+        dependency of their saved resolution, with their recommended and latest builds that include
+        it), the servers whose latest scan identified it, and its versions from the catalog. Never
+        waits for Modrinth for the versions.
+
+        Modrinth is asked at most once, within `icon_deadline`, for every project the page names that
+        the catalog lacks (or has without an icon): its dependencies, who asked for it and `named`
+        (e.g. the mod the panel came from). A stored project is filled best effort: Modrinth failing
+        leaves those names as ids. A project the catalog does not have is fetched with them in a call
+        whose failure is raised (UpstreamError, TimeoutError): the panel shows it with a retry. Writes
+        the catalog.
+
+        :param project_id: A Modrinth project id, or a slug.
+        :param named: More project ids whose titles the page shows.
+        :return: The page; 404 if the id is not a Modrinth id or Modrinth does not know the project.
+        """
+        if not MODRINTH_ID.fullmatch(project_id):
+            raise HTTP_404_NOT_FOUND(f"«{project_id}» no es un id de Modrinth")
+        stored = await self.modrinthDB.project_find_by_ref(project_id)
+        key = stored.project_id if stored is not None else project_id
+        local = await self._mod_local(key)
+        others = [i for i in dict.fromkeys([*local.dependencies, *(r for ids in local.requested.values() for r in ids),
+                                            *named]) if i != key]
+        if stored is not None:
+            catalog = await fill_catalog(self.modrinthDB, self.modrinthAPI, [key, *others], self.icon_deadline)
+            project = catalog.get(key, stored)
+        else:
+            known = {p.project_id: p for p in await self.modrinthDB.project_find_by_modrinth_id(others)}
+            missing = [i for i in others if i not in known or not known[i].icon_url]
+            fetched = list(await asyncio.wait_for(self.modrinthAPI.project_get_many([key, *missing]),
+                                                  self.icon_deadline))
+            found = next((p for p in fetched if key in (p.project_id, p.slug)), None)
+            if found is None:
+                raise HTTP_404_NOT_FOUND(f"Modrinth no conoce el mod «{key}»")
+            catalog = {**known, **{p.project_id: p for p in await self.modrinthDB.project_upsert_many(fetched)}}
+            project = catalog[found.project_id]
+            if found.project_id != key:
+                # It was a slug: what MongoDB has about the project is under its id.
+                key = found.project_id
+                local = await self._mod_local(key)
+        return self._mod_page(project, local, catalog, named)
+
+    async def _mod_local(self, project_id: str) -> _ModLocal:
+        """The reads of mod_page, all on MongoDB: the catalog's versions and their required
+        dependencies, the packs that use the project, their builds, and the servers' latest scans."""
+        versions = await self.modrinthDB.version_find_by_project(project_id, MOD_PAGE_VERSIONS)
+        dependencies = list(dict.fromkeys(
+            d.project_id for v in versions for d in v.dependencies
+            if d.dependency_type == ModrinthDependencyType.required and d.project_id and d.project_id != project_id))
+        bundles = {str(b.id): b for b in await self.modpackDB.bundle_find_with_project(project_id)}
+        requested: dict[str, list[str]] = {}
+        for resolution in await self.modpackDB.resolution_find_with_dependency(project_id):
+            owner = str(resolution.bundle_id)
+            requested[owner] = [r for e in resolution.lock.entries if e.project_id == project_id and e.origin is None
+                                for r in e.requested_by]
+        extra = [i for i in requested if i not in bundles]
+        if extra:
+            bundles.update({str(b.id): b for b in await self.modpackDB.bundle_find(extra).to_list()})
+        # As mod_list: a project of the pack is listed as such, never as a dependency too; and a
+        # resolution whose bundle is gone names nobody.
+        requested = {b: ids for b, ids in requested.items()
+                     if b in bundles and all(p.project_id != project_id for p in bundles[b].projects)}
+        wanted = [(b.id, n) for b in bundles.values() if b.id is not None
+                  for n in (b.recommended_build, b.latest_build) if n is not None]
+        in_builds = {(str(build.bundle_id), build.number): e.version_number
+                     for build in await self.modpackDB.build_find_numbers(wanted)
+                     for e in build.lock.entries if e.project_id == project_id}
+        servers: list[tuple[PterodactylServer, datetime, Optional[str]]] = []
+        for server in await self.pterodactylDB.server_find().to_list():
+            scan = await self.pterodactylDB.scan_latest(str(server.id), SCAN_DIRECTORY)
+            hit = next((f for f in scan.files if f.status == "identified" and f.project_id == project_id),
+                       None) if scan else None
+            if scan is not None and hit is not None:
+                servers.append((server, scan.scanned_at, hit.version_id))
+        servers.sort(key=lambda s: (s[0].name.casefold(), str(s[0].id)))
+        identified = [v for _, _, v in servers if v]
+        numbers = {v.version_id: v.version_number for v in await self.modrinthDB.version_find_by_version_ids(identified)}
+        return _ModLocal(versions=versions, dependencies=dependencies, bundles=list(bundles.values()),
+                         requested=requested, in_builds=in_builds, servers=servers, numbers=numbers)
+
+    @staticmethod
+    def _mod_page(project: ModrinthProject, local: _ModLocal, catalog: dict[str, ModrinthProject],
+                  named: Sequence[str]) -> ModPage:
+        def title(project_id: str) -> str:
+            return catalog[project_id].title if project_id in catalog else project_id
+
+        def built(bundle_id: str, number: Optional[int]) -> Optional[tuple[int, str]]:
+            version = local.in_builds.get((bundle_id, number)) if number is not None else None
+            return (number, version) if number is not None and version is not None else None
+
+        uses: list[ModUse] = []
+        for bundle in sorted(local.bundles, key=lambda b: (b.name.casefold(), str(b.id))):
+            bundle_id = str(bundle.id)
+            origin = next((p.origin.value for p in bundle.projects if p.project_id == project.project_id), None)
+            uses.append(ModUse(bundle_id=bundle_id, bundle_name=bundle.name, origin=origin,
+                               dependency_of=[title(r) for r in local.requested.get(bundle_id, [])],
+                               recommended=built(bundle_id, bundle.recommended_build),
+                               latest=built(bundle_id, bundle.latest_build)))
+        servers = [ServerUse(server_id=str(server.id), server_name=server.name,
+                             version=local.numbers.get(version_id) if version_id else None, scanned_at=scanned_at)
+                   for server, scanned_at, version_id in local.servers]
+        shown = [project.project_id, *local.dependencies, *named]
+        return ModPage(project=project, uses=uses, servers=servers,
+                       versions=[_version_row(v) for v in local.versions], versions_partial=True,
+                       titles={i: title(i) for i in shown}, dependencies=local.dependencies)
+
+    async def mod_versions_all(self, project_id: str) -> list[VersionRow]:
+        """
+        Every version Modrinth has of a project, newest first: asked without filters within
+        `icon_deadline`, and stored in the catalog. Modrinth failing or not answering is raised
+        (UpstreamError, TimeoutError). 404 for an id that is not a Modrinth id. Writes the catalog.
+        """
+        if not MODRINTH_ID.fullmatch(project_id):
+            raise HTTP_404_NOT_FOUND(f"«{project_id}» no es un id de Modrinth")
+        found = list(await asyncio.wait_for(self.modrinthAPI.project_versions(project_id), self.icon_deadline))
+        if found:
+            await self.modrinthDB.version_upsert_many(found)
+        found.sort(key=lambda v: v.date_published, reverse=True)
+        return [_version_row(v) for v in found]
 
     # Resolution (i-7985ee-7f735a).
 

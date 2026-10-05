@@ -2,12 +2,14 @@ from fastapi import FastAPI
 import src.routers.web.activity as activity
 import src.routers.web.home as home
 import src.routers.web.modpacks as modpacks
+import src.routers.web.mods as mods
 import src.routers.web.servers as servers
 from src.web import LoginRequired, login_required_handler
 
 WEB_MODULES = [
     home,
     modpacks,
+    mods,
     servers,
     activity,
 ]

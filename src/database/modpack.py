@@ -29,6 +29,10 @@ class ModpackDatabase():
             query = query.find(In(ModpackBundle.id, (PydanticObjectId(id) for id in bundle_ids)))
         return query
 
+    async def bundle_find_with_project(self, project_id: str) -> list[ModpackBundle]:
+        """The bundles that have this Modrinth project among their projects (any origin)."""
+        return await ModpackBundle.find({"projects.project_id": project_id}).to_list()
+
     async def bundle_get(self, bundle_id: str) -> ModpackBundle:
         """
         Get a single modpack bundle by its ID.
@@ -194,6 +198,13 @@ class ModpackDatabase():
         builds = await ModpackBuild.find({"$or": wanted}).to_list()
         return {build.bundle_id: build for build in builds}
 
+    async def build_find_numbers(self, wanted: Iterable[tuple[PydanticObjectId, int]]) -> list[ModpackBuild]:
+        """The builds with these (bundle id, number) pairs, in one query; one that does not exist is absent."""
+        keys = [{"bundle_id": bundle_id, "number": number} for bundle_id, number in dict.fromkeys(wanted)]
+        if not keys:
+            return []
+        return await ModpackBuild.find({"$or": keys}).to_list()
+
     async def build_get(self, bundle_id: str, number: int) -> ModpackBuild:
         build = await ModpackBuild.find_one(ModpackBuild.bundle_id == self._bundle_oid(bundle_id),
                                             ModpackBuild.number == number)
@@ -219,6 +230,12 @@ class ModpackDatabase():
     async def resolution_get(self, bundle_id: PydanticObjectId) -> Optional[ModpackResolution]:
         """A bundle's latest resolution; None if it was never resolved."""
         return await ModpackResolution.find_one(ModpackResolution.bundle_id == bundle_id)
+
+    async def resolution_find_with_dependency(self, project_id: str) -> list[ModpackResolution]:
+        """The saved resolutions that brought this project in as a dependency: an entry of it without
+        an origin (one with an origin was asked for by the pack)."""
+        return await ModpackResolution.find(
+            {"lock.entries": {"$elemMatch": {"project_id": project_id, "origin": None}}}).to_list()
 
     @staticmethod
     def _bundle_oid(bundle_id: str) -> PydanticObjectId:

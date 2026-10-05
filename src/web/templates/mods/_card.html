@@ -1,0 +1,107 @@
+{# A mod's card (spec §2): who it is and where it is used. Shared by its page and by the side panel
+   (`compact`); the versions are the page's alone. Everything from Modrinth is escaped; `icon` and
+   `https_url` only let through URLs that may be shown (an icon from Modrinth's CDN, an https link).
+   Mod names are plain text here: a later change turns them into links to their cards. #}
+{% import "_macros.html" as ui %}
+{% set LINK = "font-medium text-emerald-700 hover:underline dark:text-emerald-300" %}
+{% set TYPES = {"mod": "Mod", "modpack": "Modpack", "resourcepack": "Paquete de recursos", "shader": "Shader"} %}
+{% set project = page.project %}
+{% set image = icon(project.icon_url) %}
+{% set side = side_label(project.environment) %}
+<article class="space-y-4" data-mod-card="{{ project.project_id }}">
+  <header class="flex items-start gap-3">
+    {% if image %}
+    <img src="{{ image }}" alt="" width="64" height="64" class="{{ 'size-12' if compact else 'size-16' }} shrink-0 rounded-lg bg-zinc-100 object-cover dark:bg-zinc-800">
+    {% else %}
+    <div class="{{ 'size-12' if compact else 'size-16' }} shrink-0 rounded-lg bg-zinc-100 dark:bg-zinc-800" aria-hidden="true"></div>
+    {% endif %}
+    <div class="min-w-0 flex-1 space-y-1">
+      {% if compact %}
+      <h2 class="text-base font-semibold wrap-anywhere">{{ project.title }}</h2>
+      {% else %}
+      <h1 class="text-xl font-semibold tracking-tight wrap-anywhere">{{ project.title }}</h1>
+      {% endif %}
+      <div class="flex flex-wrap gap-1">
+        {{ ui.badge(TYPES.get(project.project_type.value, project.project_type.value)) }}
+        {% if side %}{{ ui.badge(side, "info", title="El lado según Modrinth") }}{% endif %}
+      </div>
+    </div>
+  </header>
+
+  {% if project.description %}<p class="text-sm break-words text-zinc-700 dark:text-zinc-300">{{ project.description }}</p>{% endif %}
+  {% if project.categories %}
+  <div class="flex flex-wrap gap-1">{% for category in project.categories %}{{ ui.badge(category) }}{% endfor %}</div>
+  {% endif %}
+
+  <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
+    <dt class="font-medium">Lado</dt>
+    <dd class="break-words">{{ side if side else "Modrinth no lo dice" }}</dd>
+    <dt class="font-medium">Loaders</dt>
+    <dd class="break-words">{{ project.loaders | join(", ") if project.loaders else "—" }}</dd>
+    <dt class="font-medium">Minecraft</dt>
+    <dd class="break-words">
+      {%- set shown = 8 if compact else 16 %}
+      {%- if project.game_versions %}{% if project.game_versions | length > shown %}…, {% endif %}{{ project.game_versions[-shown:] | join(", ") }}{% else %}—{% endif -%}
+    </dd>
+    <dt class="font-medium">Descargas</dt>
+    <dd class="tabular-nums">{{ downloads(project.downloads) }}</dd>
+    {% if page.dependencies %}
+    <dt class="font-medium">Dependencias</dt>
+    <dd class="break-words">{% for dependency in page.dependencies %}{{ page.titles.get(dependency, dependency) }}{% if not loop.last %}, {% endif %}{% endfor %}</dd>
+    {% endif %}
+  </dl>
+
+  <p class="flex flex-wrap gap-x-3 gap-y-1 text-xs">
+    <a href="https://modrinth.com/project/{{ project.project_id }}" target="_blank" rel="noopener noreferrer" class="{{ LINK }}">Modrinth</a>
+    {% if https_url(project.source_url) %}<a href="{{ https_url(project.source_url) }}" target="_blank" rel="noopener noreferrer" class="{{ LINK }}">Código</a>{% endif %}
+    {% if https_url(project.issues_url) %}<a href="{{ https_url(project.issues_url) }}" target="_blank" rel="noopener noreferrer" class="{{ LINK }}">Issues</a>{% endif %}
+  </p>
+
+  <section class="space-y-2" aria-labelledby="uses-{{ "panel-" if compact else "" }}{{ project.project_id }}">
+    <h3 id="uses-{{ "panel-" if compact else "" }}{{ project.project_id }}" class="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Dónde se usa</h3>
+    {% if page.uses %}
+    <ul class="divide-y divide-zinc-100 rounded-lg border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+      {% for use in page.uses %}
+      <li class="space-y-1 px-3 py-2">
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <a href="/modpacks/{{ use.bundle_id }}" class="{{ LINK }} wrap-anywhere">{{ use.bundle_name }}</a>
+          {% if use.origin == "admin" %}{{ ui.badge("agregado") }}{% elif use.origin == "pack" %}{{ ui.badge("del .mrpack") }}{% endif %}
+        </div>
+        {% if use.origin is none %}
+        <p class="text-xs break-words text-zinc-500 dark:text-zinc-400">dependencia de {{ use.dependency_of | join(", ") if use.dependency_of else "otro mod" }}</p>
+        {% endif %}
+        {% if use.recommended or use.latest %}
+        <p class="text-xs break-words text-zinc-600 dark:text-zinc-400">
+          <a href="/modpacks/{{ use.bundle_id }}#builds-section" class="hover:underline">
+          {%- if use.recommended and use.latest and use.recommended == use.latest -%}
+            #{{ use.recommended[0] }} recomendado y último, {{ use.recommended[1] }}
+          {%- else -%}
+            {%- if use.recommended %}#{{ use.recommended[0] }} recomendado, {{ use.recommended[1] }}{% endif %}
+            {%- if use.recommended and use.latest %} · {% endif %}
+            {%- if use.latest %}#{{ use.latest[0] }} último, {{ use.latest[1] }}{% endif %}
+          {%- endif -%}
+          </a>
+        </p>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-zinc-500 dark:text-zinc-400">Ningún modpack lo usa.</p>
+    {% endif %}
+
+    {% if page.servers %}
+    <ul class="divide-y divide-zinc-100 rounded-lg border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+      {% for server in page.servers %}
+      <li class="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2">
+        <a href="/servers/{{ server.server_id }}" class="{{ LINK }} wrap-anywhere">{{ server.server_name }}</a>
+        {% if server.version %}<span class="font-mono text-xs break-all text-zinc-600 dark:text-zinc-400">{{ server.version }}</span>{% endif %}
+        <span class="text-xs text-zinc-500 dark:text-zinc-400">escaneado {{ ui.when(server.scanned_at) }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="text-sm text-zinc-500 dark:text-zinc-400">Ningún servidor lo tiene en su último escaneo.</p>
+    {% endif %}
+  </section>
+</article>

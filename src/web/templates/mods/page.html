@@ -1,0 +1,18 @@
+{# A mod's page (spec §2): its card and its versions. Modrinth not answering (asked only when the
+   catalog lacks the project) is a notice with a retry. #}
+{% extends "base.html" %}
+{% block title %}{{ page.project.title if page else "Mod" }}{% endblock %}
+
+{% block content %}
+{% if failure %}
+{{ ui.page_header("No se pudo mostrar el mod") }}
+{{ ui.notice(failure, "error", detail=detail) }}
+<p>{{ ui.link_button("Reintentar", "/mods/" ~ project_id) }}</p>
+{% else %}
+{% set compact = False %}
+{% include "mods/_card.html" %}
+{% call ui.section("Versiones conocidas") %}
+{% with versions=page.versions, partial=page.versions_partial %}{% include "mods/_versions.html" %}{% endwith %}
+{% endcall %}
+{% endif %}
+{% endblock %}
