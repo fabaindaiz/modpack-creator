@@ -282,10 +282,14 @@ async def server_import_confirm(
         project_id: Annotated[str, Form(min_length=1, max_length=200, pattern=MODRINTH_REF)],
         actor: Actor = Depends(get_web_actor),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
+        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         ):
-    """The admin says a jar is this Modrinth project."""
+    """The admin says a jar is this Modrinth project. Its row names it by title, as a link to its
+    card (one catalog fill)."""
     await pterodactylService.import_confirm(server_id, path, project_id, actor)
-    return render(request, "servers/_import_done.html", actor, path=path, what="project", project_id=project_id)
+    titles = await _titles(modrinthService, [project_id])
+    return render(request, "servers/_import_done.html", actor, path=path, what="project", project_id=project_id,
+                  title=titles[project_id])
 
 @router.post("/servers/{server_id}/import/local")
 @inject
@@ -298,7 +302,7 @@ async def server_import_local(
         ):
     """The admin keeps a jar as a local file of the bundle."""
     await pterodactylService.import_local(server_id, path, actor)
-    return render(request, "servers/_import_done.html", actor, path=path, what="local", project_id="")
+    return render(request, "servers/_import_done.html", actor, path=path, what="local", project_id="", title="")
 
 @router.get("/servers/{server_id}/update/preview")
 @inject

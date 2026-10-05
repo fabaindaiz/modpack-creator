@@ -1,6 +1,6 @@
-{# The row of an import candidate once the admin decided it. #}
+{# The row of an import candidate once the admin decided it; the project chosen opens its card. #}
 {% import "_macros.html" as ui %}
 <li class="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm dark:border-emerald-500/30 dark:bg-emerald-500/10">
   <span class="font-mono text-xs break-all">{{ path }}</span>
-  {% if what == "project" %}quedó como el proyecto {{ ui.badge(project_id, "accent") }} del modpack.{% else %}se conserva como archivo local del modpack.{% endif %}
+  {% if what == "project" %}quedó como el proyecto {{ ui.mod_link(project_id, title) }} del modpack.{% else %}se conserva como archivo local del modpack.{% endif %}
 </li>

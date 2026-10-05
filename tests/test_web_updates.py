@@ -129,18 +129,23 @@ def reset_overrides() -> Any:
 
 
 def setup(actor: Optional[Actor] = EDITOR) -> tuple[TestClient, FakeModpack, FakeChecks]:
+    client, modpack, checks, _ = setup_all(actor)
+    return client, modpack, checks
+
+
+def setup_all(actor: Optional[Actor] = EDITOR) -> tuple[TestClient, FakeModpack, FakeChecks, FakeModrinth]:
     import main
 
-    modpack, checks = FakeModpack(), FakeChecks()
+    modpack, checks, modrinth = FakeModpack(), FakeChecks(), FakeModrinth()
     main.container.modpackService.override(providers.Object(modpack))
     main.container.updateCheckService.override(providers.Object(checks))
     main.container.jobService.override(providers.Object(FakeJobs()))
     main.container.pterodactylService.override(providers.Object(FakePtero()))
-    main.container.modrinthService.override(providers.Object(FakeModrinth()))
+    main.container.modrinthService.override(providers.Object(modrinth))
     client = TestClient(main.app, base_url="https://testserver", follow_redirects=False)
     if actor is not None:
         client.cookies.set("session", session_cookie(session_for(actor)))
-    return client, modpack, checks
+    return client, modpack, checks, modrinth
 
 
 def test_the_page_without_a_check_invites_to_search() -> None:
@@ -274,11 +279,7 @@ def test_the_dashboard_has_no_badge_when_only_pinned_ones_or_no_check() -> None:
 
 
 def test_every_update_opens_its_card_from_the_pack_with_one_fill() -> None:
-    import main
-
-    client, _, checks = setup()
-    modrinth = FakeModrinth()
-    main.container.modrinthService.override(providers.Object(modrinth))
+    client, _, checks, modrinth = setup_all()
     checks.latest_check = check([update("A", "Sodium"), update("C", "Lithium", pinned=True)])
     text = client.get(f"/modpacks/{BUNDLE_ID}/actualizaciones").text
     for project_id, title in (("A", "Sodium"), ("C", "Lithium")):
@@ -289,11 +290,7 @@ def test_every_update_opens_its_card_from_the_pack_with_one_fill() -> None:
 
 
 def test_the_page_without_updates_does_not_ask_modrinth() -> None:
-    import main
-
-    client, _, checks = setup()
-    modrinth = FakeModrinth()
-    main.container.modrinthService.override(providers.Object(modrinth))
+    client, _, checks, modrinth = setup_all()
     client.get(f"/modpacks/{BUNDLE_ID}/actualizaciones")
     checks.latest_check = check([])
     client.get(f"/modpacks/{BUNDLE_ID}/actualizaciones")

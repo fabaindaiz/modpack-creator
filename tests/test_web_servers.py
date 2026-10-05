@@ -1370,3 +1370,13 @@ def test_the_update_preview_names_open_their_cards_with_one_fill() -> None:
     for project_id in ("P1", "P2", "P3"):
         assert mod_link(project_id) in text
     assert fakes.modrinth.filled == [["P1", "P2", "P3"]]
+
+
+def test_the_confirmed_candidate_opens_its_card_by_title_with_one_fill() -> None:
+    client, fakes = setup(OPERATOR)
+    response = client.post(f"/servers/{SERVER_ID}/import/confirm", headers=HTMX,
+                           data={"path": "/mods/odd.jar", "project_id": "C1"})
+    assert response.status_code == 200
+    assert mod_link("C1") + ' hx-target="#mod-drawer-body"' in response.text
+    assert ">Odd Mod Project</a>" in response.text and ">C1<" not in response.text
+    assert fakes.modrinth.filled == [["C1"]]
