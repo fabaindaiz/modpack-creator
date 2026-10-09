@@ -86,6 +86,8 @@ class ModpackBundle(Document):
 
     # Build pointers (i-7985ee-098611): latest follows the newest build; recommended moves only
     # when the admin moves it, and going back is moving it to an older build.
+    # When its Modrinth information was last compared with Modrinth (spec 2026-10-09-economia-de-requests, E1).
+    modrinth_checked_at: Optional[datetime] = None
     latest_build: Optional[int] = None
     recommended_build: Optional[int] = None
 

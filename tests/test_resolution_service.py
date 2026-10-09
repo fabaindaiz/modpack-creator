@@ -41,9 +41,10 @@ def test_resolving_a_bundle_fetches_what_the_lock_needs_and_stores_it(mongo: Mon
 
     chosen, calls, stored = mongo(scenario)
     assert chosen[SODIUM] == "bAZQdGpg"
-    # Iris: su tipo y sus versiones para 26.3 y fabric. Después, la versión exacta de Sodium que
+    # Iris: su tipo ya está en el catálogo (lo guardó project_add), así que solo sus versiones para
+    # 26.3 y fabric (spec 2026-10-09-economia-de-requests). Después, la versión exacta de Sodium que
     # fija, y el proyecto Sodium solo para saber su tipo, sin traer todas sus versiones.
-    assert calls == [("project_get_many", (IRIS,)), ("project_versions", (IRIS, ("fabric",), ("26.3",))),
+    assert calls == [("project_versions", (IRIS, ("fabric",), ("26.3",))),
                      ("version_get_many", ("bAZQdGpg",)), ("project_get_many", (SODIUM,))]
     assert {chosen[IRIS], "bAZQdGpg"} <= stored
 

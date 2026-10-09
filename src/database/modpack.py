@@ -1,6 +1,7 @@
 from beanie import PydanticObjectId, SortDirection
 from beanie.operators import In
 from beanie.odm.documents import FindMany, DeleteResult
+from datetime import datetime
 from typing import Any, Iterable, Optional
 from pymongo.errors import DuplicateKeyError
 from src.library.scan import ClaimedFile, LocalFile
@@ -233,6 +234,10 @@ class ModpackDatabase():
         if not result.matched_count:
             raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' not found")
         return (await self.bundle_get(bundle_id)).projects
+
+    async def bundle_checked_at_set(self, bundle_id: str, when: datetime) -> None:
+        """Mark the pack's Modrinth information as compared with Modrinth at `when`."""
+        await self._bundle_key(bundle_id, {"$set": {"modrinth_checked_at": when}})
 
     async def bundle_latest_build(self, bundle_id: str, number: int) -> None:
         """Move the latest pointer forward to `number`; never back ($max)."""

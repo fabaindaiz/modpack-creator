@@ -1,7 +1,8 @@
 import asyncio
 import logging
 import re
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 from typing import Optional, Sequence
 from pydantic import BaseModel
@@ -13,7 +14,7 @@ from src.library.mrpack import mrpack_index, write_mrpack
 from src.services.jobs import NotificationSink
 from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, request_digest, resolve
 from src.model.modpack import BUNDLE_KEYED_FIELDS, AvailableUpdate, UpdateCheck, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, ProjectOrigin
-from src.model.modrinth import ModrinthProject, ModrinthVersion
+from src.model.modrinth import ModrinthProject, ModrinthVersion, ModrinthVersionList
 from src.model.modrinth.version import ModrinthDependencyType
 from src.model.pterodactyl import PterodactylServer
 from src.model.audit import AuditTarget
@@ -26,12 +27,19 @@ from src.exceptions import *
 # Each round fetches what the lock needs; a dependency chain deeper than this is reported as an
 # incomplete lock instead of fetching forever.
 RESOLVE_ROUNDS = 32
+# A pack's Modrinth information is checked at most this often (E1); a build always checks (E2).
+CATALOG_WINDOW = timedelta(minutes=5)
+# How many ids go in one Modrinth request.
+ID_CHUNK = 100
 # What a Modrinth project id looks like; anything else is not a key to store.
 MODRINTH_ID = re.compile(r"[A-Za-z0-9_-]+")
 # One request decides at most this many mods: a bigger one is a mistake or abuse.
 MAX_DECISIONS = 500
 # Fields of a bundle that a patch may leave out but never set to null: the bundle would not load.
 BUNDLE_NOT_NULL = ("name", "description", "version", "loader", "channels", *BUNDLE_KEYED_FIELDS)
+
+def _chunks(ids: Sequence[str]) -> list[list[str]]:
+    return [list(ids[i:i + ID_CHUNK]) for i in range(0, len(ids), ID_CHUNK)]
 
 def candidate(version: ModrinthVersion) -> Candidate:
     return Candidate.from_modrinth({**version.model_dump(mode="json"), "id": version.version_id})
@@ -239,7 +247,9 @@ class ModpackService():
             pterodactylDB: Optional[PterodactylDatabase] = None,
             changelog_deadline: float = CHANGELOG_DEADLINE,
             icon_deadline: float = FILL_DEADLINE,
+            clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
             ) -> None:
+        self.clock = clock
         self.pterodactylDB = pterodactylDB or PterodactylDatabase()
         self.changelog_deadline = changelog_deadline
         self.icon_deadline = icon_deadline
@@ -710,8 +720,28 @@ class ModpackService():
         """
         bundle = await self.modpackDB.bundle_get(bundle_id)
         request = await self._request(bundle)
-        lock = await self._resolve(request)
+        lock = await self._resolve_checked(bundle, request, check=self._stale(bundle))
         await self._resolution_save(bundle, request, lock)
+        return lock
+
+    def _stale(self, bundle: ModpackBundle) -> bool:
+        """Whether the pack's Modrinth information is past the window (E1): never checked, or longer ago."""
+        checked = bundle.modrinth_checked_at
+        if checked is not None and checked.tzinfo is None:
+            checked = checked.replace(tzinfo=timezone.utc)
+        return checked is None or self.clock() - checked >= CATALOG_WINDOW
+
+    async def _resolve_checked(self, bundle: ModpackBundle, request: ResolveRequest, check: bool) -> Lock:
+        """Resolve; with `check`, what the catalog has of the pack is compared with Modrinth first
+        and the pack is marked checked now."""
+        prior: list[str] = []
+        if check and bundle.id is not None:
+            saved = await self.modpackDB.resolution_get(bundle.id)
+            prior = list(dict.fromkeys([*request.projects, *(e.project_id for e in saved.lock.entries)] if saved
+                                       else request.projects))
+        lock = await self._resolve(request, check=check, prior=prior)
+        if check:
+            await self.modpackDB.bundle_checked_at_set(str(bundle.id), self.clock())
         return lock
 
     async def resolution(self, bundle_id: str) -> Optional[tuple[ModpackResolution, bool]]:
@@ -742,41 +772,113 @@ class ModpackService():
             pins=bundle.pins, server_decisions=bundle.server_decisions, channel_exceptions=bundle.channel_exceptions,
             replacements=merge_replacements(global_rules, bundle.replacements))
 
-    async def _resolve(self, request: ResolveRequest) -> Lock:
+    async def _resolve(self, request: ResolveRequest, check: bool = False, prior: Sequence[str] = ()) -> Lock:
+        """
+        Resolve from the catalog, asking Modrinth only for what it lacks (spec 2026-10-09-economia-de-
+        requests, F2). With `check`, every project the catalog already accounts for is compared
+        with Modrinth before it is used: the `prior` ones at once, the rest as resolution reaches
+        them, each batch in one request for the projects and one for their new versions. Whatever
+        is fetched is stored as it arrives: a failure halfway keeps it.
+        """
         catalog = Catalog()
+        checked: set[str] = set()
+        if check and prior:
+            await self._check(list(prior), request.target.game_version, checked)
+        lock = resolve(request, catalog)
         for _ in range(RESOLVE_ROUNDS):
-            lock = resolve(request, catalog)
             if lock.complete:
                 return lock
-            fetched: list[ModrinthVersion] = []
-            await self._fetch_types(catalog, sorted(lock.needs_projects | lock.needs_types))
-            for project_id in sorted(lock.needs_projects):
-                loaders = sorted(request.target.loaders(catalog.types.get(project_id, "mod")))
-                fetched += await self.modrinthAPI.project_versions(project_id, loaders, [request.target.game_version])
-                catalog.by_project.setdefault(project_id, [])
-            if lock.needs_versions:
-                asked = sorted(lock.needs_versions)
-                versions = list(await self.modrinthAPI.version_get_many(asked))
-                catalog.gone |= set(asked) - {v.version_id for v in versions}
-                fetched += versions
-            for version in fetched:
-                catalog.add(candidate(version))
-            if fetched:
-                await self.modrinthDB.version_upsert_many(fetched)
+            await self._load(catalog, lock, request, check, checked)
+            lock = resolve(request, catalog)
         return lock
 
-    async def _fetch_types(self, catalog: Catalog, project_ids: list[str]) -> None:
-        """Fetch the projects whose type resolution needs, and store them in the catalog. One
-        Modrinth does not return is typed unknown, which resolution reports."""
-        if not project_ids:
+    async def _load(self, catalog: Catalog, lock: Lock, request: ResolveRequest, check: bool, checked: set[str]) -> None:
+        """Put in `catalog` what `lock` needs: from MongoDB when the catalog accounts for it, else
+        from Modrinth (each project's versions for the target, once; projects and versions by id,
+        in batches)."""
+        game_version = request.target.game_version
+        wanted_types = sorted(lock.needs_projects | lock.needs_types)
+        if wanted_types:
+            stored = {p.project_id: p for p in await self.modrinthDB.project_find_by_modrinth_id(wanted_types)}
+            missing = [i for i in wanted_types if i not in stored]
+            fetched = {p.project_id: p for p in await self._projects_fetch(missing)} if missing else {}
+            for project_id in wanted_types:
+                found = fetched.get(project_id) or stored.get(project_id)
+                catalog.types[project_id] = found.project_type.value if found else "unknown"
+        if lock.needs_projects:
+            needed = sorted(lock.needs_projects)
+            if check:
+                await self._check([i for i in needed if i not in checked], game_version, checked)
+            records = {(r.project_id, tuple(r.loaders)): r
+                       for r in await self.modrinthDB.version_lists_find(needed, game_version)}
+            for project_id in needed:
+                loaders = sorted(request.target.loaders(catalog.types.get(project_id, "mod")))
+                record = records.get((project_id, tuple(loaders)))
+                if record is not None:
+                    versions = await self.modrinthDB.version_find_listed(project_id, record.version_ids)
+                else:
+                    versions = await self._versions_fetch(project_id, loaders, game_version)
+                    checked.add(project_id)
+                catalog.by_project.setdefault(project_id, [])
+                for version in versions:
+                    if game_version in version.game_versions and set(loaders) & set(version.loaders):
+                        catalog.add(candidate(version))
+        if lock.needs_versions:
+            asked = sorted(lock.needs_versions)
+            stored_versions = await self.modrinthDB.version_find_by_version_ids(asked)
+            missing_ids = sorted(set(asked) - {v.version_id for v in stored_versions})
+            fetched_versions: list[ModrinthVersion] = []
+            for chunk in _chunks(missing_ids):
+                fetched_versions += list(await self.modrinthAPI.version_get_many(chunk))
+            if fetched_versions:
+                await self.modrinthDB.version_upsert_many(fetched_versions)
+            catalog.gone |= set(missing_ids) - {v.version_id for v in fetched_versions}
+            for version in [*stored_versions, *fetched_versions]:
+                catalog.add(candidate(version))
+
+    async def _versions_fetch(self, project_id: str, loaders: list[str], game_version: str) -> list[ModrinthVersion]:
+        """A project's versions for a target, from Modrinth (the first time only), stored at once with
+        the list of ids the project names now."""
+        versions = list(await self.modrinthAPI.project_versions(project_id, loaders, [game_version]))
+        if versions:
+            await self.modrinthDB.version_upsert_many(versions)
+        stored = await self.modrinthDB.project_find_by_modrinth_id([project_id])
+        listed = set(stored[0].versions) if stored else set()
+        await self.modrinthDB.version_list_save(ModrinthVersionList(
+            project_id=project_id, game_version=game_version, loaders=loaders,
+            version_ids=sorted(listed | {v.version_id for v in versions}), fetched_at=self.clock()))
+        return versions
+
+    async def _projects_fetch(self, project_ids: list[str]) -> list[ModrinthProject]:
+        """Projects from Modrinth, in batches, stored."""
+        found: list[ModrinthProject] = []
+        for chunk in _chunks(project_ids):
+            found += list(await self.modrinthAPI.project_get_many(chunk))
+        if found:
+            await self.modrinthDB.project_upsert_many(found)
+        return found
+
+    async def _check(self, project_ids: list[str], game_version: str, checked: set[str]) -> None:
+        """Compare what the catalog accounts for of these projects with what Modrinth lists now: one
+        request for the projects (by batch), one for the versions it lists that the catalog lacks.
+        A version it no longer lists stops being used. Projects without a list are left to fetch."""
+        records = await self.modrinthDB.version_lists_find(project_ids, game_version)
+        known = sorted({r.project_id for r in records})
+        checked.update(project_ids)
+        if not known:
             return
-        projects = list(await self.modrinthAPI.project_get_many(project_ids))
-        for project in projects:
-            catalog.types[project.project_id] = project.project_type.value
-        for project_id in set(project_ids) - {p.project_id for p in projects}:
-            catalog.types[project_id] = "unknown"
-        if projects:
-            await self.modrinthDB.project_upsert_many(projects)
+        current = {p.project_id: set(p.versions) for p in await self._projects_fetch(known)}
+        new_ids = sorted({i for r in records for i in current.get(r.project_id, set()) - set(r.version_ids)})
+        fetched: list[ModrinthVersion] = []
+        for chunk in _chunks(new_ids):
+            fetched += list(await self.modrinthAPI.version_get_many(chunk))
+        if fetched:
+            await self.modrinthDB.version_upsert_many(fetched)
+        for record in records:
+            listed = current.get(record.project_id, set())
+            record.version_ids = sorted(listed)
+            record.fetched_at = self.clock()
+            await self.modrinthDB.version_list_save(record)
 
     # Builds (i-7985ee-098611).
 
@@ -791,7 +893,7 @@ class ModpackService():
         """
         bundle = await self.modpackDB.bundle_get(bundle_id)
         request = await self._request(bundle)
-        lock = await self._resolve(request)
+        lock = await self._resolve_checked(bundle, request, check=True)
         await self._resolution_save(bundle, request, lock)
         if not lock.complete or lock.problems or lock.undecided:
             reasons = [p.detail for p in lock.problems]

@@ -8,6 +8,7 @@ from typing import Iterable, Optional
 from src.model.modrinth import (
     ModrinthProject,
     ModrinthVersion,
+    ModrinthVersionList,
 )
 from src.exceptions import *
 
@@ -147,6 +148,26 @@ class ModrinthDatabase():
             return []
         return await ModrinthVersion.find(In(ModrinthVersion.project_id, project_ids),
                                           ModrinthVersion.game_versions == game_version).to_list()
+
+    async def version_lists_find(self, project_ids: list[str], game_version: str) -> list[ModrinthVersionList]:
+        """The version lists of these projects for this Minecraft version, any loaders."""
+        if not project_ids:
+            return []
+        return await ModrinthVersionList.find(In(ModrinthVersionList.project_id, project_ids),
+                                              ModrinthVersionList.game_version == game_version).to_list()
+
+    async def version_list_save(self, record: ModrinthVersionList) -> None:
+        """Store a version list, replacing the one with its project and target."""
+        await ModrinthVersionList.get_pymongo_collection().replace_one(
+            {"project_id": record.project_id, "game_version": record.game_version, "loaders": record.loaders},
+            record.model_dump(exclude={"id", "revision_id"}), upsert=True)
+
+    async def version_find_listed(self, project_id: str, version_ids: list[str]) -> list[ModrinthVersion]:
+        """The stored versions of a project among these ids."""
+        if not version_ids:
+            return []
+        return await ModrinthVersion.find(ModrinthVersion.project_id == project_id,
+                                          In(ModrinthVersion.version_id, version_ids)).to_list()
 
     async def version_find_by_project(self, project_id: str, limit: int) -> list[ModrinthVersion]:
         """The stored versions of a project, newest first, at most `limit` (by the project_id index)."""
