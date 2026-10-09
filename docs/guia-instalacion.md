@@ -5,7 +5,7 @@ dueño, en el servidor. Si el servidor **ya corría** una versión anterior, no 
 primero [`runbooks/migrar-mongo-a-volumen.md`](runbooks/migrar-mongo-a-volumen.md) y después
 [`runbooks/desplegar-panel.md`](runbooks/desplegar-panel.md).
 
-Versión de esta guía: **0.1.0** (2026-10-05). Este primer release es **de solo lectura**: arma
+Versión de esta guía: **0.2.0** (2026-10-09). Como el primero, este release es **de solo lectura**: arma
 modpacks, escanea servidores y compara, pero no escribe en ningún servidor de juego hasta que se
 habilite a propósito (paso 10).
 
@@ -38,7 +38,7 @@ navegador ──https──▶ proxy inverso ──http (LAN)──▶ API :8000
 ```bash
 git clone <url del repositorio> modpack-creator
 cd modpack-creator
-git checkout v0.1.0
+git checkout v0.2.0
 ```
 
 ## 2. authentik
@@ -229,7 +229,7 @@ en dar 200.
    curl -s -o /dev/null -w '%{http_code}\n' https://panel.example/health/ready     # 200
    ```
 
-2. La versión que corre aparece en `https://panel.example/docs` (`0.1.0+<commit>`).
+2. La versión que corre aparece en `https://panel.example/docs` (`0.2.0+<commit>`).
 3. **Un login con una cuenta fuera de los grupos** termina en un 403 ("is not allowed to use this
    API"), y no queda sesión.
 4. **Un login de editor** ve deshabilitados los botones de operador.
