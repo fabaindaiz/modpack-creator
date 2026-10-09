@@ -87,6 +87,8 @@ riesgo del reescaneo sembrado, que queda para decidir (roadmap):
   chequeo ahora los ignora. Terminó en 138 capturas y 0 problemas.
 - **Sin verificar:** A1 contra un panel real; la subida en lote contra un proxy real (el tope de
   90 MB es un supuesto).
+- **Cierre:** a pedido del dueño, `main` avanzó por fast-forward (con `docs/deploy-fixes`, la rama
+  reaplicada encima sin conflictos, gate verde con 1.137 tests) y se empujó a `origin`.
 
 **Fricciones contadas en este registro** (búsqueda, no memoria): la VM de podman de 2 GiB aparece
 en 15 líneas; MongoDB murió 3 veces esta sesión (dos instancias a la vez, o el gate junto a la

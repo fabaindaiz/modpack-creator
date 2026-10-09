@@ -43,11 +43,11 @@ Al cierre de la sesión de usabilidad del panel (2026-10-04 y 2026-10-05; detall
   - la regla de `DOCKER-USER`;
   - el punto de control en solo lectura.
 
-- **Release 0.2.0 (2026-10-09), rama `fix/tester-feedback`, sin mergear ni desplegar:** las
+- **Release 0.2.0 (2026-10-09), en `main` (`8c59781`, empujado); sin tag ni desplegar:** las
   observaciones de un tester, el importador de `.mrpack` y Modrinth, la economía de requests, y de
   los pendientes A1–A6 y U1–U3 (A1 habría bloqueado la primera actualización real). El resto del
   plan sigue en una sesión cloud: `docs/superpowers/plans/2026-10-09-pendientes.md`, «Traspaso».
-- **2026-10-09, rama `fix/tester-feedback`, sin mergear:** las observaciones de un tester
+- **2026-10-09, rama `fix/tester-feedback`, mergeada a `main` con 0.2.0:** las observaciones de un tester
   (i-7985ee-1a6093), el importador de `.mrpack` y Modrinth (i-7985ee-261a79) y la economía de
   requests (i-7985ee-456f19). Pendientes con decisión del dueño: los overrides (i-7985ee-943b5e).
 

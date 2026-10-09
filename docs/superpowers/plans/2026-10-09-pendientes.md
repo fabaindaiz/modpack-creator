@@ -145,8 +145,9 @@ reporte.
 
 El dueño cerró el build 0.2.0 con «lo hecho + U3» y sigue el resto en una sesión cloud.
 
-- **Rama:** `fix/tester-feedback` (sin merge a `main`). Versión `0.2.0` en `pyproject.toml`; el tag
-  `v0.2.0` y el despliegue los hace el dueño.
+- **Rama:** todo está en `main` (fast-forward, empujado el 2026-10-09, con `docs/deploy-fixes`);
+  la sesión cloud parte de `main` en una rama nueva. Versión `0.2.0`; el tag `v0.2.0` y el
+  despliegue los hace el dueño.
 - **Hecho en este build:** A1–A6 (A3 entró con los arreglos de la revisión de cierre), U1–U3. A7 va
   con T3 (M5).
 - **Sigue, en este orden:** T1 con S5 (importar un servidor como trabajo); T4 (revisión de
