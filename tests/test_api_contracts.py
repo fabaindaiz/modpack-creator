@@ -47,6 +47,8 @@ class Seen:
     authorization: str | None
     json: Any = None
     form: dict[str, Any] = field(default_factory=dict)
+    # Every part, repeated names included (a multipart body may carry several `files`).
+    parts: list[tuple[str, Any]] = field(default_factory=list)
 
 
 Reply = Callable[[web.Request, str], Awaitable[web.StreamResponse]]
@@ -78,8 +80,9 @@ async def serve(routes: dict[tuple[str, str], Reply],
             entry.json = await request.json()
         elif request.content_type == "multipart/form-data":
             form = await request.post()
-            entry.form = {k: (v.filename, v.file.read()) if isinstance(v, web.FileField) else v
-                          for k, v in form.items()}
+            entry.parts = [(k, (v.filename, v.file.read()) if isinstance(v, web.FileField) else v)
+                           for k, v in form.items()]
+            entry.form = dict(entry.parts)
         seen.append(entry)
         reply = routes.get((request.method, request.path))
         if reply is None:
@@ -347,6 +350,23 @@ def test_uploading_asks_the_panel_for_a_signed_url_and_posts_the_file_to_wings_w
     assert wings.query == {"token": "jwt", "directory": "/mods"}
     assert wings.form == {"files": ("a+mc26.3.jar", b"jar")}
     assert wings.authorization is None
+    assert result is True
+
+
+def test_uploading_several_files_is_one_signed_url_and_one_post_with_every_file() -> None:
+    # U2 (owner, 2026-10-09): Wings reads every `files` part of one POST (router_server_files.go,
+    # postServerUploadFiles; its upload_limit applies per file) and the token is single-use.
+    routes = {
+        ("GET", "/api/client/servers/abc/files/upload"): signed("/upload/file"),
+        ("POST", "/upload/file"): empty_reply(200),
+    }
+    result, seen = run(routes, lambda base: pterodactyl(base).server_files_upload_many(
+        "abc", "/mods.staging/j", [("a+mc26.3.jar", b"jar a"), ("b.jar", b"jar b")]))
+    assert [(s.method, s.path) for s in seen] == [
+        ("GET", "/api/client/servers/abc/files/upload"), ("POST", "/upload/file")]
+    wings = seen[1]
+    assert wings.query == {"token": "jwt", "directory": "/mods.staging/j"} and wings.authorization is None
+    assert wings.parts == [("files", ("a+mc26.3.jar", b"jar a")), ("files", ("b.jar", b"jar b"))]
     assert result is True
 
 

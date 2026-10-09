@@ -267,27 +267,33 @@ class UpdateService():
             if plan["install"]:
                 await ops.write("mkdir /mods.staging", _never)
                 await ops.write(f"mkdir {staging}", _never)
-            for item in plan["install"]:
-                await ops.write(f"upload {staging}/{item['filename']}", _never)
+            for batch in upload_batches([(i["filename"], i["size"]) for i in plan["install"]], UPLOAD_BATCH_BYTES):
+                await ops.write(f"upload {staging}: {', '.join(name for name, _ in batch)}", _never)
             return {"staging": staging, "files": [i["filename"] for i in plan["install"]]}
         present = {f.name: f.size for f in await self._files_if_any(ident, staging)}
         folder_made = bool(present)
-        for item in plan["install"]:
-            if present.get(item["filename"]) == item["size"]:
-                continue
-            data = await self.downloader.download_file(item["url"])
-            if len(data) != item["size"] or hashlib.sha512(data).hexdigest() != item["sha512"]:
-                raise JobFailed(f"{item['filename']} downloaded from Modrinth does not match the build: no se actualizó")
+        by_name = {item["filename"]: item for item in plan["install"]}
+        missing = [(item["filename"], item["size"]) for item in plan["install"]
+                   if present.get(item["filename"]) != item["size"]]
+        # U2 (owner, 2026-10-09): one signed URL and one POST per batch, never more than
+        # UPLOAD_BATCH_BYTES in memory: each batch is downloaded, verified and uploaded in turn.
+        for batch in upload_batches(missing, UPLOAD_BATCH_BYTES):
+            files: list[tuple[str, bytes]] = []
+            for filename, _ in batch:
+                item = by_name[filename]
+                data = await self.downloader.download_file(item["url"])
+                if len(data) != item["size"] or hashlib.sha512(data).hexdigest() != item["sha512"]:
+                    raise JobFailed(f"{filename} downloaded from Modrinth does not match the build: no se actualizó")
+                files.append((filename, data))
             if not folder_made:
-                # Only now, after the first jar checked out: a bad download writes nothing.
+                # Only now, after the first batch checked out: a bad download writes nothing.
                 await ops.write("mkdir /mods.staging", lambda: self.api.files_create_folder(ident, "/", "mods.staging"))
                 await ops.write(f"mkdir {staging}", lambda: self.api.files_create_folder(ident, "/mods.staging", str(job.id)))
                 folder_made = True
-            filename = item["filename"]
 
-            async def upload(filename: str = filename, data: bytes = data) -> bool:
-                return await self.api.server_files_upload(ident, staging, filename, data)
-            await ops.write(f"upload {staging}/{filename}", upload)
+            async def upload(files: list[tuple[str, bytes]] = files) -> bool:
+                return await self.api.server_files_upload_many(ident, staging, files)
+            await ops.write(f"upload {staging}: {', '.join(name for name, _ in files)}", upload)
         if not ops.dry_run:
             uploaded = {f.name: f.size for f in await self.api.server_files(ident, staging)}
             wrong = [i["filename"] for i in plan["install"] if uploaded.get(i["filename"]) != i["size"]]
@@ -501,3 +507,26 @@ def _verifiable(item: dict[str, Any]) -> None:
 
 async def _never() -> None:
     raise AssertionError("a dry run never writes")
+
+
+# How many bytes go up to staging in one POST (U2). Wings' own upload_limit applies per file; a proxy
+# in front of it may cap a whole request, and 100 MB is what the panel's documented nginx config
+# allows (ASSUMPTION: the owner's proxy is not stricter).
+UPLOAD_BATCH_BYTES = 100 * 1024 * 1024
+
+
+def upload_batches(items: list[tuple[str, int]], limit: int) -> list[list[tuple[str, int]]]:
+    """The jars to upload (name, size) in order, grouped so no batch passes `limit` bytes; a jar
+    bigger than the limit goes alone."""
+    batches: list[list[tuple[str, int]]] = []
+    current: list[tuple[str, int]] = []
+    total = 0
+    for name, size in items:
+        if current and total + size > limit:
+            batches.append(current)
+            current, total = [], 0
+        current.append((name, size))
+        total += size
+    if current:
+        batches.append(current)
+    return batches

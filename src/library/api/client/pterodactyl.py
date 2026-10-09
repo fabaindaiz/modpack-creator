@@ -174,12 +174,19 @@ class PterodactylAPI(HttpAPI):
         return handler.status == 204
 
     async def server_files_upload(self, server_id: str, directory: str, filename: str, fileraw: bytes) -> bool:
+        return await self.server_files_upload_many(server_id, directory, [(filename, fileraw)])
+
+    async def server_files_upload_many(self, server_id: str, directory: str, files: list[tuple[str, bytes]]) -> bool:
+        """Upload several files in one POST to Wings, under one signed URL (U2): Wings reads every
+        `files` part (its upload_limit is per file) and the token is single-use. Two requests for
+        the whole batch instead of two per file."""
         self._require_writes()
         url = await self.server_files_signed_url(server_id, "upload")
         # quote_fields=False: aiohttp otherwise percent-encodes the file name, and Wings keeps it as
         # sent, so a jar named "x+mc26.3.jar" would land as "x%2Bmc26.3.jar".
         form = FormData(quote_fields=False)
-        form.add_field("files", fileraw, filename=filename, content_type="application/octet-stream")
+        for filename, fileraw in files:
+            form.add_field("files", fileraw, filename=filename, content_type="application/octet-stream")
         handler = await self._write(url, query={"directory": directory}, body=form,
                                     session_auth=NO_AUTHORIZE, request=MultiPartRequest())
         return handler.status == 200

@@ -86,7 +86,10 @@ bien escrita. Todas se leyeron en la fuente primaria el 2026-10-01.
   Subir y bajar son dos pasos (`FileUploadController`, `FileController::download`): un GET al panel
   devuelve `{"object": "signed_url", "attributes": {"url": ...}}`, una URL de Wings con un JWT que
   vence en 15 minutos. Wings recibe la subida como multipart, campo `files`, con `directory` en la
-  query (`router_server_files.go`).
+  query (`router_server_files.go`). Lee **todas** las partes `files` de un mismo POST
+  (`postServerUploadFiles`; `upload_limit` se aplica por archivo) y el token es de un solo uso
+  (`IsUniqueRequest`): una tanda de jars son 2 requests (U2, 2026-10-09;
+  `docs/research/2026-10-09-flujo-actualizacion-y-caches.md`, H2).
 
   **Lo que confirma:** `src/library/api/client/pterodactyl.py`, con `tests/test_api_contracts.py`
   (S6). La clave del panel nunca va a la URL de Wings.

@@ -462,3 +462,12 @@ def test_a_retry_after_the_backup_does_not_make_a_second_one(mongo: MongoRunner)
         return stored.status, len(s.panel.backup_list)
 
     assert mongo(scenario) == ("done", 1)
+
+
+def test_jars_go_up_in_batches_that_never_pass_the_limit() -> None:
+    # U2: one signed URL and one POST per batch; a jar bigger than the limit goes alone.
+    from src.services.update import upload_batches
+
+    sizes = [("a", 40), ("b", 50), ("c", 30), ("d", 120), ("e", 10)]
+    batches = upload_batches(sizes, limit=100)
+    assert [[name for name, _ in batch] for batch in batches] == [["a", "b"], ["c"], ["d"], ["e"]]
