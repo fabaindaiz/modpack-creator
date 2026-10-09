@@ -194,6 +194,20 @@ class ModpackDatabase():
         """Remove one project's channel exception, touching only that key."""
         return await self._bundle_key(bundle_id, {"$unset": {f"channel_exceptions.{project_id}": ""}})
 
+    async def bundle_keys_set_missing(self, bundle_id: str, field: str, values: dict[str, Any]) -> dict[str, Any]:
+        """Set each key of a bundle's map (`server_decisions`, `channel_exceptions`) only where it is
+        absent, key by key: a value someone set, even at the same time, is never overwritten. The
+        keys must be plain Modrinth ids. Returns the keys written."""
+        oid = self._bundle_oid(bundle_id)
+        collection = ModpackBundle.get_pymongo_collection()
+        written: dict[str, Any] = {}
+        for key, value in values.items():
+            result = await collection.update_one({"_id": oid, f"{field}.{key}": {"$exists": False}},
+                                                 {"$set": {f"{field}.{key}": value}})
+            if result.modified_count:
+                written[key] = value
+        return written
+
     async def _bundle_key(self, bundle_id: str, update: dict[str, Any]) -> ModpackBundle:
         result = await ModpackBundle.get_pymongo_collection().update_one({"_id": self._bundle_oid(bundle_id)}, update)
         if not result.matched_count:

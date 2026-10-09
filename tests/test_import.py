@@ -17,9 +17,10 @@ from typing import Any
 import pytest
 from fastapi import HTTPException
 
+from src.database.modpack import ModpackDatabase
 from src.model.modpack import ModpackBundle
 from src.model.modrinth import ModrinthProject
-from tests._actors import OPERATOR
+from tests._actors import OPERATOR, RecordingAudit
 from tests._modrinth import FABRIC_API, IRIS
 from tests.conftest import MongoRunner
 from tests.test_server_scan import T0, FakePanel, HashModrinthAPI, build_with_fabric_api, setup, sha1
@@ -52,15 +53,19 @@ class SearchingModrinthAPI(HashModrinthAPI):
                 for p in hits[:limit]]
 
 
-async def linked_server(files: dict[str, bytes]) -> tuple[Any, str, str]:
-    """Un servidor asociado a un bundle con Fabric API, escaneado con estos jars."""
+async def linked_server(files: dict[str, bytes], iris_channel: str = "release",
+                        audit: Any = None) -> tuple[Any, str, str]:
+    """Un servidor asociado a un bundle con Fabric API, escaneado con estos jars. `iris_channel` es
+    el canal de la versión de Iris que el servidor tiene instalada."""
     modrinth = SearchingModrinthAPI({})
     bundle_id, version_id = await build_with_fabric_api(modrinth)
     modrinth.known[sha1(b"fabric api")] = version_id
-    modrinth.known[sha1(b"iris jar")] = next(v["id"] for v in modrinth.versions if v["project_id"] == IRIS)
+    iris = next(v for v in modrinth.versions if v["project_id"] == IRIS)
+    iris["version_type"] = iris_channel
+    modrinth.known[sha1(b"iris jar")] = iris["id"]
     panel = FakePanel()
     panel.files = {name: (data, T0) for name, data in files.items()}
-    service, server_id = await setup(panel, modrinth)
+    service, server_id = await setup(panel, modrinth, audit)
     await service.server_link_bundle(server_id, bundle_id, actor=OPERATOR)
     await service.scan(server_id, actor=None)
     return service, server_id, bundle_id
@@ -148,3 +153,62 @@ def test_importing_needs_a_linked_server_and_a_scan(mongo: MongoRunner) -> None:
         return codes
 
     assert mongo(scenario) == [409, 409, 409]
+
+
+# Lo que corre en el servidor (dueño, 2026-10-09, por la observación de un tester): un mod ambiguo
+# salía "Por decidir" y uno con solo beta "con problemas", aunque los dos estaban corriendo.
+
+
+def test_importing_records_that_every_identified_mod_runs_on_the_server(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[dict[str, bool], list[Any]]:
+        audit = RecordingAudit()
+        service, server_id, bundle_id = await linked_server({"fabric-api.jar": b"fabric api", "iris.jar": b"iris jar"},
+                                                            audit=audit)
+        await service.import_server(server_id, actor=OPERATOR)
+        bundle = await ModpackBundle.get(bundle_id)
+        assert bundle is not None
+        return bundle.server_decisions, [e[2] for e in audit.events if e[0] == "server.import"]
+
+    decisions, [details] = mongo(scenario)
+    # Fabric API was already in the bundle: importing again reaches it too.
+    assert decisions == {FABRIC_API: True, IRIS: True}
+    assert sorted(details["on_server"]) == sorted([FABRIC_API, IRIS])
+
+
+def test_importing_never_overrides_a_decision_the_admin_made(mongo: MongoRunner) -> None:
+    async def scenario() -> dict[str, bool]:
+        service, server_id, bundle_id = await linked_server({"iris.jar": b"iris jar"})
+        await ModpackDatabase().bundle_decision_set(bundle_id, IRIS, False)
+        await service.import_server(server_id, actor=OPERATOR)
+        bundle = await ModpackBundle.get(bundle_id)
+        assert bundle is not None
+        return bundle.server_decisions
+
+    assert mongo(scenario) == {IRIS: False}
+
+
+@pytest.mark.parametrize("channel, expected", [("beta", {IRIS: "beta"}), ("alpha", {IRIS: "alpha"}), ("release", {})])
+def test_a_beta_running_on_the_server_becomes_a_channel_exception(
+        mongo: MongoRunner, channel: str, expected: dict[str, str]) -> None:
+    async def scenario() -> tuple[dict[str, str], list[Any]]:
+        audit = RecordingAudit()
+        service, server_id, bundle_id = await linked_server({"iris.jar": b"iris jar"}, iris_channel=channel, audit=audit)
+        await service.import_server(server_id, actor=OPERATOR)
+        bundle = await ModpackBundle.get(bundle_id)
+        assert bundle is not None
+        return bundle.channel_exceptions, [e[2] for e in audit.events if e[0] == "server.import"]
+
+    exceptions, [details] = mongo(scenario)
+    assert exceptions == expected and details["channel_exceptions"] == expected
+
+
+def test_importing_keeps_an_exception_the_admin_already_set(mongo: MongoRunner) -> None:
+    async def scenario() -> dict[str, str]:
+        service, server_id, bundle_id = await linked_server({"iris.jar": b"iris jar"}, iris_channel="beta")
+        await ModpackDatabase().bundle_channel_exception_set(bundle_id, IRIS, "alpha")
+        await service.import_server(server_id, actor=OPERATOR)
+        bundle = await ModpackBundle.get(bundle_id)
+        assert bundle is not None
+        return bundle.channel_exceptions
+
+    assert mongo(scenario) == {IRIS: "alpha"}

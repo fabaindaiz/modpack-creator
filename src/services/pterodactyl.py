@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Optional
 from src.database import ModpackDatabase, ModrinthDatabase, PterodactylDatabase
@@ -9,6 +10,7 @@ from src.library.api.client.pterodactyl import PterodactylAPI
 from fastapi import HTTPException
 from src.library.deduce import Deduction, deduce_target
 from src.library.jarmeta import ModMetadata, read_mod_metadata
+from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS
 from src.library.scan import ClaimedFile, Comparison, ListedFile, LocalFile, ScanFile, compare, drift_message, plan_scan
 from src.model.modpack import ModpackBundle, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthVersion
@@ -29,6 +31,8 @@ SCAN_MAX_BYTES = 128 * 1024 * 1024
 # signed URL and the download): a large first scan is paced by this and by the panel.
 SCAN_CONCURRENCY = 4
 SCAN_DIRECTORY = "/mods"
+# As ModpackService's: an id written as a key of a bundle's map becomes a dotted path.
+MODRINTH_ID = re.compile(r"[A-Za-z0-9_-]+")
 IMPORT_FAILED = ("El modpack quedó creado y vinculado a este servidor, pero la importación de sus mods falló. "
                  "Vuelve a intentarlo con «Importar».")
 
@@ -286,10 +290,34 @@ class PterodactylService():
                     result.local.append(file.path)
         if result.added:
             await self._add_projects(str(bundle.id), result.added)
+        on_server, exceptions = await self._running(bundle, scan)
         await self.audit.record(actor, "server.import", _target(server_id), {
             "bundle_id": str(bundle.id), "added": result.added, "local": result.local,
-            "candidates": [c.path for c in result.candidates]})
+            "candidates": [c.path for c in result.candidates], "on_server": on_server,
+            "channel_exceptions": exceptions})
         return result
+
+    async def _running(self, bundle: ModpackBundle, scan: ServerScan) -> tuple[list[str], dict[str, str]]:
+        """Record what the server runs (owner, 2026-10-09): every identified mod goes on the server,
+        and one whose installed version is beta or alpha, outside the pack's channels, accepts that
+        channel (d-7985ee-b1ce87). Only where the admin decided nothing: a decision or an exception
+        already there stays. Returns the decisions and the exceptions written."""
+        identified = [f for f in scan.files if f.status == "identified" and f.project_id and MODRINTH_ID.fullmatch(f.project_id)]
+        versions = {v.version_id: v for v in await self.modrinthDB.version_find_by_version_ids(
+            sorted({f.version_id for f in identified if f.version_id}))}
+        exceptions: dict[str, str] = {}
+        for file in identified:
+            version = versions.get(file.version_id) if file.version_id else None
+            channel = version.version_type.value if version is not None else None
+            if channel in EXCEPTION_CHANNELS and channel not in bundle.channels and file.project_id is not None:
+                known = exceptions.get(file.project_id)
+                if known is None or CHANNEL_RANK[channel] > CHANNEL_RANK[known]:
+                    exceptions[file.project_id] = channel
+        bundle_id = str(bundle.id)
+        decided = await self.modpackDB.bundle_keys_set_missing(
+            bundle_id, "server_decisions", {f.project_id: True for f in identified if f.project_id})
+        excepted = await self.modpackDB.bundle_keys_set_missing(bundle_id, "channel_exceptions", exceptions)
+        return sorted(decided), excepted
 
     async def _candidates(self, metadata: ModMetadata) -> list[ProjectCandidate]:
         """Modrinth projects a jar's metadata may be: its mod id as a slug, then a search by name.

@@ -17,6 +17,8 @@ from pydantic import BaseModel
 
 ADMIN = "admin"
 CHANNEL_RANK = {"release": 0, "beta": 1, "alpha": 2}
+# The channels a project's exception may accept: the less stable ones (d-7985ee-b1ce87).
+EXCEPTION_CHANNELS = ("beta", "alpha")
 # Quilt loads Fabric mods; the reverse is not true.
 LOADER_ACCEPTS = {"quilt": {"quilt", "fabric"}}
 

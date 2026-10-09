@@ -11,7 +11,7 @@ from src.library.api.client.modrinth import ModrinthAPI
 from src.library.changes import ChangeSet, diff_entries
 from src.library.mrpack import mrpack_index, write_mrpack
 from src.services.jobs import NotificationSink
-from src.library.resolution import CHANNEL_RANK, Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, request_digest, resolve
+from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, request_digest, resolve
 from src.model.modpack import BUNDLE_KEYED_FIELDS, AvailableUpdate, UpdateCheck, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject, ModrinthVersion
 from src.model.modrinth.version import ModrinthDependencyType
@@ -119,8 +119,6 @@ class VersionOption:
 
 # How many of a project's catalog versions its page shows; "Cargar todas" asks Modrinth for the rest.
 MOD_PAGE_VERSIONS = 50
-# The channels a project's exception may accept: the less stable ones.
-EXCEPTION_CHANNELS = ("beta", "alpha")
 
 
 @dataclass(frozen=True)
