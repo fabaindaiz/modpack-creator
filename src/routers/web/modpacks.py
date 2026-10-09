@@ -213,8 +213,8 @@ async def _acted(request: Request, actor: Actor, modpackService: ModpackService,
                        pending=_has_pending((mods.resolution, mods.stale) if mods.resolution else None), **context)
     return await _resolved(request, actor, modpackService, updateCheckService, bundle_id, success, vista="problemas")
 
-# What the decision dialog says when it is sent with every mod left "Sin decidir".
-NOTHING_DECIDED = "Elige «En el servidor» o «Solo cliente» para al menos un mod."
+# What the decision dialog says when it is sent with every mod left "Por decidir".
+NOTHING_DECIDED = "Elige «En el servidor» o «Desactivado» para al menos un mod."
 
 def _dialog(request: Request, actor: Actor, lock: Lock, **context: Any) -> Response:
     """The build dialog, into #build-dialog, from a fresh lock (spec §1): its problems first, each a
@@ -508,7 +508,7 @@ async def modpack_decide(
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         ):
     """Decide whether a mod goes on the server: one key, written atomically by the service. The
-    resolution is run again so the mod leaves "Sin decidir"."""
+    resolution is run again so the mod leaves "Por decidir"."""
     await modpackService.decision_set(bundle_id, project_id, server == "yes", actor)
     await modpackService.resolve(bundle_id)
     return await _decided(request, actor, modpackService, updateCheckService, bundle_id)

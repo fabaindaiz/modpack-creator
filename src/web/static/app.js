@@ -119,7 +119,7 @@
       }
       return;
     }
-    // "Todos al servidor" / "Todos solo cliente" (Por decidir): mark every select of the button's
+    // "Todos al servidor" / "Desactivar todos" (Por decidir): mark every select of the button's
     // form with its value. Nothing is sent: the form's own button saves.
     var setAll = element.closest('[data-set-all]');
     if (setAll) {

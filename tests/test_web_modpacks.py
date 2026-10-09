@@ -655,6 +655,7 @@ def test_blocked_by_undecided_answers_a_dialog_with_titles() -> None:
     assert " open" not in tag and "data-autoopen" in tag
     assert "Lithium" in text and 'name="decision.P2"' in text and "Decidir y crear build" in text
     assert "data-dialog-close" in text
+    assert '<option value="" selected>Por decidir</option>' in text and '<option value="no">Desactivado</option>' in text
     assert f'hx-post="/modpacks/{BUNDLE_ID}/builds"' in text
     assert [c[0] for c in modpack.calls] == ["build_create"]
 
@@ -709,7 +710,7 @@ def test_the_dialog_sent_without_deciding_says_what_is_missing() -> None:
     assert 'name="dialog"' in first and "data-notice" not in first  # the button's click: no reason yet
     response = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX, data={"dialog": "1", "decision.P2": ""})
     assert response.status_code == 200 and response.headers["HX-Retarget"] == "#build-dialog"
-    assert "Elige «En el servidor» o «Solo cliente» para al menos un mod" in response.text
+    assert "Elige «En el servidor» o «Desactivado» para al menos un mod" in response.text
     assert "decisions_set" not in [c[0] for c in modpack.calls]
 
 
@@ -1389,12 +1390,17 @@ def test_mods_list_shows_card_data_not_ids() -> None:
     assert modpack.checks_seen == [checks.check]  # la última revisión llega a la lista
     sodium = card(text, "AANobbMI")
     assert '<img src="https://cdn.modrinth.com/data/AANobbMI/icon.png"' in sodium
-    for shown in ("Sodium", "agregado", "Solo cliente", "0.8.13 → 0.8.14", "1,2 M descargas", "fijado"):
+    for shown in ("Sodium", "agregado", "Desactivado", "0.8.13 → 0.8.14", "1,2 M descargas", "fijado"):
         assert shown in sodium, shown
     assert 'title="0.8.13 → 0.8.14"' in sodium and "truncate" in sodium  # versión larga con elipsis
     dependency = card(text, "P9")
     assert "dependencia de Sodium" in dependency and "En el servidor" in dependency and "0.100.0" in dependency
-    assert "del .mrpack" in card(text, "P8") and "Sin decidir" in card(text, "P8")
+    assert "del .mrpack" in card(text, "P8") and "Por decidir" in card(text, "P8")
+    # Tester feedback (2026-10-08): "Solo cliente" read as a property of the mod, not a decision.
+    assert "Solo cliente" not in text and "Sin decidir" not in text
+    decide = card(text, "P8")
+    button = decide[decide.rindex("<button", 0, decide.index('value="no"')):]
+    assert "Desactivado" in button[:button.index("</button>")]
     assert "AANobbMI" not in visible(text)
 
 
@@ -1751,11 +1757,12 @@ def test_pending_view_shows_each_undecided_mod_with_its_card_and_shortcuts() -> 
         assert text.count(f'name="decision.{undecided}"') == form.count(f'name="decision.{undecided}"') == 1
     assert 'name="decision.P1"' not in text
     # The shortcuts mark every select without saving (app.js); saving is the form's button.
-    for value, label in (("si", "Todos al servidor"), ("no", "Todos solo cliente")):
+    for value, label in (("si", "Todos al servidor"), ("no", "Desactivar todos")):
         button = form[form.rindex("<button", 0, form.index(f'data-set-all="{value}"')):]
         button = button[:button.index("</button>")]
         assert 'type="button"' in button and label in button and "hx-" not in button
     assert "Guardar las 2 decisiones" in form
+    assert '<option value="" selected>Por decidir</option>' in form and '<option value="no">Desactivado</option>' in form
 
 
 def test_pending_view_without_mods_to_decide_says_so() -> None:

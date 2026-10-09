@@ -471,7 +471,7 @@ def test_client_only_extra_says_it_does_not_go_on_the_server() -> None:
                                         extra=[scan_file("/mods/extra.jar", "P4"), scan_file("/mods/other.jar", "P1")],
                                         client_only=["P4"])
     text = client.get(f"/servers/{SERVER_ID}").text
-    assert text.count("solo cliente: no va en el servidor") == 1 and text.count("el build no lo incluye") == 1
+    assert text.count("desactivado: no va en el servidor") == 1 and text.count("el build no lo incluye") == 1
 
 
 def importar(text: str) -> str:

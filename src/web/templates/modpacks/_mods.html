@@ -11,8 +11,8 @@
 {% import "_macros.html" as ui %}
 {% set SIDE = {
   "include": ("En el servidor", "accent"),
-  "exclude": ("Solo cliente", "neutral"),
-  "admin": ("Sin decidir", "warning"),
+  "exclude": ("Desactivado", "neutral"),
+  "admin": ("Por decidir", "warning"),
 } %}
 {% set LINK = "font-medium text-emerald-700 hover:underline dark:text-emerald-300" %}
 {% set saved = mods.resolution.lock if mods.resolution is not none else none %}
@@ -121,7 +121,7 @@
               <input type="hidden" name="project_id" value="{{ row.project_id }}">
               <span class="text-xs font-medium">¿Va en el servidor?</span>
               {{ ui.button("En el servidor", type="submit", kind="secondary", small=True, attrs={"name": "server", "value": "yes"}) }}
-              {{ ui.button("Solo cliente", type="submit", kind="secondary", small=True, attrs={"name": "server", "value": "no"}) }}
+              {{ ui.button("Desactivado", type="submit", kind="secondary", small=True, attrs={"name": "server", "value": "no"}) }}
             </form>
             {% endif %}
 

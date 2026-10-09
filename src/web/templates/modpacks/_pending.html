@@ -1,7 +1,7 @@
 {# "Por decidir" (spec §3): every mod of the current resolution whose place on the server waits for
    the admin, with its card summary (icon, name, one line of description, what Modrinth says about
    its side, who asked for it, the version) and a select, all in one form: "Guardar las N decisiones"
-   saves the ones decided and stays in this view. "Todos al servidor" and "Todos solo cliente" only
+   saves the ones decided and stays in this view. "Todos al servidor" and "Desactivar todos" only
    mark the selects (app.js, `data-set-all`): nothing is saved until the form is. Part of _mods.html,
    with its `saved` and `current`. #}
 {% import "_macros.html" as ui %}
@@ -16,7 +16,7 @@
     <p class="min-w-0 flex-1 text-sm text-zinc-600 dark:text-zinc-400">Modrinth no dice si estos mods van en el servidor: hasta que lo decidas no se puede crear un build. Los que dejes sin decidir no se guardan.</p>
     <div class="flex flex-wrap gap-2">
       {{ ui.button("Todos al servidor", kind="secondary", small=True, attrs={"data-set-all": "si"}) }}
-      {{ ui.button("Todos solo cliente", kind="secondary", small=True, attrs={"data-set-all": "no"}) }}
+      {{ ui.button("Desactivar todos", kind="secondary", small=True, attrs={"data-set-all": "no"}) }}
     </div>
   </div>
   <ul class="divide-y divide-zinc-100 rounded-lg border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
@@ -41,9 +41,9 @@
         </p>
       </div>
       <select id="bulk-{{ entry.project_id }}" name="decision.{{ entry.project_id }}" class="rounded-md border-0 bg-white px-2 py-1 text-sm text-zinc-900 ring-1 ring-inset ring-amber-400 dark:bg-zinc-900 dark:text-zinc-100">
-        <option value="" selected>Sin decidir</option>
+        <option value="" selected>Por decidir</option>
         <option value="si">En el servidor</option>
-        <option value="no">Solo cliente</option>
+        <option value="no">Desactivado</option>
       </select>
     </li>
     {% endfor %}
