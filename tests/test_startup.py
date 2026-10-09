@@ -81,3 +81,11 @@ def test_the_oidc_client_uses_httpx2_not_the_deprecated_httpx_fallback() -> None
         capture_output=True, text=True)
     assert result.returncode == 0, result.stderr[-500:]
     assert result.stdout.strip() == "httpx2"
+
+
+def test_the_modrinth_client_takes_its_turn_in_one_limiter_of_240_per_minute_and_60_per_user() -> None:
+    import main
+    from src.library.api.limiter import RateLimiter
+
+    limiter = main.container.modrinthAPI().limiter
+    assert isinstance(limiter, RateLimiter) and (limiter.per_minute, limiter.per_user) == (240, 60)

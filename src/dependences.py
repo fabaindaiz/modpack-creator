@@ -22,6 +22,7 @@ from src.services.jobs import WorkerBeat
 from src.services.notify import Notifier
 from src.services.update import UpdateService
 from src.services.modpack_import import ModpackImportService
+from src.library.api.limiter import CURRENT_USER, RateLimiter
 from src.services import (
     AuditService,
     HealthService,
@@ -44,7 +45,9 @@ from src.exceptions import *
 class Dependences(containers.DeclarativeContainer):
     authlib_oauth: providers.Singleton[OAuth] = providers.Singleton(OAuth)
     downloader = providers.Singleton(Downloader)
-    modrinthAPI = providers.Singleton(ModrinthAPI)
+    # E4: 240 requests a minute for the whole app (Modrinth cuts at 300 per IP) and 60 per user.
+    modrinthLimiter = providers.Singleton(RateLimiter, per_minute=240, per_user=60)
+    modrinthAPI = providers.Singleton(ModrinthAPI, limiter=modrinthLimiter)
     pterodactylAPI = providers.Singleton(PterodactylAPI)
     loaderAPI = providers.Singleton(LoaderMetaAPI)
 
@@ -99,4 +102,7 @@ async def get_current_user(
     return UsersInternal.model_validate_json(user)
 
 async def get_current_actor(request: Request) -> Actor:
-    return actor_from_session(request.session, OIDC_OPERATOR_GROUPS)
+    actor = actor_from_session(request.session, OIDC_OPERATOR_GROUPS)
+    # The requests to Modrinth this request makes count against this user's quota (E4).
+    CURRENT_USER.set(f"{actor.iss}|{actor.sub}")
+    return actor

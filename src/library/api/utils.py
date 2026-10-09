@@ -1,10 +1,12 @@
 import asyncio
+import math
 import backoff
 from functools import wraps
 from typing import Optional
 from aiohttp import ClientResponse, ConnectionTimeoutError, ClientResponseError, ServerConnectionError
 from src.library.utils import WRAP
 from src.library.api.handler.response import TooLarge
+from src.library.api.limiter import RateLimited
 from src.exceptions import *
 
 UNKNOWN_SERVICE = "un servicio externo"
@@ -67,9 +69,16 @@ def handle_errors(func: WRAP) -> WRAP:
             raise UpstreamError(service, 502, f"Request has failed with connection error: {e}", raw=str(e)) from e
         except ConnectionTimeoutError as e:
             raise UpstreamError(service, 504, f"Request has failed with timeout error: {e}", raw=str(e)) from e
+        except RateLimited as e:
+            # Refused here, before sending: the panel's user has no room left (E5).
+            raise QuotaExceeded(
+                f"Demasiadas consultas a {service}: intenta en {math.ceil(e.seconds)} s", e.seconds) from e
         except ClientResponseError as e:
             if e.status == 429:
                 retry_after = retry_after_seconds(e.headers.get("Retry-After") if e.headers else None)
+                limiter = getattr(args[0], "limiter", None) if args else None
+                if limiter is not None:
+                    limiter.pause(retry_after if retry_after is not None else 60.0)
                 raise HTTP_429_TOO_MANY_REQUESTS(f"Rate limited: {e.message}", retry_after) from e
             raise UpstreamError(service, e.status, f"Request has failed with status error {e.status}: {e.message}",
                                 raw=f"{e.request_info.method} {e.request_info.url}: {e.message}") from e

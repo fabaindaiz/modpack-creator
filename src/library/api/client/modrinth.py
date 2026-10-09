@@ -3,6 +3,8 @@ import json
 from typing import Any, Generator, Optional, Sequence
 from src.library.api import HttpAPI, METHOD
 from src.library.api.handler import JsonResponse
+from src.library.api.limiter import RateLimiter
+from src.exceptions import HTTP_429_TOO_MANY_REQUESTS
 from src.library.api.session import TokenAuthorization
 from src.model.modrinth import ModrinthGameVersion, ModrinthProject, ModrinthVersion
 from src.library.utils import getenv, getenv_opt, boolToStr
@@ -11,12 +13,18 @@ MODRINTH_API_URL = getenv("MODRINTH_API_URL", "https://api.modrinth.com/v2/")
 MODRINTH_TOKEN = getenv_opt("MODRINTH_TOKEN")
 MODRINTH_AGENT = getenv_opt("MODRINTH_AGENT")
 
+def _rate_limited(error: Exception) -> bool:
+    """A 429 (Modrinth's, or ours before sending) is never retried on the spot: the limiter waits
+    for its Retry-After, and the owner counts every request (spec 2026-10-09-economia-de-requests)."""
+    return isinstance(error, HTTP_429_TOO_MANY_REQUESTS)
+
+
 class ModrinthAPI(HttpAPI):
     SERVICE = "Modrinth"
 
-    def __init__(self) -> None:
+    def __init__(self, limiter: Optional[RateLimiter] = None) -> None:
         super().__init__(
-            base_url=MODRINTH_API_URL)
+            base_url=MODRINTH_API_URL, limiter=limiter)
         
         if MODRINTH_TOKEN:
             self.session_auth = TokenAuthorization(
@@ -26,14 +34,14 @@ class ModrinthAPI(HttpAPI):
             self.session_headers = {
                 "User-Agent": MODRINTH_AGENT}
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=_rate_limited)
     async def project_get(self, slug: str) -> ModrinthProject:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
             path=f'project/{slug}')
         return ModrinthProject.parse(**handler.json)
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=_rate_limited)
     async def project_get_many(self, slugs: list[str]) -> Generator[ModrinthProject, None, None]:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
@@ -41,7 +49,7 @@ class ModrinthAPI(HttpAPI):
             query={"ids": json.dumps(slugs)})
         return (ModrinthProject.parse(**item) for item in handler.json)
     
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=_rate_limited)
     async def search(self, query: str, facets: list[list[str]], limit: int = 5) -> list[dict[str, Any]]:
         """GET /search: the hits for a text, filtered by facets (a JSON array of OR-groups, ANDed),
         as Modrinth returns them (openapi.yaml v2.7.0, SearchResults)."""
@@ -52,7 +60,7 @@ class ModrinthAPI(HttpAPI):
         hits: list[dict[str, Any]] = handler.json.get("hits", [])
         return hits
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=_rate_limited)
     async def game_versions(self) -> list[ModrinthGameVersion]:
         """Every game version Modrinth knows, newest first: the order to compare them by."""
         handler: JsonResponse = await self._request(
@@ -60,7 +68,7 @@ class ModrinthAPI(HttpAPI):
             path='tag/game_version')
         return [ModrinthGameVersion(**item) for item in handler.json]
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=_rate_limited)
     async def project_versions(self, slug: str, loaders: Sequence[str] = (), game_versions: Sequence[str] = (), featured: Optional[bool] = None) -> Generator[ModrinthVersion, None, None]:
         # `featured` filters to featured-only or non-featured-only: omitted, every version comes.
         # The spec recommends include_changelog=false unless the changelog is used.
@@ -78,14 +86,14 @@ class ModrinthAPI(HttpAPI):
             query=query)
         return (ModrinthVersion.parse(**item) for item in handler.json)
     
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=_rate_limited)
     async def version_get(self, id: str) -> ModrinthVersion:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
             path=f'version/{id}')
         return ModrinthVersion.parse(**handler.json)
     
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=_rate_limited)
     async def version_get_many(self, ids: list[str]) -> Generator[ModrinthVersion, None, None]:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
@@ -93,7 +101,7 @@ class ModrinthAPI(HttpAPI):
             query={"ids": json.dumps(ids)})
         return (ModrinthVersion.parse(**item) for item in handler.json)
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=_rate_limited)
     async def files_hash_get(self, hash: str, algorithm: str = "sha512") -> ModrinthVersion:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
@@ -103,7 +111,7 @@ class ModrinthAPI(HttpAPI):
 
     # The three POSTs below are lookups: Modrinth only reads, so retrying them is safe
     # (IDEMPOTENT_POSTS in scripts/audit.py). Bodies and answers per openapi.yaml v2.7.0.
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=_rate_limited)
     async def files_hash_post_many(self, hashes: list[str], algorithm: str = "sha512") -> dict[str, ModrinthVersion]:
         handler: JsonResponse = await self._request(
             method=METHOD.POST,
@@ -114,7 +122,7 @@ class ModrinthAPI(HttpAPI):
             })
         return {hash: ModrinthVersion.parse(**item) for hash, item in handler.json.items()}
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=_rate_limited)
     async def files_update_hash_post(self, hash: str, algorithm: str = "sha512", loaders: Sequence[str] = (), game_versions: Sequence[str] = ()) -> ModrinthVersion:
         handler: JsonResponse = await self._request(
             method=METHOD.POST,
@@ -126,7 +134,7 @@ class ModrinthAPI(HttpAPI):
             })
         return ModrinthVersion.parse(**handler.json)
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=_rate_limited)
     async def files_update_hash_post_many(self, hashes: list[str], algorithm: str = "sha512", loaders: Sequence[str] = (), game_versions: Sequence[str] = (), version_types: Sequence[str] = ()) -> dict[str, ModrinthVersion]:
         # `version_types` (release, beta, alpha) is optional in openapi v2.7.0: sent only if given.
         body: dict[str, Any] = {

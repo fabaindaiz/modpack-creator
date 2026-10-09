@@ -65,6 +65,10 @@ class HTTP_429_TOO_MANY_REQUESTS(HTTPException):
         super().__init__(status.HTTP_429_TOO_MANY_REQUESTS, detail)
         self.retry_after = retry_after
 
+class QuotaExceeded(HTTP_429_TOO_MANY_REQUESTS):
+    """Refused here, before sending: the user (or the app) has no requests left this minute; the
+    detail says how long to wait, in words for the panel (spec 2026-10-09-economia-de-requests, E5)."""
+
 class HTTP_500_INTERNAL_SERVER_ERROR(HTTPException):
     """Used when an unexpected error occurs"""
     def __init__(self, detail: Optional[str] = None):

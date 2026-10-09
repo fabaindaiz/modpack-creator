@@ -2163,3 +2163,29 @@ def test_iris_suggested_for_a_shader_says_it_is_needed_not_optional() -> None:
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
     shown = " ".join(visible(text[text.index("Sugerencias"):]).split())
     assert "Iris — necesario para Complementary" in shown and "opcional para Complementary" not in shown
+
+
+def test_a_panel_request_names_its_user_for_the_modrinth_limiter() -> None:
+    # Spec 2026-10-09-economia-de-requests (E4): the per-user quota is counted against this name.
+    from src.library.api.limiter import CURRENT_USER
+
+    client, _, modrinth = setup()
+    seen: list[Optional[str]] = []
+
+    async def search(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        seen.append(CURRENT_USER.get())
+        return []
+
+    modrinth.search = search  # type: ignore[method-assign]
+    client.get(f"/modpacks/{BUNDLE_ID}/search", params={"q": "sodium"}, headers=HTMX)
+    assert seen == [f"{EDITOR.iss}|{EDITOR.sub}"]
+
+
+def test_a_user_without_quota_reads_how_long_to_wait_and_nothing_else() -> None:
+    from src.exceptions import QuotaExceeded
+
+    client, _, modrinth = setup()
+    modrinth.error = QuotaExceeded("Demasiadas consultas a Modrinth: intenta en 30 s", 30.0)
+    response = client.get(f"/modpacks/{BUNDLE_ID}/search", params={"q": "sodium"}, headers=HTMX)
+    shown = " ".join(visible(response.text).split())
+    assert "Demasiadas consultas a Modrinth: intenta en 30 s" in shown and "no responde" not in shown

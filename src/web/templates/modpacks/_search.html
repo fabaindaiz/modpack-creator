@@ -2,7 +2,7 @@
    which fetches the project from Modrinth if the catalog lacks it. #}
 {% import "_macros.html" as ui %}
 {% if failed %}
-{{ ui.notice("Modrinth no respondió; intenta de nuevo", "warning") }}
+{{ ui.notice(failed if failed is string else "Modrinth no respondió; intenta de nuevo", "warning") }}
 {% elif searched and not hits %}
 <p class="text-sm text-zinc-500 dark:text-zinc-400">Modrinth no encontró nada para ese texto.</p>
 {% elif hits %}

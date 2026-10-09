@@ -5,6 +5,7 @@ from typing import Any, Callable, Optional
 from aiohttp import hdrs, ClientSession, ClientTimeout
 from src.library.api.handler import REQUEST, RESPONSE, DEFAULT_REQUEST, DEFAULT_RESPONSE
 from src.library.api.session import SessionAuthorization, NO_AUTHORIZE
+from src.library.api.limiter import CURRENT_USER, ON_WAIT, RateLimiter
 from src.library.api.utils import FakeResponse, handle_errors, validate_results
 from src.library.utils import getenv
 
@@ -44,8 +45,11 @@ class HttpAPI:
             session_headers: Optional[dict[str, str]] = None,
             session_kwargs_fun: Callable[[], dict[str, Any]] = KWARGS_DEFAULT,
             raise_for_status: bool = True,
+            limiter: Optional[RateLimiter] = None,
             **kwargs) -> None:
         self.base_url = base_url
+        # Every request takes its turn here first, when the client has one (spec 2026-10-09-economia-de-requests).
+        self.limiter = limiter
         self.proxy = proxy
         self.timeout = timeout
         self.session_auth = session_auth
@@ -140,6 +144,8 @@ class HttpAPI:
             headers = await session_auth.headers(session, headers)
             kwargs = await request.kwargs(query or {}, json or {}, body, kwargs)
             
+            if self.limiter is not None:
+                await self.limiter.acquire(CURRENT_USER.get(), on_wait=ON_WAIT.get())
             async with session.request(method.value, path, headers=headers, **kwargs) as results:
                 await response.handle(results)
                 await validate_results(results)

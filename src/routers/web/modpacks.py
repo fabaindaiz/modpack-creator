@@ -7,7 +7,7 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Form, Query, Request
 from starlette.datastructures import FormData, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from src.exceptions import BuildBlocked, HTTP_413_CONTENT_TOO_LARGE, HTTP_422_UNPROCESSABLE_ENTITY, UpstreamError
+from src.exceptions import BuildBlocked, HTTP_413_CONTENT_TOO_LARGE, HTTP_422_UNPROCESSABLE_ENTITY, QuotaExceeded, UpstreamError
 from src.library.resolution import ADMIN, Lock
 from src.dependences import Dependences, ModpackImportService, ModpackService, ModrinthService, PterodactylService, UpdateCheckService
 from src.model.modpack import ModpackBundle, ModpackBundleCreate, ModpackBundlePatch, ProjectOrigin
@@ -401,6 +401,10 @@ async def modpack_search(
         return render(request, "modpacks/_search.html", actor, bundle_id=bundle_id, hits=[], failed=False, searched=False)
     try:
         raw = await modrinthService.search(text, bundle.version, str(bundle.loader.value), SEARCH_LIMIT)
+    except QuotaExceeded as error:
+        # Not a failure of Modrinth: no requests left this minute, and it says for how long (E5).
+        return render(request, "modpacks/_search.html", actor, bundle_id=bundle_id, hits=[], failed=str(error.detail),
+                      searched=True)
     except Exception:
         logger.warning("Modrinth search failed for bundle %s", bundle_id, exc_info=True)
         return render(request, "modpacks/_search.html", actor, bundle_id=bundle_id, hits=[], failed=True, searched=True)

@@ -16,7 +16,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.routing import APIRoute
 from fastapi.templating import Jinja2Templates
 
-from src.exceptions import UpstreamError
+from src.exceptions import QuotaExceeded, UpstreamError
+from src.library.api.limiter import CURRENT_USER
 from src.library.auth.redirect import is_local_path
 from src.library.auth.roles import actor_from_session
 from src.library.logging import request_id as current_request_id
@@ -139,6 +140,8 @@ async def get_web_actor(request: Request) -> Actor:
         raise LoginRequired(_return_to(request)) from error
     # The error page of WebRoute renders the layout with it.
     request.state.actor = actor
+    # The requests to Modrinth this request makes count against this user's quota (E4).
+    CURRENT_USER.set(f"{actor.iss}|{actor.sub}")
     return actor
 
 
@@ -203,7 +206,7 @@ class WebRoute(APIRoute):
                 if error.status_code not in NOTICE_STATUSES:
                     raise
                 message = str(error.detail) if error.detail else "No se pudo completar la acción."
-                if error.status_code in UPSTREAM_STATUSES:
+                if error.status_code in UPSTREAM_STATUSES and not isinstance(error, QuotaExceeded):
                     message = f"{UPSTREAM_DOWN} {error.detail}" if error.detail else UPSTREAM_DOWN
                 response = _notice_response(request, message, error.status_code)
                 if response is None:
