@@ -51,7 +51,8 @@
     <dd class="break-words">
       {%- set shown = 8 if compact else 16 %}
       {%- if project.game_versions %}{% if project.game_versions | length > shown %}…, {% endif %}{{ project.game_versions[-shown:] | join(", ") }}{% else %}—{% endif -%}
-      {%- if mark %} · <span class="{{ OK if mark.supports_version else NO }}">{{ (mark.game_version ~ " ✓") if mark.supports_version else ("no soporta " ~ mark.game_version) }}</span>{% endif -%}
+      {%- if mark and mark.version_channel %} · <span class="text-amber-800 dark:text-amber-300">{{ mark.game_version }} · solo {{ mark.version_channel }}</span>
+      {%- elif mark %} · <span class="{{ OK if mark.supports_version else NO }}">{{ (mark.game_version ~ " ✓") if mark.supports_version else ("no soporta " ~ mark.game_version) }}</span>{% endif -%}
     </dd>
     {% if mark %}
     <dt class="font-medium">Pack</dt>

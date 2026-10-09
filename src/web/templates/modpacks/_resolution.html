@@ -40,13 +40,13 @@
   {% if saved.suggestions %}
   <div class="space-y-2 rounded-lg border border-sky-300 bg-sky-50 p-3 text-sm text-sky-900 dark:border-sky-500/40 dark:bg-sky-950/60 dark:text-sky-200">
     <h3 class="font-semibold">Sugerencias</h3>
-    <p class="text-xs">Mods que otros del pack recomiendan; no se agregan solos.</p>
+    <p class="text-xs">Mods que otros del pack declaran como dependencia opcional en Modrinth. No se agregan solos.</p>
     <ul class="space-y-1">
       {% for suggestion in saved.suggestions %}
       <li class="flex flex-wrap items-center gap-2">
         <div class="min-w-0 flex-1 break-words">
           <span class="font-medium">{{ ui.mod_link(suggestion.project_id, titles.get(suggestion.project_id, suggestion.project_id), pack=bundle_id) }}</span>
-          {% if suggestion.requested_by %}<span class="text-xs">sugerida por {% for requester in suggestion.requested_by %}{{ ui.mod_link(requester, titles.get(requester, requester), pack=bundle_id) }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
+          {% if suggestion.requested_by %}<span class="text-xs">— opcional para {% for requester in suggestion.requested_by %}{{ ui.mod_link(requester, titles.get(requester, requester), pack=bundle_id) }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
         </div>
         <form hx-post="/modpacks/{{ bundle_id }}/projects" hx-target="#mods" hx-swap="outerHTML">
           <input type="hidden" name="ref" value="{{ suggestion.project_id }}">

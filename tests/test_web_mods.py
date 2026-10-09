@@ -267,6 +267,14 @@ def test_a_page_from_a_pack_marks_its_minecraft_version_and_loader() -> None:
     assert "no soporta 1.12.2" in text and "no soporta forge" in text
 
 
+def test_a_page_from_a_pack_with_only_a_beta_says_solo_beta() -> None:
+    client, fake = setup()
+    mark = pack_mark()
+    fake.page = mod_page(pack=PackMark(**{**mark.__dict__, "version_channel": "beta"}))
+    text = client.get(f"/mods/AANobbMI?pack={PACK}").text
+    assert "1.21.1 · solo beta" in text and "1.21.1 ✓" not in text and "fabric ✓" in text
+
+
 def test_the_panel_from_a_pack_marks_it_and_keeps_it_in_its_links() -> None:
     client, fake = setup()
     fake.page = mod_page(pack=pack_mark())

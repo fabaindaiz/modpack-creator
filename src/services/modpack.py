@@ -11,7 +11,7 @@ from src.library.api.client.modrinth import ModrinthAPI
 from src.library.changes import ChangeSet, diff_entries
 from src.library.mrpack import mrpack_index, write_mrpack
 from src.services.jobs import NotificationSink
-from src.library.resolution import Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, request_digest, resolve
+from src.library.resolution import CHANNEL_RANK, Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, request_digest, resolve
 from src.model.modpack import BUNDLE_KEYED_FIELDS, AvailableUpdate, UpdateCheck, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject, ModrinthVersion
 from src.model.modrinth.version import ModrinthDependencyType
@@ -86,6 +86,9 @@ class ModRow:
     issues_url: Optional[str] = None
     # The ids of the projects in `required_by`, in its order: each name opens its card.
     requested_by: list[str] = field(default_factory=list)
+    # "beta" or "alpha" when the catalog's versions for the pack's Minecraft version and loader are
+    # all outside the pack's channels: the most stable of them (see `outside_channel`).
+    version_channel: Optional[str] = None
 
 
 @dataclass
@@ -148,6 +151,7 @@ class PackMark:
     loader: str
     supports_version: bool
     supports_loader: bool
+    version_channel: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -212,6 +216,16 @@ def _version_row(version: ModrinthVersion) -> VersionRow:
     return VersionRow(version_id=version.version_id, version_number=version.version_number,
                       channel=version.version_type.value, published=version.date_published,
                       game_versions=list(version.game_versions), loaders=list(version.loaders))
+
+
+def outside_channel(target: Target, project_type: str, versions: Sequence[ModrinthVersion]) -> Optional[str]:
+    """The most stable channel among the versions that fit the pack (its Minecraft version and loader,
+    listed) when none of them is in the pack's channels; None when one is, or when none fits: the
+    catalog may simply not have them, and the card then keeps what the project says."""
+    fitting = [v.version_type.value for v in versions if target.fits(candidate(v), project_type)]
+    if not fitting or any(channel in target.channels for channel in fitting):
+        return None
+    return min(fitting, key=lambda channel: CHANNEL_RANK.get(channel, 99))
 
 
 class ModpackService():
@@ -445,15 +459,19 @@ class ModpackService():
         current = check is not None and check.build_number == bundle.latest_build
         newer = {u.project_id: u.to_version for u in check.updates if not u.pinned} if check and current else {}
         target = Target(game_version=bundle.version, loader=str(bundle.loader.value), channels=frozenset(bundle.channels))
+        for_version: dict[str, list[ModrinthVersion]] = {}
+        for found_version in await self.modrinthDB.version_find_for_game_version([*pack, *dependencies], bundle.version):
+            for_version.setdefault(found_version.project_id, []).append(found_version)
 
         def row(project_id: str, origin: Optional[str]) -> ModRow:
             found, entry = catalog.get(project_id), entries.get(project_id)
             pinned = project_id in bundle.pins
-            supports_loader = supports_version = None
+            supports_loader = supports_version = version_channel = None
             if found is not None:
                 kind = entry.project_type if entry else found.project_type.value
                 supports_loader = bool(target.loaders(kind) & set(found.loaders))
                 supports_version = bundle.version in found.game_versions
+                version_channel = outside_channel(target, kind, for_version.get(project_id, []))
             return ModRow(
                 project_id=project_id, title=found.title if found else project_id,
                 icon_url=found.icon_url if found else None, description=found.description if found else "",
@@ -464,7 +482,8 @@ class ModpackService():
                 requested_by=list(entry.requested_by) if entry else [],
                 side=entry.server if entry else None, build_version=in_build.get(project_id),
                 newer_version=None if pinned else newer.get(project_id), pinned=pinned,
-                source_url=found.source_url if found else None, issues_url=found.issues_url if found else None)
+                source_url=found.source_url if found else None, issues_url=found.issues_url if found else None,
+                version_channel=version_channel)
 
         rows = [row(i, origin) for i, origin in pack.items()]
         rows += sorted((row(i, None) for i in dependencies), key=lambda r: r.title)
@@ -552,7 +571,9 @@ class ModpackService():
                 if relatives:
                     left = max(self.icon_deadline - (loop.time() - started), 0.0)
                     catalog.update(await fill_catalog(self.modrinthDB, self.modrinthAPI, relatives, left))
-        return self._mod_page(project, local, catalog, named, bundle)
+        for_version = (await self.modrinthDB.version_find_for_game_version([project.project_id], bundle.version)
+                       if bundle is not None else [])
+        return self._mod_page(project, local, catalog, named, bundle, for_version)
 
     async def _pack(self, bundle_id: Optional[str]) -> Optional[ModpackBundle]:
         """The bundle a mod's page was opened from; None when the id is not a bundle's."""
@@ -598,7 +619,8 @@ class ModpackService():
 
     @staticmethod
     def _mod_page(project: ModrinthProject, local: _ModLocal, catalog: dict[str, ModrinthProject],
-                  named: Sequence[str], bundle: Optional[ModpackBundle] = None) -> ModPage:
+                  named: Sequence[str], bundle: Optional[ModpackBundle] = None,
+                  for_version: Sequence[ModrinthVersion] = ()) -> ModPage:
         def title(project_id: str) -> str:
             return catalog[project_id].title if project_id in catalog else project_id
 
@@ -620,10 +642,11 @@ class ModpackService():
                    for server, scanned_at, version_id in local.servers]
         mark = None
         if bundle is not None:
-            target = Target(game_version=bundle.version, loader=str(bundle.loader.value))
+            target = Target(game_version=bundle.version, loader=str(bundle.loader.value), channels=frozenset(bundle.channels))
             mark = PackMark(bundle_id=str(bundle.id), name=bundle.name, game_version=bundle.version,
                             loader=str(bundle.loader.value), supports_version=bundle.version in project.game_versions,
-                            supports_loader=bool(target.loaders(project.project_type.value) & set(project.loaders)))
+                            supports_loader=bool(target.loaders(project.project_type.value) & set(project.loaders)),
+                            version_channel=outside_channel(target, project.project_type.value, for_version))
         shown = [project.project_id, *local.dependencies, *named]
         return ModPage(project=project, uses=uses, servers=servers,
                        versions=[_version_row(v) for v in local.versions], versions_partial=True,

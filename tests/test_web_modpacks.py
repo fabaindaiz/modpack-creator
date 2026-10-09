@@ -1416,6 +1416,15 @@ def test_icon_off_the_cdn_is_a_placeholder() -> None:
         assert 'aria-hidden="true"' in card(text, project_id)  # el cuadro neutro
 
 
+def test_a_card_with_only_a_beta_for_the_pack_says_solo_beta_not_a_check() -> None:
+    client, modpack, _ = setup()
+    modpack.rows = [row("P1", "Sodium", game_versions=["1.21.1"], supports_loader=True, supports_version=True,
+                        version_channel="beta")]
+    sodium = card(client.get(f"/modpacks/{BUNDLE_ID}").text, "P1")
+    assert "1.21.1 · solo beta" in sodium and "1.21.1 ✓" not in sodium
+    assert re.search(r'<span class="[^"]*text-amber-[^"]*">1\.21\.1 · solo beta</span>', sodium)
+
+
 def test_card_has_support_links_and_lazy_version_picker() -> None:
     client, modpack, _ = setup()
     modpack.rows = [
@@ -1494,7 +1503,10 @@ def test_suggestions_have_titles_and_an_add_button() -> None:
                                     problems=[Problem(kind="unresolvable", project_id="P6", detail="sin versión")]))
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
     suggestions = text[text.index("Sugerencias"):]
-    assert "Mod Menu" in suggestions and "sugerida por Sodium" in " ".join(visible(suggestions).split())
+    # Tester feedback (2026-10-08): it was not clear what the suggestions are based on.
+    shown = " ".join(visible(suggestions).split())
+    assert "Mods que otros del pack declaran como dependencia opcional en Modrinth." in shown
+    assert "Mod Menu — opcional para Sodium" in shown and "sugerida por" not in shown
     assert f'hx-post="/modpacks/{BUNDLE_ID}/projects"' in suggestions and 'name="ref" value="P7"' in suggestions
     assert "P7" not in visible(text)
     text = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "problemas"}).text

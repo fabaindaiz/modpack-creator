@@ -302,6 +302,19 @@ def test_from_a_pack_the_page_marks_its_version_and_loader(mongo: MongoRunner) -
     assert unknown.pack is None and invalid.pack is None  # ignored, never an error
 
 
+def test_from_a_pack_with_only_a_beta_for_its_version_the_mark_says_so(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        s = Scenario(FakeModrinth())
+        await s.modrinthDB.project_upsert_many([project("P", "P title", game_versions=("1.20.1", "1.21.1"))])
+        await s.modrinthDB.version_upsert_many([version("b1", "P", "2.0-beta", 1, kind="beta"),
+                                                version("r0", "P", "1.0", 2, game_versions=["1.20.1"])])
+        a = await s.bundle("A")  # 1.21.1, fabric, release only
+        return (await s.service.mod_page("P", pack=a)).pack
+
+    mark = mongo(scenario)
+    assert mark is not None and mark.version_channel == "beta"
+
+
 def test_unknown_to_modrinth_is_a_404(mongo: MongoRunner) -> None:
     async def scenario() -> Any:
         s = Scenario(FakeModrinth())

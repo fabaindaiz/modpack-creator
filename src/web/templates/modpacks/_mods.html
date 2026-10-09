@@ -106,7 +106,8 @@
               <dt class="font-medium">Minecraft</dt>
               <dd class="break-words">
                 {%- if row.game_versions %}{% if row.game_versions | length > 8 %}…, {% endif %}{{ row.game_versions[-8:] | join(", ") }}{% else %}—{% endif %}
-                {%- if row.supports_version is true %} · <span class="text-emerald-700 dark:text-emerald-300">{{ bundle.version }} ✓</span>
+                {%- if row.version_channel %} · <span class="text-amber-800 dark:text-amber-300">{{ bundle.version }} · solo {{ row.version_channel }}</span>
+                {%- elif row.supports_version is true %} · <span class="text-emerald-700 dark:text-emerald-300">{{ bundle.version }} ✓</span>
                 {%- elif row.supports_version is false %} · <span class="text-red-700 dark:text-red-300">no soporta {{ bundle.version }}</span>{% endif -%}
               </dd>
             </dl>

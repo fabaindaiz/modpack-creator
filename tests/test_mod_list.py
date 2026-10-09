@@ -331,6 +331,26 @@ def test_support_flags_follow_the_pack(mongo: MongoRunner) -> None:
     assert mongo(scenario) == [(False, True), (True, False), (True, True)]
 
 
+def test_a_version_only_outside_the_pack_channels_is_marked_with_its_channel(mongo: MongoRunner) -> None:
+    # Tester feedback (2026-10-08): the card said "1.21.1 ✓" for a mod with only a beta for 1.21.1,
+    # while the resolution marked it as a problem. The project's game versions span every channel.
+    async def scenario() -> Any:
+        s = Scenario(FakeModrinth())
+        await s.modrinthDB.project_upsert_many([project(i, i) for i in ("P1", "P2", "P3", "P4")])
+        await s.modrinthDB.version_upsert_many([
+            version("b1", "P1", "1.0-beta", 1, kind="beta"),
+            version("r1", "P1", "0.9", 2, game_versions=["1.20.1"]),
+            version("a2", "P2", "1.0-alpha", 1, kind="alpha"), version("b2", "P2", "1.0-beta", 2, kind="beta"),
+            version("r3", "P3", "1.0", 1), version("b3", "P3", "1.1-beta", 2, kind="beta"),
+            version("q4", "P4", "1.0-beta", 1, kind="beta", loaders=["forge"])])
+        bundle_id = await s.bundle([(i, ProjectOrigin.pack) for i in ("P1", "P2", "P3", "P4", "P5")])
+        rows = (await s.service.mod_list(bundle_id, check=None)).rows
+        return [(r.project_id, r.version_channel) for r in rows]
+
+    # P4's beta is for another loader and P5 has no versions in the catalog: nothing to say.
+    assert mongo(scenario) == [("P1", "beta"), ("P2", "beta"), ("P3", None), ("P4", None), ("P5", None)]
+
+
 def test_support_flags_are_unknown_without_the_project(mongo: MongoRunner) -> None:
     async def scenario() -> Any:
         s = Scenario(FakeModrinth(fail=True))

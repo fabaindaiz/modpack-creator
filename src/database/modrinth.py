@@ -135,6 +135,13 @@ class ModrinthDatabase():
             return []
         return await ModrinthVersion.find(In(ModrinthVersion.version_id, version_ids)).to_list()
 
+    async def version_find_for_game_version(self, project_ids: list[str], game_version: str) -> list[ModrinthVersion]:
+        """The stored versions of these projects that list this Minecraft version, any loader or channel."""
+        if not project_ids:
+            return []
+        return await ModrinthVersion.find(In(ModrinthVersion.project_id, project_ids),
+                                          ModrinthVersion.game_versions == game_version).to_list()
+
     async def version_find_by_project(self, project_id: str, limit: int) -> list[ModrinthVersion]:
         """The stored versions of a project, newest first, at most `limit` (by the project_id index)."""
         return await ModrinthVersion.find(ModrinthVersion.project_id == project_id) \
