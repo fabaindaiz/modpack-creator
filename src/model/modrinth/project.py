@@ -75,6 +75,8 @@ class ModrinthProject(Document):
 
     published: datetime
     updated: datetime
+    # When the catalog last stored it from Modrinth; None on projects stored before it was kept.
+    fetched_at: Optional[datetime] = None
 
     @staticmethod
     def parse(**kwargs) -> "ModrinthProject":

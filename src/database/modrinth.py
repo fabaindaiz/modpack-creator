@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timezone
 from beanie import PydanticObjectId, SortDirection
 from beanie.operators import In
 from beanie.odm.queries.find import FindOne
@@ -9,6 +10,7 @@ from src.model.modrinth import (
     ModrinthProject,
     ModrinthVersion,
     ModrinthVersionList,
+    ModrinthUnknown,
 )
 from src.exceptions import *
 
@@ -86,6 +88,9 @@ class ModrinthDatabase():
         """
         # One write per key: two concurrent upserts of one key race on the unique index.
         projects = list({p.project_id: p for p in projects}.values())
+        now = datetime.now(timezone.utc)
+        for project in projects:
+            project.fetched_at = now
         await asyncio.gather(*[self._upsert(ModrinthProject.find_one(ModrinthProject.project_id == project.project_id), project) for project in projects])
         return await ModrinthProject.find(In(ModrinthProject.project_id, [p.project_id for p in projects])).to_list()
 
@@ -168,6 +173,19 @@ class ModrinthDatabase():
             return []
         return await ModrinthVersion.find(ModrinthVersion.project_id == project_id,
                                           In(ModrinthVersion.version_id, version_ids)).to_list()
+
+    async def unknown_find(self, project_ids: list[str], since: datetime) -> set[str]:
+        """The ids among these Modrinth did not know at or after `since`."""
+        if not project_ids:
+            return set()
+        found = await ModrinthUnknown.find(In(ModrinthUnknown.project_id, project_ids), ModrinthUnknown.checked_at >= since).to_list()
+        return {u.project_id for u in found}
+
+    async def unknown_add(self, project_ids: list[str], when: datetime) -> None:
+        """Remember that Modrinth did not know these ids at `when`."""
+        collection = ModrinthUnknown.get_pymongo_collection()
+        for project_id in project_ids:
+            await collection.update_one({"project_id": project_id}, {"$set": {"checked_at": when}}, upsert=True)
 
     async def version_find_by_project(self, project_id: str, limit: int) -> list[ModrinthVersion]:
         """The stored versions of a project, newest first, at most `limit` (by the project_id index)."""

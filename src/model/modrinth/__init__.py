@@ -2,6 +2,7 @@ from src.model.modrinth.game_version import ModrinthGameVersion, newest_first
 from src.model.modrinth.project import ModrinthProject
 from src.model.modrinth.version import ModrinthVersion
 from src.model.modrinth.version_list import ModrinthVersionList
+from src.model.modrinth.unknown import ModrinthUnknown
 
 __all__ = [
     "ModrinthGameVersion",
@@ -9,4 +10,5 @@ __all__ = [
     "ModrinthProject",
     "ModrinthVersion",
     "ModrinthVersionList",
+    "ModrinthUnknown",
 ]

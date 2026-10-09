@@ -242,6 +242,8 @@ def test_missing_icons_are_filled_in_one_batch_call(mongo: MongoRunner) -> None:
         api = FakeModrinth([project("P1", "Sodium"), project("P2", "Iris")])
         s = Scenario(api)
         await s.modrinthDB.project_upsert_many([project("P1", "Sodium", icon=None), project("P3", "Lithium")])
+        # Stored before projects carried when they were fetched: worth asking again for its icon.
+        await ModrinthProject.get_pymongo_collection().update_one({"project_id": "P1"}, {"$unset": {"fetched_at": ""}})
         bundle_id = await s.bundle([("P1", ProjectOrigin.pack), ("P2", ProjectOrigin.pack), ("P3", ProjectOrigin.pack)])
         listed = await s.service.mod_list(bundle_id, check=None)
         return api.calls, [(r.project_id, r.icon_url) for r in listed.rows], listed.icons_missing
@@ -418,3 +420,38 @@ def test_projects_filled_returns_the_catalog_and_fills_what_is_missing(mongo: Mo
         return sorted(filled), api.calls
 
     assert mongo(scenario) == (["P1", "P2"], [("project_get_many", ["P2", "P3"])])
+
+
+def test_the_version_picker_asks_modrinth_once_and_then_reads_the_catalog(mongo: MongoRunner) -> None:
+    # Spec 2026-10-09-economia-de-requests (F6): one request per card opened became none once the
+    # catalog accounts for the project's versions (the resolution's checks keep them current).
+    async def scenario() -> Any:
+        api = FakeModrinth(versions=[version("a", "P1", "0.8.13", 1), version("b", "P1", "0.8.14", 5)])
+        s = Scenario(api)
+        await s.modrinthDB.project_upsert_many([ModrinthProject.parse(**{**project("P1", "Sodium").model_dump(mode="json"),
+                                                                         "id": "P1", "versions": ["a", "b"]})])
+        bundle_id = await s.bundle([("P1", ProjectOrigin.pack)])
+        first = [o.version_number for o in await s.service.project_versions(bundle_id, "P1")]
+        second = [o.version_number for o in await s.service.project_versions(bundle_id, "P1")]
+        return first, second, [c[0] for c in api.calls]
+
+    first, second, calls = mongo(scenario)
+    assert first == second == ["0.8.14", "0.8.13"] and calls == ["project_versions"]
+
+
+
+def test_a_page_does_not_ask_again_for_an_icon_modrinth_just_said_it_lacks_nor_for_an_unknown_id(mongo: MongoRunner) -> None:
+    # Spec 2026-10-09-economia-de-requests (F6): each render asked again for every project without an
+    # icon and every id Modrinth does not know. Now both wait 24 hours.
+    async def scenario() -> Any:
+        api = FakeModrinth([project("P1", "Sodium", icon=None)])
+        s = Scenario(api)
+        bundle_id = await s.bundle([("P1", ProjectOrigin.pack), ("GONE1", ProjectOrigin.pack)])
+        await s.service.mod_list(bundle_id, check=None)
+        first = list(api.calls)
+        api.calls.clear()
+        await s.service.mod_list(bundle_id, check=None)
+        return first, api.calls
+
+    first, second = mongo(scenario)
+    assert first == [("project_get_many", ["P1", "GONE1"])] and second == []

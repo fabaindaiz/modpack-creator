@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Optional, Sequence
 from src.library.resolution import LOADER_ACCEPTS, TYPE_LOADERS
 from src.library.api.client.modrinth import ModrinthAPI
@@ -12,6 +13,10 @@ from src.exceptions import *
 SEARCH_TYPES = ("mod", "shader", "resourcepack", "datapack")
 # How long filling the catalog for a page waits for Modrinth: a page must not wait for it.
 FILL_DEADLINE = 5.0
+# How long the catalog trusts that a project has no icon, or that Modrinth does not know an id.
+RECHECK_AFTER = timedelta(hours=24)
+# How many ids go in one Modrinth request.
+ID_CHUNK = 100
 
 logger = logging.getLogger("modrinth.catalog")
 
@@ -25,16 +30,33 @@ async def fill_catalog(modrinthDB: ModrinthDatabase, modrinthAPI: ModrinthAPI, p
     """
     wanted = list(dict.fromkeys(project_ids))
     stored = {p.project_id: p for p in await modrinthDB.project_find_by_modrinth_id(wanted)}
-    missing = [i for i in wanted if i not in stored or not stored[i].icon_url]
+    now = datetime.now(timezone.utc)
+    # Asked again only after a day: an id Modrinth did not know, or a project it gave without an icon
+    # (spec 2026-10-09-economia-de-requests, F6). One stored before `fetched_at` existed is asked.
+    unknown = await modrinthDB.unknown_find([i for i in wanted if i not in stored], now - RECHECK_AFTER)
+    missing = [i for i in wanted if (i not in stored and i not in unknown)
+               or (i in stored and not stored[i].icon_url and _older(stored[i].fetched_at, now))]
     if missing:
         async def fetch() -> list[ModrinthProject]:
-            return await modrinthDB.project_upsert_many(await modrinthAPI.project_get_many(missing))
+            found: list[ModrinthProject] = []
+            for start in range(0, len(missing), ID_CHUNK):
+                found += list(await modrinthAPI.project_get_many(missing[start:start + ID_CHUNK]))
+            returned = {p.project_id for p in found} | {p.slug for p in found}
+            await modrinthDB.unknown_add([i for i in missing if i not in returned and i not in stored], now)
+            return await modrinthDB.project_upsert_many(found)
         try:
             for project in await asyncio.wait_for(fetch(), deadline):
                 stored[project.project_id] = project
         except Exception:
             logger.warning("catalog fill of %d projects failed or ran out of time", len(missing), exc_info=True)
     return stored
+
+
+def _older(fetched_at: Optional[datetime], now: datetime) -> bool:
+    if fetched_at is None:
+        return True
+    fetched_at = fetched_at if fetched_at.tzinfo else fetched_at.replace(tzinfo=timezone.utc)
+    return now - fetched_at >= RECHECK_AFTER
 
 
 class ModrinthService():

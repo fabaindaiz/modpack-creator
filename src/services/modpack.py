@@ -572,8 +572,9 @@ class ModpackService():
         """
         The versions of one project the admin can pin it to: those for the pack's Minecraft version
         and the loaders its resolution accepts for the project's type, in the channels the pack
-        allows, newest first. Asked of Modrinth and stored in the catalog. 422 for an id that is
-        not a Modrinth id.
+        allows, newest first. From the catalog when it accounts for the project's versions (the
+        resolution's checks keep them current); else asked of Modrinth once and stored with its
+        list (spec 2026-10-09-economia-de-requests, F6). 422 for an id that is not a Modrinth id.
         """
         if not MODRINTH_ID.fullmatch(project_id):
             raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{project_id}' no es un id de Modrinth")
@@ -581,9 +582,14 @@ class ModpackService():
         stored = await self.modrinthDB.project_find_by_modrinth_id([project_id])
         kind = stored[0].project_type.value if stored else "mod"
         target = Target(game_version=bundle.version, loader=str(bundle.loader.value), channels=frozenset(bundle.channels))
-        found = list(await self.modrinthAPI.project_versions(project_id, sorted(target.loaders(kind)), [bundle.version]))
-        if found:
-            await self.modrinthDB.version_upsert_many(found)
+        loaders = sorted(target.loaders(kind))
+        record = next((r for r in await self.modrinthDB.version_lists_find([project_id], bundle.version)
+                       if r.loaders == loaders), None)
+        if record is not None:
+            found = [v for v in await self.modrinthDB.version_find_listed(project_id, record.version_ids)
+                     if bundle.version in v.game_versions and set(loaders) & set(v.loaders)]
+        else:
+            found = await self._versions_fetch(project_id, loaders, bundle.version)
         allowed = [v for v in found if v.version_type.value in bundle.channels and v.status.value == "listed"]
         allowed.sort(key=lambda v: v.date_published, reverse=True)
         return [VersionOption(version_id=v.version_id, version_number=v.version_number,
