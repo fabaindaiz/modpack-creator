@@ -5,7 +5,12 @@ from typing import Any, Optional
 import pytest
 from dependency_injector import providers
 
+from datetime import datetime, timezone
+
+from beanie import PydanticObjectId
+
 from src.exceptions import HTTP_409_CONFLICT
+from src.model.jobs import Job
 from src.model.users import Actor
 from src.services.modpack_import import ImportReport
 from tests._actors import EDITOR
@@ -22,18 +27,25 @@ class FakeImport:
             bundle_id=str(BUNDLE_ID), created=True, source="Aventura 2.0", projects=["P1", "P2", "P3"],
             unknown=["mods/privado.jar", "overrides/mods/propio.jar"], overrides={"overrides/config": 31, "overrides/kubejs": 6},
             decisions={"P1": False}, channel_exceptions={"P3": "beta"})
+        self.job = Job.model_construct(
+            id=PydanticObjectId(), kind="modpack_import", key="import:x", status="queued", active=True, payload={},
+            progress=None, waiting_until=None, updated_at=None, created_at=datetime.now(timezone.utc), attempts=0,
+            max_attempts=1, error=None, requested_by=EDITOR.ref(), checkpoint={}, step=None)
 
-    async def import_mrpack(self, data: bytes, actor: Actor, into: Optional[str] = None) -> ImportReport:
+    async def import_mrpack(self, data: bytes, actor: Actor, into: Optional[str] = None) -> Job:
         self.calls.append(("import_mrpack", data, actor, into))
         if self.error:
             raise self.error
-        return self.report
+        return self.job
 
-    async def import_modrinth(self, ref: str, actor: Actor, into: Optional[str] = None) -> ImportReport:
+    async def import_modrinth(self, ref: str, actor: Actor, into: Optional[str] = None) -> Job:
         self.calls.append(("import_modrinth", ref, actor, into))
         if self.error:
             raise self.error
-        return self.report
+        return self.job
+
+    async def import_status(self, job_id: str) -> tuple[Job, Optional[ImportReport]]:
+        return self.job, self.report if self.job.status == "done" else None
 
 
 @pytest.fixture(autouse=True)
@@ -72,11 +84,16 @@ def test_the_pack_page_offers_replacing_its_content_and_says_what_stays() -> Non
     assert "lo que agregaste a mano se queda" in visible(section)
 
 
-def test_an_uploaded_mrpack_is_imported_and_the_report_says_what_was_left_out() -> None:
+def test_an_uploaded_mrpack_queues_its_import_and_shows_it_until_the_report() -> None:
     client, fake = setup()
     response = client.post("/modpacks/importar", headers=HTMX, files={"archivo": ("pack.mrpack", b"PK data", "application/zip")})
-    assert response.status_code == 200
+    assert response.status_code == 200 and response.headers["HX-Trigger"] == "job-started"
     assert fake.calls == [("import_mrpack", b"PK data", EDITOR, None)]
+    assert "Importación de modpack" in response.text and 'hx-trigger="every 2s"' in response.text
+    assert f'hx-get="/modpacks/importar/{fake.job.id}"' in response.text
+    fake.job.status, fake.job.active = "done", False
+    response = client.get(f"/modpacks/importar/{fake.job.id}", headers=HTMX)
+    assert "every 2s" not in response.text
     shown = " ".join(visible(response.text).split())
     assert "Importado: 3 mods de Aventura 2.0" in shown
     assert "No están en Modrinth (2)" in shown and "mods/privado.jar" in shown and "overrides/mods/propio.jar" in shown
@@ -118,3 +135,11 @@ def test_a_refusal_of_the_service_reaches_the_panel_in_its_words() -> None:
     fake.error = HTTP_409_CONFLICT("El archivo es para 1.21.1 con fabric; este pack es 1.20.1 con fabric. No se cambió nada.")
     response = client.post("/modpacks/importar", headers=HTMX, data={"ref": "aventura", "into": str(BUNDLE_ID)})
     assert response.status_code == 409 and "No se cambió nada" in response.text
+
+
+
+def test_a_failed_import_says_why() -> None:
+    client, fake = setup()
+    fake.job.status, fake.job.active, fake.job.error = "failed", False, "Modrinth no conoce «x»"
+    response = client.get(f"/modpacks/importar/{fake.job.id}", headers=HTMX)
+    assert "No se pudo importar: Modrinth no conoce «x»" in " ".join(visible(response.text).split())

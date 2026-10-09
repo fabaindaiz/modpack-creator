@@ -1,0 +1,13 @@
+{# An import in the form's result (E7): its progress while it is queued or running (polling every
+   2 s), then its report, or why it failed. Needs `job` and, once done, `report`. #}
+{% if job.active %}
+<div hx-get="/modpacks/importar/{{ job.id }}" hx-trigger="every 2s" hx-swap="outerHTML"
+  class="rounded-lg border border-sky-300 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-500/40 dark:bg-sky-950/40 dark:text-sky-100"
+  role="status" aria-live="polite">
+  {% include "_job_progress.html" %}
+</div>
+{% elif report %}
+{% include "modpacks/_import_result.html" %}
+{% else %}
+<p class="break-words rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-500/40 dark:bg-red-950/40 dark:text-red-200" role="alert">No se pudo importar: {{ job.error or "el trabajo falló" }}</p>
+{% endif %}

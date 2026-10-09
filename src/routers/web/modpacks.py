@@ -8,7 +8,7 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Form, Query, Request
 from starlette.datastructures import FormData, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from src.exceptions import BuildBlocked, HTTP_413_CONTENT_TOO_LARGE, HTTP_422_UNPROCESSABLE_ENTITY, QuotaExceeded, UpstreamError
+from src.exceptions import BuildBlocked, HTTP_404_NOT_FOUND, HTTP_413_CONTENT_TOO_LARGE, HTTP_422_UNPROCESSABLE_ENTITY, QuotaExceeded, UpstreamError
 from src.library.resolution import ADMIN, Lock
 from src.dependences import Dependences, ModpackImportService, ModpackService, ModrinthService, PterodactylService, UpdateCheckService
 from src.model.modpack import ModpackBundle, ModpackBundleCreate, ModpackBundlePatch, ProjectOrigin
@@ -367,12 +367,29 @@ async def modpack_import(
     upload, ref = form.get("archivo"), str(form.get("ref") or "").strip()
     if isinstance(upload, UploadFile) and upload.filename:
         data = await upload.read(IMPORT_MAX_BYTES + 1)
-        report = await importService.import_mrpack(data, actor, into=into)
+        job = await importService.import_mrpack(data, actor, into=into)
     elif ref:
-        report = await importService.import_modrinth(ref[:500], actor, into=into)
+        job = await importService.import_modrinth(ref[:500], actor, into=into)
     else:
         raise HTTP_422_UNPROCESSABLE_ENTITY("Elige un archivo .mrpack o escribe la URL de un modpack de Modrinth")
-    return render(request, "modpacks/_import_result.html", actor, report=report)
+    response = render(request, "modpacks/_import_job.html", actor, job=job, report=None)
+    response.headers["HX-Trigger"] = JOB_STARTED
+    return response
+
+@router.get("/modpacks/importar/{job_id}")
+@inject
+async def modpack_import_status(
+        job_id: str,
+        request: Request,
+        actor: Actor = Depends(get_web_actor),
+        importService: ModpackImportService = Depends(Provide[Dependences.modpackImportService]),
+        ):
+    """An import job in the form's result: its progress while it runs (polling), then its report or
+    why it failed."""
+    if not re.fullmatch(BUNDLE_REF, job_id):
+        raise HTTP_404_NOT_FOUND("Esa importación no existe")
+    job, report = await importService.import_status(job_id)
+    return render(request, "modpacks/_import_job.html", actor, job=job, report=report)
 
 @router.get("/modpacks/{bundle_id}")
 @inject

@@ -33,7 +33,8 @@ from src.services.update_check import schedule_from_env
 def job_handlers(container: Dependences) -> dict[str, Handler]:
     """Every kind of job a service queues, with its handler: the worker runs these."""
     return {**container.jobService().handlers(), **container.updateService().handlers(),
-            **container.updateCheckService().handlers(), **container.modpackService().handlers()}
+            **container.updateCheckService().handlers(), **container.modpackService().handlers(),
+            **container.modpackImportService().handlers()}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

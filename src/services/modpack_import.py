@@ -8,14 +8,17 @@ or alpha outside the pack's channels the channel exception, only where nothing i
 """
 import hashlib
 import re
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import asdict, dataclass, field
+from typing import Any, Optional
 from urllib.parse import urlparse
 from fastapi import HTTPException
 from src.database import ModpackDatabase, ModrinthDatabase
 from src.library.api.client.download import Downloader, TooLarge
 from src.library.api.client.modrinth import ModrinthAPI
-from src.library.mrpack_import import MrpackContent, MrpackError, MrpackLimits, read_mrpack
+from src.library.mrpack_import import IndexFile, MrpackContent, MrpackError, MrpackLimits, OverrideJar, read_mrpack
+from src.database.jobs import JobDatabase
+from src.model.jobs import Job
+from src.services.jobs import Handler, JobContext, JobFailed
 from src.library.resolution import EXCEPTION_CHANNELS
 from src.model.audit import AuditTarget
 from src.model.modpack import ModpackBundle
@@ -25,7 +28,7 @@ from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
 from src.services.audit import AuditSink
 from src.services.modpack import MODRINTH_ID, ModpackService
-from src.exceptions import HTTP_409_CONFLICT, HTTP_422_UNPROCESSABLE_ENTITY
+from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT, HTTP_422_UNPROCESSABLE_ENTITY
 
 LIMITS = MrpackLimits()
 # A published modpack's file is only fetched from Modrinth's CDN.
@@ -57,7 +60,9 @@ class ModpackImportService():
             modrinthAPI: ModrinthAPI,
             downloader: Downloader,
             audit: AuditSink,
+            jobDB: Optional[JobDatabase] = None,
             ) -> None:
+        self.jobDB = jobDB or JobDatabase()
         self.modpackService = modpackService
         self.modpackDB = modpackDB
         self.modrinthDB = modrinthDB
@@ -65,18 +70,88 @@ class ModpackImportService():
         self.downloader = downloader
         self.audit = audit
 
-    async def import_mrpack(self, data: bytes, actor: Actor, into: Optional[str] = None) -> ImportReport:
+    async def import_mrpack(self, data: bytes, actor: Actor, into: Optional[str] = None) -> Job:
         """
-        Import an uploaded .mrpack: a new pack, or the content of `into`. 422 naming why if the file
-        is not a valid .mrpack; 409 if `into` is for another Minecraft version or loader. Either way,
-        nothing is written.
+        Import an uploaded .mrpack (spec 2026-10-09-economia-de-requests, E7): read now, with no
+        request, and identified on Modrinth by the person's import job (one at a time: asking again
+        gives the running one). 422 naming why if the file is not a valid .mrpack; 409 if `into` is
+        for another Minecraft version or loader. Either way, no job.
         """
         content = _read(data)
-        report = await self._import(content, actor, into, source=_label(content))
-        await self.audit.record(actor, "bundle.import", _target(report), _details(report))
-        return report
+        if into is not None:
+            _same_target(await self.modpackDB.bundle_get(into), content)
+        job, new = await self._job(actor, {"content": asdict(content), "into": into, "source": _label(content)})
+        if new:
+            await self.audit.record(actor, "bundle.import.request", _target(into),
+                                    {"source": _label(content), "job_id": str(job.id)})
+        return job
 
-    async def import_modrinth(self, ref: str, actor: Actor, into: Optional[str] = None) -> ImportReport:
+    async def import_modrinth(self, ref: str, actor: Actor, into: Optional[str] = None) -> Job:
+        """
+        Import a modpack published on Modrinth (by URL, slug or id) in the person's import job. A
+        reference that is not Modrinth's is a 422 now, with no job.
+        """
+        _parse_ref(ref)
+        job, new = await self._job(actor, {"ref": ref, "into": into})
+        if new:
+            await self.audit.record(actor, "bundle.import.request", _target(into), {"source": ref, "job_id": str(job.id)})
+        return job
+
+    async def import_status(self, job_id: str) -> tuple[Job, Optional[ImportReport]]:
+        """An import job and, once it is done, its report."""
+        job = await self.jobDB.get(job_id)
+        if job.kind != "modpack_import":
+            raise HTTP_404_NOT_FOUND(f"Job '{job_id}' is not an import")
+        saved = job.checkpoint.get("import")
+        return job, ImportReport(**saved) if saved else None
+
+    async def _job(self, actor: Actor, payload: dict[str, Any]) -> tuple[Job, bool]:
+        """The person's import job: a new one (True), or the one already queued or running (False)."""
+        key = f"import:{actor.sub}"
+        try:
+            return await self.jobDB.enqueue("modpack_import", key=key, payload=payload, requested_by=actor.ref(),
+                                            max_attempts=1), True
+        except HTTP_409_CONFLICT:
+            active = await self.jobDB.active_for(key)
+            if active is None:
+                raise
+            return active, False
+
+    def handlers(self) -> dict[str, Handler]:
+        return {"modpack_import": self._run}
+
+    async def _run(self, job: Job, context: JobContext) -> None:
+        asked = job.requested_by
+        if asked is None:
+            raise JobFailed("Una importación sin quién la pidió no se hace: no quedaría en la auditoría")
+        actor = Actor(iss=asked.iss, sub=asked.sub, name=asked.name, groups=frozenset(), is_operator=False)
+        payload = job.payload
+
+        async def run() -> dict[str, Any]:
+            try:
+                if "ref" in payload:
+                    await context.progress("Buscando el modpack en Modrinth", 0, 1)
+                    report = await self.run_modrinth(payload["ref"], actor, payload.get("into"))
+                else:
+                    await context.progress("Identificando los archivos en Modrinth", 0, 1)
+                    report = await self.run_content(_content(payload["content"]), actor, payload.get("into"),
+                                                    payload["source"])
+            except HTTPException as error:
+                # Refused for a reason the person reads (not on Modrinth, altered file): no retry.
+                raise JobFailed(str(error.detail)) from error
+            return asdict(report)
+
+        await context.step("import", run)
+
+    async def run_mrpack(self, data: bytes, actor: Actor, into: Optional[str] = None) -> ImportReport:
+        """Import an uploaded .mrpack now (the job's work; tests call it directly)."""
+        content = _read(data)
+        return await self.run_content(content, actor, into, _label(content))
+
+    async def run_content(self, content: MrpackContent, actor: Actor, into: Optional[str], source: str) -> ImportReport:
+        return await self._import(content, actor, into, source=source)
+
+    async def run_modrinth(self, ref: str, actor: Actor, into: Optional[str] = None) -> ImportReport:
         """
         Import a modpack published on Modrinth, by its URL (of the project or of one version), slug
         or id, or a version id: without a version, the newest listed one. Its primary file must be on
@@ -95,9 +170,7 @@ class ModpackImportService():
             chosen = max(listed, key=lambda v: v.date_published)
         data = await self._download(chosen)
         content = _read(data)
-        report = await self._import(content, actor, into, source=f"{project.title} {chosen.version_number}")
-        await self.audit.record(actor, "bundle.import", _target(report), _details(report))
-        return report
+        return await self._import(content, actor, into, source=f"{project.title} {chosen.version_number}")
 
     async def _published(self, slug: str, wanted: Optional[str]) -> tuple[ModrinthProject, list[ModrinthVersion]]:
         """The modpack project and its versions: by slug or id, else by a version id. Two calls."""
@@ -142,10 +215,7 @@ class ModpackImportService():
         target: Optional[ModpackBundle] = None
         if into is not None:
             target = await self.modpackDB.bundle_get(into)
-            if (target.version, target.loader) != (content.game_version, loader):
-                raise HTTP_409_CONFLICT(
-                    f"El archivo es para {content.game_version} con {content.loader}; este pack es "
-                    f"{target.version} con {target.loader.value}. No se cambió nada.")
+            _same_target(target, content)
         found = await self._identify([f.sha512 for f in content.files] + [j.sha512 for j in content.override_jars])
         project_ids = list(dict.fromkeys(found[h].project_id for h in
                                          [f.sha512 for f in content.files] + [j.sha512 for j in content.override_jars]
@@ -189,14 +259,22 @@ class ModpackImportService():
         return found
 
 
-def _target(report: ImportReport) -> AuditTarget:
-    return AuditTarget(kind="bundle", id=report.bundle_id)
+def _target(into: Optional[str]) -> AuditTarget:
+    return AuditTarget(kind="bundle", id=into or "nuevo")
 
 
-def _details(report: ImportReport) -> dict[str, object]:
-    return {"source": report.source, "created": report.created, "projects": len(report.projects),
-            "unknown": report.unknown, "overrides": report.overrides, "decisions": report.decisions,
-            "channel_exceptions": report.channel_exceptions}
+def _same_target(target: ModpackBundle, content: MrpackContent) -> None:
+    """409, with nothing changed, if the pack is for another Minecraft version or loader."""
+    if (target.version, target.loader) != (content.game_version, MinecraftLoaders(content.loader)):
+        raise HTTP_409_CONFLICT(
+            f"El archivo es para {content.game_version} con {content.loader}; este pack es "
+            f"{target.version} con {target.loader.value}. No se cambió nada.")
+
+
+def _content(data: dict[str, Any]) -> MrpackContent:
+    """A read .mrpack back from a job's payload."""
+    return MrpackContent(**{**data, "files": [IndexFile(**f) for f in data["files"]],
+                            "override_jars": [OverrideJar(**j) for j in data["override_jars"]]})
 
 
 def _read(data: bytes) -> MrpackContent:

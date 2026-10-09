@@ -150,7 +150,7 @@ class Scenario:
 def test_a_new_pack_from_an_mrpack_takes_its_target_its_mods_and_what_they_run_on(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[Any, ...]:
         s = Scenario()
-        report = await s.service.import_mrpack(mrpack(), EDITOR)
+        report = await s.service.run_mrpack(mrpack(), EDITOR)
         bundle = await s.modpackDB.bundle_get(report.bundle_id)
         return report, bundle, s.api.calls, [e[0] for e in s.audit.events]
 
@@ -167,14 +167,14 @@ def test_a_new_pack_from_an_mrpack_takes_its_target_its_mods_and_what_they_run_o
     # One identification call for every hash, then one call for the projects: nothing per mod.
     assert [c[0] for c in calls] == ["files_hash_post_many", "project_get_many"]
     assert calls[0][1][0] == "sha512" and len(calls[0][1][1]) == 5
-    assert "bundle.import" in events
+    assert "bundle.create" in events and "bundle.project.replace" in events
 
 
 def test_hashes_the_catalog_already_has_are_not_asked_again(mongo: MongoRunner) -> None:
     async def scenario() -> list[tuple[str, Any]]:
         s = Scenario()
         await ModrinthDatabase().version_upsert_many([ModrinthVersion.parse(**v) for v in s.api.versions])
-        await s.service.import_mrpack(mrpack(), EDITOR)
+        await s.service.run_mrpack(mrpack(), EDITOR)
         return [c for c in s.api.calls if c[0] == "files_hash_post_many"]
 
     [(_, (algorithm, asked))] = mongo(scenario)
@@ -186,7 +186,7 @@ def test_replacing_the_content_keeps_what_the_admin_added(mongo: MongoRunner) ->
         s = Scenario()
         bundle_id = await s.bundle()
         await s.modpackDB.bundle_decision_set(bundle_id, SODIUM[0], True)
-        report = await s.service.import_mrpack(mrpack(), EDITOR, into=bundle_id)
+        report = await s.service.run_mrpack(mrpack(), EDITOR, into=bundle_id)
         bundle = await s.modpackDB.bundle_get(bundle_id)
         return report, {p.project_id: p.origin for p in bundle.projects} | {"decisions": bundle.server_decisions}
 
@@ -202,7 +202,7 @@ def test_another_target_than_the_pack_is_refused_and_changes_nothing(mongo: Mong
         s = Scenario()
         bundle_id = await s.bundle()
         with pytest.raises(HTTPException) as refused:
-            await s.service.import_mrpack(mrpack(game=game, loader=loader), EDITOR, into=bundle_id)
+            await s.service.run_mrpack(mrpack(game=game, loader=loader), EDITOR, into=bundle_id)
         bundle = await s.modpackDB.bundle_get(bundle_id)
         return refused.value.status_code, str(refused.value.detail), [p.project_id for p in bundle.projects], s.api.calls
 
@@ -214,7 +214,7 @@ def test_a_broken_mrpack_is_a_422_with_its_reason_and_nothing_is_created(mongo: 
     async def scenario() -> tuple[int, str, int]:
         s = Scenario()
         with pytest.raises(HTTPException) as refused:
-            await s.service.import_mrpack(b"not a zip", EDITOR)
+            await s.service.run_mrpack(b"not a zip", EDITOR)
         return refused.value.status_code, str(refused.value.detail), await ModpackBundle.find().count()
 
     status, detail, bundles = mongo(scenario)
@@ -243,7 +243,7 @@ def test_a_published_modpack_imports_its_newest_version(mongo: MongoRunner, ref:
     async def scenario() -> tuple[Any, ...]:
         s = Scenario()
         published(s, ("v1", 1, "cdn.modrinth.com"), ("v2", 2, "cdn.modrinth.com"))
-        report = await s.service.import_modrinth(ref, EDITOR)
+        report = await s.service.run_modrinth(ref, EDITOR)
         return report, s.downloader.calls, [c[0] for c in s.api.calls]
 
     report, downloads, calls = mongo(scenario)
@@ -256,7 +256,7 @@ def test_a_version_url_imports_that_version(mongo: MongoRunner) -> None:
     async def scenario() -> str:
         s = Scenario()
         published(s, ("v1", 1, "cdn.modrinth.com"), ("v2", 2, "cdn.modrinth.com"))
-        return (await s.service.import_modrinth("https://modrinth.com/modpack/aventura-pack/version/v1", EDITOR)).source
+        return (await s.service.run_modrinth("https://modrinth.com/modpack/aventura-pack/version/v1", EDITOR)).source
 
     assert mongo(scenario) == "Aventura Pack v1"
 
@@ -265,7 +265,7 @@ def test_a_version_id_alone_imports_that_version(mongo: MongoRunner) -> None:
     async def scenario() -> str:
         s = Scenario()
         published(s, ("v1", 1, "cdn.modrinth.com"))
-        return (await s.service.import_modrinth("v1", EDITOR)).source
+        return (await s.service.run_modrinth("v1", EDITOR)).source
 
     assert mongo(scenario) == "Aventura Pack v1"
 
@@ -294,8 +294,79 @@ def test_a_published_modpack_is_refused_with_its_reason(mongo: MongoRunner, setu
         elif setup == "bad_url":
             ref = "https://evil.example/modpack/aventura-pack"
         with pytest.raises(HTTPException) as refused:
-            await s.service.import_modrinth(ref, EDITOR)
+            await s.service.run_modrinth(ref, EDITOR)
         return refused.value.status_code, str(refused.value.detail), await ModpackBundle.find().count()
 
     status, detail, bundles = mongo(scenario)
     assert status == 422 and reason in detail and bundles == 0
+
+
+
+# Como trabajo (spec 2026-10-09-economia-de-requests, E7): leer el archivo y validar el destino es
+# inmediato; lo que pide a Modrinth va en un trabajo, uno por persona a la vez, con su informe.
+
+
+async def run_jobs(s: Scenario) -> None:
+    from src.database.jobs import JobDatabase
+    from src.services.jobs import JobWorker
+
+    worker = JobWorker(JobDatabase(), s.service.handlers(), owner="w1")
+    while await worker.run_once():
+        pass
+
+
+def test_an_upload_is_read_at_once_and_identified_in_a_job_with_its_report(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Any, ...]:
+        s = Scenario()
+        job = await s.service.import_mrpack(mrpack(), EDITOR)
+        again = await s.service.import_mrpack(mrpack(), EDITOR)
+        before = list(s.api.calls)
+        await run_jobs(s)
+        done, report = await s.service.import_status(str(job.id))
+        return job, again, before, done, report
+
+    job, again, before, done, report = mongo(scenario)
+    assert (job.kind, job.key) == ("modpack_import", f"import:{EDITOR.sub}") and again.id == job.id
+    assert before == []  # nothing asked of Modrinth before the job
+    assert done.status == "done" and report is not None and report.created
+    assert report.unknown == ["mods/private.jar", "overrides/mods/own.jar"] and len(report.projects) == 3
+
+
+@pytest.mark.parametrize("data, into_other, status", [(b"not a zip", False, 422), (None, True, 409)])
+def test_a_refusal_known_without_modrinth_comes_at_once_without_a_job(
+        mongo: MongoRunner, data: Optional[bytes], into_other: bool, status: int) -> None:
+    async def scenario() -> tuple[int, int]:
+        s = Scenario()
+        into = await s.bundle(version="1.21.1") if into_other else None
+        with pytest.raises(HTTPException) as refused:
+            await s.service.import_mrpack(data if data is not None else mrpack(), EDITOR, into=into)
+        from src.model.jobs import Job
+        return refused.value.status_code, await Job.find().count()
+
+    assert mongo(scenario) == (status, 0)
+
+
+def test_a_modrinth_reference_is_imported_by_a_job(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Any, ...]:
+        s = Scenario()
+        published(s, ("v1", 1, "cdn.modrinth.com"), ("v2", 2, "cdn.modrinth.com"))
+        with pytest.raises(HTTPException) as bad:
+            await s.service.import_modrinth("https://evil.example/modpack/x", EDITOR)
+        job = await s.service.import_modrinth("aventura-pack", EDITOR)
+        before = list(s.api.calls)
+        await run_jobs(s)
+        return bad.value.status_code, before, await s.service.import_status(str(job.id))
+
+    status, before, (done, report) = mongo(scenario)
+    assert status == 422 and before == [] and done.status == "done" and report.source == "Aventura Pack v2"
+
+
+def test_a_job_that_modrinth_refuses_ends_failed_with_the_reason(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Any, Any]:
+        s = Scenario()
+        job = await s.service.import_modrinth("nadie-lo-tiene", EDITOR)
+        await run_jobs(s)
+        return await s.service.import_status(str(job.id))
+
+    done, report = mongo(scenario)
+    assert done.status == "failed" and "no conoce" in (done.error or "") and report is None

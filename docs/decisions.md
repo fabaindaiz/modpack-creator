@@ -85,8 +85,8 @@ los dos, o una fila mal formada, hace fallar el test. El nombre del método no s
 | `ModpackService.build_request` | editor | «Crear build» en el panel: rechaza al instante un pack bloqueado (resuelto desde el catálogo) o deja el trabajo de build, que revisa Modrinth, resuelve y congela. |
 | `ModpackService.project_add` | editor | Agrega mods al bundle. |
 | `ModpackService.pack_replace` | editor | Reemplaza la lista de mods del bundle. |
-| `ModpackImportService.import_mrpack` | editor | Importa un .mrpack subido: crea un pack o reemplaza el contenido de uno (lo que agregó el admin se queda). |
-| `ModpackImportService.import_modrinth` | editor | Importa un modpack publicado en Modrinth, por URL, slug o id: crea un pack o reemplaza el contenido de uno. |
+| `ModpackImportService.import_mrpack` | editor | Importa un .mrpack subido: lo lee al instante y deja el trabajo que lo identifica en Modrinth y crea un pack o reemplaza el contenido de uno (lo que agregó el admin se queda). |
+| `ModpackImportService.import_modrinth` | editor | Importa un modpack publicado en Modrinth, por URL, slug o id, en un trabajo: crea un pack o reemplaza el contenido de uno. |
 | `ModpackService.project_remove` | editor | Quita un mod del bundle. |
 | `ModpackService.resolve` | editor | Calcula el lock del bundle y guarda la última resolución para mostrarla (nunca es entrada de un build); guarda en el catálogo lo que trajo de Modrinth. No toca ningún servidor. |
 | `ModpackService.mod_list` | editor | Arma la lista de mods del bundle; guarda en el catálogo los proyectos (íconos) que trajo de Modrinth en una llamada por lotes. No toca ningún servidor. |

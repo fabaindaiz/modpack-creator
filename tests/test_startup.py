@@ -95,4 +95,4 @@ def test_the_worker_runs_every_kind_a_service_queues() -> None:
     import main
 
     kinds = set(main.job_handlers(main.container))
-    assert {"catalog_refresh", "update_check", "server_scan", "server_update", "server_rollback", "notify"} <= kinds
+    assert {"catalog_refresh", "build_create", "modpack_import", "update_check", "server_scan", "server_update", "server_rollback", "notify"} <= kinds
