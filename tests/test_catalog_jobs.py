@@ -152,3 +152,17 @@ def test_a_build_blocked_by_what_the_check_found_ends_saying_so(mongo: MongoRunn
 
     outcome, blocked = mongo(scenario)
     assert outcome["blocked"] is True and outcome["problems"] >= 1 and blocked is True
+
+
+def test_a_build_of_a_pack_the_catalog_lacks_is_one_click_its_job_brings_what_is_missing(mongo: MongoRunner) -> None:
+    # Seen in the visual sweep (2026-10-09): "Crear build" on a pack never resolved left a catalog job
+    # and asked for a second click. The build job brings what is missing itself.
+    async def scenario() -> tuple[Any, ...]:
+        service, api, clock, bundle_id = await setup()
+        job = await service.build_request(bundle_id, EDITOR)
+        await run_jobs(service)
+        done = await JobDatabase().get(str(job.id))
+        return job.kind, done.checkpoint.get("build"), await service.last_build_blocked(bundle_id)
+
+    kind, outcome, blocked = mongo(scenario)
+    assert kind == "build_create" and outcome["blocked"] is True and blocked is True  # every mod is "Por decidir"

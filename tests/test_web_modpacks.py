@@ -103,6 +103,8 @@ class FakeModpack:
         # The pack's active jobs, for its banner (spec 2026-10-09-economia-de-requests).
         self.jobs: list[Any] = []
         self.build_blocked_now = False
+        # The job build_request answers.
+        self.queued: Any = None
         # What mod_list answers: `rows` as given, or one row per project of the bundle (with the
         # side and pin it has) and per entry of the saved resolution that is not in it.
         self.titles: dict[str, str] = {"P1": "Sodium", "P2": "Lithium"}
@@ -229,7 +231,7 @@ class FakeModpack:
         self._record("build_request", bundle_id, actor)
         if self.blocked is not None:
             raise self.blocked
-        return None
+        return self.queued
 
     async def last_build_blocked(self, bundle_id: str) -> bool:
         return self.build_blocked_now

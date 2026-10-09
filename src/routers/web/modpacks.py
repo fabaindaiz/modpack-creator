@@ -588,8 +588,9 @@ async def pack_catalog_refresh(
         ):
     """"Actualizar desde Modrinth" (E3): the pack's catalog job, or the one already running; the
     banner and the bar show it."""
-    await modpackService.catalog_refresh(bundle_id, actor)
-    response = render(request, "_notice_oob.html", actor, message="Actualizando desde Modrinth")
+    job = await modpackService.catalog_refresh(bundle_id, actor)
+    response = render(request, "_notice_oob.html", actor, message="Actualizando desde Modrinth",
+                      banner_jobs=[job] if job is not None else None, bundle_id=bundle_id)
     response.headers["HX-Trigger"] = JOB_STARTED
     return response
 
@@ -697,7 +698,7 @@ async def build_create(
     try:
         if decisions:
             await modpackService.decisions_set(bundle_id, decisions, actor)
-        await modpackService.build_request(bundle_id, actor)
+        job = await modpackService.build_request(bundle_id, actor)
     except BuildBlocked as blocked:
         nothing_decided = from_dialog and not decisions and blocked.only_undecided
         return await _build_dialog(request, actor, modpackService, modrinthService, bundle_id, blocked.lock,
@@ -705,7 +706,10 @@ async def build_create(
                                    explain=from_dialog or bool(decisions))
     # The build is a job now (E9): the banner shows it and the page reloads when it ends. The
     # dialog, if this came from it, closes: its content is emptied.
-    response = render(request, "_notice_oob.html", actor, message=BUILD_QUEUED)
+    # The banner comes with the job, so even one that ends at once is seen ending (and opens the
+    # dialog if blocked).
+    response = render(request, "_notice_oob.html", actor, message=BUILD_QUEUED,
+                      banner_jobs=[job] if job is not None else None, bundle_id=bundle_id)
     response.headers["HX-Trigger"] = JOB_STARTED
     response.headers["HX-Retarget"] = "#build-dialog"
     response.headers["HX-Reswap"] = "innerHTML"

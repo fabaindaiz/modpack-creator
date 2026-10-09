@@ -1010,12 +1010,21 @@ class ModpackService():
     async def build_request(self, bundle_id: str, actor: Actor) -> Job:
         """
         "Crear build" in the panel (E9): resolved from the catalog first, with no request, a pack
-        that cannot be built is refused at once (BuildBlocked, as build_create). Otherwise the build
-        job: it checks Modrinth, resolves and freezes (build_create). Asking again while it is queued
-        or running gives that job.
+        that cannot be built is refused at once (BuildBlocked, as build_create). Otherwise, or when
+        the catalog lacks something, the build job: it checks Modrinth (bringing what is missing),
+        resolves and freezes (build_create). Asking again while it is queued or running gives that job.
         """
-        lock = await self.resolve(bundle_id, actor)
-        _refuse_blocked(lock)
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        request = await self._request(bundle)
+        try:
+            lock = await self._resolve(request, local_only=True)
+        except _NeedsModrinth:
+            # The catalog lacks something: the build job brings it itself, one click (if that leaves
+            # the build blocked, the dialog opens as the job ends).
+            pass
+        else:
+            await self._resolution_save(bundle, request, lock)
+            _refuse_blocked(lock)
         key = f"build:{bundle_id}"
         try:
             job = await self.jobDB.enqueue("build_create", key=key, payload={"bundle_id": bundle_id},

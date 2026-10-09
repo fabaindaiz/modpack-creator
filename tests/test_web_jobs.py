@@ -148,3 +148,12 @@ def test_every_page_loads_the_bar_and_reloads_it_when_a_job_starts() -> None:
     client, _, _ = setup()
     text = client.get("/modpacks").text
     assert 'id="my-jobs"' in text and 'hx-get="/trabajos/mios"' in text and "job-started from:body" in text
+
+
+
+def test_the_build_click_brings_the_banner_with_its_job_so_a_fast_job_is_not_missed() -> None:
+    client, modpack, _ = setup()
+    modpack.queued = job(kind="build_create", status="queued")
+    response = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX)
+    assert 'id="job-banner" hx-swap-oob="innerHTML"' in response.text
+    assert f'hx-get="/modpacks/{BUNDLE_ID}/trabajo?activo=1"' in response.text and "Build" in response.text
