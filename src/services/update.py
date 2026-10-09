@@ -258,7 +258,19 @@ class UpdateService():
         """Download each new jar, check it against the build, and upload it to a staging folder,
         while the server still runs. A jar that does not match stops everything before the stop."""
         staging = f"/mods.staging/{job.id}"
-        present = {} if ops.dry_run else {f.name: f.size for f in await self._files_if_any(ident, staging)}
+        for item in plan["install"]:
+            _verifiable(item)
+        if ops.dry_run:
+            # U1 (owner, 2026-10-09): the dry run downloads nothing. The build's own data is checked
+            # above; the real run verifies each download against it before stopping the server. What
+            # it would write is still listed (Ops only records it in a dry run).
+            if plan["install"]:
+                await ops.write("mkdir /mods.staging", _never)
+                await ops.write(f"mkdir {staging}", _never)
+            for item in plan["install"]:
+                await ops.write(f"upload {staging}/{item['filename']}", _never)
+            return {"staging": staging, "files": [i["filename"] for i in plan["install"]]}
+        present = {f.name: f.size for f in await self._files_if_any(ident, staging)}
         folder_made = bool(present)
         for item in plan["install"]:
             if present.get(item["filename"]) == item["size"]:
@@ -478,3 +490,14 @@ def _unexplained_reason(jars: Unexplained) -> str:
     if jars.in_pack:
         reasons.append(f"crea un build nuevo: el modpack ya lo incluye y el build no: {', '.join(jars.in_pack)}")
     return "; ".join(reasons)
+
+
+def _verifiable(item: dict[str, Any]) -> None:
+    """A jar to install must carry its sha512 and size: what the real run checks each download
+    against (the preflight already refused a host outside the allowed ones). JobFailed otherwise."""
+    if not item.get("sha512") or not isinstance(item.get("size"), int):
+        raise JobFailed(f"{item.get('filename')} has no sha512 or size in the build: no se actualizó")
+
+
+async def _never() -> None:
+    raise AssertionError("a dry run never writes")

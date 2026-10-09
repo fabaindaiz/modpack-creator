@@ -148,7 +148,11 @@ def test_a_dry_run_reads_and_verifies_everything_and_writes_nothing(mongo: Mongo
     # The plan names the bundle it was made for: the panel's real run is tied to it.
     assert linked and plan["bundle_id"] == linked
     assert [f["filename"] for f in plan["install"]] == [new_jar(s)] and plan["remove"] == ["/mods/fabric-api-installed.jar"]
-    assert fetched and any("power stop" in line for line in log) and any("backup" in line for line in log)
+    # U1 (owner, 2026-10-09): the dry run downloads nothing; it checks the build's own data and the
+    # real run verifies each download before stopping the server.
+    assert fetched == [] and any("power stop" in line for line in log) and any("backup" in line for line in log)
+    # What it would write still lists the uploads, as before (the dry run's page shows it).
+    assert any(line.startswith("upload /mods.staging/") and line.endswith(new_jar(s)) for line in log)
 
 
 # El camino feliz.
@@ -182,6 +186,26 @@ def test_a_server_already_on_the_build_is_left_alone(mongo: MongoRunner) -> None
 
 
 # Lo que aborta antes de escribir.
+
+
+def test_a_dry_run_refuses_a_jar_the_build_cannot_verify(mongo: MongoRunner) -> None:
+    # U1: with no download, the dry run still refuses what the real run could not verify (here a
+    # file from a host outside Modrinth's allowed ones).
+    from src.model.modpack import ModpackBuild
+
+    async def scenario() -> tuple[str, Any, list[str]]:
+        s = await setup()
+        builds = await ModpackBuild.find().to_list()
+        for build in builds:
+            for entry in build.lock.entries:
+                if entry.file is not None:
+                    entry.file.url = "https://evil.example/fabric-api.jar"
+            await build.save()
+        job = await s.run()
+        return job.status, job.error, s.downloader.fetched
+
+    status, error, fetched = mongo(scenario)
+    assert status == "failed" and "allowed domain" in (error or "") and fetched == []
 
 
 @pytest.mark.parametrize("case", ["unexplained jar", "no backup slot", "bad download", "server busy"])
