@@ -5,6 +5,12 @@ from pymongo import ASCENDING, DESCENDING, IndexModel
 from typing import Any, Literal, Optional
 from src.model.users.actor import ActorRef
 
+class JobProgress(BaseModel):
+    """What a job is processing and how far it is (spec 2026-10-09-economia-de-requests, E8)."""
+    label: str
+    done: int
+    total: int
+
 class Job(Document):
     """A durable job (i-7985ee-0ec295): claimed atomically by one worker at a time under a lease,
     with a checkpoint per step. Delivery is at least once: a step that already ran is in
@@ -30,6 +36,11 @@ class Job(Document):
     # Not claimed before this time: a failed attempt waits before the next (JobDatabase.release).
     available_at: Optional[datetime] = None
     finished_at: Optional[datetime] = None
+    progress: Optional[JobProgress] = None
+    # Until when it waits its turn (the limit of an external API); None when it is not waiting.
+    waiting_until: Optional[datetime] = None
+    # The last time the worker said something about it: its heartbeat, progress or wait.
+    updated_at: Optional[datetime] = None
     # Who asked for it; None for the worker's own jobs and for jobs stored before this field.
     requested_by: Optional[ActorRef] = None
 

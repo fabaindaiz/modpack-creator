@@ -111,7 +111,7 @@ def test_the_lock_says_where_each_project_came_from(mongo: MongoRunner) -> None:
         service, bundle_id = await empty_bundle()
         await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
         await service.project_add(bundle_id, ["fabric-api"], ProjectOrigin.admin, actor=EDITOR)
-        lock = await service.resolve(bundle_id)
+        lock = await service.resolve_fetching(bundle_id)
         return {e.project_id: (e.origin, e.reason) for e in lock.entries}
 
     entries = mongo(scenario)
@@ -179,7 +179,7 @@ def test_build_create_resolves_again_and_never_reads_the_saved_lock(mongo: Mongo
     async def scenario() -> tuple[Any, Any, Any]:
         service, bundle_id = await empty_bundle()
         await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
-        fresh = await service.resolve(bundle_id)
+        fresh = await service.resolve_fetching(bundle_id)
         bundle = await service.modpackDB.bundle_get(bundle_id)
         # A current resolution (same digest) whose lock holds nothing: a build must not use it.
         await service.modpackDB.resolution_save(ModpackResolution(

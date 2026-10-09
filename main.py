@@ -26,8 +26,14 @@ from starlette.middleware.sessions import SessionMiddleware
 import src.model as model
 import asyncio
 from datetime import timedelta
-from src.services.jobs import JobWorker
+from src.services.jobs import Handler, JobWorker
+from src.dependences import Dependences
 from src.services.update_check import schedule_from_env
+
+def job_handlers(container: Dependences) -> dict[str, Handler]:
+    """Every kind of job a service queues, with its handler: the worker runs these."""
+    return {**container.jobService().handlers(), **container.updateService().handlers(),
+            **container.updateCheckService().handlers(), **container.modpackService().handlers()}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -41,8 +47,7 @@ async def lifespan(app: FastAPI):
     stop = asyncio.Event()
     worker = None
     if getenv("JOBS_WORKER", "on").strip().lower() != "off":
-        handlers = {**container.jobService().handlers(), **container.updateService().handlers(),
-                    **container.updateCheckService().handlers()}
+        handlers = job_handlers(container)
         container.workerBeat().expect()
         worker = asyncio.create_task(JobWorker(container.jobDatabase(), handlers,
                                                beat=container.workerBeat()).run_forever(stop))

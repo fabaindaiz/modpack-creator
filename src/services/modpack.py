@@ -1,17 +1,20 @@
 import asyncio
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+import math
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
-from typing import Optional, Sequence
+from typing import Any, Optional, Sequence
 from pydantic import BaseModel
 from src.database import ModpackDatabase, ModrinthDatabase, PterodactylDatabase
 from src.library.api.client.loaders import LoaderMetaAPI
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.changes import ChangeSet, diff_entries
 from src.library.mrpack import mrpack_index, write_mrpack
-from src.services.jobs import NotificationSink
+from src.services.jobs import Handler, JobContext, NotificationSink
+from src.database.jobs import JobDatabase
+from src.model.jobs import Job
 from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, request_digest, resolve
 from src.model.modpack import BUNDLE_KEYED_FIELDS, AvailableUpdate, UpdateCheck, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject, ModrinthVersion, ModrinthVersionList
@@ -29,6 +32,8 @@ from src.exceptions import *
 RESOLVE_ROUNDS = 32
 # A pack's Modrinth information is checked at most this often (E1); a build always checks (E2).
 CATALOG_WINDOW = timedelta(minutes=5)
+# How often the manual "Actualizar desde Modrinth" may run for one pack (E3).
+MANUAL_REFRESH_EVERY = timedelta(minutes=1)
 # How many ids go in one Modrinth request.
 ID_CHUNK = 100
 # What a Modrinth project id looks like; anything else is not a key to store.
@@ -37,6 +42,18 @@ MODRINTH_ID = re.compile(r"[A-Za-z0-9_-]+")
 MAX_DECISIONS = 500
 # Fields of a bundle that a patch may leave out but never set to null: the bundle would not load.
 BUNDLE_NOT_NULL = ("name", "description", "version", "loader", "channels", *BUNDLE_KEYED_FIELDS)
+
+# What a catalog job hears as it goes: what it processes, done and total.
+Report = Callable[[str, int, int], Awaitable[None]]
+
+
+class _NeedsModrinth(Exception):
+    """Resolving from the catalog alone is not enough: something must come from Modrinth."""
+
+
+def _catalog_key(bundle_id: str) -> str:
+    return f"catalog:{bundle_id}"
+
 
 def _chunks(ids: Sequence[str]) -> list[list[str]]:
     return [list(ids[i:i + ID_CHUNK]) for i in range(0, len(ids), ID_CHUNK)]
@@ -248,8 +265,10 @@ class ModpackService():
             changelog_deadline: float = CHANGELOG_DEADLINE,
             icon_deadline: float = FILL_DEADLINE,
             clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+            jobDB: Optional[JobDatabase] = None,
             ) -> None:
         self.clock = clock
+        self.jobDB = jobDB or JobDatabase()
         self.pterodactylDB = pterodactylDB or PterodactylDatabase()
         self.changelog_deadline = changelog_deadline
         self.icon_deadline = icon_deadline
@@ -707,22 +726,88 @@ class ModpackService():
 
     # Resolution (i-7985ee-7f735a).
 
-    async def resolve(self, bundle_id: str) -> Lock:
+    async def resolve(self, bundle_id: str, actor: Optional[Actor] = None) -> Lock:
         """
-        Resolve a bundle into a lock, fetching from Modrinth what it needs.
+        Resolve a bundle into a lock from the catalog, never waiting for Modrinth (spec
+        2026-10-09-economia-de-requests, E6–E7). When the catalog lacks something, a catalog job
+        brings it and resolves the pack (CatalogPending names it; asking again names the same one).
+        Past the window, the pack resolves from the catalog at once and the check is left in that job.
 
         The latest resolution is saved to show it, never as the input of a build: build_create
-        resolves again and freezes that lock. Every project and version fetched is stored in the
-        catalog.
+        resolves again and freezes that lock.
 
-        :param bundle_id: The ID of the bundle.
         :return: The lock; `complete` is False only if the dependency chain ran past RESOLVE_ROUNDS.
         """
         bundle = await self.modpackDB.bundle_get(bundle_id)
         request = await self._request(bundle)
-        lock = await self._resolve_checked(bundle, request, check=self._stale(bundle))
+        try:
+            lock = await self._resolve(request, local_only=True)
+        except _NeedsModrinth:
+            raise CatalogPending(await self._catalog_job(bundle_id, actor, force=False))
+        await self._resolution_save(bundle, request, lock)
+        if self._stale(bundle):
+            await self._catalog_job(bundle_id, actor, force=False)
+        return lock
+
+    async def resolve_fetching(self, bundle_id: str, report: Optional[Report] = None, force: bool = False) -> Lock:
+        """Resolve asking Modrinth for what the catalog lacks, and checking it first if the pack is past
+        the window (or `force`): the catalog job's work. `report` hears how far it is."""
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        request = await self._request(bundle)
+        lock = await self._resolve_checked(bundle, request, check=force or self._stale(bundle), report=report)
         await self._resolution_save(bundle, request, lock)
         return lock
+
+    async def catalog_refresh(self, bundle_id: str, actor: Actor) -> Job:
+        """
+        "Actualizar desde Modrinth" (E3): a catalog job that checks the pack now, inside the window
+        too. If one is already queued or running, that one. Once a minute per pack: sooner is a
+        QuotaExceeded that says when.
+        """
+        active = await self.jobDB.active_for(_catalog_key(bundle_id))
+        if active is not None:
+            return active
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        last = bundle.manual_refreshed_at
+        if last is not None:
+            last = last if last.tzinfo else last.replace(tzinfo=timezone.utc)
+            left = MANUAL_REFRESH_EVERY - (self.clock() - last)
+            if left > timedelta(0):
+                raise QuotaExceeded(f"Se puede volver a actualizar en {math.ceil(left.total_seconds())} s",
+                                    left.total_seconds())
+        await self.modpackDB.bundle_manual_refreshed_at_set(bundle_id, self.clock())
+        job = await self._catalog_job(bundle_id, actor, force=True)
+        await self.audit.record(actor, "bundle.catalog_refresh", _bundle(bundle_id), {"job_id": str(job.id)})
+        return job
+
+    async def _catalog_job(self, bundle_id: str, actor: Optional[Actor], force: bool) -> Job:
+        """The pack's catalog job: a new one, or the one already queued or running (never two)."""
+        key = _catalog_key(bundle_id)
+        try:
+            return await self.jobDB.enqueue("catalog_refresh", key=key, payload={"bundle_id": bundle_id, "force": force},
+                                            requested_by=actor.ref() if actor is not None else None)
+        except HTTP_409_CONFLICT:
+            active = await self.jobDB.active_for(key)
+            if active is None:
+                raise
+            return active
+
+    async def active_jobs(self, bundle_id: str) -> list[Job]:
+        """The pack's queued or running jobs: its catalog, its build and its update check (E8)."""
+        return await self.jobDB.active_for_keys([_catalog_key(bundle_id), f"build:{bundle_id}", f"bundle:{bundle_id}"])
+
+    def handlers(self) -> dict[str, Handler]:
+        return {"catalog_refresh": self._catalog_run}
+
+    async def _catalog_run(self, job: Job, context: JobContext) -> None:
+        bundle_id = job.payload["bundle_id"]
+
+        async def run() -> dict[str, Any]:
+            lock = await self.resolve_fetching(bundle_id, report=context.progress, force=bool(job.payload.get("force")))
+            await context.progress("Resolviendo el pack", 1, 1)
+            return {"entries": len(lock.entries), "problems": len(lock.problems), "undecided": len(lock.undecided)}
+
+        await context.step("resolve", run)
 
     def _stale(self, bundle: ModpackBundle) -> bool:
         """Whether the pack's Modrinth information is past the window (E1): never checked, or longer ago."""
@@ -731,7 +816,8 @@ class ModpackService():
             checked = checked.replace(tzinfo=timezone.utc)
         return checked is None or self.clock() - checked >= CATALOG_WINDOW
 
-    async def _resolve_checked(self, bundle: ModpackBundle, request: ResolveRequest, check: bool) -> Lock:
+    async def _resolve_checked(self, bundle: ModpackBundle, request: ResolveRequest, check: bool,
+                               report: Optional[Report] = None) -> Lock:
         """Resolve; with `check`, what the catalog has of the pack is compared with Modrinth first
         and the pack is marked checked now."""
         prior: list[str] = []
@@ -739,7 +825,7 @@ class ModpackService():
             saved = await self.modpackDB.resolution_get(bundle.id)
             prior = list(dict.fromkeys([*request.projects, *(e.project_id for e in saved.lock.entries)] if saved
                                        else request.projects))
-        lock = await self._resolve(request, check=check, prior=prior)
+        lock = await self._resolve(request, check=check, prior=prior, report=report)
         if check:
             await self.modpackDB.bundle_checked_at_set(str(bundle.id), self.clock())
         return lock
@@ -772,27 +858,32 @@ class ModpackService():
             pins=bundle.pins, server_decisions=bundle.server_decisions, channel_exceptions=bundle.channel_exceptions,
             replacements=merge_replacements(global_rules, bundle.replacements))
 
-    async def _resolve(self, request: ResolveRequest, check: bool = False, prior: Sequence[str] = ()) -> Lock:
+    async def _resolve(self, request: ResolveRequest, check: bool = False, prior: Sequence[str] = (),
+                       local_only: bool = False, report: Optional[Report] = None) -> Lock:
         """
         Resolve from the catalog, asking Modrinth only for what it lacks (spec 2026-10-09-economia-de-
         requests, F2). With `check`, every project the catalog already accounts for is compared
         with Modrinth before it is used: the `prior` ones at once, the rest as resolution reaches
         them, each batch in one request for the projects and one for their new versions. Whatever
-        is fetched is stored as it arrives: a failure halfway keeps it.
+        is fetched is stored as it arrives: a failure halfway keeps it. With `local_only`, needing
+        Modrinth raises _NeedsModrinth instead. `report` hears what is processed and how far.
         """
         catalog = Catalog()
         checked: set[str] = set()
         if check and prior:
+            if report is not None:
+                await report("Revisando cambios en Modrinth", 0, 1)
             await self._check(list(prior), request.target.game_version, checked)
         lock = resolve(request, catalog)
         for _ in range(RESOLVE_ROUNDS):
             if lock.complete:
                 return lock
-            await self._load(catalog, lock, request, check, checked)
+            await self._load(catalog, lock, request, check, checked, local_only, report)
             lock = resolve(request, catalog)
         return lock
 
-    async def _load(self, catalog: Catalog, lock: Lock, request: ResolveRequest, check: bool, checked: set[str]) -> None:
+    async def _load(self, catalog: Catalog, lock: Lock, request: ResolveRequest, check: bool, checked: set[str],
+                    local_only: bool = False, report: Optional[Report] = None) -> None:
         """Put in `catalog` what `lock` needs: from MongoDB when the catalog accounts for it, else
         from Modrinth (each project's versions for the target, once; projects and versions by id,
         in batches)."""
@@ -801,6 +892,8 @@ class ModpackService():
         if wanted_types:
             stored = {p.project_id: p for p in await self.modrinthDB.project_find_by_modrinth_id(wanted_types)}
             missing = [i for i in wanted_types if i not in stored]
+            if missing and local_only:
+                raise _NeedsModrinth()
             fetched = {p.project_id: p for p in await self._projects_fetch(missing)} if missing else {}
             for project_id in wanted_types:
                 found = fetched.get(project_id) or stored.get(project_id)
@@ -811,22 +904,34 @@ class ModpackService():
                 await self._check([i for i in needed if i not in checked], game_version, checked)
             records = {(r.project_id, tuple(r.loaders)): r
                        for r in await self.modrinthDB.version_lists_find(needed, game_version)}
+            targets = {i: sorted(request.target.loaders(catalog.types.get(i, "mod"))) for i in needed}
+            cold = [i for i in needed if (i, tuple(targets[i])) not in records]
+            if cold and local_only:
+                raise _NeedsModrinth()
+            fetched_cold = 0
             for project_id in needed:
-                loaders = sorted(request.target.loaders(catalog.types.get(project_id, "mod")))
+                loaders = targets[project_id]
                 record = records.get((project_id, tuple(loaders)))
                 if record is not None:
                     versions = await self.modrinthDB.version_find_listed(project_id, record.version_ids)
                 else:
+                    if report is not None:
+                        await report("Versiones de los mods", fetched_cold, len(cold))
                     versions = await self._versions_fetch(project_id, loaders, game_version)
+                    fetched_cold += 1
                     checked.add(project_id)
                 catalog.by_project.setdefault(project_id, [])
                 for version in versions:
                     if game_version in version.game_versions and set(loaders) & set(version.loaders):
                         catalog.add(candidate(version))
+            if cold and report is not None:
+                await report("Versiones de los mods", fetched_cold, len(cold))
         if lock.needs_versions:
             asked = sorted(lock.needs_versions)
             stored_versions = await self.modrinthDB.version_find_by_version_ids(asked)
             missing_ids = sorted(set(asked) - {v.version_id for v in stored_versions})
+            if missing_ids and local_only:
+                raise _NeedsModrinth()
             fetched_versions: list[ModrinthVersion] = []
             for chunk in _chunks(missing_ids):
                 fetched_versions += list(await self.modrinthAPI.version_get_many(chunk))

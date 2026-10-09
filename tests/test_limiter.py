@@ -33,7 +33,7 @@ def limiter(per_minute: int = 3, per_user: int = 2) -> tuple[RateLimiter, Clock]
 
 def test_a_user_past_their_quota_is_told_how_long_to_wait_and_others_are_not() -> None:
     async def scenario() -> tuple[Any, ...]:
-        limit, clock = limiter(per_minute=10, per_user=2)
+        limit, clock = limiter(per_minute=4, per_user=2)
         await limit.acquire("ana")
         clock.now += 15
         await limit.acquire("ana")
@@ -164,3 +164,20 @@ def test_a_modrinth_read_does_not_retry_a_429_on_its_own() -> None:
         return hits
 
     assert asyncio.run(scenario()) == 1
+
+
+
+def test_with_room_to_spare_a_user_may_go_past_their_quota() -> None:
+    # The owner (2026-10-09): the limits are there to respect Modrinth's; with margin left they
+    # need not be as strict. A user's quota binds only once half the app's minute is spent.
+    async def scenario() -> tuple[int, Any]:
+        limit, clock = limiter(per_minute=20, per_user=2)
+        taken = 0
+        with pytest.raises(RateLimited) as refused:
+            while True:
+                await limit.acquire("ana")
+                taken += 1
+        return taken, refused.value.seconds
+
+    taken, seconds = asyncio.run(scenario())
+    assert taken == 10 and seconds == pytest.approx(60.0)

@@ -9,7 +9,8 @@ from uuid import uuid4
 from src.database.jobs import JobDatabase
 from src.database.pterodactyl import PterodactylDatabase
 from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
-from src.model.jobs import Job, RollbackState, is_real_update
+from src.model.jobs import Job, JobProgress, RollbackState, is_real_update
+from src.library.api.limiter import ON_WAIT
 from src.model.audit import AuditTarget
 from src.model.users import Actor
 from src.services.audit import AuditSink
@@ -43,11 +44,22 @@ class LeaseLost(Exception):
     """The job was claimed by another worker: this one must stop without writing."""
 
 class JobContext:
-    """What a handler uses to run its steps once each, across retries."""
-    def __init__(self, job: Job, jobs: JobDatabase, owner: str) -> None:
+    """What a handler uses to run its steps once each, across retries, and to say how far it is."""
+    def __init__(self, job: Job, jobs: JobDatabase, owner: str,
+                 clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
         self.job = job
         self.jobs = jobs
         self.owner = owner
+        self.clock = clock
+
+    async def progress(self, label: str, done: int, total: int) -> None:
+        """What the job processes now and how far it is (E8): the panel shows it as it changes."""
+        await self.jobs.progress(self.job.id, self.owner, self.clock(), JobProgress(label=label, done=done, total=total))
+
+    async def waiting(self, seconds: float) -> None:
+        """The job waits its turn for `seconds` (an external API's limit)."""
+        now = self.clock()
+        await self.jobs.waiting(self.job.id, self.owner, now, now + timedelta(seconds=seconds))
 
     async def step(self, name: str, action: Callable[[], Awaitable[dict[str, Any]]]) -> dict[str, Any]:
         """
@@ -115,8 +127,18 @@ class JobWorker:
             await self.jobs.finish(job.id, self.owner, self.clock(), error=f"no handler for {job.kind}")
             return True
         beat = asyncio.create_task(self._heartbeat(job))
+        context = JobContext(job, self.jobs, self.owner, self.clock)
+        waits: set[asyncio.Task[None]] = set()
+
+        def on_wait(seconds: float) -> None:
+            task = asyncio.ensure_future(context.waiting(seconds))
+            waits.add(task)
+            task.add_done_callback(waits.discard)
+
+        # A request this job sends that has to wait its turn says so on the job (E5, E8).
+        token = ON_WAIT.set(on_wait)
         try:
-            await handler(job, JobContext(job, self.jobs, self.owner))
+            await handler(job, context)
             await self.jobs.finish(job.id, self.owner, self.clock(), error=None)
         except LeaseLost:
             logger.warning("lease lost", extra={"job_id": str(job.id), "kind": job.kind})
@@ -137,6 +159,7 @@ class JobWorker:
             else:
                 await self.jobs.release(job.id, self.owner, error=message, now=self.clock(), attempts=job.attempts)
         finally:
+            ON_WAIT.reset(token)
             beat.cancel()
         return True
 
@@ -291,6 +314,10 @@ class JobService():
                 await asyncio.wait_for(stop.wait(), check)
             except asyncio.TimeoutError:
                 pass
+
+    async def active_for_user(self, actor: Actor) -> list[Job]:
+        """The queued or running jobs this person asked for: the bar shows them (E8)."""
+        return await self.jobDB.active_for_requester(actor.iss, actor.sub)
 
     def handlers(self) -> dict[str, Handler]:
         handlers: dict[str, Handler] = {"server_scan": self._server_scan}

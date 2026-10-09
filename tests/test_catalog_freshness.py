@@ -93,11 +93,11 @@ def chosen(lock: Any) -> dict[str, str]:
 def test_the_first_resolve_fetches_what_is_missing_and_the_next_inside_the_window_none(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[Any, ...]:
         service, api, clock, bundle_id = await setup()
-        first = chosen(await service.resolve(bundle_id))
+        first = chosen(await service.resolve_fetching(bundle_id))
         cold = list(api.calls)
         api.calls.clear()
         clock.now += CATALOG_WINDOW - timedelta(seconds=1)
-        second = chosen(await service.resolve(bundle_id))
+        second = chosen(await service.resolve_fetching(bundle_id))
         return first, second, cold, api.calls
 
     first, second, cold, warm = mongo(scenario)
@@ -109,11 +109,11 @@ def test_the_first_resolve_fetches_what_is_missing_and_the_next_inside_the_windo
 def test_past_the_window_a_check_is_two_batched_calls_and_brings_a_new_version(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[Any, ...]:
         service, api, clock, bundle_id = await setup()
-        await service.resolve(bundle_id)
+        await service.resolve_fetching(bundle_id)
         api.calls.clear()
         api.versions["b2"] = version("b2", "BBBB", 5)
         clock.now += CATALOG_WINDOW + timedelta(seconds=1)
-        lock = await service.resolve(bundle_id)
+        lock = await service.resolve_fetching(bundle_id)
         return chosen(lock), api.calls
 
     picked, calls = mongo(scenario)
@@ -124,10 +124,10 @@ def test_past_the_window_a_check_is_two_batched_calls_and_brings_a_new_version(m
 def test_a_check_without_changes_is_one_call(mongo: MongoRunner) -> None:
     async def scenario() -> list[tuple[str, Any]]:
         service, api, clock, bundle_id = await setup()
-        await service.resolve(bundle_id)
+        await service.resolve_fetching(bundle_id)
         api.calls.clear()
         clock.now += CATALOG_WINDOW + timedelta(seconds=1)
-        await service.resolve(bundle_id)
+        await service.resolve_fetching(bundle_id)
         return api.calls
 
     assert mongo(scenario) == [("project_get_many", ("AAAA", "BBBB", "LIBB"))]
@@ -137,10 +137,10 @@ def test_a_version_modrinth_no_longer_lists_is_not_used(mongo: MongoRunner) -> N
     async def scenario() -> dict[str, str]:
         service, api, clock, bundle_id = await setup()
         api.versions["b2"] = version("b2", "BBBB", 5)
-        await service.resolve(bundle_id)
+        await service.resolve_fetching(bundle_id)
         del api.versions["b2"]
         clock.now += CATALOG_WINDOW + timedelta(seconds=1)
-        return chosen(await service.resolve(bundle_id))
+        return chosen(await service.resolve_fetching(bundle_id))
 
     assert mongo(scenario)["BBBB"] == "b1"
 
@@ -150,11 +150,11 @@ def test_a_project_refreshed_elsewhere_does_not_hide_its_new_versions(mongo: Mon
     # against what the version list accounted for, not against that document.
     async def scenario() -> dict[str, str]:
         service, api, clock, bundle_id = await setup()
-        await service.resolve(bundle_id)
+        await service.resolve_fetching(bundle_id)
         api.versions["b2"] = version("b2", "BBBB", 5)
         await ModrinthDatabase().project_upsert_many([ModrinthProject.parse(**project("BBBB", api.listed("BBBB")))])
         clock.now += CATALOG_WINDOW + timedelta(seconds=1)
-        return chosen(await service.resolve(bundle_id))
+        return chosen(await service.resolve_fetching(bundle_id))
 
     assert mongo(scenario)["BBBB"] == "b2"
 
@@ -162,7 +162,7 @@ def test_a_project_refreshed_elsewhere_does_not_hide_its_new_versions(mongo: Mon
 def test_a_build_checks_even_inside_the_window(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[str, list[tuple[str, Any]]]:
         service, api, clock, bundle_id = await setup()
-        await service.resolve(bundle_id)
+        await service.resolve_fetching(bundle_id)
         await service.decisions_set(bundle_id, {"AAAA": True, "BBBB": True, "LIBB": True}, EDITOR)
         api.calls.clear()
         api.versions["b2"] = version("b2", "BBBB", 5)
@@ -185,7 +185,7 @@ def test_what_was_fetched_stays_even_if_a_later_call_fails(mongo: MongoRunner) -
 
         api.project_versions = failing  # type: ignore[method-assign]
         with pytest.raises(RuntimeError):
-            await service.resolve(bundle_id)
+            await service.resolve_fetching(bundle_id)
         return sorted({v.project_id async for v in ModrinthVersion.find()})
 
     assert "AAAA" in mongo(scenario)

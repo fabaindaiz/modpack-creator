@@ -13,10 +13,18 @@
       Resuelto {{ ui.when(resolution.resolved_at) }} · {{ resolution.lock.entries | length }} archivos
       {% endif %}
     </p>
-    {{ ui.button("Resolver" if resolution is none else "Resolver de nuevo", kind="secondary", attrs={
-      "hx-post": "/modpacks/" ~ bundle_id ~ "/resolve" ~ ("" if vista == "todos" else "?vista=" ~ vista),
-      "hx-target": "#mods", "hx-swap": "outerHTML"}) }}
+    <div class="flex flex-wrap items-center gap-2">
+      {{ ui.button("Resolver" if resolution is none else "Resolver de nuevo", kind="secondary", disabled_reason="En curso…" if busy else None, attrs={
+        "hx-post": "/modpacks/" ~ bundle_id ~ "/resolve" ~ ("" if vista == "todos" else "?vista=" ~ vista),
+        "hx-target": "#mods", "hx-swap": "outerHTML"}) }}
+      {{ ui.button("Actualizar desde Modrinth", kind="ghost", disabled_reason="En curso…" if busy else None, attrs={
+        "hx-post": "/modpacks/" ~ bundle_id ~ "/catalogo", "hx-swap": "none"}) }}
+    </div>
   </div>
+  <p class="text-xs text-zinc-500 dark:text-zinc-400">
+    {%- if busy %}En curso… {% endif -%}
+    {%- if bundle.modrinth_checked_at %}Revisado en Modrinth {{ bundle.modrinth_checked_at | ago }}{% else %}Todavía no se revisa en Modrinth{% endif -%}
+  </p>
 
   {% if resolution is not none %}
   {% set saved = resolution.lock %}

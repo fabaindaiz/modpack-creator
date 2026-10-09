@@ -343,3 +343,47 @@ def test_find_filters_by_exact_server_kind_and_status_and_pages_by_id(mongo: Mon
     assert total == 6 and s1_kinds == ["server_update", "server_scan", "server_scan"]
     assert both == 1 and failed == 1 and literal_only and kind_pattern == 0
     assert paged == ordered[:4] and clamped == 1 and bad == 404
+
+
+# Avance visible (spec 2026-10-09-economia-de-requests, E7–E8): qué se procesa, cuánto va y si
+# espera turno, para que se vea que la app no se quedó pegada.
+
+
+def test_a_job_reports_what_it_processes_and_how_far_it_is(mongo: MongoRunner) -> None:
+    async def handler(job: Job, context: JobContext) -> None:
+        await context.progress("Versiones de los mods", 3, 10)
+
+    async def scenario() -> tuple[Any, Any]:
+        jobs = JobDatabase()
+        job = await jobs.enqueue("demo", key=None, payload={})
+        await JobWorker(jobs, {"demo": handler}, owner="w1", clock=lambda: T0).run_once()
+        stored = await jobs.get(str(job.id))
+        return stored.progress, stored.updated_at
+
+    progress, updated_at = mongo(scenario)
+    assert progress is not None and (progress.label, progress.done, progress.total) == ("Versiones de los mods", 3, 10)
+    assert updated_at is not None and updated_at.replace(tzinfo=timezone.utc) == T0
+
+
+def test_a_job_waiting_for_its_turn_says_until_when_and_progress_clears_it(mongo: MongoRunner) -> None:
+    from src.library.api.limiter import ON_WAIT
+
+    seen: list[Any] = []
+
+    async def handler(job: Job, context: JobContext) -> None:
+        on_wait = ON_WAIT.get()
+        assert on_wait is not None
+        on_wait(12.0)
+        await asyncio.sleep(0.05)
+        seen.append((await JobDatabase().get(str(job.id))).waiting_until)
+        await context.progress("Versiones de los mods", 1, 2)
+
+    async def scenario() -> Any:
+        jobs = JobDatabase()
+        job = await jobs.enqueue("demo", key=None, payload={})
+        await JobWorker(jobs, {"demo": handler}, owner="w1", clock=lambda: T0).run_once()
+        return (await jobs.get(str(job.id))).waiting_until
+
+    after = mongo(scenario)
+    assert seen[0] is not None and seen[0].replace(tzinfo=timezone.utc) == T0 + timedelta(seconds=12)
+    assert after is None

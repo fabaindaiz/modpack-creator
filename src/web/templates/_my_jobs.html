@@ -1,0 +1,24 @@
+{# The bar's jobs (E8): what this person asked for that is queued or running, with its progress and
+   a shortcut to where it shows. Only the list and its count poll (every 3 s), so an open dropdown
+   stays open; with nothing left the list says `my-jobs-done` and #my-jobs empties. `lista` renders
+   the list alone. #}
+{% macro job_list() %}
+<ul id="my-jobs-list" hx-get="/trabajos/mios?lista=1" hx-trigger="every 3s" hx-swap="outerHTML"
+  class="absolute right-0 z-20 mt-2 w-80 max-w-[calc(100vw-2rem)] space-y-3 rounded-lg border border-zinc-200 bg-white p-3 text-sm shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+  {% for job in jobs %}
+  {% set href = "/modpacks/" ~ job.payload.bundle_id if job.payload.get("bundle_id") else ("/servers/" ~ job.payload.server_id if job.payload.get("server_id") else "/actividad") %}
+  <li class="space-y-1">
+    {% include "_job_progress.html" %}
+    <a href="{{ href }}" class="text-xs font-medium text-emerald-700 hover:underline dark:text-emerald-300">Ver detalle</a>
+  </li>
+  {% endfor %}
+</ul>
+{% endmacro %}
+{% if lista %}
+{% if jobs %}{{ job_list() }}<span id="my-jobs-count" hx-swap-oob="true">{{ jobs | length }} en curso</span>{% endif %}
+{% elif jobs %}
+<details class="relative">
+  <summary class="cursor-pointer rounded-md bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-900 dark:bg-sky-500/20 dark:text-sky-100"><span id="my-jobs-count">{{ jobs | length }} en curso</span></summary>
+  {{ job_list() }}
+</details>
+{% endif %}

@@ -89,3 +89,10 @@ def test_the_modrinth_client_takes_its_turn_in_one_limiter_of_240_per_minute_and
 
     limiter = main.container.modrinthAPI().limiter
     assert isinstance(limiter, RateLimiter) and (limiter.per_minute, limiter.per_user) == (240, 60)
+
+
+def test_the_worker_runs_every_kind_a_service_queues() -> None:
+    import main
+
+    kinds = set(main.job_handlers(main.container))
+    assert {"catalog_refresh", "update_check", "server_scan", "server_update", "server_rollback", "notify"} <= kinds

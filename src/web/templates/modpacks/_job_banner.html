@@ -1,0 +1,9 @@
+{# The pack's banner (E8): its queued or running jobs, polling every 2 s while there are some; empty
+   otherwise. The route sends `job-finished` when the last one ends, and the pack reloads. #}
+{% if jobs %}
+<div hx-get="/modpacks/{{ bundle_id }}/trabajo?activo=1" hx-trigger="every 2s" hx-swap="outerHTML"
+  class="space-y-3 rounded-lg border border-sky-300 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-500/40 dark:bg-sky-950/40 dark:text-sky-100"
+  role="status" aria-live="polite">
+  {% for job in jobs %}{% include "_job_progress.html" %}{% endfor %}
+</div>
+{% endif %}

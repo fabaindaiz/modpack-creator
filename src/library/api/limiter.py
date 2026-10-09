@@ -1,7 +1,8 @@
 """How many requests the app sends to an API (spec 2026-10-09-economia-de-requests, E4–E5).
 
-A sliding minute with a global cap and a quota per user. The panel's request names its user in
-CURRENT_USER: past either limit it is refused with the seconds to wait (RateLimited). A background
+A sliding minute with a global cap and a quota per user, which binds only once half the minute is
+spent. The panel's request names its user in CURRENT_USER: past a limit it is refused with the
+seconds to wait (RateLimited). A background
 job runs without a user: it waits its turn, and says until when through `on_wait`. A 429 from the
 API pauses everyone for its Retry-After. In process: the app runs as a single uvicorn process.
 """
@@ -62,7 +63,12 @@ class RateLimiter:
     def _wait(self, user: Optional[str], now: float) -> float:
         waits = [self.paused_until - now, _window_wait(self.sent, self.per_minute, now)]
         if user is not None:
-            waits.append(_window_wait(self.by_user.setdefault(user, deque()), self.per_user, now))
+            mine = self.by_user.setdefault(user, deque())
+            _window_wait(mine, self.per_user, now)  # drops what left the window
+            # A user's quota binds only once half the app's minute is spent: with room to spare
+            # nobody is held back, and under pressure no one person takes it all (owner, 2026-10-09).
+            if len(self.sent) >= self.per_minute // 2:
+                waits.append(_window_wait(mine, self.per_user, now))
         return max(waits)
 
 

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 from typing import Any, Optional
-from src.model.jobs import Job
+from src.model.jobs import Job, JobProgress
 from src.model.users.actor import ActorRef
 from src.exceptions import *
 
@@ -30,6 +30,15 @@ class JobDatabase():
             return await Job.insert(job)
         except DuplicateKeyError as error:
             raise HTTP_409_CONFLICT(f"There is already an active job for {key}") from error
+
+    async def active_for_keys(self, keys: list[str]) -> list[Job]:
+        """The active jobs holding these keys, oldest first."""
+        return await Job.find({"key": {"$in": keys}, "active": True}).sort(("created_at", SortDirection.ASCENDING)).to_list()
+
+    async def active_for_requester(self, iss: str, sub: str) -> list[Job]:
+        """The active jobs this person asked for, oldest first."""
+        return await Job.find({"active": True, "requested_by.iss": iss, "requested_by.sub": sub}
+                              ).sort(("created_at", SortDirection.ASCENDING)).to_list()
 
     async def active_for(self, key: str) -> Optional[Job]:
         """The active job holding this key, if any."""
@@ -112,7 +121,16 @@ class JobDatabase():
 
     async def heartbeat(self, job_id: Any, owner: str, now: datetime, lease: timedelta) -> bool:
         """Extend the lease; False if the job is no longer this worker's."""
-        return await self._owned(job_id, owner, {"$set": {"lease_until": now + lease}})
+        return await self._owned(job_id, owner, {"$set": {"lease_until": now + lease, "updated_at": now}})
+
+    async def progress(self, job_id: Any, owner: str, now: datetime, progress: JobProgress) -> bool:
+        """What the job processes and how far it is; it is no longer waiting."""
+        return await self._owned(job_id, owner, {"$set": {"progress": progress.model_dump(), "waiting_until": None,
+                                                          "updated_at": now}})
+
+    async def waiting(self, job_id: Any, owner: str, now: datetime, until: datetime) -> bool:
+        """The job waits its turn until `until`."""
+        return await self._owned(job_id, owner, {"$set": {"waiting_until": until, "updated_at": now}})
 
     async def checkpoint(self, job_id: Any, owner: str, step: str, data: dict[str, Any]) -> bool:
         """Record that a step ran and what it left; False if the job is no longer this worker's."""

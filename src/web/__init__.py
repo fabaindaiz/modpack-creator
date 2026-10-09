@@ -4,7 +4,9 @@ Pages are server-rendered with Jinja2 and enhanced with htmx. Under the CSP (`we
 nothing inline runs: no `<script>` without `src`, no `style=`, no `hx-on`.
 """
 import hashlib
+import math
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Coroutine, Optional
 from urllib.parse import quote, urlsplit
@@ -16,7 +18,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.routing import APIRoute
 from fastapi.templating import Jinja2Templates
 
-from src.exceptions import QuotaExceeded, UpstreamError
+from src.exceptions import CatalogPending, QuotaExceeded, UpstreamError
 from src.library.api.limiter import CURRENT_USER
 from src.library.auth.redirect import is_local_path
 from src.library.auth.roles import actor_from_session
@@ -31,6 +33,8 @@ DIST_DIR = STATIC_DIR / "dist"
 
 # Errors a page shows as a notice: htmx swaps these into #notices (static/app.js). 429 and 5xx
 # are the upstream's (Modrinth, Pterodactyl) passed through by the clients: not a bug of ours.
+# The event a page hears when an action left a job: the pack's banner and the bar reload on it.
+JOB_STARTED = "job-started"
 NOTICE_STATUSES = frozenset({403, 404, 409, 422, 429, 502, 503, 504})
 UPSTREAM_STATUSES = frozenset({429, 502, 503, 504})
 UPSTREAM_DOWN = "Un servicio externo no respondió; intenta de nuevo."
@@ -91,6 +95,31 @@ BUNDLE_REF = r"^[0-9a-fA-F]{24}$"
 templates.env.tests["bundle_ref"] = lambda value: isinstance(value, str) and re.fullmatch(BUNDLE_REF, value) is not None
 templates.env.globals["asset_url"] = asset_url
 templates.env.globals["static_url"] = static_url
+
+
+def ago(value: Optional[datetime], now: Optional[datetime] = None) -> str:
+    """How long ago, in words for the panel: "hace 3 s", "hace 4 min", "hace 2 h"."""
+    if value is None:
+        return ""
+    value = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    seconds = max(0, int(((now or datetime.now(timezone.utc)) - value).total_seconds()))
+    if seconds < 60:
+        return f"hace {seconds} s"
+    if seconds < 3600:
+        return f"hace {seconds // 60} min"
+    return f"hace {seconds // 3600} h"
+
+
+def seconds_until(value: Optional[datetime]) -> int:
+    """Whole seconds from now until `value`; 0 when it is past."""
+    if value is None:
+        return 0
+    value = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return max(0, math.ceil((value - datetime.now(timezone.utc)).total_seconds()))
+
+
+templates.env.filters["ago"] = ago
+templates.env.filters["seconds_until"] = seconds_until
 
 
 class LoginRequired(Exception):
@@ -211,6 +240,9 @@ class WebRoute(APIRoute):
                 response = _notice_response(request, message, error.status_code)
                 if response is None:
                     raise
+                if isinstance(error, CatalogPending):
+                    # The pack's banner and the bar reload on it, and show the job (E8).
+                    response.headers["HX-Trigger"] = JOB_STARTED
                 return response
             except RequestValidationError:
                 response = _notice_response(request, INVALID_FORM, 422)

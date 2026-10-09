@@ -34,7 +34,7 @@ def test_resolving_a_bundle_fetches_what_the_lock_needs_and_stores_it(mongo: Mon
         api = RecordedModrinthAPI()
         service, bundle_id = await bundle(api, "iris")
         api.calls.clear()
-        lock = await service.resolve(bundle_id)
+        lock = await service.resolve_fetching(bundle_id)
         assert lock.complete and not lock.problems
         stored = {v.version_id async for v in ModrinthVersion.find()}
         return {e.project_id: e.version_id for e in lock.entries}, api.calls, stored
@@ -52,7 +52,7 @@ def test_resolving_a_bundle_fetches_what_the_lock_needs_and_stores_it(mongo: Mon
 def test_a_shader_resolves_in_a_fabric_pack_and_stays_off_the_server(mongo: MongoRunner) -> None:
     async def scenario() -> dict[str, str]:
         service, bundle_id = await bundle(RecordedModrinthAPI(), "complementary-reimagined")
-        lock = await service.resolve(bundle_id)
+        lock = await service.resolve_fetching(bundle_id)
         assert not lock.problems
         return {e.project_id: e.server for e in lock.entries}
 
@@ -63,7 +63,7 @@ def test_a_pack_rule_overrides_the_global_one(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[set[str], list[str]]:
         await ModpackDatabase().replacement_set(ModpackReplacement(project_id=SODIUM, replacement="embeddium"))
         service, bundle_id = await bundle(RecordedModrinthAPI(), "iris", replacements={SODIUM: None})
-        lock = await service.resolve(bundle_id)
+        lock = await service.resolve_fetching(bundle_id)
         return {e.project_id for e in lock.entries}, [p.kind for p in lock.problems]
 
     # La global cambiaría Sodium por embeddium, que no tiene versiones grabadas: daría un
@@ -86,7 +86,7 @@ def test_resolve_stores_the_latest_resolution_with_its_digest(mongo: MongoRunner
     async def scenario() -> tuple[Any, Any, Any]:
         service, bundle_id = await bundle(RecordedModrinthAPI(), "iris")
         before = await service.resolution(bundle_id)
-        lock = await service.resolve(bundle_id)
+        lock = await service.resolve_fetching(bundle_id)
         return before, lock, await service.resolution(bundle_id)
 
     before, lock, after = mongo(scenario)
@@ -98,10 +98,10 @@ def test_resolve_stores_the_latest_resolution_with_its_digest(mongo: MongoRunner
 def test_a_change_to_the_pack_makes_the_resolution_stale(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[bool, bool]:
         service, bundle_id = await bundle(RecordedModrinthAPI(), "iris")
-        await service.resolve(bundle_id)
+        await service.resolve_fetching(bundle_id)
         await service.pin_set(bundle_id, IRIS, "bAdKrpw8", EDITOR)
         stale = (await service.resolution(bundle_id))[1]  # type: ignore[index]
-        await service.resolve(bundle_id)
+        await service.resolve_fetching(bundle_id)
         return stale, (await service.resolution(bundle_id))[1]  # type: ignore[index]
 
     assert mongo(scenario) == (True, False)
@@ -115,7 +115,7 @@ def test_a_dependency_of_the_last_resolution_can_be_pinned(mongo: MongoRunner) -
         service, bundle_id = await bundle(api, "iris")
         with pytest.raises(HTTPException) as before:
             await service.pin_set(bundle_id, SODIUM, "v4PSXean", EDITOR)  # nothing resolved yet
-        await service.resolve(bundle_id)
+        await service.resolve_fetching(bundle_id)
         await service.pin_set(bundle_id, SODIUM, "v4PSXean", EDITOR)
         return (await ModpackDatabase().bundle_get(bundle_id)).pins, before.value.status_code
 
@@ -129,7 +129,7 @@ def test_a_channel_exception_is_stored_audited_and_reaches_the_request(mongo: Mo
         audit = RecordingAudit()
         service, bundle_id = await bundle(RecordedModrinthAPI(), "iris")
         service.audit = audit
-        await service.resolve(bundle_id)
+        await service.resolve_fetching(bundle_id)
         await service.channel_exception_set(bundle_id, IRIS, "beta", EDITOR)
         stored = (await ModpackDatabase().bundle_get(bundle_id)).channel_exceptions
         stale = (await service.resolution(bundle_id))[1]  # type: ignore[index]

@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Any, Optional
 from fastapi import HTTPException, status
 from src.library.resolution import Lock
 
@@ -48,6 +48,13 @@ class BuildBlocked(HTTP_409_CONFLICT):
         super().__init__(detail)
         self.lock = lock
         self.only_undecided = only_undecided
+
+class CatalogPending(HTTP_409_CONFLICT):
+    """The pack needs information from Modrinth the catalog lacks: a job brings it (spec
+    2026-10-09-economia-de-requests, E6) and the pack resolves when it ends. `job` is that job."""
+    def __init__(self, job: Any):
+        super().__init__("Preparando el catálogo de Modrinth para este pack: se resuelve solo al terminar.")
+        self.job = job
 
 class HTTP_413_CONTENT_TOO_LARGE(HTTPException):
     """Used when a request body is larger than the route accepts"""

@@ -14,9 +14,12 @@ from src.model.modpack import ModpackBundle, ModpackBundleCreate, ModpackBundleP
 from src.model.modrinth.project import ModrinthEnvironment
 from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
-from src.web import BUNDLE_REF, MODRINTH_REF, WebRoute, get_web_actor, render
+from src.web import BUNDLE_REF, JOB_STARTED, MODRINTH_REF, WebRoute, get_web_actor, render
 
 logger = logging.getLogger("modpack.web")
+# The event a pack hears when its last job ended: it reloads.
+JOB_FINISHED = "job-finished"
+
 router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
 
 # The prefix of a bulk-decision field: `decision.<project id>`.
@@ -147,7 +150,9 @@ async def _mods_context(modpackService: ModpackService, updateCheckService: Upda
             "https_url": _https_url, "downloads": abbreviate_downloads, "vista": _vista(vista),
             "cards": {r.project_id: r for r in mods.rows} | mods.problem_cards,
             "origins": {p.project_id: p.origin.value for p in bundle.projects},
-            "humanize": humanize, "environment_label": environment_label}
+            "humanize": humanize, "environment_label": environment_label,
+            # A queued or running job of the pack: its buttons say "En curso…" (E8).
+            "busy": bool(await modpackService.active_jobs(bundle_id))}
 
 async def _mods(request: Request, actor: Actor, modpackService: ModpackService, updateCheckService: UpdateCheckService,
                 bundle_id: str, success: Optional[str] = None, info: Optional[str] = None,
@@ -202,7 +207,7 @@ async def _acted(request: Request, actor: Actor, modpackService: ModpackService,
     redrawn out of band. Never a build: that is the owner's click."""
     if contexto is None:
         return await _mods(request, actor, modpackService, updateCheckService, bundle_id)
-    lock = await modpackService.resolve(bundle_id)
+    lock = await modpackService.resolve(bundle_id, actor)
     if contexto == "dialogo":
         # mod_list (inside) fills the catalog once for every mod the page and the dialog name: the
         # resolution it reads is the one just saved, this lock.
@@ -525,6 +530,38 @@ async def pin_remove(
     await modpackService.pin_unset(bundle_id, project_id, actor)
     return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto, "Fijación quitada")
 
+@router.get("/modpacks/{bundle_id}/trabajo")
+@inject
+async def pack_jobs(
+        bundle_id: str,
+        request: Request,
+        activo: Annotated[Optional[str], Query(max_length=1)] = None,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        ):
+    """The pack's banner (E8): its queued or running jobs, polling while there are some. When the
+    last one ends (`activo` says the banner showed one), the pack reloads on `job-finished`."""
+    jobs = await modpackService.active_jobs(bundle_id)
+    response = render(request, "modpacks/_job_banner.html", actor, jobs=jobs, bundle_id=bundle_id)
+    if activo and not jobs:
+        response.headers["HX-Trigger"] = JOB_FINISHED
+    return response
+
+@router.post("/modpacks/{bundle_id}/catalogo")
+@inject
+async def pack_catalog_refresh(
+        bundle_id: str,
+        request: Request,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        ):
+    """"Actualizar desde Modrinth" (E3): the pack's catalog job, or the one already running; the
+    banner and the bar show it."""
+    await modpackService.catalog_refresh(bundle_id, actor)
+    response = render(request, "_notice_oob.html", actor, message="Actualizando desde Modrinth")
+    response.headers["HX-Trigger"] = JOB_STARTED
+    return response
+
 @router.post("/modpacks/{bundle_id}/channel-exceptions")
 @inject
 async def channel_exception_add(
@@ -569,7 +606,7 @@ async def modpack_resolve(
         ):
     """Resolve the bundle now and show the mods under it. The resolution is kept only to show it:
     a build resolves again and freezes that lock. The view it was asked from stays."""
-    await modpackService.resolve(bundle_id)
+    await modpackService.resolve(bundle_id, actor)
     return await _mods(request, actor, modpackService, updateCheckService, bundle_id, vista=vista)
 
 @router.post("/modpacks/{bundle_id}/decisions")
@@ -586,7 +623,7 @@ async def modpack_decide(
     """Decide whether a mod goes on the server: one key, written atomically by the service. The
     resolution is run again so the mod leaves "Por decidir"."""
     await modpackService.decision_set(bundle_id, project_id, server == "yes", actor)
-    await modpackService.resolve(bundle_id)
+    await modpackService.resolve(bundle_id, actor)
     return await _decided(request, actor, modpackService, updateCheckService, bundle_id)
 
 @router.post("/modpacks/{bundle_id}/decisions/bulk")
@@ -605,7 +642,7 @@ async def modpack_decide_bulk(
     if not decisions:
         raise HTTP_422_UNPROCESSABLE_ENTITY("Elige al menos una decisión")
     await modpackService.decisions_set(bundle_id, decisions, actor)
-    await modpackService.resolve(bundle_id)
+    await modpackService.resolve(bundle_id, actor)
     return await _decided(request, actor, modpackService, updateCheckService, bundle_id, vista)
 
 @router.post("/modpacks/{bundle_id}/builds")

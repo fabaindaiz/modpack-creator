@@ -14,7 +14,7 @@ quedó pegada". **Investigación:** `docs/research/2026-10-09-auditoria-requests
 | E1 | La información de Modrinth de un modpack se pide como mucho una vez cada 5 minutos, salvo el botón manual. |
 | E2 | Crear un build no usa la ventana: antes revisa cambios (2–3 requests agrupadas), porque un build queda congelado. |
 | E3 | Botón manual «Actualizar desde Modrinth»: datos y versiones de los mods del pack, agrupados; una vez por minuto por pack. La búsqueda de actualizaciones sigue aparte. |
-| E4 | Cupo de 60 requests a Modrinth por minuto por usuario y tope global de 240 por minuto (Modrinth corta a 300); se respeta `Retry-After`. |
+| E4 | Cupo de 60 requests a Modrinth por minuto por usuario y tope global de 240 por minuto (Modrinth corta a 300); se respeta `Retry-After`. Después: «si hay margen, no tan estrictos» — el cupo por usuario solo rige cuando se gastó la mitad del minuto de la app. |
 | E5 | Sin cupo, el panel avisa «Demasiadas consultas a Modrinth: intenta en N s»; los trabajos de fondo esperan su turno. |
 | E6 | La primera carga de un pack (más requests que el cupo) es un trabajo de fondo que espera el tope global y no gasta el cupo del usuario; lo pedido queda guardado aunque falle a la mitad; al terminar, el pack se resuelve solo. |
 | E7 | Todo lo que haga varias requests es un trabajo: espera su turno, muestra su avance y no se duplica (pulsar de nuevo muestra el que corre). |

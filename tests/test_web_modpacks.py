@@ -42,7 +42,7 @@ def bundle(projects: Optional[list[PackProject]] = None, decisions: Optional[dic
         projects=projects if projects is not None else [PackProject(project_id="P1", origin=ProjectOrigin.pack),
                                                        PackProject(project_id="P2", origin=ProjectOrigin.admin)],
         server_decisions=decisions if decisions is not None else {"OLD": True}, latest_build=2, recommended_build=1,
-        channels=["release"], pins={"P1": "ver-p1"}, channel_exceptions={},
+        channels=["release"], pins={"P1": "ver-p1"}, channel_exceptions={}, modrinth_checked_at=None,
         local_files=[LocalFile(filename="custom.jar", sha512="ab12cd34ef56" + "0" * 100, sha1="x", size=1536)])
 
 
@@ -100,6 +100,8 @@ class FakeModpack:
         self.lock = lock(entry("P1"), entry("P2", "admin"))
         self.calls: list[tuple[Any, ...]] = []
         self.error: Optional[Exception] = None
+        # The pack's active jobs, for its banner (spec 2026-10-09-economia-de-requests).
+        self.jobs: list[Any] = []
         # What mod_list answers: `rows` as given, or one row per project of the bundle (with the
         # side and pin it has) and per entry of the saved resolution that is not in it.
         self.titles: dict[str, str] = {"P1": "Sodium", "P2": "Lithium"}
@@ -150,6 +152,15 @@ class FakeModpack:
         self.bundle.pins = {k: v for k, v in self.bundle.pins.items() if k != project_id}
         return self.bundle
 
+    async def active_jobs(self, bundle_id: str) -> list[Any]:
+        return list(self.jobs)
+
+    async def catalog_refresh(self, bundle_id: str, actor: Actor) -> Any:
+        self._record("catalog_refresh", bundle_id, actor)
+        if self.error is not None:
+            raise self.error
+        return None
+
     async def channel_exception_set(self, bundle_id: str, project_id: str, channel: str, actor: Actor) -> ModpackBundle:
         self._record("channel_exception_set", bundle_id, project_id, channel, actor)
         self.bundle.channel_exceptions = {**self.bundle.channel_exceptions, project_id: channel}
@@ -171,7 +182,7 @@ class FakeModpack:
         self.bundle.projects = [p for p in self.bundle.projects if p.project_id != project_id]
         return self.bundle.projects
 
-    async def resolve(self, bundle_id: str) -> Lock:
+    async def resolve(self, bundle_id: str, actor: Optional[Actor] = None) -> Lock:
         self._record("resolve", bundle_id)
         self.saved = resolution(self.lock)
         return self.lock

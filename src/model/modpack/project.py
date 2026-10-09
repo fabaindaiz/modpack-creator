@@ -88,6 +88,8 @@ class ModpackBundle(Document):
     # when the admin moves it, and going back is moving it to an older build.
     # When its Modrinth information was last compared with Modrinth (spec 2026-10-09-economia-de-requests, E1).
     modrinth_checked_at: Optional[datetime] = None
+    # When "Actualizar desde Modrinth" last ran: once a minute per pack (E3).
+    manual_refreshed_at: Optional[datetime] = None
     latest_build: Optional[int] = None
     recommended_build: Optional[int] = None
 

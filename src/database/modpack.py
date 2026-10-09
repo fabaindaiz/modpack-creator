@@ -239,6 +239,10 @@ class ModpackDatabase():
         """Mark the pack's Modrinth information as compared with Modrinth at `when`."""
         await self._bundle_key(bundle_id, {"$set": {"modrinth_checked_at": when}})
 
+    async def bundle_manual_refreshed_at_set(self, bundle_id: str, when: datetime) -> None:
+        """Mark when "Actualizar desde Modrinth" last ran for the pack."""
+        await self._bundle_key(bundle_id, {"$set": {"manual_refreshed_at": when}})
+
     async def bundle_latest_build(self, bundle_id: str, number: int) -> None:
         """Move the latest pointer forward to `number`; never back ($max)."""
         await ModpackBundle.get_pymongo_collection().update_one(

@@ -1,0 +1,22 @@
+{# What one queued or running job is doing (spec 2026-10-09-economia-de-requests, E8): its kind,
+   what it processes and how far, whether it waits its turn, who asked and when it last moved, so
+   it is plain that the app is not stuck. Needs `job`. No inline style: the bar is a <progress>. #}
+{% import "_macros.html" as ui %}
+{% set wait = job.waiting_until | seconds_until %}
+<div class="min-w-0 space-y-1" data-job="{{ job.id }}">
+  <p class="flex flex-wrap items-center gap-x-2 gap-y-1">
+    <span class="font-medium">{{ ui.JOB_KIND.get(job.kind, job.kind) }}</span>
+    {{ ui.badge("En cola" if job.status == "queued" else "En curso", "info") }}
+  </p>
+  {% if job.progress %}
+  <p class="break-words">{{ job.progress.label }}{% if job.progress.total > 1 %}: {{ job.progress.done }} de {{ job.progress.total }}{% endif %}</p>
+  {% if job.progress.total > 1 %}<progress value="{{ job.progress.done }}" max="{{ job.progress.total }}" class="h-2 w-full max-w-sm accent-emerald-600"></progress>{% endif %}
+  {% elif job.status == "queued" %}
+  <p class="text-zinc-600 dark:text-zinc-400">Esperando a que termine el trabajo anterior.</p>
+  {% endif %}
+  {% if wait %}<p class="text-amber-800 dark:text-amber-300">Esperando turno: {{ wait }} s (límite de Modrinth)</p>{% endif %}
+  <p class="text-xs text-zinc-500 dark:text-zinc-400">
+    {%- if job.requested_by %}pedido por {{ job.requested_by.name }} · {% endif -%}
+    {%- if job.updated_at %}actualizado {{ job.updated_at | ago }}{% else %}en cola {{ job.created_at | ago }}{% endif -%}
+  </p>
+</div>

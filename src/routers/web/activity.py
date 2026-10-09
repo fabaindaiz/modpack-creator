@@ -19,6 +19,23 @@ AUDIT_PAGE = 50
 # A filter or a cursor: kept short, and passed to the service as the exact value.
 FilterValue = Annotated[Optional[str], Query(max_length=200)]
 
+@router.get("/trabajos/mios")
+@inject
+async def my_jobs(
+        request: Request,
+        lista: Annotated[Optional[str], Query(max_length=1)] = None,
+        actor: Actor = Depends(get_web_actor),
+        jobService: JobService = Depends(Provide[Dependences.jobService]),
+        ):
+    """The bar's jobs (E8): what this person asked for that is queued or running, with its
+    progress and a shortcut; it polls only while there are some. `lista`: the list alone, and
+    `my-jobs-done` when it is empty, so the bar empties."""
+    jobs = await jobService.active_for_user(actor)
+    response = render(request, "_my_jobs.html", actor, jobs=jobs, lista=bool(lista))
+    if lista and not jobs:
+        response.headers["HX-Trigger"] = "my-jobs-done"
+    return response
+
 def _day(value: Optional[str], label: str) -> Optional[datetime]:
     """A `YYYY-MM-DD` date as midnight UTC; empty is no bound; anything else is a 422."""
     if not value:

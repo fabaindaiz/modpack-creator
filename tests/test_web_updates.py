@@ -50,6 +50,9 @@ class FakeModpack:
     async def bundle_get(self, bundle_id: str) -> ModpackBundle:
         return self.bundle
 
+    async def active_jobs(self, bundle_id: str) -> list[Any]:
+        return []
+
     async def build_find(self, bundle_id: str) -> list[ModpackBuild]:
         return []
 

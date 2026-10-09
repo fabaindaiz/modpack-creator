@@ -39,6 +39,8 @@
         </ul>
       </nav>
       <div class="ml-auto flex min-w-0 items-center gap-2 text-sm">
+        {# The person's open jobs (E8): loaded with the page, and again when an action starts or the last one ends. #}
+        <div id="my-jobs" hx-get="/trabajos/mios" hx-trigger="load, job-started from:body, my-jobs-done from:body" hx-swap="innerHTML"></div>
         <span class="max-w-[12rem] truncate text-zinc-700 dark:text-zinc-300" title="{{ actor.name }}">{{ actor.name }}</span>
         {% if actor.is_operator %}
         {{ ui.badge("Operador", "accent", title="Puede escribir en los servidores") }}

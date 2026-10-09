@@ -1,0 +1,3 @@
+{# A success notice out of band, into #notices; the answer of an action whose result shows elsewhere. #}
+{% import "_macros.html" as ui %}
+<div id="notices" hx-swap-oob="beforeend">{{ ui.success(message) }}</div>
