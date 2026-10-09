@@ -73,6 +73,21 @@ clave de importación usaba `sub` sin `iss`; una consulta a MongoDB por proyecto
 trabajos traían el `.mrpack` entero; duplicados (`not_rate_limited`, `MODRINTH_ID`, la normalización
 a UTC).
 
+**Tercera parte: build 0.2.0** (a pedido del dueño: «lo hecho + U3»; el resto, en una sesión
+cloud con el traspaso en `docs/superpowers/plans/2026-10-09-pendientes.md`). Hechos A1–A6 y U1–U3, y
+la versión 0.2.0. Una segunda revisión (`e30f471..`) dio 10 hallazgos, arreglados con test salvo el
+riesgo del reescaneo sembrado, que queda para decidir (roadmap):
+- **Lo que salió mal:** el commit de A1 decía que el mismo arreglo cubría una actualización que solo
+  quita jars, sin test; la revisión mostró que la verificación final seguía listando la carpeta (404).
+  Ahora tiene test, y el cambio de carpetas falla si los jars preparados desaparecieron.
+- Un gate quedó corriendo en segundo plano por un `&` de más; se detuvo.
+- mongod murió también con una base nueva por corrida (~1,5 GB): `test-mongo.sh` ahora cierra a los
+  10 s los archivos de colecciones borradas (pico medido ~1,2 GB).
+- La revisión visual marcó como peticiones de «Todos al servidor» los sondeos de la barra: el
+  chequeo ahora los ignora. Terminó en 138 capturas y 0 problemas.
+- **Sin verificar:** A1 contra un panel real; la subida en lote contra un proxy real (el tope de
+  90 MB es un supuesto).
+
 **Fricciones contadas en este registro** (búsqueda, no memoria): la VM de podman de 2 GiB aparece
 en 15 líneas; MongoDB murió 3 veces esta sesión (dos instancias a la vez, o el gate junto a la
 revisión visual) y una cuarta en el cierre. Causa encontrada en el `dmesg` de la VM: un mongod

@@ -41,14 +41,15 @@ def backoff_on_rate_limit(func: WRAP) -> WRAP:
                 await _sleep(min(wait, RATE_LIMIT_MAX_WAIT))
     return wrapper # type: ignore
 
-def not_rate_limited(error: Exception) -> bool:
+def not_retryable(error: Exception) -> bool:
     """For backoff's giveup on a read: never retried on the spot are a 429 (backoff_on_rate_limit's,
     or the limiter's to wait for) and any other 4xx, which asking again does not change: each try is
-    a request (A4, docs/superpowers/plans/2026-10-09-pendientes.md)."""
+    a request (A4, docs/superpowers/plans/2026-10-09-pendientes.md). A 408 is the exception: a
+    timeout on the way, worth one more try."""
     if isinstance(error, HTTP_429_TOO_MANY_REQUESTS):
         return True
     status = error.upstream_status if isinstance(error, UpstreamError) else getattr(error, "status_code", None)
-    return isinstance(status, int) and 400 <= status < 500
+    return isinstance(status, int) and 400 <= status < 500 and status != 408
 
 def handle_auth(func: WRAP) -> WRAP:
     @wraps(func)

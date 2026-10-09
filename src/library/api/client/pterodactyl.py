@@ -4,7 +4,7 @@ from typing import Any, Generator, Optional
 from src.library.api import HttpAPI, METHOD
 from src.library.api.handler import JsonRequest, JsonResponse, MultiPartRequest, RequestHandler, StreamResponse
 from src.library.api.session import NO_AUTHORIZE, SessionAuthorization, TokenAuthorization
-from src.library.api.utils import backoff_on_rate_limit, not_rate_limited
+from src.library.api.utils import backoff_on_rate_limit, not_retryable
 from src.model.pterodactyl import PterodactylAccount, PterodactylBackup, PterodactylPermission, PterodactylFile, PterodactylServer, ServerResources, ServerState
 from src.library.utils import getenv, getenv_opt
 from src.exceptions import *
@@ -32,7 +32,7 @@ class PterodactylAPI(HttpAPI):
                 token=PTERODACTYL_TOKEN)
 
     @backoff_on_rate_limit
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_rate_limited)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_retryable)
     async def account(self) -> PterodactylAccount:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
@@ -40,7 +40,7 @@ class PterodactylAPI(HttpAPI):
         return PterodactylAccount(**handler.json.get("attributes", {}))
 
     @backoff_on_rate_limit
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_rate_limited)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_retryable)
     async def permissions(self) -> Generator[PterodactylPermission, None, None]:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
@@ -48,7 +48,7 @@ class PterodactylAPI(HttpAPI):
         return (PterodactylPermission(**item) for item in handler.json.get("attributes", {}).get("permissions", []))
 
     @backoff_on_rate_limit
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_rate_limited)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_retryable)
     async def server_get(self, server_id: str) -> PterodactylServer:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
@@ -56,7 +56,7 @@ class PterodactylAPI(HttpAPI):
         return PterodactylServer(**handler.json.get("attributes", {}))
 
     @backoff_on_rate_limit
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_rate_limited)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_retryable)
     async def server_get_many(self) -> Generator[PterodactylServer, None, None]:
         handler: JsonResponse = await self._request(
             method=METHOD.GET,
@@ -67,7 +67,7 @@ class PterodactylAPI(HttpAPI):
         return (PterodactylServer(**item.get("attributes", {})) for item in handler.json.get("data", []))
     
     @backoff_on_rate_limit
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_rate_limited)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_retryable)
     async def server_files(self, server_id: str, directory: str) -> Generator[PterodactylFile, None, None]:
         handler: JsonResponse = await self._request(
             method=METHOD.GET, path=f'client/servers/{server_id}/files/list',
@@ -75,7 +75,7 @@ class PterodactylAPI(HttpAPI):
         return (PterodactylFile(**item.get("attributes", {})) for item in handler.json.get("data", []))
 
     @backoff_on_rate_limit
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_rate_limited)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_retryable)
     async def server_files_signed_url(self, server_id: str, action: str, query: Optional[dict[str, str]] = None) -> str:
         """A one-use URL on the node (Wings), valid 15 minutes. Asking for one changes nothing."""
         handler: JsonResponse = await self._request(
@@ -97,7 +97,7 @@ class PterodactylAPI(HttpAPI):
         return handler.stream
 
     @backoff_on_rate_limit
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_rate_limited)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_retryable)
     async def server_state(self, server_id: str) -> ServerState:
         handler: JsonResponse = await self._request(method=METHOD.GET, path=f'client/servers/{server_id}')
         attributes = handler.json["attributes"]
@@ -106,7 +106,7 @@ class PterodactylAPI(HttpAPI):
                            backup_limit=attributes["feature_limits"]["backups"])
 
     @backoff_on_rate_limit
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_rate_limited)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_retryable)
     async def resources(self, server_id: str) -> ServerResources:
         handler: JsonResponse = await self._request(method=METHOD.GET, path=f'client/servers/{server_id}/resources')
         attributes = handler.json["attributes"]
@@ -114,7 +114,7 @@ class PterodactylAPI(HttpAPI):
                                uptime_ms=attributes["resources"]["uptime"])
 
     @backoff_on_rate_limit
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_rate_limited)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_retryable)
     async def backups(self, server_id: str) -> tuple[list[PterodactylBackup], int]:
         """The server's backups (first page, up to 50) and backup_count: the non-failed ones, which
         the panel holds against feature_limits.backups."""
@@ -124,7 +124,7 @@ class PterodactylAPI(HttpAPI):
         return backups, int(handler.json.get("meta", {}).get("backup_count", len(backups)))
 
     @backoff_on_rate_limit
-    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_rate_limited)
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_retryable)
     async def backup_get(self, server_id: str, backup_id: str) -> PterodactylBackup:
         handler: JsonResponse = await self._request(method=METHOD.GET, path=f'client/servers/{server_id}/backups/{backup_id}')
         return PterodactylBackup(**handler.json["attributes"])
@@ -172,9 +172,6 @@ class PterodactylAPI(HttpAPI):
     async def files_create_folder(self, server_id: str, root: str, name: str) -> bool:
         handler = await self._write(f'client/servers/{server_id}/files/create-folder', json={"root": root, "name": name})
         return handler.status == 204
-
-    async def server_files_upload(self, server_id: str, directory: str, filename: str, fileraw: bytes) -> bool:
-        return await self.server_files_upload_many(server_id, directory, [(filename, fileraw)])
 
     async def server_files_upload_many(self, server_id: str, directory: str, files: list[tuple[str, bytes]]) -> bool:
         """Upload several files in one POST to Wings, under one signed URL (U2): Wings reads every

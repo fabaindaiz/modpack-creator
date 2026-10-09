@@ -17,8 +17,6 @@ SEARCH_TYPES = ("mod", "shader", "resourcepack", "datapack")
 FILL_DEADLINE = 5.0
 # How long the catalog trusts that a project has no icon, or that Modrinth does not know an id.
 RECHECK_AFTER = timedelta(hours=24)
-# How many ids go in one Modrinth request.
-ID_CHUNK = 100
 # How long a search's hits are reused.
 SEARCH_REUSE = timedelta(minutes=10)
 
@@ -42,9 +40,7 @@ async def fill_catalog(modrinthDB: ModrinthDatabase, modrinthAPI: ModrinthAPI, p
                or (i in stored and not stored[i].icon_url and _older(stored[i].fetched_at, now))]
     if missing:
         async def fetch() -> list[ModrinthProject]:
-            found: list[ModrinthProject] = []
-            for start in range(0, len(missing), ID_CHUNK):
-                found += list(await modrinthAPI.project_get_many(missing[start:start + ID_CHUNK]))
+            found = list(await modrinthAPI.project_get_many(missing))
             returned = {p.project_id for p in found} | {p.slug for p in found}
             await modrinthDB.unknown_add([i for i in missing if i not in returned and i not in stored], now)
             return await modrinthDB.project_upsert_many(found)
@@ -169,13 +165,3 @@ class ModrinthService():
         await self.modrinthDB.project_upsert_many(await self.modrinthAPI.project_get_many(project_ids))
         await self.modrinthDB.version_upsert_many(versions)
         return version.dependencies
-    
-    async def project_version_update_all(self, slug: str) -> Iterable[ModrinthVersion]:
-        """
-        Get all versions for a project.
-        """
-        project = await ModrinthProject.find_one({"slug": slug})
-        if not project:
-            raise ValueError(f"Project with slug '{slug}' not found.")
-        versions = await self.modrinthAPI.version_get_many(project.versions)
-        return await self.modrinthDB.version_upsert_many(versions)

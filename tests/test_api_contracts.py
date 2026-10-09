@@ -343,7 +343,7 @@ def test_uploading_asks_the_panel_for_a_signed_url_and_posts_the_file_to_wings_w
         ("POST", "/upload/file"): empty_reply(200),
     }
     # A name with "+", like most Modrinth jars (`+mc26.3`): it must arrive as is, not percent-encoded.
-    result, seen = run(routes, lambda base: pterodactyl(base).server_files_upload("abc", "/mods", "a+mc26.3.jar", b"jar"))
+    result, seen = run(routes, lambda base: pterodactyl(base).server_files_upload_many("abc", "/mods", [("a+mc26.3.jar", b"jar")]))
     assert [(s.method, s.path) for s in seen] == [
         ("GET", "/api/client/servers/abc/files/upload"), ("POST", "/upload/file")]
     wings = seen[1]
@@ -406,3 +406,21 @@ def test_concurrent_requests_on_one_client_each_get_their_own_response() -> None
 
     result, _ = run({("GET", "/project/first"): slow_project, ("GET", "/project/second"): slow_project}, call)
     assert result == ["first", "second"]
+
+
+def test_project_and_version_batches_go_100_ids_a_request() -> None:
+    # Code review (2026-10-09): the 100-id batches belong in the client, so every caller gets them.
+    import json as json_module
+
+    routes = {("GET", "/projects"): json_reply([]), ("GET", "/versions"): json_reply([])}
+    ids = [f"P{i:07d}" for i in range(150)]
+
+    async def call(base: str) -> None:
+        api = modrinth(base)
+        list(await api.project_get_many(ids))
+        list(await api.version_get_many(ids))
+        await api.close()
+
+    _, seen = run(routes, call)
+    assert [(s.path, len(json_module.loads(s.query["ids"]))) for s in seen] == [
+        ("/projects", 100), ("/projects", 50), ("/versions", 100), ("/versions", 50)]

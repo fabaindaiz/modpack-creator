@@ -43,6 +43,10 @@ Al cierre de la sesión de usabilidad del panel (2026-10-04 y 2026-10-05; detall
   - la regla de `DOCKER-USER`;
   - el punto de control en solo lectura.
 
+- **Release 0.2.0 (2026-10-09), rama `fix/tester-feedback`, sin mergear ni desplegar:** las
+  observaciones de un tester, el importador de `.mrpack` y Modrinth, la economía de requests, y de
+  los pendientes A1–A6 y U1–U3 (A1 habría bloqueado la primera actualización real). El resto del
+  plan sigue en una sesión cloud: `docs/superpowers/plans/2026-10-09-pendientes.md`, «Traspaso».
 - **2026-10-09, rama `fix/tester-feedback`, sin mergear:** las observaciones de un tester
   (i-7985ee-1a6093), el importador de `.mrpack` y Modrinth (i-7985ee-261a79) y la economía de
   requests (i-7985ee-456f19). Pendientes con decisión del dueño: los overrides (i-7985ee-943b5e).
@@ -297,7 +301,8 @@ viejo cuando el catálogo se refresca. La resolución solo lee el `project_id`, 
 ### Builds inmutables de un modpack con punteros recomendado y último — Hecha (2026-10-01) · i-7985ee-098611
 - **En qué quedó:**
   - `POST /v1/modpack/{id}/build` resuelve y congela un `ModpackBuild` (número, fecha, pedido y
-    lock). Nunca se edita.
+    lock). Nunca se edita. Desde 0.2.0 deja el trabajo de build del panel y responde 202 con él
+    (U5, 2026-10-09).
   - Se rechaza con 409 si el lock tiene problemas, mods sin decidir o no terminó.
   - Un índice único `(bundle_id, number)` impide dos builds con el mismo número.
   - `latest_build` avanza con `$max`. `PUT /v1/modpack/{id}/recommended/{n}` mueve
@@ -862,8 +867,9 @@ JSON con `request_id` y `job_id`.
   - importar un servidor como trabajo (i-7985ee-27db6c);
   - changelogs en una sola request (R6; SUPUESTO por verificar: que `GET /versions?ids=` los trae);
   - guardar la versión del loader y la lista de servidores del panel (R9);
-  - la simulación descarga cada jar y la actualización real los vuelve a bajar (R7/R9);
-  - `/v1/modpack/{id}/build` sigue síncrono (el panel ya no);
+  - ~~la simulación descarga cada jar y la actualización real los vuelve a bajar (R7/R9)~~: hecho
+    en 0.2.0 (U1, U2, U3);
+  - ~~`/v1/modpack/{id}/build` sigue síncrono~~: 202 con el trabajo desde 0.2.0 (A2, U5);
   - medir en real cuántas requests hace una sesión (hoy son cuentas leyendo el código).
 
 ### Pendientes del 2026-10-09: investigados, decididos y en curso — A medias (2026-10-09) · i-7985ee-805517
@@ -872,8 +878,13 @@ JSON con `request_id` y `job_id`.
   del loader y de la lista de servidores, `/v1` con trabajos, el limitador con las cabeceras de
   Modrinth, CurseForge y Prism (i-7985ee-261a79), la deuda del panel y los overrides
   (i-7985ee-943b5e, O1 abierta).
-- **A1, primero:** la preparación de una actualización lista una carpeta antes de crearla; con un
-  panel real fallaría (fuentes de Pterodactyl/Wings, sin probar en real).
+- **A1, hecho en 0.2.0:** la preparación listaba una carpeta antes de crearla; con un panel real
+  habría fallado (fuentes de Pterodactyl/Wings; los paneles de prueba ahora responden 404 como
+  Wings). Sin probar contra un panel real.
+- **Para decidir en la sesión cloud (revisión del 2026-10-09):** el reescaneo sembrado (U3) confía en
+  el tamaño, y un jar con el tamaño del build pero otros bytes quedaría registrado como del build
+  hasta un escaneo completo. Opciones: dejarlo (lo decidido), o que el siguiente escaneo normal
+  vuelva a hashear una vez lo sembrado.
 
 ### La VM de podman de 2 GiB mata a mongod cuando corren dos instancias — Planeada · i-7985ee-9b250c
 - El registro la menciona 15 veces; el 2026-10-09 murió 4 veces. **Causa encontrada** (el `dmesg`

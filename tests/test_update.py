@@ -112,6 +112,7 @@ async def setup(extra_files: dict[str, bytes] | None = None, installed: str = "o
     older = next(v["id"] for v in modrinth.versions if v["project_id"] == FABRIC_API and v["id"] != newest)
     for version_id in (newest, older):
         modrinth.known[sha1(f"fabric-api {version_id}".encode())] = version_id
+
     on_server = f"fabric-api {newest if installed == 'newest' else older}".encode()
     panel = StatefulPanel({"/mods/fabric-api-installed.jar": on_server, **(extra_files or {})}, **panel_options)
     servers = PterodactylService(pterodactylAPI=cast(Any, panel), PterodactylDB=PterodactylDatabase(),
@@ -295,6 +296,42 @@ def test_the_rescan_after_an_update_takes_the_uploaded_jars_from_the_build(mongo
     assert status == "done" and f"/mods/{jar}" not in downloads
     [installed] = [f for f in scan.files if f.path == f"/mods/{jar}"]
     assert installed.status == "identified" and installed.sha512 == sha512(f"fabric-api {installed.version_id}".encode())
+
+
+def test_staging_with_nothing_to_install_lists_no_folder_it_never_made(mongo: MongoRunner) -> None:
+    # Code review (2026-10-09): an update that only removes jars never makes its staging folder, and
+    # the step's final check listed it anyway: Wings' 404 failed the step on every attempt.
+    from src.services.update import Ops
+
+    async def scenario() -> tuple[dict[str, Any], list[str]]:
+        s = await setup()
+        job = Job(kind="server_update", key="k", payload={}, created_at=NOW)
+        result = await s.update._staging(job, "1a2b", {"install": [], "remove": ["/mods/x.jar"]}, Ops(dry_run=False))
+        return result, s.panel.writes
+
+    result, writes = mongo(scenario)
+    assert result["files"] == [] and writes == []
+
+
+def test_the_swap_fails_if_the_staged_jars_are_gone(mongo: MongoRunner) -> None:
+    # Code review (2026-10-09): reading a missing staging folder as empty must not let the swap move
+    # the old jars out with nothing to put in.
+    async def scenario() -> tuple[str, Any, list[str]]:
+        s = await setup()
+        real = s.update._swap
+
+        async def swap(job: Any, ident: str, plan: Any, ops: Any) -> Any:
+            for path in [p for p in s.panel.files if p.startswith("/mods.staging/")]:
+                del s.panel.files[path]
+            s.panel.folders = {f for f in s.panel.folders if not f.startswith("/mods.staging")}
+            return await real(job, ident, plan, ops)
+
+        s.update._swap = swap  # type: ignore[method-assign]
+        job = await s.run(dry_run=False)
+        return job.status, job.error, [w for w in s.panel.writes if w.startswith("rename")]
+
+    status, error, renames = mongo(scenario)
+    assert status == "failed" and "staging" in (error or "") and renames == []
 
 
 def test_a_real_update_with_nothing_to_change_still_records_the_state(mongo: MongoRunner) -> None:
@@ -486,3 +523,5 @@ def test_jars_go_up_in_batches_that_never_pass_the_limit() -> None:
     sizes = [("a", 40), ("b", 50), ("c", 30), ("d", 120), ("e", 10)]
     batches = upload_batches(sizes, limit=100)
     assert [[name for name, _ in batch] for batch in batches] == [["a", "b"], ["c"], ["d"], ["e"]]
+    # Each part counted with its multipart overhead: 40 + 50 + 2 x 10 passes 100.
+    assert [[n for n, _ in b] for b in upload_batches(sizes[:2], limit=100, overhead=10)] == [["a"], ["b"]]

@@ -371,22 +371,3 @@ def test_a_job_that_modrinth_refuses_ends_failed_with_the_reason(mongo: MongoRun
 
     done, report = mongo(scenario)
     assert done.status == "failed" and "no conoce" in (done.error or "") and report is None
-
-
-def test_replacing_the_content_with_150_projects_asks_modrinth_in_batches_of_100(mongo: MongoRunner) -> None:
-    # A5: a batch of more than 100 ids was one request.
-    async def scenario() -> list[int]:
-        s = Scenario()
-        ids = [f"P{i:07d}" for i in range(150)]
-        sizes: list[int] = []
-
-        async def many(slugs: list[str]) -> list[ModrinthProject]:
-            sizes.append(len(slugs))
-            return [ModrinthProject.parse(**project(i, i)) for i in slugs]
-
-        s.api.project_get_many = many  # type: ignore[method-assign]
-        bundle_id = await s.bundle()
-        await s.service.modpackService.pack_replace(bundle_id, ids, EDITOR)
-        return sizes
-
-    assert mongo(scenario) == [100, 50]

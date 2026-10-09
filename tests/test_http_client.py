@@ -162,3 +162,28 @@ def test_a_read_that_answers_404_is_not_asked_again() -> None:
     panel = asyncio.run(_hits_for_a_404(lambda c, d: c.server_files("srv", d), "/client/servers/srv/files/list",
                                         PterodactylAPI()))
     assert (modrinth, panel) == (1, 1)
+
+
+@pytest.mark.network
+def test_a_read_that_times_out_at_a_proxy_is_asked_once_more() -> None:
+    # Code review (2026-10-09): giving up on every 4xx dropped the retry of a transient 408.
+    from src.library.api.client.modrinth import ModrinthAPI
+
+    async def scenario() -> tuple[int, Any]:
+        hits = 0
+
+        async def handler(request: web.Request) -> web.Response:
+            nonlocal hits
+            hits += 1
+            return web.json_response({}, status=408) if hits == 1 else web.json_response({"hits": [{"slug": "x"}]})
+
+        app = web.Application()
+        app.router.add_get("/search", handler)
+        async with TestServer(app) as server:
+            api = ModrinthAPI()
+            api.base_url = str(server.make_url("/"))
+            found = await api.search("x", [], 1)
+            await api.close()
+        return hits, found
+
+    assert asyncio.run(scenario()) == (2, [{"slug": "x"}])

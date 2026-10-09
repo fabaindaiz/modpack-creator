@@ -155,10 +155,9 @@ def test_creating_projects_already_stored_refreshes_them_and_loses_none(mongo: M
 def test_a_project_keeps_many_versions_and_refreshing_them_does_not_duplicate(mongo: MongoRunner) -> None:
     async def scenario() -> dict[str, int]:
         await ModrinthDatabase().project_insert(project(versions=["v1", "v2"]))
-        api = FakeModrinthAPI(versions=(version("v1"), version("v2")))
-        await modrinth(api).project_version_update_all("sodium")
-        api.versions["v2"] = version("v2", downloads=99)
-        await modrinth(api).project_version_update_all("sodium")
+        # Stored as the catalog stores them (the service method that wrapped this was dead code).
+        await ModrinthDatabase().version_upsert_many([version("v1"), version("v2")])
+        await ModrinthDatabase().version_upsert_many([version("v2", downloads=99)])
         return {v.version_id: v.downloads async for v in ModrinthVersion.find()}
 
     assert mongo(scenario) == {"v1": 1, "v2": 99}

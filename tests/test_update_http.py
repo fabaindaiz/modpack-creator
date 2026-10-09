@@ -79,9 +79,10 @@ def panel_app(panel: StatefulPanel, problems: list[str]) -> web.Application:
 
     async def wings_upload(r: web.Request) -> web.StreamResponse:
         form = await r.post()
-        part = form["files"]
-        assert isinstance(part, web.FileField)
-        await panel.server_files_upload("x", r.query["directory"], part.filename, part.file.read())
+        files = [(part.filename, part.file.read()) for key, part in form.items()
+                 if key == "files" and isinstance(part, web.FileField)]
+        assert files
+        await panel.server_files_upload_many("x", r.query["directory"], files)
         return web.Response(status=200)
 
     async def folder(r: web.Request) -> web.StreamResponse:

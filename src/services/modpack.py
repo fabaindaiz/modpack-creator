@@ -23,7 +23,7 @@ from src.model.pterodactyl import PterodactylServer
 from src.model.audit import AuditTarget
 from src.model.users import Actor
 from src.services.audit import AuditSink
-from src.services.modrinth import FILL_DEADLINE, ID_CHUNK, fill_catalog
+from src.services.modrinth import FILL_DEADLINE, fill_catalog
 from src.library.utils import MODRINTH_ID, as_utc
 from src.services.pterodactyl import SCAN_DIRECTORY
 from src.exceptions import *
@@ -68,9 +68,6 @@ def _refuse_blocked(lock: Lock) -> None:
 def _catalog_key(bundle_id: str) -> str:
     return f"catalog:{bundle_id}"
 
-
-def _chunks(ids: Sequence[str]) -> list[list[str]]:
-    return [list(ids[i:i + ID_CHUNK]) for i in range(0, len(ids), ID_CHUNK)]
 
 def candidate(version: ModrinthVersion) -> Candidate:
     return Candidate.from_modrinth({**version.model_dump(mode="json"), "id": version.version_id})
@@ -480,9 +477,7 @@ class ModpackService():
     async def _modrinth_projects(self, refs: list[str]) -> list[ModrinthProject]:
         """The Modrinth projects these slugs or ids name, stored in the catalog; 404 naming any
         that Modrinth does not know."""
-        found: list[ModrinthProject] = []
-        for chunk in _chunks(list(refs)):  # 100 ids a request (A5)
-            found += list(await self.modrinthAPI.project_get_many(chunk))
+        found = list(await self.modrinthAPI.project_get_many(list(refs))) if refs else []
         known = {key for p in found for key in (p.project_id, p.slug)}
         missing = [ref for ref in refs if ref not in known]
         if missing:
@@ -969,9 +964,7 @@ class ModpackService():
             missing_ids = sorted(set(asked) - {v.version_id for v in stored_versions} - gone)
             if missing_ids and local_only:
                 raise _NeedsModrinth()
-            fetched_versions: list[ModrinthVersion] = []
-            for chunk in _chunks(missing_ids):
-                fetched_versions += list(await self.modrinthAPI.version_get_many(chunk))
+            fetched_versions = list(await self.modrinthAPI.version_get_many(missing_ids)) if missing_ids else []
             if fetched_versions:
                 await self.modrinthDB.version_upsert_many(fetched_versions)
             not_returned = set(missing_ids) - {v.version_id for v in fetched_versions}
@@ -995,9 +988,7 @@ class ModpackService():
 
     async def _projects_fetch(self, project_ids: list[str]) -> list[ModrinthProject]:
         """Projects from Modrinth, in batches, stored."""
-        found: list[ModrinthProject] = []
-        for chunk in _chunks(project_ids):
-            found += list(await self.modrinthAPI.project_get_many(chunk))
+        found = list(await self.modrinthAPI.project_get_many(project_ids)) if project_ids else []
         if found:
             await self.modrinthDB.project_upsert_many(found)
         return found
@@ -1013,9 +1004,7 @@ class ModpackService():
             return
         current = {p.project_id: set(p.versions) for p in await self._projects_fetch(known)}
         new_ids = sorted({i for r in records for i in current.get(r.project_id, set()) - set(r.version_ids)})
-        fetched: list[ModrinthVersion] = []
-        for chunk in _chunks(new_ids):
-            fetched += list(await self.modrinthAPI.version_get_many(chunk))
+        fetched = list(await self.modrinthAPI.version_get_many(new_ids)) if new_ids else []
         if fetched:
             await self.modrinthDB.version_upsert_many(fetched)
         for record in records:

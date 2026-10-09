@@ -39,6 +39,7 @@ from src.services.audit import AuditSink
 from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink, done_rollback
 from src.services.pterodactyl import SCAN_DIRECTORY, PterodactylService
 
+import functools
 import hashlib
 
 logger = logging.getLogger("modpack.update")
@@ -268,7 +269,7 @@ class UpdateService():
             if plan["install"]:
                 await ops.write("mkdir /mods.staging", _never)
                 await ops.write(f"mkdir {staging}", _never)
-            for batch in upload_batches([(i["filename"], i["size"]) for i in plan["install"]], UPLOAD_BATCH_BYTES):
+            for batch in upload_batches([(i["filename"], i["size"]) for i in plan["install"]], UPLOAD_BATCH_BYTES, UPLOAD_PART_OVERHEAD):
                 await ops.write(f"upload {staging}: {', '.join(name for name, _ in batch)}", _never)
             return {"staging": staging, "files": [i["filename"] for i in plan["install"]]}
         present = {f.name: f.size for f in await self._files_if_any(ident, staging)}
@@ -278,7 +279,7 @@ class UpdateService():
                    if present.get(item["filename"]) != item["size"]]
         # U2 (owner, 2026-10-09): one signed URL and one POST per batch, never more than
         # UPLOAD_BATCH_BYTES in memory: each batch is downloaded, verified and uploaded in turn.
-        for batch in upload_batches(missing, UPLOAD_BATCH_BYTES):
+        for batch in upload_batches(missing, UPLOAD_BATCH_BYTES, UPLOAD_PART_OVERHEAD):
             files: list[tuple[str, bytes]] = []
             for filename, _ in batch:
                 item = by_name[filename]
@@ -291,11 +292,11 @@ class UpdateService():
                 await ops.write("mkdir /mods.staging", lambda: self.api.files_create_folder(ident, "/", "mods.staging"))
                 await ops.write(f"mkdir {staging}", lambda: self.api.files_create_folder(ident, "/mods.staging", str(job.id)))
                 folder_made = True
-
-            async def upload(files: list[tuple[str, bytes]] = files) -> bool:
-                return await self.api.server_files_upload_many(ident, staging, files)
+            upload = functools.partial(self.api.server_files_upload_many, ident, staging, files)
             await ops.write(f"upload {staging}: {', '.join(name for name, _ in files)}", upload)
-        if not ops.dry_run:
+        if plan["install"]:
+            # Only when something went up: with nothing to install the folder is never made, and
+            # listing it would be Wings' 404 (code review, 2026-10-09).
             uploaded = {f.name: f.size for f in await self.api.server_files(ident, staging)}
             wrong = [i["filename"] for i in plan["install"] if uploaded.get(i["filename"]) != i["size"]]
             if wrong:
@@ -378,6 +379,12 @@ class UpdateService():
         await ops.write(f"mkdir /{old}", lambda: self.api.files_create_folder(ident, "/mods.old", str(job.id)))
         in_mods = set() if ops.dry_run else {f.name for f in await self.api.server_files(ident, "/mods")}
         staged = set() if ops.dry_run else {f.name for f in await self._files_if_any(ident, f"/mods.staging/{job.id}")}
+        if not ops.dry_run:
+            # Every new jar is staged, or already in /mods (a retry after the move): otherwise the
+            # old jars must not go out with nothing to put in (code review, 2026-10-09).
+            lost = [i["filename"] for i in plan["install"] if i["filename"] not in staged and i["filename"] not in in_mods]
+            if lost:
+                raise JobFailed(f"the staging folder no longer holds {', '.join(lost)}: no se actualizó")
         names_out = [p.rsplit("/", 1)[-1] for p in plan["remove"]]
         moves_out = [(f"mods/{n}", f"{old}/{n}") for n in names_out if ops.dry_run or n in in_mods]
         moves_in = [(f"mods.staging/{job.id}/{i['filename']}", f"mods/{i['filename']}") for i in plan["install"]
@@ -515,23 +522,26 @@ async def _never() -> None:
 
 
 # How many bytes go up to staging in one POST (U2). Wings' own upload_limit applies per file; a proxy
-# in front of it may cap a whole request, and 100 MB is what the panel's documented nginx config
-# allows (ASSUMPTION: the owner's proxy is not stricter).
-UPLOAD_BATCH_BYTES = 100 * 1024 * 1024
+# in front of it may cap a whole request: the panel's documented nginx allows 100m, Cloudflare 100 MB
+# decimal. 90 MB, each part counted with its multipart headers, leaves room under both (code review,
+# 2026-10-09; ASSUMPTION: the owner's proxy is not stricter).
+UPLOAD_BATCH_BYTES = 90 * 1000 * 1000
+# What one part of the multipart body adds to its file: boundary and headers, with the file name.
+UPLOAD_PART_OVERHEAD = 1024
 
 
-def upload_batches(items: list[tuple[str, int]], limit: int) -> list[list[tuple[str, int]]]:
-    """The jars to upload (name, size) in order, grouped so no batch passes `limit` bytes; a jar
-    bigger than the limit goes alone."""
+def upload_batches(items: list[tuple[str, int]], limit: int, overhead: int = 0) -> list[list[tuple[str, int]]]:
+    """The jars to upload (name, size) in order, grouped so no batch passes `limit` bytes, each part
+    counted with `overhead`; a jar bigger than the limit goes alone."""
     batches: list[list[tuple[str, int]]] = []
     current: list[tuple[str, int]] = []
     total = 0
     for name, size in items:
-        if current and total + size > limit:
+        if current and total + size + overhead > limit:
             batches.append(current)
             current, total = [], 0
         current.append((name, size))
-        total += size
+        total += size + overhead
     if current:
         batches.append(current)
     return batches

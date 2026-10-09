@@ -617,7 +617,9 @@ def _set_all_sends_nothing(page: Any) -> list[str]:
     sent: list[str] = []
 
     def on_request(request: Any) -> None:
-        if request.resource_type != "image":
+        # The bar's and the banner's polls run on their own timer (E8): not the button's doing.
+        if request.resource_type != "image" and "/trabajos/mios" not in request.url and "/trabajo?" not in request.url \
+                and not request.url.endswith("/trabajo"):
             sent.append(f"{request.method} {request.url}")
     page.on("request", on_request)
     page.click('#mods [data-vista="decidir"] [data-set-all="si"]')

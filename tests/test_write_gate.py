@@ -22,7 +22,7 @@ WRITES: dict[str, Callable[[PterodactylAPI], Awaitable[Any]]] = {
     "power": lambda api: api.server_power("abc", "stop"),
     "command": lambda api: api.server_command("abc", "stop"),
     "delete": lambda api: api.server_files_delete("abc", "/mods", ["a.jar"]),
-    "upload": lambda api: api.server_files_upload("abc", "/mods", "a.jar", b"jar"),
+    "upload": lambda api: api.server_files_upload_many("abc", "/mods", [("a.jar", b"jar")]),
 }
 
 

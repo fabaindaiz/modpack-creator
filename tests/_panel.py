@@ -130,11 +130,6 @@ class StatefulPanel:
         self.folders.add(f"{root.rstrip('/')}/{name}")
         return True
 
-    async def server_files_upload(self, server_id: str, directory: str, filename: str, fileraw: bytes) -> bool:
-        self.writes.append(f"upload {directory}/{filename}")
-        self.files[f"{directory.rstrip('/')}/{filename}"] = fileraw
-        return True
-
     async def server_files_upload_many(self, server_id: str, directory: str, files: list[tuple[str, bytes]]) -> bool:
         self.writes.append(f"upload {directory}: {', '.join(name for name, _ in files)}")
         for filename, fileraw in files:

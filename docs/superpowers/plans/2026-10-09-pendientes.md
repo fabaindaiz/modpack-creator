@@ -140,3 +140,28 @@ reporte.
 5. T7 panel (B1, B3–B5).
 6. T6 Prism, luego T5 CurseForge (C1–C5).
 7. T8 overrides, cuando O1 se decida.
+
+## Traspaso (2026-10-09): lo que sigue va en una sesión cloud
+
+El dueño cerró el build 0.2.0 con «lo hecho + U3» y sigue el resto en una sesión cloud.
+
+- **Rama:** `fix/tester-feedback` (sin merge a `main`). Versión `0.2.0` en `pyproject.toml`; el tag
+  `v0.2.0` y el despliegue los hace el dueño.
+- **Hecho en este build:** A1–A6 (A3 entró con los arreglos de la revisión de cierre), U1–U3. A7 va
+  con T3 (M5).
+- **Sigue, en este orden:** T1 con S5 (importar un servidor como trabajo); T4 (revisión de
+  actualizaciones con excepciones); T3 (cachés del loader y de la lista de servidores, el resto de
+  `/v1` con trabajos, el limitador con cabeceras y la pausa de 2 s, que es A7); T7 (panel); T6
+  (Prism); T5 (CurseForge: necesita la clave del dueño para probarse en real); T8 cuando O1 se
+  decida. Cada decisión está arriba, en «Decisiones tomadas».
+- **Entorno de la sesión cloud:**
+  - Los tests de base necesitan un MongoDB: `TEST_MONGODB_URI`. Sin él se **saltan**, y el gate
+    queda en verde y ciego en esa parte; nada que toque `src/database` o los servicios se da por
+    verificado así. CI corre `mongo:8.0` siempre.
+  - Usar `./scripts/test-mongo.sh` (un mongod nuevo por corrida): reusar uno para varias corridas
+    lo hace crecer (i-7985ee-9b250c).
+  - La revisión visual (`./scripts/visual-sweep.sh`) necesita Docker y Chromium; si la sesión cloud
+    no los tiene, queda pendiente y se dice.
+  - `.env.default` y `.env.yaml` no se leen (permisos del dueño): una variable nueva se le pide.
+- **Pendiente del dueño, fuera del código:** volver a importar el servidor del tester tras desplegar
+  (registra «En el servidor» y las excepciones de canal); la clave de CurseForge (T5); O1 (T8).
