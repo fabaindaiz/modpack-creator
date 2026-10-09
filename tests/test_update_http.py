@@ -5,6 +5,7 @@ punta con `PterodactylAPI`: rutas, métodos y cuerpos del Client API (`routes/ap
 URLs firmadas de Wings para subir y bajar, la clave del panel que nunca llega a Wings, y la puerta
 de escritura (PTERODACTYL_WRITES).
 """
+from src.exceptions import UpstreamError
 import json
 from typing import Any, Awaitable, Callable
 
@@ -61,7 +62,10 @@ def panel_app(panel: StatefulPanel, problems: list[str]) -> web.Application:
                                                  "resources": {"uptime": s.uptime_ms}}})
 
     async def listing(r: web.Request) -> web.StreamResponse:
-        files = await panel.server_files("x", r.query["directory"])
+        try:
+            files = await panel.server_files("x", r.query["directory"])
+        except UpstreamError as missing:  # a directory that does not exist: Wings' 404, passed on (A1)
+            return web.json_response({"errors": [{"code": "NotFound"}]}, status=missing.upstream_status)
         return web.json_response({"data": [{"attributes": json.loads(f.model_dump_json())} for f in files]})
 
     async def signed(r: web.Request) -> web.StreamResponse:

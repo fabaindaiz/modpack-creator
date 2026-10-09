@@ -6,6 +6,7 @@ terminan después de crearse), el cupo de backups y un servidor que se cae al ar
 cada escritura, para afirmar que el modo simulación no escribe nada.
 """
 import hashlib
+from src.exceptions import UpstreamError
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -40,6 +41,11 @@ class StatefulPanel:
 
     async def server_files(self, server_id: str, directory: str) -> list[PterodactylFile]:
         prefix = directory.rstrip("/") + "/"
+        # As Wings: listing a directory that does not exist is a 404, which the panel passes on
+        # (A1, docs/research/2026-10-09-flujo-actualizacion-y-caches.md). It returned [] before.
+        if directory.rstrip("/") not in {f.rstrip("/") for f in self.folders} | {""} \
+                and not any(path.startswith(prefix) for path in self.files):
+            raise UpstreamError("Pterodactyl", 404, f"{directory}: directory not found")
         names = {path[len(prefix):] for path in self.files if path.startswith(prefix) and "/" not in path[len(prefix):]}
         return [PterodactylFile(name=n, size=len(self.files[prefix + n]), mode_bits="644", is_file=True, is_symlink=False,
                                 mimetype="application/jar", created_at=T0, modified_at=T0) for n in sorted(names)]

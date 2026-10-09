@@ -31,7 +31,7 @@ from src.library.api.client.pterodactyl import PterodactylAPI
 from src.library.mrpack import ALLOWED_DOMAINS
 from src.library.scan import Unexplained, compare, unexplained_for
 from src.model.jobs import Job, is_real_update
-from src.model.pterodactyl import PterodactylServer
+from src.model.pterodactyl import PterodactylFile, PterodactylServer
 from src.library.auth.roles import operator_only
 from src.model.audit import AuditTarget
 from src.model.users import Actor
@@ -258,7 +258,7 @@ class UpdateService():
         """Download each new jar, check it against the build, and upload it to a staging folder,
         while the server still runs. A jar that does not match stops everything before the stop."""
         staging = f"/mods.staging/{job.id}"
-        present = {} if ops.dry_run else {f.name: f.size for f in await self.api.server_files(ident, staging)}
+        present = {} if ops.dry_run else {f.name: f.size for f in await self._files_if_any(ident, staging)}
         folder_made = bool(present)
         for item in plan["install"]:
             if present.get(item["filename"]) == item["size"]:
@@ -282,6 +282,17 @@ class UpdateService():
             if wrong:
                 raise JobFailed(f"staging does not hold what was uploaded: {', '.join(wrong)}")
         return {"staging": staging, "files": [i["filename"] for i in plan["install"]]}
+
+    async def _files_if_any(self, ident: str, directory: str) -> list[PterodactylFile]:
+        """A directory's files, or none if it does not exist: Wings answers 404 for a missing
+        directory and the panel passes it on (A1). A staging folder is only made once its first jar
+        checks out, so the first listing of a fresh one always finds nothing."""
+        try:
+            return list(await self.api.server_files(ident, directory))
+        except UpstreamError as error:
+            if error.upstream_status != 404:
+                raise
+            return []
 
     async def _save(self, ident: str, ops: Ops) -> dict[str, Any]:
         await ops.write("command save-all", lambda: self.api.server_command(ident, "save-all"))
@@ -347,7 +358,7 @@ class UpdateService():
         await ops.write("mkdir /mods.old", lambda: self.api.files_create_folder(ident, "/", "mods.old"))
         await ops.write(f"mkdir /{old}", lambda: self.api.files_create_folder(ident, "/mods.old", str(job.id)))
         in_mods = set() if ops.dry_run else {f.name for f in await self.api.server_files(ident, "/mods")}
-        staged = set() if ops.dry_run else {f.name for f in await self.api.server_files(ident, f"/mods.staging/{job.id}")}
+        staged = set() if ops.dry_run else {f.name for f in await self._files_if_any(ident, f"/mods.staging/{job.id}")}
         names_out = [p.rsplit("/", 1)[-1] for p in plan["remove"]]
         moves_out = [(f"mods/{n}", f"{old}/{n}") for n in names_out if ops.dry_run or n in in_mods]
         moves_in = [(f"mods.staging/{job.id}/{i['filename']}", f"mods/{i['filename']}") for i in plan["install"]
@@ -431,7 +442,7 @@ class UpdateService():
         old = swap["old"]
         await ops.write(f"mkdir /{old}/new", lambda: self.api.files_create_folder(ident, f"/{old}", "new"))
         in_mods = {f.name for f in await self.api.server_files(ident, "/mods")}
-        kept = {f.name for f in await self.api.server_files(ident, f"/{old}")}
+        kept = {f.name for f in await self._files_if_any(ident, f"/{old}")}
         out = [(f"mods/{n}", f"{old}/new/{n}") for n in swap["moved_in"] if n in in_mods]
         back = [(f"{old}/{n}", f"mods/{n}") for n in swap["moved_out"] if n in kept]
         if out:
