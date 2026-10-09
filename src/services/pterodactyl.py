@@ -11,9 +11,10 @@ from src.library.deduce import Deduction, deduce_target
 from src.library.jarmeta import ModMetadata, read_mod_metadata
 from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS
 from src.library.utils import MODRINTH_ID
+from src.services.modrinth import ID_CHUNK
 from src.library.scan import ClaimedFile, Comparison, ListedFile, LocalFile, ScanFile, compare, drift_message, plan_scan
 from src.model.modpack import ModpackBundle, PackProject, ProjectOrigin
-from src.model.modrinth import ModrinthVersion
+from src.model.modrinth import ModrinthProject, ModrinthVersion
 from src.model.pterodactyl import BundleForServer, ImportCandidate, ImportResult, ProjectCandidate, PterodactylFile, PterodactylServer, ServerScan
 from src.exceptions import *
 from src.library.auth.roles import operator_only
@@ -334,7 +335,10 @@ class PterodactylService():
         return list(found.values())
 
     async def _add_projects(self, bundle_id: str, project_ids: list[str]) -> None:
-        projects = await self.modrinthDB.project_upsert_many(await self.modrinthAPI.project_get_many(project_ids))
+        fetched: list[ModrinthProject] = []
+        for start in range(0, len(project_ids), ID_CHUNK):  # 100 ids a request (A5)
+            fetched += list(await self.modrinthAPI.project_get_many(project_ids[start:start + ID_CHUNK]))
+        projects = await self.modrinthDB.project_upsert_many(fetched)
         await self.modpackDB.bundle_projects_add(
             bundle_id, [PackProject(project_id=p.project_id, origin=ProjectOrigin.admin) for p in projects])
 

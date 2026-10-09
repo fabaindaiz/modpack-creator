@@ -109,15 +109,17 @@ async def project_remove(
         ):
     return await modpack.project_remove(bundle_id=id, project_id=project_id, actor=actor)
 
-@router.post("/modpack/{id}/build", response_model=ModpackBuild)
+@router.post("/modpack/{id}/build", response_model=Job, status_code=202)
 @inject
 async def build_create(
         id: str,
         modpack: ModpackService = Depends(Provide[Dependences.modpackService]),
         actor: Actor = Depends(get_current_actor)
         ):
-    """Resolve and freeze the next build. 409 if the lock has problems or undecided mods."""
-    return await modpack.build_create(bundle_id=id, actor=actor)
+    """Queue the next build: 202 with its job, the panel's own (one per pack: asking again gives the
+    running one; poll /v1/job/{id}). 409 now if the pack, resolved from the catalog, has problems
+    or undecided mods (owner's decision U5, 2026-10-09)."""
+    return await modpack.build_request(bundle_id=id, actor=actor)
 
 @router.get("/modpack/{id}/build", response_model=list[ModpackBuild])
 @inject
@@ -177,7 +179,7 @@ async def modpack_resolve(
     try:
         return await modpack.resolve(bundle_id=id, actor=actor)
     except CatalogPending as pending:
-        return JSONResponse(status_code=202, content=jsonable_encoder(pending.job, by_alias=False))
+        return JSONResponse(status_code=202, content=jsonable_encoder(pending.job))
 
 @router.get("/replacement", response_model=list[ModpackReplacement])
 @inject

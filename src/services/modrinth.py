@@ -98,11 +98,6 @@ class ModrinthService():
         await self.modrinthDB.search_save(key, hits, now)
         return hits
 
-    async def projects_by_id(self, project_ids: list[str]) -> dict[str, ModrinthProject]:
-        """The catalog's projects by their Modrinth project id; what is not stored is absent."""
-        found = await self.modrinthDB.project_find_by_modrinth_id(project_ids)
-        return {project.project_id: project for project in found}
-
     async def projects_filled(self, project_ids: list[str], deadline: float = FILL_DEADLINE) -> dict[str, ModrinthProject]:
         """The catalog's projects by Modrinth project id, fetching first (in one call, best effort,
         within `deadline` seconds) the ones it lacks or that have no icon; see `fill_catalog`."""
@@ -175,16 +170,6 @@ class ModrinthService():
         await self.modrinthDB.version_upsert_many(versions)
         return version.dependencies
     
-    async def project_version_update_filter(self, slug: str, loaders: Sequence[str] = (), game_versions: Sequence[str] = (), featured: Optional[bool] = None) -> Iterable[ModrinthVersion]:
-        """
-        Get all versions for a project.
-        """
-        project = await ModrinthProject.find_one({"slug": slug})
-        if not project:
-            raise ValueError(f"Project with slug '{slug}' not found.")
-        versions = await self.modrinthAPI.project_versions(slug, loaders, game_versions, featured)
-        return await self.modrinthDB.version_upsert_many(versions)
-
     async def project_version_update_all(self, slug: str) -> Iterable[ModrinthVersion]:
         """
         Get all versions for a project.

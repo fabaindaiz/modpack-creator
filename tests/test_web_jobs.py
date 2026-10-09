@@ -189,7 +189,7 @@ def test_v1_resolve_that_needs_modrinth_answers_202_with_the_job() -> None:
     include_routers_v1(app)
     app.dependency_overrides[get_current_actor] = lambda: EDITOR
     response = TestClient(app, base_url="https://testserver").post(f"/v1/modpack/{BUNDLE_ID}/resolve")
-    assert response.status_code == 202 and response.json()["id"] == str(pending.id)
+    assert response.status_code == 202 and response.json()["_id"] == str(pending.id)  # as /v1 update, rollback, scan
     assert response.json()["kind"] == "catalog_refresh"
     assert modpack.calls[-1] == ("resolve", str(BUNDLE_ID), EDITOR)
 

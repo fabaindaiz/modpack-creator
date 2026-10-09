@@ -881,8 +881,11 @@ JSON con `request_id` y `job_id`.
   WiredTiger en 0,25 GiB): un mismo mongod reusado para varias corridas del gate crece corrida tras
   corrida (cada test crea y borra sus bases), hasta que la VM lo mata. `./scripts/test-mongo.sh`
   levanta uno nuevo por corrida y lo borra: usarlo siempre, nunca un mongod de larga vida.
+- Después, uno nuevo también murió dentro de una sola corrida (~1,5 GB): la suite creció y WiredTiger
+  deja abiertos los archivos de las colecciones borradas 10 min. `test-mongo.sh` ahora los cierra a
+  los 10 s: el pico medido bajó a ~1,2 GB y el gate pasa en ~55 s. El margen sigue siendo poco.
 - Recomendación: que `test-mongo.sh` y `visual-sweep.sh` avisen si ya hay otro mongod en la VM; subir
-  la VM a 4 GiB es opcional (es la máquina del dueño: lo decide él).
+  la VM a 4 GiB (es la máquina del dueño: lo decide él) daría margen de verdad.
 
 ### Importar un servidor como trabajo con avance — Planeada · i-7985ee-27db6c
 - Hoy son ~4 requests por jar desconocido y la página espera. Recomendación: un trabajo por

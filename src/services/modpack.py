@@ -480,7 +480,9 @@ class ModpackService():
     async def _modrinth_projects(self, refs: list[str]) -> list[ModrinthProject]:
         """The Modrinth projects these slugs or ids name, stored in the catalog; 404 naming any
         that Modrinth does not know."""
-        found = list(await self.modrinthAPI.project_get_many(list(refs))) if refs else []
+        found: list[ModrinthProject] = []
+        for chunk in _chunks(list(refs)):  # 100 ids a request (A5)
+            found += list(await self.modrinthAPI.project_get_many(chunk))
         known = {key for p in found for key in (p.project_id, p.slug)}
         missing = [ref for ref in refs if ref not in known]
         if missing:

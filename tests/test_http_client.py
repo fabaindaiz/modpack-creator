@@ -3,6 +3,7 @@
 Contra un servidor aiohttp local, nunca contra Modrinth ni Pterodactyl.
 """
 import asyncio
+from typing import Any, Awaitable, Callable
 
 import pytest
 
@@ -128,3 +129,36 @@ def test_a_capped_download_stops_past_the_cap_with_or_without_a_length(chunked: 
 
     with pytest.raises(TooLarge):
         asyncio.run(_download(b"x" * 101, cap=100, chunked=chunked))
+
+
+async def _hits_for_a_404(call: Callable[[Any, str], Awaitable[Any]], path: str, client: Any) -> int:
+    hits = 0
+
+    async def handler(request: web.Request) -> web.Response:
+        nonlocal hits
+        hits += 1
+        return web.json_response({"error": "not_found"}, status=404)
+
+    app = web.Application()
+    app.router.add_get(path, handler)
+    async with TestServer(app) as server:
+        client.base_url = str(server.make_url("/"))
+        try:
+            await call(client, "x")
+        except Exception:
+            pass
+        await client.close()
+    return hits
+
+
+@pytest.mark.network
+def test_a_read_that_answers_404_is_not_asked_again() -> None:
+    # A4 (docs/superpowers/plans/2026-10-09-pendientes.md): a 404 does not change by asking twice,
+    # and each try is a request the owner counts.
+    from src.library.api.client.modrinth import ModrinthAPI
+    from src.library.api.client.pterodactyl import PterodactylAPI
+
+    modrinth = asyncio.run(_hits_for_a_404(lambda c, ref: c.project_get(ref), "/project/x", ModrinthAPI()))
+    panel = asyncio.run(_hits_for_a_404(lambda c, d: c.server_files("srv", d), "/client/servers/srv/files/list",
+                                        PterodactylAPI()))
+    assert (modrinth, panel) == (1, 1)

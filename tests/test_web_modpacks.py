@@ -920,7 +920,8 @@ def test_v1_still_answers_a_blocked_build_with_the_same_409() -> None:
     app.dependency_overrides[get_current_actor] = lambda: EDITOR
     response = TestClient(app, base_url="https://testserver").post(f"/v1/modpack/{BUNDLE_ID}/build")
     assert response.status_code == 409 and response.json() == {"detail": OPAQUE}
-    assert "HX-Retarget" not in response.headers and [c[0] for c in modpack.calls] == ["build_create"]
+    # The same request as the panel's (build_request, its job and key): no race with it (A2, U5).
+    assert "HX-Retarget" not in response.headers and [c[0] for c in modpack.calls] == ["build_request"]
 
 
 def test_the_build_button_is_where_the_focus_goes_back_when_the_dialog_s_opener_is_gone() -> None:
@@ -1098,24 +1099,6 @@ def test_service_search_without_a_target_has_only_the_types() -> None:
     api = FakeSearchApi()
     asyncio.run(ModrinthService(api, NoSearchCache()).search("x", None, None))  # type: ignore[arg-type]
     assert len(api.calls[0][1]) == 1
-
-
-@pytest.mark.network
-def test_projects_by_id_finds_them_by_their_modrinth_id(mongo: MongoRunner) -> None:
-    import json
-    from pathlib import Path
-
-    from src.database.modrinth import ModrinthDatabase
-
-    data = json.loads((Path(__file__).parent / "fixtures" / "modrinth" / "project-sodium.json").read_text())
-
-    async def scenario() -> dict[str, str]:
-        database = ModrinthDatabase()
-        await database.project_upsert_many([ModrinthProject.parse(**data)])
-        found = await ModrinthService(None, database).projects_by_id([data["id"], "unknown"])  # type: ignore[arg-type]
-        return {i: p.slug for i, p in found.items()}
-
-    assert mongo(scenario) == {data["id"]: "sodium"}
 
 
 # Decisiones atómicas (base real).
@@ -2250,3 +2233,25 @@ def test_when_a_build_job_its_check_blocked_ends_the_dialog_opens() -> None:
     modpack.lock = lock(entry("P2", "admin"))
     dialog = client.get(f"/modpacks/{BUNDLE_ID}/builds/dialogo", headers=HTMX)
     assert "<dialog" in dialog.text and 'name="decision.P2"' in dialog.text
+
+
+
+def test_v1_build_queues_the_build_job_and_answers_202_with_it() -> None:
+    # Owner's decision U5 (2026-10-09): /v1 answers 202 with the job, with the panel's keys (A2).
+    from datetime import datetime, timezone
+    from fastapi import FastAPI
+    from src.dependences import get_current_actor
+    from src.model.jobs import Job
+    from src.routers.v1 import include_routers_v1
+
+    _, modpack, _ = setup()
+    modpack.queued = Job.model_construct(
+        id=PydanticObjectId(), kind="build_create", key=f"build:{BUNDLE_ID}", status="queued", active=True,
+        payload={"bundle_id": str(BUNDLE_ID)}, created_at=datetime.now(timezone.utc), attempts=0, max_attempts=3,
+        checkpoint={}, step=None, error=None, requested_by=EDITOR.ref(), progress=None, waiting_until=None, updated_at=None)
+    app = FastAPI()
+    include_routers_v1(app)
+    app.dependency_overrides[get_current_actor] = lambda: EDITOR
+    response = TestClient(app, base_url="https://testserver").post(f"/v1/modpack/{BUNDLE_ID}/build")
+    assert response.status_code == 202 and response.json()["kind"] == "build_create"
+    assert response.json()["_id"] == str(modpack.queued.id)  # as /v1 update, rollback, scan

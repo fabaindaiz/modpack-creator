@@ -6,7 +6,11 @@ cd "$(dirname "$0")/.."
 name="modpack-test-mongo-$$"
 # La caché de WiredTiger, acotada: con la de por defecto, mongod muere a mitad de la corrida en una
 # VM de 2 GiB (la de podman en macOS) y eso se ve como fallos de conexión de los tests.
-docker run -d --rm --name "$name" -p 127.0.0.1:27018:27017 docker.io/library/mongo:8.0 --wiredTigerCacheSizeGB 0.25 >/dev/null
+# Y los archivos de las colecciones borradas, cerrados a los 10 s y no a los 10 min: cada test crea y
+# borra sus bases, y con miles abiertos mongod pasaba de 1,5 GB y la VM lo mataba (2026-10-09).
+docker run -d --rm --name "$name" -p 127.0.0.1:27018:27017 docker.io/library/mongo:8.0 --wiredTigerCacheSizeGB 0.25 \
+  --wiredTigerEngineConfigString "file_manager=(close_idle_time=10,close_scan_interval=10,close_handle_minimum=100)" \
+  --setParameter tcmallocAggressiveMemoryDecommit=1 >/dev/null
 # `|| true`: si el contenedor ya no está, el código de salida sigue siendo el de check.sh.
 trap 'docker stop "$name" >/dev/null 2>&1 || true' EXIT
 until docker exec "$name" mongosh --quiet --eval 'db.adminCommand("ping")' >/dev/null 2>&1; do sleep 1; done

@@ -277,16 +277,7 @@ def test_create_build_with_a_conflict_is_a_notice() -> None:
 def test_the_detail_links_to_the_page() -> None:
     client, _, _ = setup()
 
-    class Titles:
-        async def projects_by_id(self, ids: list[str]) -> dict[str, Any]:
-            return {}
-
-    import main
-    main.container.modrinthService.override(providers.Object(Titles()))
-    try:
-        text = client.get(f"/modpacks/{BUNDLE_ID}").text
-    finally:
-        main.container.modrinthService.reset_override()
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
     assert f'href="/modpacks/{BUNDLE_ID}/actualizaciones"' in text and "Buscar actualizaciones de mods" in text
 
 
