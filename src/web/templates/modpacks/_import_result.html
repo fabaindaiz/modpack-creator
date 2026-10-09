@@ -1,0 +1,24 @@
+{# What an import did (spec 2026-10-09-importar-modpacks): what came in, what Modrinth does not have
+   (D3: to be put on the server by hand) and the overrides not kept (D4), counted by folder. #}
+{% import "_macros.html" as ui %}
+{% set override_total = report.overrides.values() | sum %}
+<div class="space-y-3 rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-950/40 dark:text-emerald-100" data-import-report>
+  <p class="font-medium">Importado: {{ report.projects | length }} mods de {{ report.source }}</p>
+  {% if report.unknown %}
+  <div class="space-y-1">
+    <p class="font-medium">No están en Modrinth ({{ report.unknown | length }})</p>
+    <ul class="list-inside list-disc break-words">
+      {% for path in report.unknown %}<li>{{ path }}</li>{% endfor %}
+    </ul>
+    <p class="text-xs">Súbelos al servidor a mano; al importar el servidor quedan como archivos locales.</p>
+  </div>
+  {% endif %}
+  {% if report.overrides %}
+  <div class="space-y-1">
+    <p class="font-medium">Overrides sin importar: {{ override_total }} archivos</p>
+    <p class="break-words">{% for folder, count in report.overrides | dictsort %}{{ folder.split("/", 1)[1] }}/ ({{ count }}){% if not loop.last %} · {% endif %}{% endfor %}</p>
+    <p class="text-xs">La app no guarda configs: súbelas al servidor a mano si las necesitas.</p>
+  </div>
+  {% endif %}
+  {{ ui.link_button("Abrir el modpack" if report.created else "Ver los mods", "/modpacks/" ~ report.bundle_id) }}
+</div>

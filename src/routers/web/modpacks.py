@@ -5,11 +5,11 @@ from typing import Annotated, Any, Literal, Optional
 from urllib.parse import urlsplit
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Form, Query, Request
-from starlette.datastructures import FormData
+from starlette.datastructures import FormData, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from src.exceptions import BuildBlocked, HTTP_422_UNPROCESSABLE_ENTITY, UpstreamError
+from src.exceptions import BuildBlocked, HTTP_413_CONTENT_TOO_LARGE, HTTP_422_UNPROCESSABLE_ENTITY, UpstreamError
 from src.library.resolution import ADMIN, Lock
-from src.dependences import Dependences, ModpackService, ModrinthService, PterodactylService, UpdateCheckService
+from src.dependences import Dependences, ModpackImportService, ModpackService, ModrinthService, PterodactylService, UpdateCheckService
 from src.model.modpack import ModpackBundle, ModpackBundleCreate, ModpackBundlePatch, ProjectOrigin
 from src.model.modrinth.project import ModrinthEnvironment
 from src.model.users import Actor
@@ -318,6 +318,46 @@ async def modpack_create(
                                loader=loader, loader_version=loader_version.strip() or None)
     created = await modpackService.bundle_create(bundle=ModpackBundle(**data.model_dump()), actor=actor)
     return RedirectResponse(f"/modpacks/{created.id}", status_code=303)
+
+# An upload is refused by its declared size before the form is read: Starlette 1.7 caps the form's
+# text fields, not its files, which it would spool whole. The margin is the form around the file.
+IMPORT_MAX_BYTES = 50 * 1024 * 1024
+IMPORT_MAX_REQUEST = IMPORT_MAX_BYTES + 1024 * 1024
+
+@router.get("/modpacks/importar")
+@inject
+async def modpack_import_page(
+        request: Request,
+        actor: Actor = Depends(get_web_actor),
+        ):
+    """Import a modpack as a new one: an uploaded .mrpack or one published on Modrinth."""
+    return render(request, "modpacks/import.html", actor, nav_active="modpacks")
+
+@router.post("/modpacks/importar")
+@inject
+async def modpack_import(
+        request: Request,
+        actor: Actor = Depends(get_web_actor),
+        importService: ModpackImportService = Depends(Provide[Dependences.modpackImportService]),
+        ):
+    """Import an uploaded .mrpack (`archivo`) or a Modrinth reference (`ref`): as a new pack, or as the
+    content of `into`. The answer is the report, into the form's #import-result."""
+    declared = request.headers.get("content-length", "")
+    if not declared.isdigit() or int(declared) > IMPORT_MAX_REQUEST:
+        raise HTTP_413_CONTENT_TOO_LARGE("El archivo pesa más de 50 MiB")
+    form = await request.form(max_files=1, max_fields=4)
+    into = str(form.get("into") or "") or None
+    if into is not None and not re.fullmatch(BUNDLE_REF, into):
+        raise HTTP_422_UNPROCESSABLE_ENTITY("Ese modpack no existe")
+    upload, ref = form.get("archivo"), str(form.get("ref") or "").strip()
+    if isinstance(upload, UploadFile) and upload.filename:
+        data = await upload.read(IMPORT_MAX_BYTES + 1)
+        report = await importService.import_mrpack(data, actor, into=into)
+    elif ref:
+        report = await importService.import_modrinth(ref[:500], actor, into=into)
+    else:
+        raise HTTP_422_UNPROCESSABLE_ENTITY("Elige un archivo .mrpack o escribe la URL de un modpack de Modrinth")
+    return render(request, "modpacks/_import_result.html", actor, report=report)
 
 @router.get("/modpacks/{bundle_id}")
 @inject

@@ -6,6 +6,7 @@
 
 {% block content %}
 {% call ui.page_header("Modpacks", "Cada modpack define qué se instala; los builds congelan lo resuelto.") %}
+{{ ui.link_button("Importar modpack…", "/modpacks/importar") }}
 {{ ui.link_button("Reemplazos globales", "/replacements") }}
 {% endcall %}
 

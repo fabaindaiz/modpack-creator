@@ -130,3 +130,28 @@ class StreamResponse(ResponseHandler):
         if self._stream is None:
             raise ValueError("Response has not data.")
         return self._stream
+
+class TooLarge(Exception):
+    """A response body past the cap a CappedStreamResponse was given."""
+
+
+class CappedStreamResponse(StreamResponse):
+    """The body, read in chunks and stopped past `max_bytes`: a declared Content-Length over it
+    is refused before reading, and a body without one is counted as it arrives."""
+
+    def __init__(self, max_bytes: int, format: StreamFormat = StreamFormat.OCTET_STREAM) -> None:
+        super().__init__(format)
+        self.max_bytes = max_bytes
+
+    async def handle(self, response: ClientResponse) -> None:
+        self._response = response
+        if response.content_length is not None and response.content_length > self.max_bytes:
+            raise TooLarge(f"{response.content_length} bytes > {self.max_bytes}")
+        chunks: list[bytes] = []
+        size = 0
+        async for chunk in response.content.iter_chunked(64 * 1024):
+            size += len(chunk)
+            if size > self.max_bytes:
+                raise TooLarge(f"more than {self.max_bytes} bytes")
+            chunks.append(chunk)
+        self._stream = b"".join(chunks)

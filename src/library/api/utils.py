@@ -4,6 +4,7 @@ from functools import wraps
 from typing import Optional
 from aiohttp import ClientResponse, ConnectionTimeoutError, ClientResponseError, ServerConnectionError
 from src.library.utils import WRAP
+from src.library.api.handler.response import TooLarge
 from src.exceptions import *
 
 UNKNOWN_SERVICE = "un servicio externo"
@@ -72,6 +73,9 @@ def handle_errors(func: WRAP) -> WRAP:
                 raise HTTP_429_TOO_MANY_REQUESTS(f"Rate limited: {e.message}", retry_after) from e
             raise UpstreamError(service, e.status, f"Request has failed with status error {e.status}: {e.message}",
                                 raw=f"{e.request_info.method} {e.request_info.url}: {e.message}") from e
+        except TooLarge:
+            # The caller set the cap and says what it means (e.g. "pesa más de 50 MiB").
+            raise
         except Exception as e:
             raise HTTP_500_INTERNAL_SERVER_ERROR(f"Request has failed with unhandled: {e}") from e
     return wrapper # type: ignore

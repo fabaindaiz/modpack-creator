@@ -135,6 +135,12 @@ class ModrinthDatabase():
             return []
         return await ModrinthVersion.find(In(ModrinthVersion.version_id, version_ids)).to_list()
 
+    async def version_find_by_sha512(self, hashes: list[str]) -> list[ModrinthVersion]:
+        """The stored versions with a file of one of these sha512 (by the files.hashes.sha512 index)."""
+        if not hashes:
+            return []
+        return await ModrinthVersion.find(In("files.hashes.sha512", hashes)).to_list()
+
     async def version_find_for_game_version(self, project_ids: list[str], game_version: str) -> list[ModrinthVersion]:
         """The stored versions of these projects that list this Minecraft version, any loader or channel."""
         if not project_ids:

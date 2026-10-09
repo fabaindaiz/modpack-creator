@@ -90,3 +90,41 @@ def test_status_error_is_an_upstream_error_naming_the_service() -> None:
     assert isinstance(error, UpstreamError) and error.service == "Pterodactyl" and error.upstream_status == 404
     assert error.status_code == 404
     assert error.detail.startswith("Request has failed with status error 404")
+
+
+async def _download(body: bytes, cap: int, chunked: bool = False) -> bytes:
+    from src.library.api.client.download import Downloader
+
+    async def handler(request: web.Request) -> web.StreamResponse:
+        if not chunked:
+            return web.Response(body=body)
+        response = web.StreamResponse()
+        response.enable_chunked_encoding()
+        await response.prepare(request)
+        for start in range(0, len(body), 10):
+            await response.write(body[start:start + 10])
+        await response.write_eof()
+        return response
+
+    app = web.Application()
+    app.router.add_get("/pack.mrpack", handler)
+    async with TestServer(app) as server:
+        downloader = Downloader()
+        try:
+            return await downloader.download_capped(str(server.make_url("/pack.mrpack")), cap)
+        finally:
+            await downloader.close()
+
+
+@pytest.mark.network
+def test_a_capped_download_returns_what_fits() -> None:
+    assert asyncio.run(_download(b"x" * 100, cap=100)) == b"x" * 100
+
+
+@pytest.mark.network
+@pytest.mark.parametrize("chunked", [False, True])
+def test_a_capped_download_stops_past_the_cap_with_or_without_a_length(chunked: bool) -> None:
+    from src.library.api.client.download import TooLarge
+
+    with pytest.raises(TooLarge):
+        asyncio.run(_download(b"x" * 101, cap=100, chunked=chunked))

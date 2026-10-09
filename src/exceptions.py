@@ -49,6 +49,11 @@ class BuildBlocked(HTTP_409_CONFLICT):
         self.lock = lock
         self.only_undecided = only_undecided
 
+class HTTP_413_CONTENT_TOO_LARGE(HTTPException):
+    """Used when a request body is larger than the route accepts"""
+    def __init__(self, detail: Optional[str] = None):
+        super().__init__(status.HTTP_413_CONTENT_TOO_LARGE, detail)
+
 class HTTP_422_UNPROCESSABLE_ENTITY(HTTPException):
     """Used when a value is well formed as a request but not acceptable"""
     def __init__(self, detail: Optional[str] = None):

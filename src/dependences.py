@@ -21,6 +21,7 @@ from src.database import (
 from src.services.jobs import WorkerBeat
 from src.services.notify import Notifier
 from src.services.update import UpdateService
+from src.services.modpack_import import ModpackImportService
 from src.services import (
     AuditService,
     HealthService,
@@ -66,6 +67,7 @@ class Dependences(containers.DeclarativeContainer):
     modpackService = providers.Singleton(ModpackService, modpackDatabase, modrinthDatabase, modrinthAPI, loaderAPI, auditService, notifier, pterodactylDatabase)
     jobService = providers.Singleton(JobService, jobDatabase, pterodactylService, pterodactylDatabase, auditService, notifier)
     updateService = providers.Singleton(UpdateService, pterodactylAPI, pterodactylService, pterodactylDatabase, modpackDatabase, downloader, jobDatabase, auditService, notifier)
+    modpackImportService = providers.Singleton(ModpackImportService, modpackService, modpackDatabase, modrinthDatabase, modrinthAPI, downloader, auditService)
     updateCheckService = providers.Singleton(UpdateCheckService, modpackDatabase, modrinthAPI, modrinthDatabase, updateCheckDatabase, jobDatabase, auditService, notifier)
 
 async def close_clients(container: Dependences) -> None:
