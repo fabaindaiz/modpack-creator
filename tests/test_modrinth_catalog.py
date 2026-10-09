@@ -180,3 +180,29 @@ def test_icon_url_is_stored_and_absent_reads_as_none(mongo: MongoRunner) -> None
         return a.icon_url, b.icon_url
 
     assert mongo(scenario) == ("https://cdn.modrinth.com/data/AANobbMI/icon.png", None)
+
+
+@pytest.mark.network
+def test_the_same_search_within_ten_minutes_is_answered_from_mongodb(mongo: MongoRunner) -> None:
+    # Spec 2026-10-09-economia-de-requests (F6): every pause in typing was a request to Modrinth.
+    from src.services.modrinth import ModrinthService
+
+    class Search:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        async def search(self, query: str, facets: list[list[str]], limit: int = 5) -> list[dict[str, Any]]:
+            self.calls.append(query)
+            return [{"project_id": "P1", "title": query}]
+
+    async def scenario() -> tuple[Any, ...]:
+        api = Search()
+        service = ModrinthService(cast(Any, api), ModrinthDatabase())
+        first = await service.search("Sodium ", "1.21.1", "fabric", 10)
+        again = await service.search("sodium", "1.21.1", "fabric", 10)
+        other = await service.search("sodium", "1.20.1", "fabric", 10)
+        return first, again, other, api.calls
+
+    first, again, other, calls = mongo(scenario)
+    assert first == again == [{"project_id": "P1", "title": "sodium"}]
+    assert calls == ["sodium", "sodium"]  # the second target is another search

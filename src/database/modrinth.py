@@ -5,12 +5,13 @@ from beanie.operators import In
 from beanie.odm.queries.find import FindOne
 from beanie import Document
 from beanie.odm.documents import FindMany
-from typing import Iterable, Optional
+from typing import Any, Iterable, Optional
 from src.model.modrinth import (
     ModrinthProject,
     ModrinthVersion,
     ModrinthVersionList,
     ModrinthUnknown,
+    ModrinthSearch,
 )
 from src.exceptions import *
 
@@ -173,6 +174,15 @@ class ModrinthDatabase():
             return []
         return await ModrinthVersion.find(ModrinthVersion.project_id == project_id,
                                           In(ModrinthVersion.version_id, version_ids)).to_list()
+
+    async def search_get(self, key: str, since: datetime) -> Optional[list[dict[str, Any]]]:
+        """The hits stored for this search at or after `since`; None if there are none."""
+        found = await ModrinthSearch.find_one(ModrinthSearch.key == key, ModrinthSearch.at >= since)
+        return found.hits if found is not None else None
+
+    async def search_save(self, key: str, hits: list[dict[str, Any]], when: datetime) -> None:
+        await ModrinthSearch.get_pymongo_collection().update_one(
+            {"key": key}, {"$set": {"hits": hits, "at": when}}, upsert=True)
 
     async def unknown_find(self, project_ids: list[str], since: datetime) -> set[str]:
         """The ids among these Modrinth did not know at or after `since`."""

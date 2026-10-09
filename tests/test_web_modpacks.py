@@ -1066,9 +1066,19 @@ class FakeSearchApi:
         return [{"project_id": "P"}]
 
 
+class NoSearchCache:
+    """A catalog that has no stored search: every search reaches the API double."""
+
+    async def search_get(self, key: str, since: Any) -> None:
+        return None
+
+    async def search_save(self, key: str, hits: Any, when: Any) -> None:
+        return None
+
+
 def test_service_search_builds_facets_from_the_target() -> None:
     api = FakeSearchApi()
-    service = ModrinthService(api, None)  # type: ignore[arg-type]
+    service = ModrinthService(api, NoSearchCache())  # type: ignore[arg-type]
     assert asyncio.run(service.search("sodium", "1.21.1", "quilt", 7)) == [{"project_id": "P"}]
     [(query, facets, limit)] = api.calls
     assert (query, limit) == ("sodium", 7)
@@ -1080,7 +1090,7 @@ def test_service_search_builds_facets_from_the_target() -> None:
 
 def test_service_search_without_a_target_has_only_the_types() -> None:
     api = FakeSearchApi()
-    asyncio.run(ModrinthService(api, None).search("x", None, None))  # type: ignore[arg-type]
+    asyncio.run(ModrinthService(api, NoSearchCache()).search("x", None, None))  # type: ignore[arg-type]
     assert len(api.calls[0][1]) == 1
 
 

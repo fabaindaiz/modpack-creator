@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Optional, Sequence
@@ -17,6 +18,8 @@ FILL_DEADLINE = 5.0
 RECHECK_AFTER = timedelta(hours=24)
 # How many ids go in one Modrinth request.
 ID_CHUNK = 100
+# How long a search's hits are reused.
+SEARCH_REUSE = timedelta(minutes=10)
 
 logger = logging.getLogger("modrinth.catalog")
 
@@ -84,7 +87,16 @@ class ModrinthService():
         if loader:
             loaders = set(LOADER_ACCEPTS.get(loader, {loader})).union(*TYPE_LOADERS.values())
             facets.append([f"categories:{name}" for name in sorted(loaders)])
-        return await self.modrinthAPI.search(query, facets, limit)
+        # The same search (case and spaces aside) within ten minutes is answered from MongoDB (F6).
+        text = " ".join(query.split()).casefold()
+        key = json.dumps([text, game_version, loader, limit])
+        now = datetime.now(timezone.utc)
+        cached = await self.modrinthDB.search_get(key, now - SEARCH_REUSE)
+        if cached is not None:
+            return cached
+        hits = await self.modrinthAPI.search(text, facets, limit)
+        await self.modrinthDB.search_save(key, hits, now)
+        return hits
 
     async def projects_by_id(self, project_ids: list[str]) -> dict[str, ModrinthProject]:
         """The catalog's projects by their Modrinth project id; what is not stored is absent."""
