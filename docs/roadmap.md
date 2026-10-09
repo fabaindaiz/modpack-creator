@@ -876,10 +876,13 @@ JSON con `request_id` y `job_id`.
   panel real fallaría (fuentes de Pterodactyl/Wings, sin probar en real).
 
 ### La VM de podman de 2 GiB mata a mongod cuando corren dos instancias — Planeada · i-7985ee-9b250c
-- El registro la menciona 15 veces; el 2026-10-09 murió 3 veces (la base de una sesión junto a la
-  revisión visual, o el gate largo). Recomendación: que `test-mongo.sh` y `visual-sweep.sh` avisen y
-  se detengan si ya hay otro mongod en la VM, y subir la VM a 4 GiB (es la máquina del dueño: lo
-  decide él).
+- El registro la menciona 15 veces; el 2026-10-09 murió 4 veces. **Causa encontrada** (el `dmesg`
+  de la VM: «Out of memory: Killed process (mongod) … anon-rss:1628640kB», con la caché de
+  WiredTiger en 0,25 GiB): un mismo mongod reusado para varias corridas del gate crece corrida tras
+  corrida (cada test crea y borra sus bases), hasta que la VM lo mata. `./scripts/test-mongo.sh`
+  levanta uno nuevo por corrida y lo borra: usarlo siempre, nunca un mongod de larga vida.
+- Recomendación: que `test-mongo.sh` y `visual-sweep.sh` avisen si ya hay otro mongod en la VM; subir
+  la VM a 4 GiB es opcional (es la máquina del dueño: lo decide él).
 
 ### Importar un servidor como trabajo con avance — Planeada · i-7985ee-27db6c
 - Hoy son ~4 requests por jar desconocido y la página espera. Recomendación: un trabajo por

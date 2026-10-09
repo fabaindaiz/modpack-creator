@@ -32,17 +32,29 @@ class JobDatabase():
             raise HTTP_409_CONFLICT(f"There is already an active job for {key}") from error
 
     async def active_for_keys(self, keys: list[str]) -> list[Job]:
-        """The active jobs holding these keys, oldest first."""
-        return await Job.find({"key": {"$in": keys}, "active": True}).sort(("created_at", SortDirection.ASCENDING)).to_list()
+        """The active jobs holding these keys, oldest first, for a banner: without what it never shows."""
+        return await self._polled({"key": {"$in": keys}, "active": True})
 
     async def active_for_requester(self, iss: str, sub: str) -> list[Job]:
-        """The active jobs this person asked for, oldest first."""
-        return await Job.find({"active": True, "requested_by.iss": iss, "requested_by.sub": sub}
-                              ).sort(("created_at", SortDirection.ASCENDING)).to_list()
+        """The active jobs this person asked for, oldest first, for the bar."""
+        return await self._polled({"active": True, "requested_by.iss": iss, "requested_by.sub": sub})
+
+    @staticmethod
+    async def _polled(query: dict[str, Any]) -> list[Job]:
+        """Jobs for a page that polls every few seconds: without the read file an import carries
+        (`payload.content`) nor the checkpoints (code review, 2026-10-09)."""
+        cursor = Job.get_pymongo_collection().find(query, {"payload.content": 0, "checkpoint": 0}).sort("created_at", 1)
+        return [Job.model_validate(document) for document in await cursor.to_list(None)]
 
     async def last_for_key(self, key: str) -> Optional[Job]:
         """The newest job of this key, active or not."""
         return await Job.find(Job.key == key).sort([("created_at", SortDirection.DESCENDING), ("_id", SortDirection.DESCENDING)]).first_or_none()
+
+    async def force_if_queued(self, job_id: Any) -> bool:
+        """Set `payload.force` on a job still queued; False if it is already running or done."""
+        result = await Job.get_pymongo_collection().update_one(
+            {"_id": job_id, "status": "queued"}, {"$set": {"payload.force": True}})
+        return result.modified_count == 1
 
     async def active_for(self, key: str) -> Optional[Job]:
         """The active job holding this key, if any."""

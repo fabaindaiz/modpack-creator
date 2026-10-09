@@ -1,4 +1,5 @@
 import os
+import re
 import yaml
 import logging
 import urllib.parse
@@ -108,6 +109,16 @@ def name_from_url(url: str) -> str:
 
 def now() -> float:
     return datetime.now(tz=timezone.utc).timestamp()
+
+def as_utc(value: datetime) -> datetime:
+    """A datetime in UTC: MongoDB gives naive datetimes back, and they are UTC."""
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+# What a Modrinth id (project or version) looks like: anything else is not a key to store, since it
+# would become a dotted path in a MongoDB update.
+MODRINTH_ID = re.compile(r"[A-Za-z0-9_-]+")
+
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)

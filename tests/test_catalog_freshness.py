@@ -189,3 +189,40 @@ def test_what_was_fetched_stays_even_if_a_later_call_fails(mongo: MongoRunner) -
         return sorted({v.project_id async for v in ModrinthVersion.find()})
 
     assert "AAAA" in mongo(scenario)
+
+
+def test_the_same_project_in_a_fabric_and_a_quilt_pack_keeps_both_version_lists(mongo: MongoRunner) -> None:
+    # Code review (2026-10-09): the unique index on (project, game version, loaders) was multikey, so a
+    # ['fabric'] list and a ['fabric', 'quilt'] list of one project collided and one pack never resolved.
+    async def scenario() -> tuple[dict[str, str], dict[str, str], int]:
+        service, api, clock, fabric_pack = await setup()
+        quilt = await ModpackDatabase().bundle_insert(ModpackBundle(
+            name="q", description="", version="1.20.1", loader=MinecraftLoaders.quilt,
+            projects=[PackProject(project_id="BBBB", origin=ProjectOrigin.pack)]))
+        first = chosen(await service.resolve_fetching(fabric_pack))
+        second = chosen(await service.resolve_fetching(str(quilt.id)))
+        from src.model.modrinth import ModrinthVersionList
+        return first, second, await ModrinthVersionList.find(ModrinthVersionList.project_id == "BBBB").count()
+
+    first, second, lists = mongo(scenario)
+    assert first["BBBB"] == second["BBBB"] == "b1" and lists == 2
+
+
+def test_a_warm_resolve_reads_the_listed_versions_in_one_query_per_round(mongo: MongoRunner) -> None:
+    # Code review (2026-10-09): one MongoDB query per project per round, on every click.
+    async def scenario() -> list[int]:
+        service, api, clock, bundle_id = await setup()
+        await service.resolve_fetching(bundle_id)
+        sizes: list[int] = []
+        real = service.modrinthDB.version_find_by_version_ids
+
+        async def spy(ids: list[str]) -> list[ModrinthVersion]:
+            sizes.append(len(ids))
+            return await real(ids)
+
+        service.modrinthDB.version_find_by_version_ids = spy  # type: ignore[method-assign, assignment]
+        await service.resolve(bundle_id, EDITOR)
+        return sizes
+
+    # Round 1 reads AAAA's and BBBB's lists together; round 2, LIBB (a dependency of AAAA).
+    assert len(mongo(scenario)) == 2

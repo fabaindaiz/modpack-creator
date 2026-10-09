@@ -99,6 +99,13 @@ async def get_current_user(
     user = request.session.get('user')
     if not user:
         raise HTTP_401_UNAUTHORIZED("Not authenticated")
+    # The requests to Modrinth this request makes count against this user's quota (E4); a session
+    # without an identity (legacy) is left unnamed, as before.
+    try:
+        actor = actor_from_session(request.session, OIDC_OPERATOR_GROUPS)
+        CURRENT_USER.set(f"{actor.iss}|{actor.sub}")
+    except HTTPException:
+        pass
     return UsersInternal.model_validate_json(user)
 
 async def get_current_actor(request: Request) -> Actor:

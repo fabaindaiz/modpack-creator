@@ -387,3 +387,21 @@ def test_a_job_waiting_for_its_turn_says_until_when_and_progress_clears_it(mongo
     after = mongo(scenario)
     assert seen[0] is not None and seen[0].replace(tzinfo=timezone.utc) == T0 + timedelta(seconds=12)
     assert after is None
+
+
+def test_the_polled_job_lists_leave_out_payload_content_and_checkpoints(mongo: MongoRunner) -> None:
+    # Code review (2026-10-09): the banner and the bar poll every 2-3 s, and an import job's payload
+    # holds the whole read .mrpack.
+    async def scenario() -> tuple[Any, Any]:
+        jobs = JobDatabase()
+        job = await jobs.enqueue("modpack_import", key="import:x", requested_by=EDITOR.ref(),
+                                 payload={"content": {"files": ["f"] * 5000}, "source": "Pack 1.0"})
+        await Job.get_pymongo_collection().update_one({"_id": job.id}, {"$set": {"checkpoint": {"import": {"big": "x" * 1000}}}})
+        [mine] = await jobs.active_for_requester(EDITOR.iss, EDITOR.sub)
+        [keyed] = await jobs.active_for_keys(["import:x"])
+        return mine, keyed
+
+    mine, keyed = mongo(scenario)
+    for found in (mine, keyed):
+        assert "content" not in found.payload and found.payload["source"] == "Pack 1.0"
+        assert found.checkpoint == {} and found.kind == "modpack_import"

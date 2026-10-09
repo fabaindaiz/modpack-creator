@@ -14,16 +14,12 @@ from src.library.api.limiter import ON_WAIT
 from src.model.audit import AuditTarget
 from src.model.users import Actor
 from src.services.audit import AuditSink
-from src.library.utils import utcnow
+from src.library.utils import as_utc, utcnow
 from src.services.pterodactyl import PterodactylService
 
 Clock = Callable[[], datetime]
 Handler = Callable[[Job, "JobContext"], Awaitable[None]]
 logger = logging.getLogger("modpack.jobs")
-
-def _aware(value: datetime) -> datetime:
-    """MongoDB gives datetimes back without a zone; they are UTC."""
-    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 def done_rollback(rollbacks: list[Job], mode: str) -> Optional[Job]:
     """The newest rollback of this mode that ended done: a failed one closes nothing (D1 of
@@ -292,10 +288,10 @@ class JobService():
         for server in await self.pterodactylDB.server_find().to_list():
             server_id = str(server.id)
             scans = await self.pterodactylDB.scan_find(server_id)
-            if scans and _aware(scans[0].scanned_at) > now - every:
+            if scans and as_utc(scans[0].scanned_at) > now - every:
                 continue
             last_full = next((s for s in scans if s.full), None)
-            full = last_full is None or _aware(last_full.scanned_at) <= now - full_every
+            full = last_full is None or as_utc(last_full.scanned_at) <= now - full_every
             try:
                 queued.append(await self.enqueue_scan(server_id, actor=None, full=full))
             except HTTP_409_CONFLICT:

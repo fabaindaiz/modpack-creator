@@ -49,6 +49,9 @@ class Job(Document):
             IndexModel([("key", ASCENDING)], unique=True, name="one_active_job_per_key",
                        partialFilterExpression={"active": True, "key": {"$type": "string"}}),
             IndexModel([("status", ASCENDING), ("created_at", ASCENDING)]),
+            # The bar's poll: a person's active jobs (spec 2026-10-09-economia-de-requests, E8).
+            IndexModel([("requested_by.iss", ASCENDING), ("requested_by.sub", ASCENDING), ("active", ASCENDING)],
+                       name="active_by_requester"),
             # The panel's list of recent jobs.
             IndexModel([("created_at", DESCENDING)]),
             # The newest job of a key: JobDatabase.last_real_update, which a rollback checks.

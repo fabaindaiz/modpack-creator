@@ -1,7 +1,6 @@
 import asyncio
 import hashlib
 import logging
-import re
 from datetime import datetime, timezone
 from typing import Optional
 from src.database import ModpackDatabase, ModrinthDatabase, PterodactylDatabase
@@ -11,6 +10,7 @@ from fastapi import HTTPException
 from src.library.deduce import Deduction, deduce_target
 from src.library.jarmeta import ModMetadata, read_mod_metadata
 from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS
+from src.library.utils import MODRINTH_ID
 from src.library.scan import ClaimedFile, Comparison, ListedFile, LocalFile, ScanFile, compare, drift_message, plan_scan
 from src.model.modpack import ModpackBundle, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthVersion
@@ -31,8 +31,6 @@ SCAN_MAX_BYTES = 128 * 1024 * 1024
 # signed URL and the download): a large first scan is paced by this and by the panel.
 SCAN_CONCURRENCY = 4
 SCAN_DIRECTORY = "/mods"
-# As ModpackService's: an id written as a key of a bundle's map becomes a dotted path.
-MODRINTH_ID = re.compile(r"[A-Za-z0-9_-]+")
 IMPORT_FAILED = ("El modpack quedó creado y vinculado a este servidor, pero la importación de sus mods falló. "
                  "Vuelve a intentarlo con «Importar».")
 

@@ -9,6 +9,7 @@ from src.database.modrinth import ModrinthDatabase
 from src.model.modrinth import ModrinthProject, ModrinthVersion
 from src.model.modrinth.version import ModrinthVersionDependency
 from src.exceptions import *
+from src.library.utils import as_utc
 
 # The project types a pack takes (resolution's SUPPORTED_TYPES), as Modrinth's search names them.
 SEARCH_TYPES = ("mod", "shader", "resourcepack", "datapack")
@@ -58,8 +59,7 @@ async def fill_catalog(modrinthDB: ModrinthDatabase, modrinthAPI: ModrinthAPI, p
 def _older(fetched_at: Optional[datetime], now: datetime) -> bool:
     if fetched_at is None:
         return True
-    fetched_at = fetched_at if fetched_at.tzinfo else fetched_at.replace(tzinfo=timezone.utc)
-    return now - fetched_at >= RECHECK_AFTER
+    return now - as_utc(fetched_at) >= RECHECK_AFTER
 
 
 class ModrinthService():

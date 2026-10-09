@@ -103,6 +103,7 @@ class FakeModpack:
         # The pack's active jobs, for its banner (spec 2026-10-09-economia-de-requests).
         self.jobs: list[Any] = []
         self.build_blocked_now = False
+        self.failed_job: Any = None
         # The job build_request answers.
         self.queued: Any = None
         # What mod_list answers: `rows` as given, or one row per project of the bundle (with the
@@ -186,7 +187,7 @@ class FakeModpack:
         return self.bundle.projects
 
     async def resolve(self, bundle_id: str, actor: Optional[Actor] = None) -> Lock:
-        self._record("resolve", bundle_id)
+        self._record("resolve", bundle_id, actor)
         self.saved = resolution(self.lock)
         return self.lock
 
@@ -235,6 +236,9 @@ class FakeModpack:
 
     async def last_build_blocked(self, bundle_id: str) -> bool:
         return self.build_blocked_now
+
+    async def last_failed_job(self, bundle_id: str) -> Any:
+        return self.failed_job
 
     async def resolution(self, bundle_id: str) -> Optional[tuple[ModpackResolution, bool]]:
         return (self.saved, self.stale) if self.saved else None
@@ -2108,7 +2112,7 @@ def test_ignoring_a_dependency_drops_it_everywhere_then_resolves_the_pack() -> N
     response = client.post("/replacements", headers=HTMX, data={
         "project_id": "X9", "replacement": "", "bundle_id": str(BUNDLE_ID), "contexto": "problemas"})
     assert response.status_code == 200 and response.text.lstrip().startswith('<div id="mods"')
-    assert modpack.calls == [("replacement_set", "X9", None, EDITOR), ("resolve", str(BUNDLE_ID))]
+    assert modpack.calls == [("replacement_set", "X9", None, EDITOR), ("resolve", str(BUNDLE_ID), EDITOR)]
     assert 'aria-current="page"' in tab(response.text, "problemas")
 
 

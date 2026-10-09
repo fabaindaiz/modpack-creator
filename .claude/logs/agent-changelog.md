@@ -64,9 +64,20 @@ investigación encontró un probable bug que bloquearía la primera actualizaci�
 preparación lista `/mods.staging/<job>` antes de crearla), leído en las fuentes de Pterodactyl y
 Wings, no probado contra un panel. Al cerrar, una revisión de la rama (`/code-review high`).
 
+**La revisión de cierre** (`/code-review high` sobre `main...fix/tester-feedback`) dio 10
+hallazgos, todos arreglados con test primero: el índice único de las listas de versiones era
+multikey y chocaba entre un pack Fabric y uno Quilt (crítico); un build reintentado tras su insert
+se duplicaba; un trabajo fallido terminaba sin aviso; `/v1` resolver respondía 409 sin el trabajo;
+rutas `/v1` sin cupo por usuario; «Actualizar» devolvía un trabajo en cola sin revisar Modrinth; la
+clave de importación usaba `sub` sin `iss`; una consulta a MongoDB por proyecto; los sondeos de
+trabajos traían el `.mrpack` entero; duplicados (`not_rate_limited`, `MODRINTH_ID`, la normalización
+a UTC).
+
 **Fricciones contadas en este registro** (búsqueda, no memoria): la VM de podman de 2 GiB aparece
 en 15 líneas; MongoDB murió 3 veces esta sesión (dos instancias a la vez, o el gate junto a la
-revisión visual) → i-7985ee-9b250c en el roadmap. «colgó» aparece 2 veces (comandos que esperaban
+revisión visual) y una cuarta en el cierre. Causa encontrada en el `dmesg` de la VM: un mongod
+reusado para varias corridas crece hasta que la VM lo mata; `./scripts/test-mongo.sh` (uno nuevo por
+corrida) lo evita → i-7985ee-9b250c en el roadmap. «colgó» aparece 2 veces (comandos que esperaban
 stdin, sesiones anteriores): esta sesión no se repitió.
 
 ## 2026-10-05 · s-7985ee-bae4ac — Preparar el primer release: revisión final, PATCH por clave, load_env y Tarea 8

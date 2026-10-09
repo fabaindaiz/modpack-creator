@@ -160,3 +160,56 @@ def test_the_build_click_brings_the_banner_with_its_job_so_a_fast_job_is_not_mis
     response = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX)
     assert 'id="job-banner" hx-swap-oob="innerHTML"' in response.text
     assert f'hx-get="/modpacks/{BUNDLE_ID}/trabajo?activo=1"' in response.text and "Build" in response.text
+
+
+def test_a_job_of_the_pack_that_failed_says_so_with_its_reason() -> None:
+    # Code review (2026-10-09): a build or catalog job that failed ended with no notice at all.
+    client, modpack, _ = setup()
+    modpack.jobs = []
+    failed = job(kind="build_create", status="failed")
+    failed.error = "Modrinth respondió con un error (502)"
+    modpack.failed_job = failed
+    response = client.get(f"/modpacks/{BUNDLE_ID}/trabajo?activo=1", headers=HTMX)
+    shown = " ".join(visible(response.text).split())
+    assert "Build falló: Modrinth respondió con un error (502)" in shown and "every 2s" not in response.text
+    assert response.headers["HX-Trigger"] == "job-finished"
+
+
+def test_v1_resolve_that_needs_modrinth_answers_202_with_the_job() -> None:
+    # Code review (2026-10-09): /v1 resolve answered a bare 409 and the job asked for nobody.
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.dependences import get_current_actor
+    from src.routers.v1 import include_routers_v1
+
+    _, modpack, _ = setup()
+    pending = job()
+    modpack.error = CatalogPending(pending)
+    app = FastAPI()
+    include_routers_v1(app)
+    app.dependency_overrides[get_current_actor] = lambda: EDITOR
+    response = TestClient(app, base_url="https://testserver").post(f"/v1/modpack/{BUNDLE_ID}/resolve")
+    assert response.status_code == 202 and response.json()["id"] == str(pending.id)
+    assert response.json()["kind"] == "catalog_refresh"
+    assert modpack.calls[-1] == ("resolve", str(BUNDLE_ID), EDITOR)
+
+
+def test_a_v1_route_of_a_user_counts_against_their_modrinth_quota() -> None:
+    import asyncio
+
+    from src.dependences import get_current_user
+    from src.library.api.limiter import CURRENT_USER
+    from tests._actors import session_for
+
+    class Request:
+        session = session_for(EDITOR)
+
+    async def scenario() -> Optional[str]:
+        CURRENT_USER.set(None)
+        try:
+            await get_current_user(Request(), users=None)  # type: ignore[arg-type]
+        except Exception:
+            pass
+        return CURRENT_USER.get()
+
+    assert asyncio.run(scenario()) == f"{EDITOR.iss}|{EDITOR.sub}"

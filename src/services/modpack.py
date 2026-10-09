@@ -23,7 +23,8 @@ from src.model.pterodactyl import PterodactylServer
 from src.model.audit import AuditTarget
 from src.model.users import Actor
 from src.services.audit import AuditSink
-from src.services.modrinth import FILL_DEADLINE, fill_catalog
+from src.services.modrinth import FILL_DEADLINE, ID_CHUNK, fill_catalog
+from src.library.utils import MODRINTH_ID, as_utc
 from src.services.pterodactyl import SCAN_DIRECTORY
 from src.exceptions import *
 
@@ -38,10 +39,7 @@ MANUAL_REFRESH_EVERY = timedelta(minutes=1)
 LACKS_RECHECK = timedelta(hours=24)
 # How long after its build job ended a blocked build still opens the dialog.
 BLOCKED_BUILD_RECENT = timedelta(minutes=1)
-# How many ids go in one Modrinth request.
-ID_CHUNK = 100
 # What a Modrinth project id looks like; anything else is not a key to store.
-MODRINTH_ID = re.compile(r"[A-Za-z0-9_-]+")
 # One request decides at most this many mods: a bigger one is a mistake or abuse.
 MAX_DECISIONS = 500
 # Fields of a bundle that a patch may leave out but never set to null: the bundle would not load.
@@ -788,11 +786,14 @@ class ModpackService():
         """
         active = await self.jobDB.active_for(_catalog_key(bundle_id))
         if active is not None:
+            if not active.payload.get("force") and await self.jobDB.force_if_queued(active.id):
+                # A job a resolve left (not forced) and still queued: it now checks Modrinth too.
+                active.payload["force"] = True
             return active
         bundle = await self.modpackDB.bundle_get(bundle_id)
         last = bundle.manual_refreshed_at
         if last is not None:
-            last = last if last.tzinfo else last.replace(tzinfo=timezone.utc)
+            last = as_utc(last)
             left = MANUAL_REFRESH_EVERY - (self.clock() - last)
             if left > timedelta(0):
                 raise QuotaExceeded(f"Se puede volver a actualizar en {math.ceil(left.total_seconds())} s",
@@ -834,8 +835,7 @@ class ModpackService():
     def _stale(self, bundle: ModpackBundle) -> bool:
         """Whether the pack's Modrinth information is past the window (E1): never checked, or longer ago."""
         checked = bundle.modrinth_checked_at
-        if checked is not None and checked.tzinfo is None:
-            checked = checked.replace(tzinfo=timezone.utc)
+        checked = as_utc(checked) if checked is not None else None
         return checked is None or self.clock() - checked >= CATALOG_WINDOW
 
     async def _resolve_checked(self, bundle: ModpackBundle, request: ResolveRequest, check: bool,
@@ -935,11 +935,18 @@ class ModpackService():
             if cold and local_only:
                 raise _NeedsModrinth()
             fetched_cold = 0
+            # Every listed version the catalog accounts for, in one query for the round (code review,
+            # 2026-10-09: it was one per project).
+            listed_ids = sorted({i for p in needed if (p, tuple(targets[p])) in records
+                                 for i in records[(p, tuple(targets[p]))].version_ids})
+            listed: dict[str, list[ModrinthVersion]] = {}
+            for version in await self.modrinthDB.version_find_by_version_ids(listed_ids) if listed_ids else []:
+                listed.setdefault(version.project_id, []).append(version)
             for project_id in needed:
                 loaders = targets[project_id]
                 record = records.get((project_id, tuple(loaders)))
                 if record is not None:
-                    versions = await self.modrinthDB.version_find_listed(project_id, record.version_ids)
+                    versions = listed.get(project_id, [])
                 else:
                     if report is not None:
                         await report("Versiones de los mods", fetched_cold, len(cold))
@@ -1047,12 +1054,23 @@ class ModpackService():
         await self.audit.record(actor, "build.request", _bundle(bundle_id), {"job_id": str(job.id)})
         return job
 
+    async def last_failed_job(self, bundle_id: str) -> Optional[Job]:
+        """The pack's newest job of its catalog or its build if it failed just now (code review,
+        2026-10-09: a failed job ended with no word); None otherwise."""
+        found = [j for j in [await self.jobDB.last_for_key(_catalog_key(bundle_id)),
+                             await self.jobDB.last_for_key(f"build:{bundle_id}")]
+                 if j is not None and j.status == "failed" and j.finished_at is not None]
+        if not found:
+            return None
+        newest = max(found, key=lambda j: as_utc(j.finished_at))  # type: ignore[arg-type]
+        return newest if self.clock() - as_utc(newest.finished_at) <= BLOCKED_BUILD_RECENT else None  # type: ignore[arg-type]
+
     async def last_build_blocked(self, bundle_id: str) -> bool:
         """Whether the pack's last build job ended just now without a build, blocked by what its check found."""
         last = await self.jobDB.last_for_key(f"build:{bundle_id}")
         if last is None or last.active or last.finished_at is None:
             return False
-        finished = last.finished_at if last.finished_at.tzinfo else last.finished_at.replace(tzinfo=timezone.utc)
+        finished = as_utc(last.finished_at)
         # Only just now: an old blocked build does not reopen the dialog when another job ends.
         return self.clock() - finished <= BLOCKED_BUILD_RECENT and bool(last.checkpoint.get("build", {}).get("blocked"))
 
@@ -1066,14 +1084,15 @@ class ModpackService():
 
         async def run() -> dict[str, Any]:
             try:
-                build = await self.build_create(bundle_id, actor, report=context.progress)
+                build = await self.build_create(bundle_id, actor, report=context.progress, job_id=str(job.id))
             except BuildBlocked as blocked:
                 return {"blocked": True, "problems": len(blocked.lock.problems), "undecided": len(blocked.lock.undecided)}
             return {"number": build.number}
 
         await context.step("build", run)
 
-    async def build_create(self, bundle_id: str, actor: Actor, report: Optional[Report] = None) -> ModpackBuild:
+    async def build_create(self, bundle_id: str, actor: Actor, report: Optional[Report] = None,
+                           job_id: Optional[str] = None) -> ModpackBuild:
         """
         Resolve the bundle and freeze the lock as its next build; latest moves to it.
 
@@ -1082,6 +1101,13 @@ class ModpackService():
 
         :return: The new build.
         """
+        if job_id is not None:
+            # A retry of the job that already inserted its build (code review, 2026-10-09): that one,
+            # with the pointer moved (idempotent), never a second build.
+            done = next((b for b in await self.modpackDB.build_find(bundle_id) if b.job_id == job_id), None)
+            if done is not None:
+                await self.modpackDB.bundle_latest_build(bundle_id, done.number)
+                return done
         bundle = await self.modpackDB.bundle_get(bundle_id)
         request = await self._request(bundle)
         lock = await self._resolve_checked(bundle, request, check=True, report=report)
@@ -1095,7 +1121,7 @@ class ModpackService():
         number = (builds[0].number if builds else 0) + 1
         build = await self.modpackDB.build_insert(ModpackBuild(
             bundle_id=bundle.id, number=number, created_at=datetime.now(timezone.utc),  # type: ignore[arg-type]
-            loader_version=loader_version, local_files=bundle.local_files, request=request, lock=lock))
+            loader_version=loader_version, local_files=bundle.local_files, request=request, lock=lock, job_id=job_id))
         await self.modpackDB.bundle_latest_build(bundle_id, number)
         await self.audit.record(actor, "build.create", _bundle(bundle_id), {"number": number})
         if self.notifier is not None:

@@ -27,7 +27,8 @@ from src.model.modrinth.version import ModrinthVersionFile
 from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
 from src.services.audit import AuditSink
-from src.services.modpack import MODRINTH_ID, ModpackService
+from src.library.utils import MODRINTH_ID
+from src.services.modpack import ModpackService
 from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT, HTTP_422_UNPROCESSABLE_ENTITY
 
 LIMITS = MrpackLimits()
@@ -107,7 +108,7 @@ class ModpackImportService():
 
     async def _job(self, actor: Actor, payload: dict[str, Any]) -> tuple[Job, bool]:
         """The person's import job: a new one (True), or the one already queued or running (False)."""
-        key = f"import:{actor.sub}"
+        key = f"import:{actor.iss}|{actor.sub}"  # the identity is iss + sub (AGENTS.md)
         try:
             return await self.jobDB.enqueue("modpack_import", key=key, payload=payload, requested_by=actor.ref(),
                                             max_attempts=1), True

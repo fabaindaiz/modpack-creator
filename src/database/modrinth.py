@@ -166,7 +166,7 @@ class ModrinthDatabase():
     async def version_list_save(self, record: ModrinthVersionList) -> None:
         """Store a version list, replacing the one with its project and target."""
         await ModrinthVersionList.get_pymongo_collection().replace_one(
-            {"project_id": record.project_id, "game_version": record.game_version, "loaders": record.loaders},
+            {"project_id": record.project_id, "target": record.target},
             record.model_dump(exclude={"id", "revision_id"}), upsert=True)
 
     async def version_find_listed(self, project_id: str, version_ids: list[str]) -> list[ModrinthVersion]:

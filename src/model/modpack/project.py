@@ -101,6 +101,8 @@ class ModpackBuild(Document):
     created_at: datetime
     # The loader version frozen with the build; None if there was none to take (i-7985ee-7352b3).
     loader_version: Optional[str] = None
+    # The build job that made it, if one did: a retry of that job finds it instead of making another.
+    job_id: Optional[str] = None
     # The bundle's local files when the build was made.
     local_files: list[LocalFile] = Field(default_factory=list)
     request: ResolveRequest

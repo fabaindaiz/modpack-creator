@@ -15,6 +15,7 @@ from src.model.modpack import ModpackBundle, ModpackBundleCreate, ModpackBundleP
 from src.model.modrinth.project import ModrinthEnvironment
 from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
+from src.library.utils import as_utc
 from src.web import BUNDLE_REF, JOB_STARTED, MODRINTH_REF, WebRoute, get_web_actor, render
 
 logger = logging.getLogger("modpack.web")
@@ -25,10 +26,6 @@ BUILD_BLOCKED = "build-blocked"
 BUILD_QUEUED = "Creando el build: revisando cambios en Modrinth"
 # How long after it is made a build offers to simulate it on the linked servers.
 FRESH_BUILD = timedelta(minutes=2)
-
-
-def _aware(value: datetime) -> datetime:
-    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
 
@@ -412,7 +409,7 @@ async def modpack_detail(
     servers = [s for s in await pterodactylService.server_find() if s.bundle_id == linked]
     saved = context["mods"].resolution
     # A build made a moment ago (by its job, E9) offers to simulate it on the linked servers.
-    fresh = bool(builds) and _aware(builds[0].created_at) > datetime.now(timezone.utc) - FRESH_BUILD
+    fresh = bool(builds) and as_utc(builds[0].created_at) > datetime.now(timezone.utc) - FRESH_BUILD
     return render(request, "modpacks/detail.html", actor, builds=builds, servers=servers, channel_names=CHANNELS,
                   pending=_has_pending((saved, context["mods"].stale) if saved else None),
                   next_servers=servers if fresh else None, human_size=human_size, nav_active="modpacks", **context)
@@ -571,7 +568,9 @@ async def pack_jobs(
     """The pack's banner (E8): its queued or running jobs, polling while there are some. When the
     last one ends (`activo` says the banner showed one), the pack reloads on `job-finished`."""
     jobs = await modpackService.active_jobs(bundle_id)
-    response = render(request, "modpacks/_job_banner.html", actor, jobs=jobs, bundle_id=bundle_id)
+    # When the last one ended failing, the banner says why instead of emptying in silence.
+    failed = await modpackService.last_failed_job(bundle_id) if activo and not jobs else None
+    response = render(request, "modpacks/_job_banner.html", actor, jobs=jobs, bundle_id=bundle_id, failed=failed)
     if activo and not jobs:
         # A build its check blocked opens the dialog (E9), outside the part that reloads.
         blocked = await modpackService.last_build_blocked(bundle_id)

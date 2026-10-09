@@ -20,6 +20,7 @@ from fastapi.templating import Jinja2Templates
 
 from src.exceptions import CatalogPending, QuotaExceeded, UpstreamError
 from src.library.api.limiter import CURRENT_USER
+from src.library.utils import as_utc
 from src.library.auth.redirect import is_local_path
 from src.library.auth.roles import actor_from_session
 from src.library.logging import request_id as current_request_id
@@ -101,8 +102,7 @@ def ago(value: Optional[datetime], now: Optional[datetime] = None) -> str:
     """How long ago, in words for the panel: "hace 3 s", "hace 4 min", "hace 2 h"."""
     if value is None:
         return ""
-    value = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-    seconds = max(0, int(((now or datetime.now(timezone.utc)) - value).total_seconds()))
+    seconds = max(0, int(((now or datetime.now(timezone.utc)) - as_utc(value)).total_seconds()))
     if seconds < 60:
         return f"hace {seconds} s"
     if seconds < 3600:
@@ -114,8 +114,7 @@ def seconds_until(value: Optional[datetime]) -> int:
     """Whole seconds from now until `value`; 0 when it is past."""
     if value is None:
         return 0
-    value = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
-    return max(0, math.ceil((value - datetime.now(timezone.utc)).total_seconds()))
+    return max(0, math.ceil((as_utc(value) - datetime.now(timezone.utc)).total_seconds()))
 
 
 templates.env.filters["ago"] = ago

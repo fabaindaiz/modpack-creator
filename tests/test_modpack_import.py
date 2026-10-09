@@ -326,7 +326,8 @@ def test_an_upload_is_read_at_once_and_identified_in_a_job_with_its_report(mongo
         return job, again, before, done, report
 
     job, again, before, done, report = mongo(scenario)
-    assert (job.kind, job.key) == ("modpack_import", f"import:{EDITOR.sub}") and again.id == job.id
+    # The identity is iss + sub (AGENTS.md), never sub alone.
+    assert (job.kind, job.key) == ("modpack_import", f"import:{EDITOR.iss}|{EDITOR.sub}") and again.id == job.id
     assert before == []  # nothing asked of Modrinth before the job
     assert done.status == "done" and report is not None and report.created
     assert report.unknown == ["mods/private.jar", "overrides/mods/own.jar"] and len(report.projects) == 3

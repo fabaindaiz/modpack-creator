@@ -2,6 +2,11 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Query
 from typing import Optional
 from fastapi import Response
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
+from src.exceptions import CatalogPending
+from src.model.jobs import Job
+from src.model.users import Actor
 from src.library.resolution import Lock
 from src.model.modpack import ModpackBuild, ModpackBundle, ModpackBundleCreate, ModpackBundlePatch, ModpackReplacement, PackProject, ProjectOrigin
 from src.dependences import *
@@ -157,18 +162,22 @@ async def build_recommend(
     """Point recommended at a build; going back is pointing at an older one."""
     return await modpack.build_recommend(bundle_id=id, number=number, actor=actor)
 
-@router.post("/modpack/{id}/resolve", response_model=Lock)
+@router.post("/modpack/{id}/resolve", response_model=Lock, responses={202: {"model": Job}})
 @inject
 async def modpack_resolve(
         id: str,
         modpack: ModpackService = Depends(Provide[Dependences.modpackService]),
-        current_user = Depends(get_current_user)
+        actor: Actor = Depends(get_current_actor),
         ):
     """
-    Resolve the modpack: every project with its dependencies, replacements applied, and the
-    problems found. Fetches from Modrinth what it needs; nothing is installed anywhere.
+    Resolve the modpack from the catalog: every project with its dependencies, replacements applied,
+    and the problems found. When the catalog lacks something, 202 with the catalog job that brings
+    it (spec 2026-10-09-economia-de-requests); poll /v1/job/{id} and ask again. Nothing is installed.
     """
-    return await modpack.resolve(bundle_id=id)
+    try:
+        return await modpack.resolve(bundle_id=id, actor=actor)
+    except CatalogPending as pending:
+        return JSONResponse(status_code=202, content=jsonable_encoder(pending.job, by_alias=False))
 
 @router.get("/replacement", response_model=list[ModpackReplacement])
 @inject

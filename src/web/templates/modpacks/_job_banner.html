@@ -6,4 +6,7 @@
   role="status" aria-live="polite">
   {% for job in jobs %}{% include "_job_progress.html" %}{% endfor %}
 </div>
+{% elif failed is defined and failed %}
+{% import "_macros.html" as ui %}
+<p class="break-words rounded-lg border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-500/40 dark:bg-red-950/40 dark:text-red-200" role="alert">{{ ui.JOB_KIND.get(failed.kind, failed.kind) }} falló: {{ failed.error or "sin detalle" }}</p>
 {% endif %}

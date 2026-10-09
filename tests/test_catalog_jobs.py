@@ -186,3 +186,72 @@ def test_what_modrinth_lacks_is_remembered_so_the_panel_resolves_without_it(mong
 
     kinds, calls = mongo(scenario)
     assert kinds == ["unresolvable", "unresolvable"] and calls == []
+
+
+def test_a_build_job_retried_after_its_insert_does_not_make_a_second_build(mongo: MongoRunner) -> None:
+    # Code review (2026-10-09): build_create inserts the build and then writes the pointer and the
+    # audit; a failure in between retried the whole step and made build N+1 from one click.
+    from src.model.modpack import ModpackBuild
+
+    async def scenario() -> tuple[list[int], Any, Any]:
+        service, api, clock, bundle_id = await setup()
+        await service.resolve_fetching(bundle_id)
+        await service.decisions_set(bundle_id, {"AAAA": True, "BBBB": True, "LIBB": True}, EDITOR)
+        job = await service.build_request(bundle_id, EDITOR)
+        failures = {"left": 1}
+        real_record = service.audit.record
+
+        async def flaky(actor: Any, action: str, *args: Any, **kwargs: Any) -> Any:
+            if action == "build.create" and failures["left"]:
+                failures["left"] -= 1
+                raise RuntimeError("MongoDB blip after the insert")
+            return await real_record(actor, action, *args, **kwargs)
+
+        service.audit.record = flaky  # type: ignore[method-assign]
+        worker = JobWorker(JobDatabase(), service.handlers(), owner="w1", clock=service.clock)
+        await worker.run_once()  # fails after inserting the build
+        await JobDatabase().get(str(job.id))
+        await Job.get_pymongo_collection().update_one({"_id": job.id}, {"$set": {"available_at": None}})
+        await worker.run_once()  # the retry
+        from beanie import PydanticObjectId
+        builds = [b.number for b in await ModpackBuild.find(ModpackBuild.bundle_id == PydanticObjectId(bundle_id)).to_list()]
+        return builds, (await JobDatabase().get(str(job.id))).status, (await service.bundle_get(bundle_id)).latest_build
+
+    builds, status, latest = mongo(scenario)
+    assert builds == [1] and status == "done" and latest == 1
+
+
+def test_a_pack_job_that_failed_just_now_is_reported_and_an_old_one_is_not(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Any, Any]:
+        service, api, clock, bundle_id = await setup()
+        job = await JobDatabase().enqueue("build_create", key=f"build:{bundle_id}", payload={"bundle_id": bundle_id})
+        await Job.get_pymongo_collection().update_one({"_id": job.id}, {"$set": {
+            "status": "failed", "active": False, "error": "boom", "finished_at": clock.now}})
+        now = await service.last_failed_job(bundle_id)
+        clock.now += timedelta(minutes=5)
+        return now, await service.last_failed_job(bundle_id)
+
+    now, later = mongo(scenario)
+    assert now is not None and now.error == "boom" and later is None
+
+
+def test_the_manual_refresh_makes_a_queued_catalog_job_check_modrinth(mongo: MongoRunner) -> None:
+    # Code review (2026-10-09): asking to refresh returned a queued job a resolve had left, which did
+    # not check Modrinth (force False) inside the window.
+    from src.database.modpack import ModpackDatabase
+    from src.model.modpack import PackProject, ProjectOrigin
+
+    async def scenario() -> tuple[Any, ...]:
+        service, api, clock, bundle_id = await setup()
+        await service.resolve_fetching(bundle_id)
+        await ModpackDatabase().bundle_projects_add(bundle_id, [PackProject(project_id="NEW1", origin=ProjectOrigin.admin)])
+        with pytest.raises(CatalogPending) as pending:
+            await service.resolve(bundle_id, EDITOR)  # NEW1 is missing: a catalog job, not forced
+        refreshed = await service.catalog_refresh(bundle_id, EDITOR)
+        api.calls.clear()
+        await run_jobs(service)
+        return pending.value.job.id, refreshed, [c for c in api.calls if c[0] == "project_get_many"]
+
+    first, refreshed, checks = mongo(scenario)
+    assert refreshed.id == first and refreshed.payload["force"] is True
+    assert ("project_get_many", ("AAAA", "BBBB", "LIBB")) in checks  # it did check, inside the window
