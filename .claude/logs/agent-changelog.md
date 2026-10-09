@@ -5,6 +5,57 @@ introducción. Los commits de este repositorio fueron `wip` sin cuerpo: el *por 
 no quedaba en ninguna parte, y una sesión no ve lo que otra aprendió. La referencia del formato
 está al final del archivo, para que nada entre este párrafo y la primera entrada capture texto.
 
+## 2026-10-09 · s-7985ee-1bc897 — Observaciones de un tester, importador de modpacks y economía de requests
+
+**Qué.** Todo en la rama `fix/tester-feedback`, sin mergear:
+- **Observaciones de un tester** (i-7985ee-1a6093), cada una con su decisión del dueño:
+  - "Buscar actualizaciones" sin build: explicado, sin 409 crudo ni "build #0";
+  - estados «En el servidor / Desactivado / Por decidir» (d-7985ee-00b87a);
+  - la ficha dice «solo beta» cuando corresponde;
+  - excepción de canal por mod que se anula sola (d-7985ee-b1ce87);
+  - importar un servidor registra lo que corre (d-7985ee-58801d);
+  - sugerencias explicadas.
+- **Importador** de `.mrpack` y de modpacks de Modrinth (d-7985ee-ec808c), con investigación de
+  CurseForge y Prism.
+- **Economía de requests** (i-7985ee-456f19), pedido del dueño a mitad de sesión:
+  - límite global y por usuario (d-7985ee-a6a410);
+  - resolver desde el catálogo con ventana de 5 minutos (d-7985ee-cfc81f);
+  - trabajos con avance, franja del pack y barra superior (d-7985ee-209120);
+  - build e importación como trabajos;
+  - selector, fichas y búsqueda desde la base.
+- **Investigaciones** (`docs/research/2026-10-09-*`): importar modpacks, auditoría de requests,
+  guardar overrides.
+
+**Áreas.** `src/library/{resolution,mrpack_import}.py`, `src/library/api/` (limitador, descarga
+con tope), `src/services/{modpack,modpack_import,pterodactyl,jobs,modrinth,update_check}.py`,
+`src/model/` (excepciones de canal, listas de versiones, ausencias, búsquedas, avance de trabajos),
+`src/routers/web/`, `src/web/templates/`, `scripts/visual_sweep.py`, `tests/`, `docs/`.
+
+**Por qué.** Un tester revisó el panel con un pack importado de su servidor; el dueño trajo sus
+observaciones y, después, pidió priorizar el número de requests.
+
+**Qué salió mal en el camino.**
+- MongoDB descartable de la sesión murió tres veces en la VM de podman de 2 GiB (una vez con la
+  revisión visual corriendo a la par): fallos de conexión y un gate que pasó los 10 minutos. Se
+  repitió con la base levantada de nuevo; la revisión visual se corrió con la base de la sesión
+  detenida.
+- Los tests del servicio de importación se escribieron antes que el código, pero no se vieron
+  fallar por su aserción (falló la colección): se comprobaron con mutaciones a mano.
+- La revisión visual encontró tres fallas que el gate no veía: "Crear build" en un pack sin
+  catálogo pedía dos clics, una versión fijada que Modrinth ya no tiene dejaba el pack pendiente
+  para siempre (409 en el diálogo), y un catálogo pendiente respondía 409 (error en consola).
+  Las tres arregladas con test; el barrido terminó en 138 capturas y 0 problemas.
+- Un test armaba la hora al importar el módulo y fallaba en corridas largas.
+
+**Qué quedó sin hacer.** En el roadmap: importar un servidor como trabajo (i-7985ee-27db6c),
+changelogs en una request, la versión del loader y la lista de servidores en caché, la simulación
+que descarga cada jar, `/v1` del build síncrono, CurseForge y Prism, y los overrides
+(i-7985ee-943b5e: O1 espera la consulta del dueño con el tester; O5 y O6 sin preguntar).
+
+**Qué no se pudo verificar.** Ninguna llamada real a Modrinth ni a Pterodactyl (los conteos de
+requests son leyendo el código y con dobles); el login OIDC; los datos de producción. El pack del
+tester sigue igual hasta volver a importar su servidor en producción.
+
 ## 2026-10-05 · s-7985ee-bae4ac — Preparar el primer release: revisión final, PATCH por clave, load_env y Tarea 8
 
 **Qué.** Todo en la rama `release-1-prep`, sin mergear:

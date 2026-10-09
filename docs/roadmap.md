@@ -43,6 +43,10 @@ Al cierre de la sesión de usabilidad del panel (2026-10-04 y 2026-10-05; detall
   - la regla de `DOCKER-USER`;
   - el punto de control en solo lectura.
 
+- **2026-10-09, rama `fix/tester-feedback`, sin mergear:** las observaciones de un tester
+  (i-7985ee-1a6093), el importador de `.mrpack` y Modrinth (i-7985ee-261a79) y la economía de
+  requests (i-7985ee-456f19). Pendientes con decisión del dueño: los overrides (i-7985ee-943b5e).
+
 - **Panel web, hecho en código** (i-7985ee-50d411): páginas con Jinja2 y htmx, roles de editor y
   operador por grupos del IdP, auditoría, defensa CSRF por origen con CSP estricta, y el latido
   del worker en `/health/ready`. Se despliega con `docs/runbooks/desplegar-panel.md`.
@@ -802,7 +806,8 @@ JSON con `request_id` y `job_id`.
     (hay que pedirle cuáles) y móvil a 360 px;
   - deuda que la revisión mandó al roadmap:
     - el `#mods` detrás del diálogo se redibuja siempre en "Todos";
-    - partir en lotes de 100 los ids que van a `project_get_many`;
+    - partir en lotes de 100 los ids que van a `project_get_many` (hecho el 2026-10-09 en el
+      resolvedor y el relleno de fichas, i-7985ee-456f19);
     - `projects_by_id` y `project_version_update_filter` quedaron sin uso;
     - el 404 del panel lateral va a `#notices`;
   - la ficha de una dependencia que solo figura como problema dice "Ningún modpack lo usa"
@@ -813,6 +818,68 @@ JSON con `request_id` y `job_id`.
 - **Entorno:** `./scripts/test-mongo.sh` moría a mitad de camino en la VM de podman de 2 GiB.
   Arreglado en la Tarea 8 (R4): mongod con `--wiredTigerCacheSizeGB 0.25`, y la limpieza ya no pisa
   el código de salida.
+
+### Observaciones de un tester: estados, beta por mod, ficha y error de actualizaciones — Hecha en código (2026-10-09), sin desplegar · i-7985ee-1a6093
+- **Origen:** observaciones de un tester del panel (2026-10-08) sobre un pack importado de un
+  servidor. Cada una, con lo decidido por el dueño el 2026-10-09:
+  - "Buscar actualizaciones" sin build daba un 409 crudo y "build #0": ahora lo explica y no
+    ofrece el botón;
+  - los estados se llaman «En el servidor», «Desactivado» y «Por decidir» (d-7985ee-00b87a);
+  - la ficha decía «1.20.1 ✓» con solo una beta: ahora «1.20.1 · solo beta», también en la página
+    del mod;
+  - un mod puede aceptar beta o alpha mientras no haya versión estable, y se anula sola
+    (d-7985ee-b1ce87); «Usar la beta» la crea;
+  - importar un servidor registra lo que corre: «En el servidor» y la excepción de canal de su
+    versión (d-7985ee-58801d). **Para el pack del tester hay que volver a importar el servidor.**
+  - las sugerencias dicen de dónde salen (dependencias opcionales, o Iris para shaders).
+- **Lo que falta:**
+  - la revisión de actualizaciones no avisa betas más nuevas de un mod con excepción, solo la
+    estable que la anula;
+  - el aviso de la importación del servidor no dice cuántas decisiones y excepciones dejó.
+
+### Importar modpacks: .mrpack y Modrinth hecho; CurseForge y Prism después — A medias (2026-10-09), sin desplegar · i-7985ee-261a79
+- **Hecho** (d-7985ee-ec808c; spec `docs/superpowers/specs/2026-10-09-importar-modpacks-design.md`):
+  `.mrpack` subido o modpack de Modrinth por URL, slug o id, como pack nuevo o reemplazando el
+  contenido; en un trabajo con avance. Lo que no está en Modrinth y los overrides se informan.
+- **Después** (investigación `docs/research/2026-10-09-importar-modpacks.md`):
+  - CurseForge (D2): necesita `CURSEFORGE_API_KEY` por instalación y sus términos prohíben guardar
+    sus datos; los códigos de perfil usan un endpoint no documentado. Recomendación: opcional con
+    clave, usando sus datos solo de paso para encontrar el mismo archivo en Modrinth por sha1;
+  - el zip de instancia de Prism (D1): hashear sus jars como el escaneo de un servidor;
+  - una ruta `/v1` para importar.
+
+### Economía de requests: caché, límites y trabajos con avance — A medias (2026-10-09), sin desplegar · i-7985ee-456f19
+- **Pedido del dueño (2026-10-09):** el número de requests es muy importante; limitarlas por
+  usuario sin ser estrictos si hay margen, juntarlas, cachear en la base, no recargar un pack más
+  de una vez cada 5 minutos salvo a mano, y todo lo que haga varias requests en trabajos con
+  avance que no se duplican. Spec `docs/superpowers/specs/2026-10-09-economia-de-requests-design.md`;
+  auditoría `docs/research/2026-10-09-auditoria-requests.md`.
+- **Hecho:** el límite global y por usuario (d-7985ee-a6a410); resolver desde el catálogo con la
+  ventana de 5 minutos y el build que revisa siempre (d-7985ee-cfc81f); trabajos con avance,
+  franja del pack, barra superior, «Actualizar desde Modrinth», build e importación como trabajos
+  (d-7985ee-209120); selector de versiones y fichas desde el catálogo; búsqueda guardada 10 min.
+- **Lo que falta** (por ahorro, de la auditoría):
+  - importar un servidor como trabajo (i-7985ee-27db6c);
+  - changelogs en una sola request (R6; SUPUESTO por verificar: que `GET /versions?ids=` los trae);
+  - guardar la versión del loader y la lista de servidores del panel (R9);
+  - la simulación descarga cada jar y la actualización real los vuelve a bajar (R7/R9);
+  - `/v1/modpack/{id}/build` sigue síncrono (el panel ya no);
+  - medir en real cuántas requests hace una sesión (hoy son cuentas leyendo el código).
+
+### Importar un servidor como trabajo con avance — Planeada · i-7985ee-27db6c
+- Hoy son ~4 requests por jar desconocido y la página espera. Recomendación: un trabajo por
+  servidor con avance por jar, y leer la metadata de los jars durante el escaneo para juntar las
+  búsquedas (R7).
+
+### Guardar overrides para crear y exportar modpacks — Planeada, con decisiones abiertas · i-7985ee-943b5e
+- **Investigación:** `docs/research/2026-10-09-guardar-overrides.md`.
+- **Decidido (2026-10-09):** en MongoDB por sha512 (O2); al desplegar se respeta una edición hecha
+  en el servidor: solo se escribe lo que el pack cambió y el servidor no tocó, y un conflicto se
+  respalda y se avisa (O3); además del `.mrpack` para jugadores, un pack de servidor que solo bajan
+  operadores (O4).
+- **Abierto:** qué se guarda (O1: el dueño lo consulta con el tester; su inclinación, que para
+  exportar el pack base no hacen falta los binarios), los lados (O5) y qué trae la importación
+  (O6).
 
 ## Seguridad y despliegue
 
