@@ -31,6 +31,7 @@ from src.services.audit import AuditSink
 from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink
 
 DISCORD_LIMIT = 2000
+NO_BUILD = "Este modpack todavía no tiene build: crea uno para poder buscar actualizaciones."
 DEFAULT_TZ = "America/Santiago"
 CHECK_AT = re.compile(r"([01]\d|2[0-3]):([0-5]\d)")
 logger = logging.getLogger("modpack.update_check")
@@ -139,8 +140,11 @@ class UpdateCheckService():
 
     async def enqueue(self, bundle_id: str, actor: Optional[Actor]) -> Job:
         """Queue a check of a modpack; 409 if it already has an active job (the key is shared with
-        every job of the bundle). `actor` is None for the scheduler, which is not recorded."""
-        await self.modpackDB.bundle_get(bundle_id)
+        every job of the bundle), or if it has no build yet: there is nothing to compare with. `actor`
+        is None for the scheduler, which is not recorded."""
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        if (bundle.recommended_build or bundle.latest_build) is None:
+            raise HTTP_409_CONFLICT(NO_BUILD)
         try:
             job = await self.jobDB.enqueue("update_check", key=f"bundle:{bundle_id}",
                                            payload={"bundle_id": bundle_id},

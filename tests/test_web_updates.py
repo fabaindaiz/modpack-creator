@@ -202,6 +202,28 @@ def test_a_check_with_an_error_shows_it_and_no_list() -> None:
     assert modpack.previewed == []
 
 
+def test_a_modpack_without_a_build_says_to_create_one_and_offers_no_search() -> None:
+    # Tester feedback (2026-10-08): an imported pack without a build showed "build #0" and a raw 409.
+    client, modpack, checks = setup()
+    modpack.bundle.latest_build = modpack.bundle.recommended_build = None
+    checks.latest_check = UpdateCheck.model_construct(
+        id=PydanticObjectId(), bundle_id=BUNDLE_ID, build_number=0, checked_at=T0, updates=[],
+        error="HTTP_409_CONFLICT: 409: Bundle 'x' has no build", notified_digest=None)
+    text = client.get(f"/modpacks/{BUNDLE_ID}/actualizaciones").text
+    assert "Este modpack todavía no tiene build: crea uno para poder buscar actualizaciones." in text
+    assert "actualizaciones/buscar" not in text
+    assert "#0" not in text and "HTTP_409" not in text
+
+
+def test_a_stored_check_without_a_build_number_does_not_show_build_0() -> None:
+    client, _, checks = setup()
+    checks.latest_check = UpdateCheck.model_construct(
+        id=PydanticObjectId(), bundle_id=BUNDLE_ID, build_number=0, checked_at=T0, updates=[],
+        error="RuntimeError: Modrinth down", notified_digest=None)
+    text = client.get(f"/modpacks/{BUNDLE_ID}/actualizaciones").text
+    assert "Modrinth down" in text and "#0" not in text
+
+
 def test_a_check_without_updates_says_everything_is_current() -> None:
     client, _, checks = setup()
     checks.latest_check = check([])

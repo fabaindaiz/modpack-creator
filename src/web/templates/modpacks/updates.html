@@ -14,19 +14,23 @@
 <div id="updates-main" class="space-y-6" hx-get="/modpacks/{{ bundle_id }}/actualizaciones" hx-select="#updates-main" hx-trigger="job-finished from:body" hx-swap="outerHTML" hx-disinherit="*">
   {% call ui.section("Revisión", id="revision") %}
   <div class="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-    {% if check is none %}
+    {% if (bundle.recommended_build or bundle.latest_build) is none %}
+    <p class="text-zinc-600 dark:text-zinc-400">Este modpack todavía no tiene build: crea uno para poder buscar actualizaciones.</p>
+    {% elif check is none %}
     <p class="text-zinc-600 dark:text-zinc-400">Todavía no se ha revisado este modpack. La revisión compara el build recomendado (o el último) con lo más nuevo que hay en Modrinth.</p>
     {% else %}
-    <p>Última revisión: {{ ui.when(check.checked_at) }} · build <span class="font-medium tabular-nums">#{{ check.build_number }}</span></p>
+    <p>Última revisión: {{ ui.when(check.checked_at) }}{% if check.build_number %} · build <span class="font-medium tabular-nums">#{{ check.build_number }}</span>{% endif %}</p>
     {% if check.error %}
     <p class="break-words text-red-700 dark:text-red-300" role="alert">No se pudo revisar: {{ check.error }}</p>
     {% elif not check.updates %}
     <p class="text-zinc-600 dark:text-zinc-400">Todo está al día: no hay versiones más nuevas.</p>
     {% endif %}
     {% endif %}
+    {% if (bundle.recommended_build or bundle.latest_build) is not none %}
     <div class="flex flex-wrap items-center gap-2">
       {{ ui.button("Buscar actualizaciones", kind="secondary", attrs={"hx-post": "/modpacks/" ~ bundle_id ~ "/actualizaciones/buscar", "hx-target": "#check-job", "hx-swap": "innerHTML"}) }}
     </div>
+    {% endif %}
   </div>
   {% endcall %}
 

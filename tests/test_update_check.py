@@ -273,6 +273,22 @@ def test_a_second_check_of_the_same_modpack_gives_a_readable_409(mongo: MongoRun
 
 
 @pytest.mark.network
+def test_a_modpack_without_a_build_is_refused_in_words_before_queueing(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Any, Any, Any]:
+        audit = RecordingAudit()
+        service = make(FakeModrinth({}), audit=audit)
+        bundle = await ModpackDatabase().bundle_insert(ModpackBundle(
+            name="Sin build", description="", version="26.3", loader=MinecraftLoaders.fabric))
+        with pytest.raises(HTTP_409_CONFLICT) as error:
+            await service.enqueue(str(bundle.id), EDITOR)
+        return error.value.detail, audit.events, await JobDatabase().recent(10)
+
+    detail, events, jobs = mongo(scenario)
+    assert detail == "Este modpack todavía no tiene build: crea uno para poder buscar actualizaciones."
+    assert events == [] and jobs == []
+
+
+@pytest.mark.network
 def test_latest_many_returns_the_newest_check_of_each_bundle(mongo: MongoRunner) -> None:
     async def scenario() -> Any:
         db = UpdateCheckDatabase()
