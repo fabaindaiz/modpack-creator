@@ -778,8 +778,8 @@ def check_problem_actions(page: Any, base: str, out: Path, ids: dict[str, str], 
         problems.append("después de la acción el diálogo no sigue abierto como modal")
     if after["problems"] != before["problems"] - 1 or not after["pinned"]:
         problems.append(f"el diálogo recalculado tiene {after['problems']} problemas (antes {before['problems']})")
-    if "Versión fijada" not in after["text"]:
-        problems.append("el diálogo recalculado no dice «Versión fijada»")
+    if "Beta aceptada para este mod" not in after["text"]:
+        problems.append("el diálogo recalculado no dice «Beta aceptada para este mod»")
     if page.locator("#mods[data-old]").count() or not page.locator("#mods").count():
         problems.append("#mods no se redibujó detrás del diálogo")
     problems += _escape_to_build_create(page, "después de «Usar la beta»")

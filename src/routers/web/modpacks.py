@@ -496,7 +496,8 @@ async def channel_exception_add(
     """Let a mod take beta (or alpha) versions while none fits the pack's channels ("Usar la beta" on
     a problem's card, `contexto`): one key, written by the service; then resolve again."""
     await modpackService.channel_exception_set(bundle_id, project_id, channel, actor)
-    return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto, "Canal aceptado para el mod")
+    return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto,
+                        f"{channel.capitalize()} aceptada para este mod")
 
 @router.delete("/modpacks/{bundle_id}/channel-exceptions/{project_id}")
 @inject

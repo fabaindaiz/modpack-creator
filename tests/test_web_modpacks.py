@@ -51,10 +51,10 @@ def build(number: int) -> ModpackBuild:
                                         lock=lock(), loader_version="0.16")
 
 
-def entry(project_id: str, server: str = "include") -> LockEntry:
+def entry(project_id: str, server: str = "include", project_type: str = "mod") -> LockEntry:
     return LockEntry(project_id=project_id, origin="pack", version_id="v-" + project_id, version_number="1.0",
                      file=None, environment="client_and_server", server=server,  # type: ignore[arg-type]
-                     reason="en el pack", requested_by=[])
+                     reason="en el pack", requested_by=[], project_type=project_type)
 
 
 def lock(*entries: LockEntry, problems: Optional[list[Problem]] = None,
@@ -1517,7 +1517,7 @@ def test_suggestions_have_titles_and_an_add_button() -> None:
     suggestions = text[text.index("Sugerencias"):]
     # Tester feedback (2026-10-08): it was not clear what the suggestions are based on.
     shown = " ".join(visible(suggestions).split())
-    assert "Mods que otros del pack declaran como dependencia opcional en Modrinth." in shown
+    assert "Mods que otros del pack declaran como dependencia opcional en Modrinth, e Iris si el pack tiene shaders sin él." in shown
     assert "Mod Menu — opcional para Sodium" in shown and "sugerida por" not in shown
     assert f'hx-post="/modpacks/{BUNDLE_ID}/projects"' in suggestions and 'name="ref" value="P7"' in suggestions
     assert "P7" not in visible(text)
@@ -2100,6 +2100,10 @@ def test_a_channel_exception_from_the_mods_tab_resolves_and_answers_the_problems
     assert response.status_code == 200
     assert [c[0] for c in modpack.calls] == ["channel_exception_set", "resolve"]
     assert call(modpack, "channel_exception_set")[1:] == (str(BUNDLE_ID), "P2", "beta", EDITOR)
+    assert "Beta aceptada para este mod" in response.text
+    alpha = client.post(f"/modpacks/{BUNDLE_ID}/channel-exceptions", headers=HTMX,
+                        data={"project_id": "P2", "channel": "alpha", "contexto": "problemas"})
+    assert "Alpha aceptada para este mod" in alpha.text
 
 
 @pytest.mark.parametrize("data", [{"project_id": "P2", "channel": "release"}, {"project_id": "P2", "channel": "x"},
@@ -2149,3 +2153,13 @@ def test_removing_an_exception_reloads_the_pack_page() -> None:
     response = client.delete(f"/modpacks/{BUNDLE_ID}/channel-exceptions/P1", headers=HTMX)
     assert response.status_code == 200 and response.headers["HX-Redirect"] == f"/modpacks/{BUNDLE_ID}#channels-section"
     assert call(modpack, "channel_exception_unset")[1:] == (str(BUNDLE_ID), "P1", EDITOR)
+
+
+def test_iris_suggested_for_a_shader_says_it_is_needed_not_optional() -> None:
+    client, modpack, _ = setup()
+    modpack.titles.update(YL57xq9U="Iris", S1="Complementary")
+    modpack.saved = resolution(lock(entry("P1"), entry("S1", project_type="shader"),
+                                    suggestions=[Suggestion(project_id="YL57xq9U", requested_by=["S1"])]))
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    shown = " ".join(visible(text[text.index("Sugerencias"):]).split())
+    assert "Iris — necesario para Complementary" in shown and "opcional para Complementary" not in shown
