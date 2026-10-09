@@ -90,3 +90,53 @@ el dueño, tema por tema; cada decisión se anota aquí al tomarla.
 Cada tema decidido se vuelve tareas con test primero; el orden propuesto: A1–A7, T2, T1, T4, T3,
 T7, T6, T5, T8. Lo que no se pueda probar sin un panel real (A1 contra Wings) se dice en el
 reporte.
+
+## Decisiones tomadas (dueño, 2026-10-09)
+
+- **T1:** S1 escanear primero, incremental · S2 slug en lote, búsqueda por texto solo si falla ·
+  S3 candidatos en el checkpoint del último trabajo de importación · S4 `created_at` en la clave y
+  escaneo completo cada 30 días.
+- **T2:** S5 la importación baja una vez los jars sin metadata · U1 la simulación no baja: verifica
+  con los datos del build · U2 subida a staging en lote · U3 el reescaneo tras actualizar, sembrado
+  con los hashes verificados.
+- **T3:** U4/M4 versión del loader 24 h por (loader, versión de MC), forzable con «Actualizar desde
+  Modrinth», la vencida si la meta cae · U6 lista de servidores guardada 5 min, refresco al cargar
+  si está vieja, botón 1/min, la guardada si el panel falla, y todas las páginas · U5/S7 `/v1` con
+  202 + `Job` y las claves del panel · M5 el limitador lee `X-Ratelimit-Remaining` (piso 30) y
+  pausa 2 s ante un 429 sin `Retry-After`; 240 sigue de techo.
+- **T4:** M1 `version_files/update_individual`: **una sola request con todos los hashes del pack**,
+  cada uno con sus filtros (el dueño pidió que nunca sea de a un mod; el nombre del endpoint
+  confunde: es en lote), 2 si hay excepciones; test de contrato propio porque no está en la
+  OpenAPI · M2 se anuncia solo lo posterior al lock que el resolvedor tomaría; la release que anula
+  una excepción, siempre, con ese texto · M3 al crear un build se releen en lote las versiones del
+  lock · M6 changelogs en lote, y se guardan los que trae la revisión diaria.
+- **T5:** C1 CurseForge opcional con la clave propia del dueño (`CURSEFORGE_API_KEY` en `.env.yaml`);
+  sin clave, el panel sugiere exportarlo como `.mrpack` · C2 lo que no está en Modrinth se informa,
+  no se baja · C3 en el informe, ids del manifiesto y enlace · C4 los `required: false` entran
+  «Por decidir».
+- **T6:** C5 los códigos de perfil de CurseForge **sí, con clave** (decisión del dueño, contra la
+  recomendada): el endpoint no documentado queda aislado, con test de contrato propio; si falla, el
+  importador lo dice («CurseForge no respondió al código; expórtalo como .zip») sin afectar lo demás;
+  un código dura 7 días · P1 zip de Prism sin mundos, hasta ~200 MB; uno completo se lee desde el
+  temporal sin descomprimir los mundos (tope ~1 GiB) · P2 `.jar.disabled` entra «Desactivado» ·
+  P3 los desconocidos se informan; candidatos después, con la importación de servidores · P4 (mío,
+  sin cambio visible) los `.pw.toml` solo como pistas: la identificación es por hash.
+- **T7:** B1 tras una acción (diálogo o agregar un mod) queda la pestaña que se tenía · B3 el 404
+  del panel lateral, dentro del panel: «Modrinth no conoce este mod.» · B4 la ficha de una
+  dependencia que solo es problema: «<pack> · dependencia de <mod>, con problema» · B5 los informes
+  de importación dicen «Marcados En el servidor: N · Aceptan beta: N» · TX los textos nuevos de la
+  sesión, aprobados como están.
+- **T8:** O1 sigue esperando la consulta del dueño con el tester · O5 tres lados por archivo
+  (ambos, servidor, cliente), mapeados a las capas del `.mrpack`, por defecto según la ruta y
+  editables · O6 al importar se traen los overrides de texto con su procedencia; binarios y jars se
+  informan con el motivo. O5 y O6 se aplican cuando O1 se decida (si O1 fuera «ninguno», no aplican).
+
+## Orden de trabajo acordado
+
+1. A1–A7 (sin decisión; A1 primero: bloquearía la primera actualización real).
+2. T2 actualizar un servidor (U1–U3) y T1 importar un servidor como trabajo (S1–S5).
+3. T4 revisión de actualizaciones (M1–M3, M6).
+4. T3 cachés, `/v1` y limitador (U4–U6, M5).
+5. T7 panel (B1, B3–B5).
+6. T6 Prism, luego T5 CurseForge (C1–C5).
+7. T8 overrides, cuando O1 se decida.
