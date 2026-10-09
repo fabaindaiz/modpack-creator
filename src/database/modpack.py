@@ -1,7 +1,7 @@
 from beanie import PydanticObjectId, SortDirection
 from beanie.operators import In
 from beanie.odm.documents import FindMany, DeleteResult
-from typing import Iterable, Optional
+from typing import Any, Iterable, Optional
 from pymongo.errors import DuplicateKeyError
 from src.library.scan import ClaimedFile, LocalFile
 from src.model.modpack import (
@@ -181,6 +181,21 @@ class ModpackDatabase():
         oid = self._bundle_oid(bundle_id)
         result = await ModpackBundle.get_pymongo_collection().update_one(
             {"_id": oid}, {"$unset": {f"pins.{project_id}": ""}})
+        if not result.matched_count:
+            raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' not found")
+        return await self.bundle_get(bundle_id)
+
+    async def bundle_channel_exception_set(self, bundle_id: str, project_id: str, channel: str) -> ModpackBundle:
+        """Set one project's channel exception, touching only that key. `project_id` must be a plain
+        Modrinth id (the caller checks it): it becomes a key of a dotted path."""
+        return await self._bundle_key(bundle_id, {"$set": {f"channel_exceptions.{project_id}": channel}})
+
+    async def bundle_channel_exception_unset(self, bundle_id: str, project_id: str) -> ModpackBundle:
+        """Remove one project's channel exception, touching only that key."""
+        return await self._bundle_key(bundle_id, {"$unset": {f"channel_exceptions.{project_id}": ""}})
+
+    async def _bundle_key(self, bundle_id: str, update: dict[str, Any]) -> ModpackBundle:
+        result = await ModpackBundle.get_pymongo_collection().update_one({"_id": self._bundle_oid(bundle_id)}, update)
         if not result.matched_count:
             raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' not found")
         return await self.bundle_get(bundle_id)

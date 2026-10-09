@@ -225,6 +225,18 @@ def test_pins_outside_every_row_are_listed_with_their_titles(mongo: MongoRunner)
     assert calls == [("project_get_many", ["GONE"])]
 
 
+def test_channel_exceptions_outside_every_row_have_their_titles(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        api = FakeModrinth([project("GONE", "Viejo")])
+        s = Scenario(api)
+        await s.modrinthDB.project_upsert_many([project("P1", "Sodium")])
+        bundle_id = await s.bundle([("P1", ProjectOrigin.pack)])
+        await s.modpackDB.bundle_channel_exception_set(bundle_id, "GONE", "beta")
+        return (await s.service.mod_list(bundle_id, check=None)).titles.get("GONE")
+
+    assert mongo(scenario) == "Viejo"
+
+
 def test_missing_icons_are_filled_in_one_batch_call(mongo: MongoRunner) -> None:
     async def scenario() -> Any:
         api = FakeModrinth([project("P1", "Sodium"), project("P2", "Iris")])

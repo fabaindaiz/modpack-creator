@@ -119,3 +119,38 @@ def test_a_dependency_of_the_last_resolution_can_be_pinned(mongo: MongoRunner) -
         return (await ModpackDatabase().bundle_get(bundle_id)).pins, before.value.status_code
 
     assert mongo(scenario) == ({SODIUM: "v4PSXean"}, 422)
+
+
+def test_a_channel_exception_is_stored_audited_and_reaches_the_request(mongo: MongoRunner) -> None:
+    # "Acepta beta para este mod" (owner, 2026-10-09): stored as the admin's choice; whether it has
+    # an effect is derived at each resolution (tests/test_resolution.py).
+    async def scenario() -> tuple[Any, ...]:
+        audit = RecordingAudit()
+        service, bundle_id = await bundle(RecordedModrinthAPI(), "iris")
+        service.audit = audit
+        await service.resolve(bundle_id)
+        await service.channel_exception_set(bundle_id, IRIS, "beta", EDITOR)
+        stored = (await ModpackDatabase().bundle_get(bundle_id)).channel_exceptions
+        stale = (await service.resolution(bundle_id))[1]  # type: ignore[index]
+        await service.channel_exception_unset(bundle_id, IRIS, EDITOR)
+        after = (await ModpackDatabase().bundle_get(bundle_id)).channel_exceptions
+        return stored, stale, after, [(e[0], e[2]) for e in audit.events]
+
+    stored, stale, after, events = mongo(scenario)
+    assert stored == {IRIS: "beta"} and stale is True and after == {}
+    assert events == [("bundle.channel_exception", {"project_id": IRIS, "channel": "beta"}),
+                      ("bundle.channel_exception.delete", {"project_id": IRIS})]
+
+
+@pytest.mark.parametrize("project, channel", [("IRIS", "release"), ("IRIS", "nightly"), ("SODIUM", "beta"),
+                                              ("not/an.id", "beta")])
+def test_a_channel_exception_is_refused_for_a_bad_channel_or_a_project_the_pack_does_not_name(
+        mongo: MongoRunner, project: str, channel: str) -> None:
+    async def scenario() -> tuple[int, dict[str, str]]:
+        service, bundle_id = await bundle(RecordedModrinthAPI(), "iris")
+        target = {"IRIS": IRIS, "SODIUM": SODIUM}.get(project, project)
+        with pytest.raises(HTTPException) as refused:
+            await service.channel_exception_set(bundle_id, target, channel, EDITOR)  # nothing resolved yet
+        return refused.value.status_code, (await ModpackDatabase().bundle_get(bundle_id)).channel_exceptions
+
+    assert mongo(scenario) == (422, {})

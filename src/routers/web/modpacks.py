@@ -481,6 +481,37 @@ async def pin_remove(
     await modpackService.pin_unset(bundle_id, project_id, actor)
     return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto, "Fijación quitada")
 
+@router.post("/modpacks/{bundle_id}/channel-exceptions")
+@inject
+async def channel_exception_add(
+        bundle_id: str,
+        request: Request,
+        project_id: Annotated[str, Form(min_length=1, max_length=200, pattern=MODRINTH_REF)],
+        channel: Annotated[Literal["beta", "alpha"], Form()],
+        contexto: Annotated[Optional[Contexto], Form()] = None,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
+        ):
+    """Let a mod take beta (or alpha) versions while none fits the pack's channels ("Usar la beta" on
+    a problem's card, `contexto`): one key, written by the service; then resolve again."""
+    await modpackService.channel_exception_set(bundle_id, project_id, channel, actor)
+    return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto, "Canal aceptado para el mod")
+
+@router.delete("/modpacks/{bundle_id}/channel-exceptions/{project_id}")
+@inject
+async def channel_exception_remove(
+        bundle_id: str,
+        project_id: str,
+        request: Request,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        ):
+    """Remove a mod's channel exception, from the channels section: the page is loaded again, since
+    the exceptions, the mods and the resolution's state all change with it."""
+    await modpackService.channel_exception_unset(bundle_id, project_id, actor)
+    return Response(status_code=200, headers={"HX-Redirect": f"/modpacks/{bundle_id}#channels-section"})
+
 @router.post("/modpacks/{bundle_id}/resolve")
 @inject
 async def modpack_resolve(

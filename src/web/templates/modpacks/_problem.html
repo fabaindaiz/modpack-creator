@@ -93,7 +93,16 @@
   </div>
 
   <div class="flex flex-wrap items-center gap-2">
-    {% if usable %}
+    {% if usable and alternative.channel in ("beta", "alpha") %}
+    {# Accepts the channel for this mod, not this version (owner, 2026-10-09): the newest that fits
+       is used while none fits the pack's channels, and nothing once one does. #}
+    <form hx-post="/modpacks/{{ bundle_id }}/channel-exceptions" hx-target="{{ target }}" hx-swap="{{ swap }}">
+      <input type="hidden" name="project_id" value="{{ pid }}">
+      <input type="hidden" name="channel" value="{{ alternative.channel }}">
+      <input type="hidden" name="contexto" value="{{ contexto }}">
+      {{ ui.button("Usar la " ~ alternative.channel, type="submit", small=True) }}
+    </form>
+    {% elif usable %}
     <form hx-post="/modpacks/{{ bundle_id }}/pins" hx-target="{{ target }}" hx-swap="{{ swap }}">
       <input type="hidden" name="project_id" value="{{ pid }}">
       <input type="hidden" name="version_id" value="{{ alternative.version_id }}">

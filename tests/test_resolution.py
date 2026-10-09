@@ -352,6 +352,54 @@ def test_digest_ignores_channel_order() -> None:
     assert request_digest(a) == request_digest(b)
 
 
+# Excepción de canal por mod (decisión del dueño, 2026-10-09): "acepta beta para este mod", que
+# solo cuenta mientras no haya versión en los canales del pack.
+
+
+def test_a_beta_exception_takes_the_beta_when_no_release_fits() -> None:
+    versions = [cand("P", "beta-1", type="beta", days=1), cand("P", "beta-2", type="beta", days=2)]
+    lock = resolve(request("P", channel_exceptions={"P": "beta"}), catalog(*versions))
+    assert lock.problems == [] and chosen(lock) == {"P": "beta-2"} and lock.excepted == ["P"]
+
+
+def test_an_exception_has_no_effect_once_a_release_fits() -> None:
+    versions = [cand("P", "rel-1", days=1), cand("P", "beta-9", type="beta", days=9)]
+    lock = resolve(request("P", channel_exceptions={"P": "beta"}), catalog(*versions))
+    assert chosen(lock) == {"P": "rel-1"} and lock.excepted == []
+
+
+def test_a_beta_exception_does_not_accept_an_alpha() -> None:
+    lock = resolve(request("P", channel_exceptions={"P": "beta"}), catalog(cand("P", "alpha-1", type="alpha")))
+    [problem] = lock.problems
+    assert problem.kind == "unresolvable" and problem.alternative is not None and lock.excepted == []
+
+
+def test_an_alpha_exception_prefers_a_beta_over_a_newer_alpha() -> None:
+    versions = [cand("P", "beta-1", type="beta", days=1), cand("P", "alpha-1", type="alpha", days=20)]
+    lock = resolve(request("P", channel_exceptions={"P": "alpha"}), catalog(*versions))
+    assert chosen(lock) == {"P": "beta-1"} and lock.excepted == ["P"]
+
+
+def test_an_exception_reaches_a_dependency_too() -> None:
+    versions = [cand("A", "a", deps=(("D", None, "required"),)), cand("D", "d-beta", type="beta")]
+    lock = resolve(request("A", channel_exceptions={"D": "beta"}), catalog(*versions))
+    assert lock.problems == [] and chosen(lock) == {"A": "a", "D": "d-beta"} and lock.excepted == ["D"]
+
+
+def test_digest_without_exceptions_is_the_one_stored_before_they_existed() -> None:
+    import hashlib
+    import json as json_module
+
+    plain = digest_request()
+    data = plain.model_dump(mode="json")
+    del data["channel_exceptions"]
+    data["projects"] = sorted(data["projects"])
+    data["target"]["channels"] = sorted(data["target"]["channels"])
+    before = hashlib.sha256(json_module.dumps(data, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    assert request_digest(plain) == before
+    assert request_digest(digest_request(channel_exceptions={"a": "beta"})) != before
+
+
 # Datos de cada problema: quién lo pidió, la alternativa y el otro lado del conflicto.
 
 

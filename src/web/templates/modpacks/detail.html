@@ -60,6 +60,7 @@
 
     {% call ui.section("Canales", id="channels-section") %}
     {% include "modpacks/_channels.html" %}
+    {% include "modpacks/_channel_exceptions.html" %}
     {% endcall %}
 
     {% if bundle.local_files %}

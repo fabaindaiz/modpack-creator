@@ -42,7 +42,7 @@ def bundle(projects: Optional[list[PackProject]] = None, decisions: Optional[dic
         projects=projects if projects is not None else [PackProject(project_id="P1", origin=ProjectOrigin.pack),
                                                        PackProject(project_id="P2", origin=ProjectOrigin.admin)],
         server_decisions=decisions if decisions is not None else {"OLD": True}, latest_build=2, recommended_build=1,
-        channels=["release"], pins={"P1": "ver-p1"},
+        channels=["release"], pins={"P1": "ver-p1"}, channel_exceptions={},
         local_files=[LocalFile(filename="custom.jar", sha512="ab12cd34ef56" + "0" * 100, sha1="x", size=1536)])
 
 
@@ -148,6 +148,16 @@ class FakeModpack:
     async def pin_unset(self, bundle_id: str, project_id: str, actor: Actor) -> ModpackBundle:
         self._record("pin_unset", bundle_id, project_id, actor)
         self.bundle.pins = {k: v for k, v in self.bundle.pins.items() if k != project_id}
+        return self.bundle
+
+    async def channel_exception_set(self, bundle_id: str, project_id: str, channel: str, actor: Actor) -> ModpackBundle:
+        self._record("channel_exception_set", bundle_id, project_id, channel, actor)
+        self.bundle.channel_exceptions = {**self.bundle.channel_exceptions, project_id: channel}
+        return self.bundle
+
+    async def channel_exception_unset(self, bundle_id: str, project_id: str, actor: Actor) -> ModpackBundle:
+        self._record("channel_exception_unset", bundle_id, project_id, actor)
+        self.bundle.channel_exceptions = {k: v for k, v in self.bundle.channel_exceptions.items() if k != project_id}
         return self.bundle
 
     async def project_add(self, bundle_id: str, refs: list[str], origin: ProjectOrigin, actor: Actor) -> list[PackProject]:
@@ -768,16 +778,18 @@ def test_blocked_by_problems_only_opens_the_dialog_with_their_actions() -> None:
         Problem(kind="unresolvable", project_id="P2", alternative=alternative, detail="sin versión")]), False)
     response = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX)
     assert response.status_code == 200 and response.headers["HX-Retarget"] == "#build-dialog"
-    use = response.text[response.text.index(f'hx-post="/modpacks/{BUNDLE_ID}/pins"'):]
+    use = response.text[response.text.index(f'hx-post="/modpacks/{BUNDLE_ID}/channel-exceptions"'):]
     use = use[:use.index("</form>")]
     assert 'name="contexto" value="dialogo"' in use and 'hx-target="#build-dialog"' in use
-    assert "Usar la beta 1.0-beta" in use
+    assert 'name="channel" value="beta"' in use and "Usar la beta" in use
     assert "Decidir y crear build" not in response.text and "Todo resuelto" not in response.text
     assert "data-notice" not in response.text  # the button's click: the cards say it, no reason yet
 
 
 DIALOG_ACTIONS = [
     ("POST", f"/modpacks/{BUNDLE_ID}/pins", {"project_id": "P2", "version_id": "ver-b", "contexto": "dialogo"}, "pin_set"),
+    ("POST", f"/modpacks/{BUNDLE_ID}/channel-exceptions", {"project_id": "P2", "channel": "beta", "contexto": "dialogo"},
+     "channel_exception_set"),
     ("DELETE", f"/modpacks/{BUNDLE_ID}/pins/P1?contexto=dialogo", None, "pin_unset"),
     ("DELETE", f"/modpacks/{BUNDLE_ID}/projects/P2?contexto=dialogo", None, "project_remove"),
     ("POST", "/replacements", {"project_id": "X9", "replacement": "", "bundle_id": str(BUNDLE_ID),
@@ -1792,8 +1804,10 @@ def test_the_bulk_decisions_from_the_pending_view_stay_in_it() -> None:
     assert 'aria-current="page"' in tab(text, "decidir") and 'name="decision.P3"' in view(text, "decidir")
 
 
-@pytest.mark.parametrize("channel,number,label", [("beta", "1.0-beta", "Usar la beta 1.0-beta"),
-                                                  ("alpha", "2.0-a", "Usar la alpha 2.0-a"),
+# Beta and alpha accept the channel for the mod (owner, 2026-10-09): no version number, since the
+# newest one is used while none fits the pack's channels. A release outside them is still pinned.
+@pytest.mark.parametrize("channel,number,label", [("beta", "1.0-beta", "Usar la beta"),
+                                                  ("alpha", "2.0-a", "Usar la alpha"),
                                                   ("release", "1.0", "Usar la versión 1.0 (release)")])
 def test_a_mod_without_a_version_in_the_channels_offers_its_alternative_and_removal(
         channel: str, number: str, label: str) -> None:
@@ -1803,9 +1817,11 @@ def test_a_mod_without_a_version_in_the_channels_offers_its_alternative_and_remo
                                                    detail="sin versión para 1.21.1 con fabric en los canales release"))
     lithium = problem_card(shown, "P2")
     assert mod_link("P2") in lithium and label in lithium
-    use = lithium[lithium.index(f'hx-post="/modpacks/{BUNDLE_ID}/pins"'):]
+    route = "pins" if channel == "release" else "channel-exceptions"
+    use = lithium[lithium.index(f'hx-post="/modpacks/{BUNDLE_ID}/{route}"'):]
     use = use[:use.index("</form>")]
-    assert 'name="project_id" value="P2"' in use and 'name="version_id" value="ver-b"' in use
+    assert 'name="project_id" value="P2"' in use
+    assert ('name="version_id" value="ver-b"' if channel == "release" else f'name="channel" value="{channel}"') in use
     assert 'name="contexto" value="problemas"' in use and 'hx-target="#mods"' in use and label in use
     assert "Quitar del modpack" in lithium
     assert f'hx-delete="/modpacks/{BUNDLE_ID}/projects/P2?contexto=problemas"' in lithium
@@ -1821,10 +1837,10 @@ def test_a_dependency_without_a_version_in_the_channels_offers_its_alternative()
     shown = problems_page(modpack, client, Problem(kind="unresolvable", project_id="X9", requested_by=["P1"],
                                                    alternative=alternative, detail="sin versión; pedido por P1"))
     roto = problem_card(shown, "X9")
-    use = roto[roto.index(f'hx-post="/modpacks/{BUNDLE_ID}/pins"'):]
+    use = roto[roto.index(f'hx-post="/modpacks/{BUNDLE_ID}/channel-exceptions"'):]
     use = use[:use.index("</form>")]
-    assert 'name="project_id" value="X9"' in use and 'name="version_id" value="ver-b"' in use
-    assert "Usar la beta 1.0-beta" in use
+    assert 'name="project_id" value="X9"' in use and 'name="channel" value="beta"' in use
+    assert "Usar la beta" in use
     assert "Quitar Sodium" in said(roto) and "Quitar del modpack" not in roto
     for absent in (*REPLACE_OR_IGNORE, "Fijar otra"):
         assert absent not in roto, absent
@@ -1980,7 +1996,7 @@ def test_a_mod_without_a_file_is_only_removed(project_id: str, requested_by: lis
                                                    alternative=alternative, detail="sin archivo"))
     found = problem_card(shown, project_id)
     assert ("Quitar del modpack" if project_id == "P2" else "Quitar Sodium") in said(found)
-    for absent in (*REPLACE_OR_IGNORE, "Usar la", "Quitar la fijación", "Fijar otra", "/pins"):
+    for absent in (*REPLACE_OR_IGNORE, "Usar la", "Quitar la fijación", "Fijar otra", "/pins", "/channel-exceptions"):
         assert absent not in found, absent
 
 
@@ -2072,3 +2088,64 @@ def test_app_js_marks_every_select_of_the_form_and_opens_a_linked_mod() -> None:
     # Already on ?vista=todos, "Fijar otra" only changes the hash: no load, so hashchange too, and
     # the build dialog it was clicked in closes (F3 of the final review).
     assert "addEventListener('hashchange', openLinkedMod)" in text and "addEventListener('load', openLinkedMod)" in text
+
+
+# Excepciones de canal por mod (owner, 2026-10-09): se ven y se quitan junto a los canales.
+
+
+def test_a_channel_exception_from_the_mods_tab_resolves_and_answers_the_problems_view() -> None:
+    client, modpack, _ = setup()
+    response = client.post(f"/modpacks/{BUNDLE_ID}/channel-exceptions", headers=HTMX,
+                           data={"project_id": "P2", "channel": "beta", "contexto": "problemas"})
+    assert response.status_code == 200
+    assert [c[0] for c in modpack.calls] == ["channel_exception_set", "resolve"]
+    assert call(modpack, "channel_exception_set")[1:] == (str(BUNDLE_ID), "P2", "beta", EDITOR)
+
+
+@pytest.mark.parametrize("data", [{"project_id": "P2", "channel": "release"}, {"project_id": "P2", "channel": "x"},
+                                  {"project_id": "../x", "channel": "beta"}])
+def test_a_bad_channel_exception_is_refused_before_the_service(data: dict[str, str]) -> None:
+    client, modpack, _ = setup()
+    response = client.post(f"/modpacks/{BUNDLE_ID}/channel-exceptions", headers=HTMX, data=data)
+    assert response.status_code == 422 and modpack.calls == []
+
+
+def test_the_channels_section_lists_each_exception_with_whether_it_is_used() -> None:
+    client, modpack, _ = setup()
+    modpack.bundle.channel_exceptions = {"P1": "beta", "P2": "alpha"}
+    used = lock(entry("P1"), entry("P2"))
+    used.excepted = ["P1"]
+    modpack.saved = resolution(used)
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    section = text[text.index('id="channels-section"'):]
+    section = section[:section.index('id="local-files-section"')]
+    shown = " ".join(visible(section).split())
+    assert "Sodium acepta beta" in shown and "en uso: no hay versión en los canales del pack" in shown
+    assert "Lithium acepta alpha" in shown and "sin efecto: ya hay versión en los canales del pack" in shown
+    assert f'hx-delete="/modpacks/{BUNDLE_ID}/channel-exceptions/P1"' in section
+
+
+def test_a_stale_resolution_does_not_say_whether_an_exception_is_used() -> None:
+    client, modpack, _ = setup()
+    modpack.bundle.channel_exceptions = {"P1": "beta"}
+    modpack.saved = resolution(lock(entry("P1")))
+    modpack.stale = True
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    section = text[text.index('id="channels-section"'):text.index('id="local-files-section"')]
+    shown = " ".join(visible(section).split())
+    assert "Sodium acepta beta" in shown and "en uso" not in shown and "sin efecto" not in shown
+
+
+def test_without_exceptions_the_channels_section_says_nothing_about_them() -> None:
+    client, _, _ = setup()
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    section = text[text.index('id="channels-section"'):text.index('id="local-files-section"')]
+    assert "acepta" not in section and "channel-exceptions" not in section
+
+
+def test_removing_an_exception_reloads_the_pack_page() -> None:
+    client, modpack, _ = setup()
+    modpack.bundle.channel_exceptions = {"P1": "beta"}
+    response = client.delete(f"/modpacks/{BUNDLE_ID}/channel-exceptions/P1", headers=HTMX)
+    assert response.status_code == 200 and response.headers["HX-Redirect"] == f"/modpacks/{BUNDLE_ID}#channels-section"
+    assert call(modpack, "channel_exception_unset")[1:] == (str(BUNDLE_ID), "P1", EDITOR)

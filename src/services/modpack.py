@@ -119,6 +119,8 @@ class VersionOption:
 
 # How many of a project's catalog versions its page shows; "Cargar todas" asks Modrinth for the rest.
 MOD_PAGE_VERSIONS = 50
+# The channels a project's exception may accept: the less stable ones.
+EXCEPTION_CHANNELS = ("beta", "alpha")
 
 
 @dataclass(frozen=True)
@@ -336,6 +338,33 @@ class ModpackService():
                                 {"project_id": project_id, "version_id": version_id})
         return updated
 
+    async def channel_exception_set(self, bundle_id: str, project_id: str, channel: str, actor: Actor) -> ModpackBundle:
+        """Let one project also take versions of `channel` ("beta" or "alpha") while none of its
+        versions fits in the pack's channels ("Usar la beta"); only that key changes, atomically.
+
+        422 for an id that is not a Modrinth id, another channel, or a project that is neither the
+        bundle's nor one its last resolution names, as pin_set. Nothing is written for a refusal.
+        """
+        if not MODRINTH_ID.fullmatch(project_id):
+            raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{project_id}' no es un id de Modrinth")
+        if channel not in EXCEPTION_CHANNELS:
+            raise HTTP_422_UNPROCESSABLE_ENTITY("Solo se puede aceptar beta o alpha para un mod")
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        if project_id not in {p.project_id for p in bundle.projects} and not await self._resolution_names(bundle, project_id):
+            raise HTTP_422_UNPROCESSABLE_ENTITY("Ese proyecto no está en el modpack ni es una de sus dependencias")
+        updated = await self.modpackDB.bundle_channel_exception_set(bundle_id, project_id, channel)
+        await self.audit.record(actor, "bundle.channel_exception", _bundle(bundle_id),
+                                {"project_id": project_id, "channel": channel})
+        return updated
+
+    async def channel_exception_unset(self, bundle_id: str, project_id: str, actor: Actor) -> ModpackBundle:
+        """Remove one project's channel exception. 422 for an id that is not a Modrinth id."""
+        if not MODRINTH_ID.fullmatch(project_id):
+            raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{project_id}' no es un id de Modrinth")
+        updated = await self.modpackDB.bundle_channel_exception_unset(bundle_id, project_id)
+        await self.audit.record(actor, "bundle.channel_exception.delete", _bundle(bundle_id), {"project_id": project_id})
+        return updated
+
     async def _resolution_names(self, bundle: ModpackBundle, project_id: str) -> bool:
         """Whether the bundle's last saved resolution names the project, as an entry or a problem."""
         saved = await self.modpackDB.resolution_get(bundle.id) if bundle.id is not None else None
@@ -445,6 +474,8 @@ class ModpackService():
         orphan_pins = [i for i in bundle.pins if i not in pack and i not in dependencies]
         requesters = {r for e in entries.values() for r in e.requested_by}
         named: list[str] = list(orphan_pins)
+        # The channel exceptions are listed by title too, with or without a row.
+        named += [i for i in bundle.channel_exceptions if i not in pack and i not in dependencies]
         if resolution is not None:
             named += [x.project_id for x in resolution.lock.suggestions]
             named += [r for x in resolution.lock.suggestions for r in x.requested_by]
@@ -710,7 +741,7 @@ class ModpackService():
                           channels=frozenset(bundle.channels)),
             projects=[p.project_id for p in bundle.projects],
             origins={p.project_id: p.origin.value for p in bundle.projects},
-            pins=bundle.pins, server_decisions=bundle.server_decisions,
+            pins=bundle.pins, server_decisions=bundle.server_decisions, channel_exceptions=bundle.channel_exceptions,
             replacements=merge_replacements(global_rules, bundle.replacements))
 
     async def _resolve(self, request: ResolveRequest) -> Lock:

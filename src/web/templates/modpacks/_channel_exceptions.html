@@ -1,0 +1,27 @@
+{# The mods that also accept a less stable channel (owner, 2026-10-09): "Usar la beta" on a problem's
+   card, or a server import that found one running. Whether each one is used comes from the saved
+   resolution, and only when it is current: used while none of the mod's versions fits the pack's
+   channels, without effect once one does. Removing one reloads the page. Part of detail.html. #}
+{% import "_macros.html" as ui %}
+{% if bundle.channel_exceptions %}
+{% set saved = mods.resolution.lock if mods.resolution is not none else none %}
+{% set current = saved is not none and not mods.stale %}
+{% set chosen = saved.entries | map(attribute="project_id") | list if saved is not none else [] %}
+<div class="space-y-2 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+  <h3 class="font-semibold">Excepciones por mod</h3>
+  <ul class="space-y-2">
+    {% for project_id, channel in bundle.channel_exceptions | dictsort %}
+    <li class="flex flex-wrap items-center gap-2">
+      <div class="min-w-0 flex-1 break-words">
+        <span class="font-medium">{{ ui.mod_link(project_id, mods.titles.get(project_id, project_id), pack=bundle_id) }}</span> acepta {{ channel }}
+        {%- if current and project_id in saved.excepted %}<span class="text-xs text-amber-800 dark:text-amber-300"> · en uso: no hay versión en los canales del pack</span>
+        {%- elif current and project_id in chosen %}<span class="text-xs text-zinc-500 dark:text-zinc-400"> · sin efecto: ya hay versión en los canales del pack</span>{% endif %}
+      </div>
+      {{ ui.button("Quitar", kind="ghost", small=True, attrs={
+        "hx-delete": "/modpacks/" ~ bundle_id ~ "/channel-exceptions/" ~ project_id,
+        "hx-confirm": "¿Quitar la excepción de " ~ mods.titles.get(project_id, project_id) ~ "?"}) }}
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}

@@ -178,12 +178,18 @@ class ResolveRequest(BaseModel):
     pins: dict[str, str] = {}
     replacements: dict[str, Optional[str]] = {}
     server_decisions: dict[str, bool] = {}
+    # Project id → the least stable channel it also accepts ("beta" or "alpha"), only while none of
+    # its versions fits in the pack's channels: once one does, the exception has no effect.
+    channel_exceptions: dict[str, str] = {}
 
 
 def request_digest(request: ResolveRequest) -> str:
     """A stable sha256 of what a resolution was asked for: the same request, in any order of
     projects, keys or channels, gives the same digest; any change to it gives another."""
     data = request.model_dump(mode="json")
+    # Left out when empty: every resolution saved before the field existed keeps its digest.
+    if not data["channel_exceptions"]:
+        del data["channel_exceptions"]
     data["projects"] = sorted(data["projects"])
     data["target"]["channels"] = sorted(data["target"]["channels"])
     text = json.dumps(data, sort_keys=True, separators=(",", ":"))
@@ -249,6 +255,8 @@ class Lock(BaseModel):
     needs_projects: set[str]
     needs_types: set[str]
     needs_versions: set[str]
+    # Projects resolved to a version outside the pack's channels through their channel exception.
+    excepted: list[str] = []
 
     @property
     def complete(self) -> bool:
@@ -296,6 +304,7 @@ class _Run:
         self.needs_projects: set[str] = set()
         self.needs_types: set[str] = set()
         self.needs_versions: set[str] = set()
+        self.excepted: set[str] = set()
 
     def run(self) -> Lock:
         origins = self.request.origins
@@ -350,6 +359,8 @@ class _Run:
                 f"un proyecto de tipo {project_type} no entra en un modpack; pedido por {requester}")))
             return None
         allowed = [c for c in self.catalog.by_project[project_id] if self.request.target.allows(c, project_type)]
+        if not allowed and project_id in self.request.channel_exceptions:
+            allowed = self._excepted(project_id, project_type)
         if not allowed:
             fitting = [c for c in self.catalog.by_project[project_id]
                        if self.request.target.fits(c, project_type)]
@@ -365,6 +376,16 @@ class _Run:
             return None
         best = min(allowed, key=_preference)
         return self._take(best, reason, requester, exact=False)
+
+    def _excepted(self, project_id: str, project_type: str) -> list[Candidate]:
+        """The fitting versions the project's channel exception accepts: its channel and the more
+        stable ones. Only asked when none fits in the pack's channels."""
+        limit = CHANNEL_RANK.get(self.request.channel_exceptions[project_id], -1)
+        accepted = [c for c in self.catalog.by_project[project_id] if self.request.target.fits(c, project_type)
+                    and CHANNEL_RANK.get(c.version_type, 99) <= limit]
+        if accepted:
+            self.excepted.add(project_id)
+        return accepted
 
     def _choose_exact(self, project_id: Optional[str], version_id: str,
                       requester: str, reason: str) -> Optional[Candidate]:
@@ -486,7 +507,8 @@ class _Run:
                        if p not in self.chosen]
         return Lock(entries=entries, problems=self.problems, suggestions=suggestions,
                     needs_projects=self.needs_projects, needs_types=self.needs_types,
-                    needs_versions=self.needs_versions)
+                    needs_versions=self.needs_versions,
+                    excepted=[p for p in self.chosen if p in self.excepted])
 
 
 def resolve(request: ResolveRequest, catalog: Catalog) -> Lock:

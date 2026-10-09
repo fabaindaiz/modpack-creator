@@ -79,6 +79,10 @@ class ModpackBundle(Document):
     replacements: dict[str, Optional[str]] = Field(default_factory=dict)
     # Modrinth project id → whether an ambiguous mod goes on the server (d-7985ee-f0c7a6).
     server_decisions: dict[str, bool] = Field(default_factory=dict)
+    # Modrinth project id → the least stable channel it also accepts ("beta" or "alpha"): the
+    # admin's choice, or the version a server import found. It only has an effect while none of the
+    # project's versions fits in `channels` (decided by the owner, 2026-10-09).
+    channel_exceptions: dict[str, str] = Field(default_factory=dict)
 
     # Build pointers (i-7985ee-098611): latest follows the newest build; recommended moves only
     # when the admin moves it, and going back is moving it to an older build.
