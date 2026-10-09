@@ -282,6 +282,21 @@ def test_a_real_update_ends_with_a_scan_compared_with_the_new_build(mongo: Mongo
     assert drift is not None and drift.startswith("✅") and "build 1" in drift
 
 
+def test_the_rescan_after_an_update_takes_the_uploaded_jars_from_the_build(mongo: MongoRunner) -> None:
+    # U3 (owner, 2026-10-09): the jars the update just uploaded and verified are not downloaded back
+    # to hash them: their size is checked and their hashes come from the build.
+    async def scenario() -> tuple[str, list[str], Any, str]:
+        s = await setup()
+        job = await s.run(dry_run=False)
+        scan = await PterodactylDatabase().scan_latest(s.server_id, "/mods")
+        return job.status, s.panel.downloads, scan, new_jar(s)
+
+    status, downloads, scan, jar = mongo(scenario)
+    assert status == "done" and f"/mods/{jar}" not in downloads
+    [installed] = [f for f in scan.files if f.path == f"/mods/{jar}"]
+    assert installed.status == "identified" and installed.sha512 == sha512(f"fabric-api {installed.version_id}".encode())
+
+
 def test_a_real_update_with_nothing_to_change_still_records_the_state(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[str, str | None]:
         s = await setup(installed="newest")

@@ -37,7 +37,7 @@ from src.model.audit import AuditTarget
 from src.model.users import Actor
 from src.services.audit import AuditSink
 from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink, done_rollback
-from src.services.pterodactyl import PterodactylService
+from src.services.pterodactyl import SCAN_DIRECTORY, PterodactylService
 
 import hashlib
 
@@ -240,7 +240,8 @@ class UpdateService():
             # bundle_id: the panel's real run from this plan is refused if the server was relinked since.
             plan = {"build": build.number, "bundle": bundle.name, "bundle_id": str(bundle.id), "remove": remove,
                     "install": [{"project_id": e.project_id, "filename": e.file.filename, "url": e.file.url,
-                                 "sha512": e.file.sha512, "size": e.file.size} for e in install if e.file]}
+                                 "sha512": e.file.sha512, "sha1": e.file.sha1, "size": e.file.size}
+                                for e in install if e.file]}
             if not install and not remove:
                 return plan
             state = await self.api.server_state(server.identifier)
@@ -418,16 +419,20 @@ class UpdateService():
             await ops.write("unlock backup", lambda: self.api.backup_lock_toggle(ident, backup["uuid"]))
         await self._notify(f"✅ {server.name} actualizado a {plan['bundle']}, build {plan['build']}.", ops.dry_run)
         if not ops.dry_run:
-            await self._rescan(server)
+            await self._rescan(server, plan)
         return {}
 
-    async def _rescan(self, server: PterodactylServer) -> None:
+    async def _rescan(self, server: PterodactylServer, plan: Optional[dict[str, Any]] = None) -> None:
         """After a real update that ended well, scan the server again and record how it compares
         with its build (F37): the preflight's scan predates the new jars and records none. Only
         reads the panel (lists and downloads). Best effort, inside the finish step and never a step
         of its own: the update already succeeded, so a failure here is logged, never the job's."""
+        # U3 (owner, 2026-10-09): what this update uploaded was verified against the build before the
+        # stop, so its jars take the build's hashes when the listing shows them with that size.
+        seeds = {f"{SCAN_DIRECTORY}/{i['filename']}": (i["size"], i["sha1"], i["sha512"])
+                 for i in (plan or {}).get("install", []) if i.get("sha1")}
         try:
-            await self.servers.scan(str(server.id), actor=None, record_drift=True)
+            await self.servers.scan(str(server.id), actor=None, record_drift=True, seeds=seeds)
         except Exception:
             logger.warning("the scan after the update failed: the server's state waits for the next scan",
                            exc_info=True, extra={"server_id": str(server.id)})

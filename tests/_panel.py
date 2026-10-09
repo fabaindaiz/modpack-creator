@@ -24,6 +24,7 @@ class StatefulPanel:
                  ignores_stop: bool = False, backup_fails: bool = False) -> None:
         self.files: dict[str, bytes] = dict(files)
         self.folders: set[str] = {"/", "/mods"}
+        self.downloads: list[str] = []
         self.state = "running"
         self.uptime = 1_000_000
         self.status: Optional[str] = None
@@ -51,6 +52,7 @@ class StatefulPanel:
                                 mimetype="application/jar", created_at=T0, modified_at=T0) for n in sorted(names)]
 
     async def server_files_download(self, server_id: str, filepath: str) -> bytes:
+        self.downloads.append(filepath)
         return self.files[filepath]
 
     async def server_state(self, server_id: str) -> ServerState:

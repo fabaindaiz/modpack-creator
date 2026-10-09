@@ -111,7 +111,8 @@ class PterodactylService():
     # What a server has (i-7985ee-43df2f, option 1). Only reads: listing and downloading.
 
     async def scan(self, server_id: str, actor: Optional[Actor], directory: str = SCAN_DIRECTORY,
-                   full: bool = False, record_drift: bool = True) -> ServerScan:
+                   full: bool = False, record_drift: bool = True,
+                   seeds: Optional[dict[str, tuple[int, str, str]]] = None) -> ServerScan:
         """
         Scan a directory of a server: which jars it has, and which Modrinth version each one is.
 
@@ -122,6 +123,8 @@ class PterodactylService():
         :param actor: Who asked; None for the scheduler's and the worker's scans, which are not recorded.
         :param record_drift: Store how the scan compares with the server's build (F37). False for a
             real update's preflight: the update changes the server right after, so it would be stale.
+        :param seeds: Path → (size, sha1, sha512) of jars the app itself just uploaded and verified
+            (U3): one listed with that size takes those hashes instead of being downloaded.
         :return: The stored scan.
         """
         server = await self.pterodactylDB.server_get(server_id)
@@ -130,7 +133,10 @@ class PterodactylService():
                    if f.is_file and not f.is_symlink and f.name.endswith(".jar")]
         previous = await self.pterodactylDB.scan_latest(server_id, directory)
         kept, to_hash, too_large = plan_scan(listing, previous.files if previous else [], full, SCAN_MAX_BYTES)
-        hashed = await self._hash(server.identifier, to_hash)
+        seeded = [ScanFile(**f.model_dump(), status="unknown", sha1=seeds[f.path][1], sha512=seeds[f.path][2])
+                  for f in to_hash if seeds and f.path in seeds and seeds[f.path][0] == f.size]
+        seeded_paths = {f.path for f in seeded}
+        hashed = [*seeded, *await self._hash(server.identifier, [f for f in to_hash if f.path not in seeded_paths])]
         # Modrinth may know today a jar it did not know before: unknown ones are asked about again.
         known = [f for f in kept if f.status == "identified"]
         identified = await self._identify([*hashed, *(f for f in kept if f.status == "unknown")])
