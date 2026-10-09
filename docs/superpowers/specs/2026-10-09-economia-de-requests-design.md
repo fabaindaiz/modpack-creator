@@ -41,8 +41,8 @@ guarda 10 minutos; leer y decidir con datos de menos de 5 minutos no hace ningun
    minutos, 0 requests y en el acto (decidir, quitar, fijar, aceptar beta siguen siendo inmediatos).
    Si falta algo o pasó la ventana, se encola (o se muestra) el trabajo de catálogo del pack.
 4. **Trabajos con avance**: `Job` gana `progress` (hecho, total, qué) y `waiting_until`. Un trabajo
-   por pack a la vez (la clave `bundle:<id>`, que ya comparte la búsqueda de actualizaciones):
-   pulsar de nuevo devuelve el activo. Tipos nuevos: `catalog_refresh`, `build_create`,
+   de cada tipo por pack a la vez (`catalog:<id>`, `build:<id>`; la búsqueda de actualizaciones
+   sigue en `bundle:<id>`): pulsar de nuevo devuelve el activo. El worker corre uno a la vez. Tipos nuevos: `catalog_refresh`, `build_create`,
    `modpack_import` (desde Modrinth, o la identificación de un archivo ya leído), y la importación de
    un servidor.
 5. **Franja del pack y barra superior**: la franja sondea la fila del trabajo activo del pack; la
