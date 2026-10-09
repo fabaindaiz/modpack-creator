@@ -1,7 +1,7 @@
 {# A success notice out of band, into #notices; the answer of an action whose result shows elsewhere.
    With `banner_jobs` (and `bundle_id`), the pack's banner comes too, showing the job just queued. #}
 {% import "_macros.html" as ui %}
-<div id="notices" hx-swap-oob="beforeend">{{ ui.success(message) }}</div>
+<div id="notices" hx-swap-oob="beforeend">{{ ui.notice(message, "info", autoclose=True) if tone is defined and tone == "info" else ui.success(message) }}</div>
 {% if banner_jobs %}
 <div id="job-banner" hx-swap-oob="innerHTML">{% with jobs=banner_jobs %}{% include "modpacks/_job_banner.html" %}{% endwith %}</div>
 {% endif %}

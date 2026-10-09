@@ -56,12 +56,15 @@ def setup() -> tuple[Any, Any, FakeJobs]:
     return client, modpack, jobs
 
 
-def test_a_resolve_that_needs_modrinth_says_a_job_prepares_it_and_announces_it() -> None:
+def test_a_resolve_that_needs_modrinth_says_a_job_prepares_it_and_shows_it() -> None:
+    # Not an error (the visual sweep flagged the 409 in the console): the work is queued.
     client, modpack, _ = setup()
     modpack.error = CatalogPending(job())
     response = client.post(f"/modpacks/{BUNDLE_ID}/resolve", headers=HTMX)
-    assert response.status_code == 409 and response.headers.get("HX-Trigger") == "job-started"
+    assert response.status_code == 200 and response.headers.get("HX-Trigger") == "job-started"
+    assert response.headers.get("HX-Reswap") == "none"
     assert "Preparando el catálogo de Modrinth para este pack: se resuelve solo al terminar." in response.text
+    assert 'id="job-banner" hx-swap-oob="innerHTML"' in response.text and "Catálogo de Modrinth" in response.text
 
 
 def test_the_banner_says_what_is_processed_how_far_and_when_it_last_moved() -> None:

@@ -231,6 +231,19 @@ class WebRoute(APIRoute):
                 if response is None:
                     raise
                 return response
+            except CatalogPending as pending:
+                # Not an error: the work is queued (E6). The notice says so, and the pack's banner
+                # comes with the job, so even one that ends at once is seen ending.
+                if not request.headers.get("HX-Request"):
+                    raise
+                actor = getattr(request.state, "actor", None)
+                job = pending.job
+                response = templates.TemplateResponse(request, "_notice_oob.html", {
+                    "actor": actor, "message": str(pending.detail), "tone": "info", "banner_jobs": [job],
+                    "bundle_id": job.payload.get("bundle_id")})
+                response.headers["HX-Trigger"] = JOB_STARTED
+                response.headers["HX-Reswap"] = "none"
+                return response
             except HTTPException as error:
                 if error.status_code not in NOTICE_STATUSES:
                     raise
@@ -240,9 +253,6 @@ class WebRoute(APIRoute):
                 response = _notice_response(request, message, error.status_code)
                 if response is None:
                     raise
-                if isinstance(error, CatalogPending):
-                    # The pack's banner and the bar reload on it, and show the job (E8).
-                    response.headers["HX-Trigger"] = JOB_STARTED
                 return response
             except RequestValidationError:
                 response = _notice_response(request, INVALID_FORM, 422)
