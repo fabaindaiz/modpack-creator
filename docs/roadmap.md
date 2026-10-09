@@ -866,6 +866,21 @@ JSON con `request_id` y `job_id`.
   - `/v1/modpack/{id}/build` sigue síncrono (el panel ya no);
   - medir en real cuántas requests hace una sesión (hoy son cuentas leyendo el código).
 
+### Pendientes del 2026-10-09: investigados, decididos y en curso — A medias (2026-10-09) · i-7985ee-805517
+- Plan y decisiones del dueño (T1–T8): `docs/superpowers/plans/2026-10-09-pendientes.md`. Cubre
+  i-7985ee-27db6c (importar un servidor), la revisión de actualizaciones con excepciones, las cachés
+  del loader y de la lista de servidores, `/v1` con trabajos, el limitador con las cabeceras de
+  Modrinth, CurseForge y Prism (i-7985ee-261a79), la deuda del panel y los overrides
+  (i-7985ee-943b5e, O1 abierta).
+- **A1, primero:** la preparación de una actualización lista una carpeta antes de crearla; con un
+  panel real fallaría (fuentes de Pterodactyl/Wings, sin probar en real).
+
+### La VM de podman de 2 GiB mata a mongod cuando corren dos instancias — Planeada · i-7985ee-9b250c
+- El registro la menciona 15 veces; el 2026-10-09 murió 3 veces (la base de una sesión junto a la
+  revisión visual, o el gate largo). Recomendación: que `test-mongo.sh` y `visual-sweep.sh` avisen y
+  se detengan si ya hay otro mongod en la VM, y subir la VM a 4 GiB (es la máquina del dueño: lo
+  decide él).
+
 ### Importar un servidor como trabajo con avance — Planeada · i-7985ee-27db6c
 - Hoy son ~4 requests por jar desconocido y la página espera. Recomendación: un trabajo por
   servidor con avance por jar, y leer la metadata de los jars durante el escaneo para juntar las

@@ -56,6 +56,19 @@ que descarga cada jar, `/v1` del build síncrono, CurseForge y Prism, y los over
 requests son leyendo el código y con dobles); el login OIDC; los datos de producción. El pack del
 tester sigue igual hasta volver a importar su servidor en producción.
 
+**Segunda parte: los pendientes investigados y revisados con el dueño.** Cuatro investigaciones
+en paralelo (`docs/research/2026-10-09-{importar-servidor-como-trabajo,api-modrinth-detalle,flujo-actualizacion-y-caches,curseforge-prism-y-deuda-panel}.md`)
+y el plan `docs/superpowers/plans/2026-10-09-pendientes.md`, revisado por temas (T1–T8) con todas
+sus decisiones anotadas; O1 (qué overrides guardar) espera la consulta del dueño con el tester. La
+investigación encontró un probable bug que bloquearía la primera actualización real (A1: la
+preparación lista `/mods.staging/<job>` antes de crearla), leído en las fuentes de Pterodactyl y
+Wings, no probado contra un panel. Al cerrar, una revisión de la rama (`/code-review high`).
+
+**Fricciones contadas en este registro** (búsqueda, no memoria): la VM de podman de 2 GiB aparece
+en 15 líneas; MongoDB murió 3 veces esta sesión (dos instancias a la vez, o el gate junto a la
+revisión visual) → i-7985ee-9b250c en el roadmap. «colgó» aparece 2 veces (comandos que esperaban
+stdin, sesiones anteriores): esta sesión no se repitió.
+
 ## 2026-10-05 · s-7985ee-bae4ac — Preparar el primer release: revisión final, PATCH por clave, load_env y Tarea 8
 
 **Qué.** Todo en la rama `release-1-prep`, sin mergear:
