@@ -15,3 +15,13 @@ class ModrinthUnknown(Document):
 
     class Settings:
         indexes = [IndexModel([("checked_at", ASCENDING)], expireAfterSeconds=UNKNOWN_FOR_SECONDS, name="forget_after_a_day")]
+
+
+class ModrinthGone(Document):
+    """A version id Modrinth did not return (a pin to a version it removed, say), and when: resolving
+    takes it as gone for a day without asking. MongoDB removes the record itself then."""
+    version_id: Annotated[str, Indexed(unique=True)]
+    checked_at: datetime
+
+    class Settings:
+        indexes = [IndexModel([("checked_at", ASCENDING)], expireAfterSeconds=UNKNOWN_FOR_SECONDS, name="forget_after_a_day")]

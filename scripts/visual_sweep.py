@@ -190,7 +190,9 @@ def app_env(mongo_uri: str, modrinth_url: str) -> dict[str, str]:
         "OIDC_METADATA_URL": "http://127.0.0.1:1/.well-known/openid-configuration",
         "OIDC_ALLOWED_GROUPS": "modpack-admins",
         "OIDC_OPERATOR_GROUPS": "modpack-operators",
-        "JOBS_WORKER": "off",
+        # On: builds, imports and the catalog are jobs (spec 2026-10-09-economia-de-requests). The seeded
+        # jobs are kept out of its reach (a live lease, a later availability).
+        "JOBS_WORKER": "on",
     }
 
 
@@ -329,9 +331,12 @@ async def seed(mongo_uri: str) -> dict[str, str]:
                                                               "stop", "backup update-x"]}}),
         Job(kind="server_scan", key=f"server:{servers[2].id}",
             payload={"server_id": str(servers[2].id), "full": False}, status="running", active=True, step="scan",
-            created_at=now - timedelta(minutes=1), requested_by=EDDIE),
+            created_at=now - timedelta(minutes=1), requested_by=EDDIE,
+            # The sweep's worker runs (the build is a job): a live lease keeps it from taking this one.
+            owner="seed", lease_until=now + timedelta(days=1)),
         Job(kind="server_scan", key=f"server:{servers[0].id}-queued", payload={"server_id": survival}, status="queued",
-            active=True, created_at=now - timedelta(seconds=20), requested_by=EDDIE),
+            active=True, created_at=now - timedelta(seconds=20), requested_by=EDDIE,
+            available_at=now + timedelta(days=1)),  # shown queued, never taken by the sweep's worker
         failed,
         Job(kind="server_scan", key=None, payload={"server_id": survival}, status="done", active=False,
             created_at=now - timedelta(days=1), finished_at=now - timedelta(days=1)),

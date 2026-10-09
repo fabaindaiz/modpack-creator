@@ -34,6 +34,8 @@ RESOLVE_ROUNDS = 32
 CATALOG_WINDOW = timedelta(minutes=5)
 # How often the manual "Actualizar desde Modrinth" may run for one pack (E3).
 MANUAL_REFRESH_EVERY = timedelta(minutes=1)
+# How long what Modrinth lacks (an unknown project, a removed version) is taken as lacking.
+LACKS_RECHECK = timedelta(hours=24)
 # How long after its build job ended a blocked build still opens the dialog.
 BLOCKED_BUILD_RECENT = timedelta(minutes=1)
 # How many ids go in one Modrinth request.
@@ -911,10 +913,14 @@ class ModpackService():
         wanted_types = sorted(lock.needs_projects | lock.needs_types)
         if wanted_types:
             stored = {p.project_id: p for p in await self.modrinthDB.project_find_by_modrinth_id(wanted_types)}
-            missing = [i for i in wanted_types if i not in stored]
+            since = self.clock() - LACKS_RECHECK
+            unknown = await self.modrinthDB.unknown_find([i for i in wanted_types if i not in stored], since)
+            missing = [i for i in wanted_types if i not in stored and i not in unknown]
             if missing and local_only:
                 raise _NeedsModrinth()
             fetched = {p.project_id: p for p in await self._projects_fetch(missing)} if missing else {}
+            # What Modrinth does not know is remembered: a day without asking again (F6).
+            await self.modrinthDB.unknown_add([i for i in missing if i not in fetched], self.clock())
             for project_id in wanted_types:
                 found = fetched.get(project_id) or stored.get(project_id)
                 catalog.types[project_id] = found.project_type.value if found else "unknown"
@@ -949,7 +955,9 @@ class ModpackService():
         if lock.needs_versions:
             asked = sorted(lock.needs_versions)
             stored_versions = await self.modrinthDB.version_find_by_version_ids(asked)
-            missing_ids = sorted(set(asked) - {v.version_id for v in stored_versions})
+            gone = await self.modrinthDB.gone_find(asked, self.clock() - LACKS_RECHECK)
+            catalog.gone |= gone
+            missing_ids = sorted(set(asked) - {v.version_id for v in stored_versions} - gone)
             if missing_ids and local_only:
                 raise _NeedsModrinth()
             fetched_versions: list[ModrinthVersion] = []
@@ -957,7 +965,9 @@ class ModpackService():
                 fetched_versions += list(await self.modrinthAPI.version_get_many(chunk))
             if fetched_versions:
                 await self.modrinthDB.version_upsert_many(fetched_versions)
-            catalog.gone |= set(missing_ids) - {v.version_id for v in fetched_versions}
+            not_returned = set(missing_ids) - {v.version_id for v in fetched_versions}
+            catalog.gone |= not_returned
+            await self.modrinthDB.gone_add(sorted(not_returned), self.clock())
             for version in [*stored_versions, *fetched_versions]:
                 catalog.add(candidate(version))
 

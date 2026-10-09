@@ -11,6 +11,7 @@ from src.model.modrinth import (
     ModrinthVersion,
     ModrinthVersionList,
     ModrinthUnknown,
+    ModrinthGone,
     ModrinthSearch,
 )
 from src.exceptions import *
@@ -183,6 +184,19 @@ class ModrinthDatabase():
     async def search_save(self, key: str, hits: list[dict[str, Any]], when: datetime) -> None:
         await ModrinthSearch.get_pymongo_collection().update_one(
             {"key": key}, {"$set": {"hits": hits, "at": when}}, upsert=True)
+
+    async def gone_find(self, version_ids: list[str], since: datetime) -> set[str]:
+        """The version ids among these Modrinth did not return at or after `since`."""
+        if not version_ids:
+            return set()
+        found = await ModrinthGone.find(In(ModrinthGone.version_id, version_ids), ModrinthGone.checked_at >= since).to_list()
+        return {g.version_id for g in found}
+
+    async def gone_add(self, version_ids: list[str], when: datetime) -> None:
+        """Remember that Modrinth did not return these version ids at `when`."""
+        collection = ModrinthGone.get_pymongo_collection()
+        for version_id in version_ids:
+            await collection.update_one({"version_id": version_id}, {"$set": {"checked_at": when}}, upsert=True)
 
     async def unknown_find(self, project_ids: list[str], since: datetime) -> set[str]:
         """The ids among these Modrinth did not know at or after `since`."""

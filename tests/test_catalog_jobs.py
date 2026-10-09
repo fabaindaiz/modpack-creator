@@ -166,3 +166,23 @@ def test_a_build_of_a_pack_the_catalog_lacks_is_one_click_its_job_brings_what_is
 
     kind, outcome, blocked = mongo(scenario)
     assert kind == "build_create" and outcome["blocked"] is True and blocked is True  # every mod is "Por decidir"
+
+
+def test_what_modrinth_lacks_is_remembered_so_the_panel_resolves_without_it(mongo: MongoRunner) -> None:
+    # Seen in the visual sweep (2026-10-09): a pin to a version Modrinth no longer has, or a project
+    # it does not know, was asked again by every resolve, so the panel never resolved from the
+    # catalog (CatalogPending forever) and the build dialog answered 409.
+    from src.database.modpack import ModpackDatabase
+    from src.model.modpack import PackProject, ProjectOrigin
+
+    async def scenario() -> tuple[Any, ...]:
+        service, api, clock, bundle_id = await setup()
+        await ModpackDatabase().bundle_projects_add(bundle_id, [PackProject(project_id="NOPE", origin=ProjectOrigin.admin)])
+        await ModpackDatabase().bundle_pin_set(bundle_id, "BBBB", "gone-version")
+        await service.resolve_fetching(bundle_id)
+        api.calls.clear()
+        lock = await service.resolve(bundle_id, EDITOR)
+        return sorted(p.kind for p in lock.problems), api.calls
+
+    kinds, calls = mongo(scenario)
+    assert kinds == ["unresolvable", "unresolvable"] and calls == []
