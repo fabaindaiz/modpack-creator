@@ -40,6 +40,10 @@ class JobDatabase():
         return await Job.find({"active": True, "requested_by.iss": iss, "requested_by.sub": sub}
                               ).sort(("created_at", SortDirection.ASCENDING)).to_list()
 
+    async def last_for_key(self, key: str) -> Optional[Job]:
+        """The newest job of this key, active or not."""
+        return await Job.find(Job.key == key).sort([("created_at", SortDirection.DESCENDING), ("_id", SortDirection.DESCENDING)]).first_or_none()
+
     async def active_for(self, key: str) -> Optional[Job]:
         """The active job holding this key, if any."""
         return await Job.find_one(Job.key == key, Job.active == True)  # noqa: E712

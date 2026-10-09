@@ -5,7 +5,7 @@ doble anota qué recibió, para afirmar que toda mutación lleva el `actor` de l
 """
 import asyncio
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import pytest
@@ -102,6 +102,7 @@ class FakeModpack:
         self.error: Optional[Exception] = None
         # The pack's active jobs, for its banner (spec 2026-10-09-economia-de-requests).
         self.jobs: list[Any] = []
+        self.build_blocked_now = False
         # What mod_list answers: `rows` as given, or one row per project of the bundle (with the
         # side and pin it has) and per entry of the saved resolution that is not in it.
         self.titles: dict[str, str] = {"P1": "Sodium", "P2": "Lithium"}
@@ -223,6 +224,15 @@ class FakeModpack:
         if self.blocked is not None:
             raise self.blocked
         return self.builds[0]
+
+    async def build_request(self, bundle_id: str, actor: Actor) -> Any:
+        self._record("build_request", bundle_id, actor)
+        if self.blocked is not None:
+            raise self.blocked
+        return None
+
+    async def last_build_blocked(self, bundle_id: str) -> bool:
+        return self.build_blocked_now
 
     async def resolution(self, bundle_id: str) -> Optional[tuple[ModpackResolution, bool]]:
         return (self.saved, self.stale) if self.saved else None
@@ -645,11 +655,15 @@ def test_builds_list_marks_the_recommended_one() -> None:
     assert f'hx-post="/modpacks/{BUNDLE_ID}/builds/2/recommend"' in text
 
 
-def test_create_build_returns_the_builds_with_the_actor() -> None:
+def test_create_build_queues_its_job_with_the_actor_and_says_so() -> None:
+    # Spec 2026-10-09-economia-de-requests (E9): the build is a job; the banner shows it.
     client, modpack, _ = setup()
     response = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX)
-    assert response.status_code == 200 and 'id="builds"' in response.text
-    assert call(modpack, "build_create")[1:] == (str(BUNDLE_ID), EDITOR)
+    assert response.status_code == 200 and response.headers["HX-Trigger"] == "job-started"
+    assert "Creando el build: revisando cambios en Modrinth" in response.text
+    # Whatever was in the dialog (it may come from it) is emptied, so it closes.
+    assert response.headers["HX-Retarget"] == "#build-dialog" and response.headers["HX-Reswap"] == "innerHTML"
+    assert call(modpack, "build_request")[1:] == (str(BUNDLE_ID), EDITOR)
 
 
 def test_build_conflict_shows_reason_as_notice() -> None:
@@ -678,7 +692,7 @@ def test_blocked_by_undecided_answers_a_dialog_with_titles() -> None:
     assert "data-dialog-close" in text
     assert '<option value="" selected>Por decidir</option>' in text and '<option value="no">Desactivado</option>' in text
     assert f'hx-post="/modpacks/{BUNDLE_ID}/builds"' in text
-    assert [c[0] for c in modpack.calls] == ["build_create"]
+    assert [c[0] for c in modpack.calls] == ["build_request"]
 
 
 def test_detail_has_the_dialog_container() -> None:
@@ -689,8 +703,9 @@ def test_detail_has_the_dialog_container() -> None:
 def test_dialog_submit_saves_decisions_then_builds() -> None:
     client, modpack, _ = setup()
     response = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX, data={"decision.P2": "si", "decision.P3": ""})
-    assert response.status_code == 200 and 'id="builds"' in response.text and "HX-Retarget" not in response.headers
-    assert [c[0] for c in modpack.calls] == ["decisions_set", "build_create"]
+    assert response.status_code == 200 and response.headers["HX-Trigger"] == "job-started"
+    assert response.headers["HX-Retarget"] == "#build-dialog" and "<dialog" not in response.text
+    assert [c[0] for c in modpack.calls] == ["decisions_set", "build_request"]
     assert call(modpack, "decisions_set")[1:] == (str(BUNDLE_ID), {"P2": True}, EDITOR)
 
 
@@ -779,7 +794,7 @@ def test_blocked_by_a_problem_and_a_pending_mod_opens_the_dialog_with_both() -> 
     assert text.index('data-problem="P2"') < text.index('name="decision.P3"')
     assert "Iris" in text and "Decidir y crear build" in text and "P2:" not in text
     assert_no_nested_forms(text)
-    assert [c[0] for c in modpack.calls] == ["build_create"]
+    assert [c[0] for c in modpack.calls] == ["build_request"]
 
 
 def test_blocked_by_problems_only_opens_the_dialog_with_their_actions() -> None:
@@ -844,7 +859,7 @@ def test_with_nothing_left_the_dialog_says_todo_resuelto_and_offers_crear_build(
     create = create[:create.index("</form>")]
     assert 'hx-target="#builds"' in create and 'hx-swap="outerHTML"' in create and ">Crear build<" in create
     assert 'name="dialog"' not in create and "Decidir y crear build" not in text
-    assert "build_create" not in [c[0] for c in modpack.calls]
+    assert "build_request" not in [c[0] for c in modpack.calls]
 
 
 def dialog_part(text: str) -> str:
@@ -980,11 +995,14 @@ def test_the_page_does_not_highlight_crear_build_by_itself() -> None:
 
 def test_a_new_build_offers_simulating_on_linked_servers() -> None:
     client, modpack, _, _, ptero = setup_all()
-    ptero.servers = [PterodactylServer.model_construct(id="srv1", name="Survival", bundle_id=str(BUNDLE_ID)),
-                     PterodactylServer.model_construct(id="srv2", name="Otro", bundle_id="x")]
-    text = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX).text
-    assert 'id="notices" hx-swap-oob="beforeend"' in text and "Build 2 creado" in text
+    ptero.servers = [PterodactylServer.model_construct(id="srv1", name="Survival", bundle_id=str(BUNDLE_ID),
+                                                       is_suspended=False, status=None),
+                     PterodactylServer.model_construct(id="srv2", name="Otro", bundle_id="x", is_suspended=False, status=None)]
+    modpack.builds[0].created_at = datetime.now(timezone.utc) - timedelta(seconds=20)  # its job just made it
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
     assert "Simular en Survival" in text and 'href="/servers/srv1#actualizar"' in text and "Otro" not in text
+    modpack.builds[0].created_at = datetime.now(timezone.utc) - timedelta(minutes=10)
+    assert "Simular en Survival" not in client.get(f"/modpacks/{BUNDLE_ID}").text
 
 
 def test_recommend_build_with_the_actor() -> None:
@@ -2200,3 +2218,19 @@ def test_a_user_without_quota_reads_how_long_to_wait_and_nothing_else() -> None:
     response = client.get(f"/modpacks/{BUNDLE_ID}/search", params={"q": "sodium"}, headers=HTMX)
     shown = " ".join(visible(response.text).split())
     assert "Demasiadas consultas a Modrinth: intenta en 30 s" in shown and "no responde" not in shown
+
+
+
+def test_when_a_build_job_its_check_blocked_ends_the_dialog_opens() -> None:
+    client, modpack, _ = setup()
+    modpack.build_blocked_now = True
+    ended = client.get(f"/modpacks/{BUNDLE_ID}/trabajo?activo=1", headers=HTMX)
+    assert ended.headers["HX-Trigger"] == "job-finished, build-blocked"
+    page = client.get(f"/modpacks/{BUNDLE_ID}").text
+    container = page[page.index('<div id="build-dialog"'):]
+    container = container[:container.index(">")]
+    assert f'hx-get="/modpacks/{BUNDLE_ID}/builds/dialogo"' in container and "build-blocked from:body" in container
+    assert page.index('id="build-dialog"') < page.index('id="pack-main"')  # outside the part that reloads
+    modpack.lock = lock(entry("P2", "admin"))
+    dialog = client.get(f"/modpacks/{BUNDLE_ID}/builds/dialogo", headers=HTMX)
+    assert "<dialog" in dialog.text and 'name="decision.P2"' in dialog.text

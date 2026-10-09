@@ -56,6 +56,10 @@ class FakeModpack:
     async def build_find(self, bundle_id: str) -> list[ModpackBuild]:
         return []
 
+    async def build_request(self, bundle_id: str, actor: Actor) -> Any:
+        self.calls.append(("build_request", bundle_id, actor))
+        return None
+
     async def build_create(self, bundle_id: str, actor: Actor) -> ModpackBuild:
         self.calls.append(("build_create", bundle_id, actor))
         return ModpackBuild.model_construct(id=PydanticObjectId(), bundle_id=BUNDLE_ID, number=3, created_at=T0)
@@ -250,11 +254,11 @@ def test_a_busy_modpack_is_a_readable_conflict_notice() -> None:
     assert response.status_code == 409 and "Ya hay una revisión en curso para este modpack" in response.text
 
 
-def test_create_build_calls_build_create_with_the_actor_and_goes_to_the_builds() -> None:
+def test_create_build_queues_the_build_job_with_the_actor_and_goes_to_the_builds() -> None:
     client, modpack, _ = setup()
     response = client.post(f"/modpacks/{BUNDLE_ID}/actualizaciones/build", headers=HTMX)
     assert response.status_code == 200 and response.headers["HX-Redirect"] == f"/modpacks/{BUNDLE_ID}#builds-section"
-    assert modpack.calls == [("build_create", str(BUNDLE_ID), EDITOR)]
+    assert modpack.calls == [("build_request", str(BUNDLE_ID), EDITOR)]
     plain = client.post(f"/modpacks/{BUNDLE_ID}/actualizaciones/build", headers=SAME_ORIGIN)
     assert plain.status_code == 303 and plain.headers["location"] == f"/modpacks/{BUNDLE_ID}#builds-section"
 
@@ -265,7 +269,7 @@ def test_create_build_with_a_conflict_is_a_notice() -> None:
     async def refuse(bundle_id: str, actor: Actor) -> Any:
         raise HTTP_409_CONFLICT("Hay mods sin decidir")
 
-    modpack.build_create = refuse  # type: ignore[method-assign]
+    modpack.build_request = refuse  # type: ignore[method-assign]
     response = client.post(f"/modpacks/{BUNDLE_ID}/actualizaciones/build", headers=HTMX)
     assert response.status_code == 409 and "Hay mods sin decidir" in response.text
 

@@ -12,6 +12,8 @@
 {% if bundle.description %}<p class="max-w-3xl text-sm break-words text-zinc-600 dark:text-zinc-400">{{ bundle.description }}</p>{% endif %}
 {# The pack's jobs while they run (E8); the page below reloads when one starts or the last one ends. #}
 <div id="job-banner" hx-get="/modpacks/{{ bundle_id }}/trabajo" hx-trigger="load, job-started from:body" hx-swap="innerHTML"></div>
+{# The build dialog, outside the part that reloads: a build job its check blocked opens it (E9). #}
+<div id="build-dialog" hx-get="/modpacks/{{ bundle_id }}/builds/dialogo" hx-trigger="build-blocked from:body" hx-swap="innerHTML" hx-disinherit="*"></div>
 <div id="pack-main" hx-get="/modpacks/{{ bundle_id }}" hx-select="#pack-main" hx-trigger="job-finished from:body, job-started from:body" hx-swap="outerHTML" hx-disinherit="*">
 
 {# Mods wide on the left and a side column (spec §5); below xl, one column in the same order. #}
@@ -42,7 +44,6 @@
   <div class="min-w-0 space-y-6">
     {% call ui.section("Builds", id="builds-section") %}
     {% include "modpacks/_builds.html" %}
-    <div id="build-dialog"></div>
     {% endcall %}
 
     {% if servers %}

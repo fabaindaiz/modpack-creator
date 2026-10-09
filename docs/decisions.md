@@ -82,6 +82,7 @@ los dos, o una fila mal formada, hace fallar el test. El nombre del método no s
 | `ModpackService.channel_exception_set` | editor | Deja que un mod del bundle, o una dependencia que nombra su última resolución, acepte beta o alpha mientras ninguna versión suya quepa en los canales del pack. |
 | `ModpackService.channel_exception_unset` | editor | Quita la excepción de canal de un mod. |
 | `ModpackService.catalog_refresh` | editor | «Actualizar desde Modrinth»: deja el trabajo de catálogo del pack (o muestra el que corre), una vez por minuto por pack. |
+| `ModpackService.build_request` | editor | «Crear build» en el panel: rechaza al instante un pack bloqueado (resuelto desde el catálogo) o deja el trabajo de build, que revisa Modrinth, resuelve y congela. |
 | `ModpackService.project_add` | editor | Agrega mods al bundle. |
 | `ModpackService.pack_replace` | editor | Reemplaza la lista de mods del bundle. |
 | `ModpackImportService.import_mrpack` | editor | Importa un .mrpack subido: crea un pack o reemplaza el contenido de uno (lo que agregó el admin se queda). |

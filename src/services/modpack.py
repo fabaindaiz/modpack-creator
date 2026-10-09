@@ -12,7 +12,7 @@ from src.library.api.client.loaders import LoaderMetaAPI
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.changes import ChangeSet, diff_entries
 from src.library.mrpack import mrpack_index, write_mrpack
-from src.services.jobs import Handler, JobContext, NotificationSink
+from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink
 from src.database.jobs import JobDatabase
 from src.model.jobs import Job
 from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, request_digest, resolve
@@ -34,6 +34,8 @@ RESOLVE_ROUNDS = 32
 CATALOG_WINDOW = timedelta(minutes=5)
 # How often the manual "Actualizar desde Modrinth" may run for one pack (E3).
 MANUAL_REFRESH_EVERY = timedelta(minutes=1)
+# How long after its build job ended a blocked build still opens the dialog.
+BLOCKED_BUILD_RECENT = timedelta(minutes=1)
 # How many ids go in one Modrinth request.
 ID_CHUNK = 100
 # What a Modrinth project id looks like; anything else is not a key to store.
@@ -49,6 +51,18 @@ Report = Callable[[str, int, int], Awaitable[None]]
 
 class _NeedsModrinth(Exception):
     """Resolving from the catalog alone is not enough: something must come from Modrinth."""
+
+
+def _refuse_blocked(lock: Lock) -> None:
+    """BuildBlocked if the lock is not complete, has problems, or has mods whose place on the server
+    waits for the admin: a build is something that can be deployed as it is."""
+    if not lock.complete or lock.problems or lock.undecided:
+        reasons = [p.detail for p in lock.problems]
+        reasons += [f"{e.project_id}: falta decidir si va en el servidor" for e in lock.undecided]
+        if not lock.complete:
+            reasons.append("la resolución no terminó")
+        raise BuildBlocked("No se puede congelar este lock: " + "; ".join(reasons), lock,
+                           only_undecided=lock.complete and not lock.problems and bool(lock.undecided))
 
 
 def _catalog_key(bundle_id: str) -> str:
@@ -797,7 +811,7 @@ class ModpackService():
         return await self.jobDB.active_for_keys([_catalog_key(bundle_id), f"build:{bundle_id}", f"bundle:{bundle_id}"])
 
     def handlers(self) -> dict[str, Handler]:
-        return {"catalog_refresh": self._catalog_run}
+        return {"catalog_refresh": self._catalog_run, "build_create": self._build_run}
 
     async def _catalog_run(self, job: Job, context: JobContext) -> None:
         bundle_id = job.payload["bundle_id"]
@@ -987,7 +1001,54 @@ class ModpackService():
 
     # Builds (i-7985ee-098611).
 
-    async def build_create(self, bundle_id: str, actor: Actor) -> ModpackBuild:
+    async def build_request(self, bundle_id: str, actor: Actor) -> Job:
+        """
+        "Crear build" in the panel (E9): resolved from the catalog first, with no request, a pack
+        that cannot be built is refused at once (BuildBlocked, as build_create). Otherwise the build
+        job: it checks Modrinth, resolves and freezes (build_create). Asking again while it is queued
+        or running gives that job.
+        """
+        lock = await self.resolve(bundle_id, actor)
+        _refuse_blocked(lock)
+        key = f"build:{bundle_id}"
+        try:
+            job = await self.jobDB.enqueue("build_create", key=key, payload={"bundle_id": bundle_id},
+                                           requested_by=actor.ref())
+        except HTTP_409_CONFLICT:
+            active = await self.jobDB.active_for(key)
+            if active is None:
+                raise
+            return active
+        await self.audit.record(actor, "build.request", _bundle(bundle_id), {"job_id": str(job.id)})
+        return job
+
+    async def last_build_blocked(self, bundle_id: str) -> bool:
+        """Whether the pack's last build job ended just now without a build, blocked by what its check found."""
+        last = await self.jobDB.last_for_key(f"build:{bundle_id}")
+        if last is None or last.active or last.finished_at is None:
+            return False
+        finished = last.finished_at if last.finished_at.tzinfo else last.finished_at.replace(tzinfo=timezone.utc)
+        # Only just now: an old blocked build does not reopen the dialog when another job ends.
+        return self.clock() - finished <= BLOCKED_BUILD_RECENT and bool(last.checkpoint.get("build", {}).get("blocked"))
+
+    async def _build_run(self, job: Job, context: JobContext) -> None:
+        bundle_id = job.payload["bundle_id"]
+        asked = job.requested_by
+        if asked is None:
+            raise JobFailed("Un build sin quién lo pidió no se crea: no quedaría en la auditoría")
+        # Who asked, for the audit: the identity is iss + sub; a build needs no operator role.
+        actor = Actor(iss=asked.iss, sub=asked.sub, name=asked.name, groups=frozenset(), is_operator=False)
+
+        async def run() -> dict[str, Any]:
+            try:
+                build = await self.build_create(bundle_id, actor, report=context.progress)
+            except BuildBlocked as blocked:
+                return {"blocked": True, "problems": len(blocked.lock.problems), "undecided": len(blocked.lock.undecided)}
+            return {"number": build.number}
+
+        await context.step("build", run)
+
+    async def build_create(self, bundle_id: str, actor: Actor, report: Optional[Report] = None) -> ModpackBuild:
         """
         Resolve the bundle and freeze the lock as its next build; latest moves to it.
 
@@ -998,15 +1059,11 @@ class ModpackService():
         """
         bundle = await self.modpackDB.bundle_get(bundle_id)
         request = await self._request(bundle)
-        lock = await self._resolve_checked(bundle, request, check=True)
+        lock = await self._resolve_checked(bundle, request, check=True, report=report)
         await self._resolution_save(bundle, request, lock)
-        if not lock.complete or lock.problems or lock.undecided:
-            reasons = [p.detail for p in lock.problems]
-            reasons += [f"{e.project_id}: falta decidir si va en el servidor" for e in lock.undecided]
-            if not lock.complete:
-                reasons.append("la resolución no terminó")
-            raise BuildBlocked("No se puede congelar este lock: " + "; ".join(reasons), lock,
-                               only_undecided=lock.complete and not lock.problems and bool(lock.undecided))
+        _refuse_blocked(lock)
+        if report is not None:
+            await report("Congelando el build", 1, 1)
         loader_version = bundle.loader_version or await self.loaderAPI.loader_version(
             str(bundle.loader.value), bundle.version)
         builds = await self.modpackDB.build_find(bundle_id)

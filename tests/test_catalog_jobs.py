@@ -96,3 +96,59 @@ def test_the_manual_refresh_checks_now_once_a_minute_and_shows_the_running_one(m
     assert "Se puede volver a actualizar en 30 s" in str(detail)
     assert ("project_get_many", ("AAAA", "BBBB", "LIBB")) in calls  # inside the window, it checked
     assert events.count("bundle.catalog_refresh") == 2
+
+
+# El build como trabajo (E2, E9): bloqueado en lo local, se dice al instante; si no, un trabajo
+# revisa cambios en Modrinth, resuelve y congela, y dice cómo terminó.
+
+
+def test_a_build_blocked_locally_is_refused_at_once_without_a_job(mongo: MongoRunner) -> None:
+    from src.exceptions import BuildBlocked
+
+    async def scenario() -> tuple[Any, Any]:
+        service, api, clock, bundle_id = await setup()
+        await service.resolve_fetching(bundle_id)
+        api.calls.clear()
+        with pytest.raises(BuildBlocked) as blocked:
+            await service.build_request(bundle_id, EDITOR)  # nothing decided: every mod is "Por decidir"
+        return blocked.value.only_undecided, (api.calls, await Job.find().to_list())
+
+    only_undecided, (calls, jobs) = mongo(scenario)
+    assert only_undecided is True and calls == [] and jobs == []
+
+
+def test_a_buildable_pack_leaves_one_build_job_that_checks_and_freezes(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Any, ...]:
+        service, api, clock, bundle_id = await setup()
+        service.audit = audit = RecordingAudit()
+        await service.resolve_fetching(bundle_id)
+        await service.decisions_set(bundle_id, {"AAAA": True, "BBBB": True, "LIBB": True}, EDITOR)
+        first = await service.build_request(bundle_id, EDITOR)
+        again = await service.build_request(bundle_id, EDITOR)
+        api.calls.clear()
+        await run_jobs(service)
+        done = await JobDatabase().get(str(first.id))
+        bundle = await service.bundle_get(bundle_id)
+        return first, again, done, bundle.latest_build, [c[0] for c in api.calls], [e[0] for e in audit.events]
+
+    first, again, done, latest, calls, events = mongo(scenario)
+    assert first.id == again.id and (first.kind, first.key) == ("build_create", f"build:{first.payload['bundle_id']}")
+    assert done.status == "done" and done.checkpoint["build"] == {"number": 1} and latest == 1
+    assert calls == ["project_get_many"]  # the build's check: one batched request, nothing new
+    assert "build.request" in events and "build.create" in events
+
+
+def test_a_build_blocked_by_what_the_check_found_ends_saying_so(mongo: MongoRunner) -> None:
+    from tests.test_catalog_freshness import version
+
+    async def scenario() -> Any:
+        service, api, clock, bundle_id = await setup()
+        await service.resolve_fetching(bundle_id)
+        await service.decisions_set(bundle_id, {"AAAA": True, "BBBB": True, "LIBB": True}, EDITOR)
+        job = await service.build_request(bundle_id, EDITOR)
+        api.versions["b2"] = version("b2", "BBBB", 5, deps=["NEWDEP"])  # a new dependency Modrinth lacks
+        await run_jobs(service)
+        return (await JobDatabase().get(str(job.id))).checkpoint["build"], await service.last_build_blocked(bundle_id)
+
+    outcome, blocked = mongo(scenario)
+    assert outcome["blocked"] is True and outcome["problems"] >= 1 and blocked is True

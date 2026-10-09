@@ -1,5 +1,6 @@
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Optional
 from urllib.parse import urlsplit
@@ -19,6 +20,15 @@ from src.web import BUNDLE_REF, JOB_STARTED, MODRINTH_REF, WebRoute, get_web_act
 logger = logging.getLogger("modpack.web")
 # The event a pack hears when its last job ended: it reloads.
 JOB_FINISHED = "job-finished"
+# And when that job was a build its check blocked: the build dialog opens.
+BUILD_BLOCKED = "build-blocked"
+BUILD_QUEUED = "Creando el build: revisando cambios en Modrinth"
+# How long after it is made a build offers to simulate it on the linked servers.
+FRESH_BUILD = timedelta(minutes=2)
+
+
+def _aware(value: datetime) -> datetime:
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
 
@@ -384,9 +394,11 @@ async def modpack_detail(
     linked = str(context["bundle"].id)
     servers = [s for s in await pterodactylService.server_find() if s.bundle_id == linked]
     saved = context["mods"].resolution
+    # A build made a moment ago (by its job, E9) offers to simulate it on the linked servers.
+    fresh = bool(builds) and _aware(builds[0].created_at) > datetime.now(timezone.utc) - FRESH_BUILD
     return render(request, "modpacks/detail.html", actor, builds=builds, servers=servers, channel_names=CHANNELS,
                   pending=_has_pending((saved, context["mods"].stale) if saved else None),
-                  human_size=human_size, nav_active="modpacks", **context)
+                  next_servers=servers if fresh else None, human_size=human_size, nav_active="modpacks", **context)
 
 @router.get("/modpacks/{bundle_id}/search")
 @inject
@@ -544,7 +556,9 @@ async def pack_jobs(
     jobs = await modpackService.active_jobs(bundle_id)
     response = render(request, "modpacks/_job_banner.html", actor, jobs=jobs, bundle_id=bundle_id)
     if activo and not jobs:
-        response.headers["HX-Trigger"] = JOB_FINISHED
+        # A build its check blocked opens the dialog (E9), outside the part that reloads.
+        blocked = await modpackService.last_build_blocked(bundle_id)
+        response.headers["HX-Trigger"] = f"{JOB_FINISHED}, {BUILD_BLOCKED}" if blocked else JOB_FINISHED
     return response
 
 @router.post("/modpacks/{bundle_id}/catalogo")
@@ -666,16 +680,33 @@ async def build_create(
     try:
         if decisions:
             await modpackService.decisions_set(bundle_id, decisions, actor)
-        build = await modpackService.build_create(bundle_id, actor)
+        await modpackService.build_request(bundle_id, actor)
     except BuildBlocked as blocked:
         nothing_decided = from_dialog and not decisions and blocked.only_undecided
         return await _build_dialog(request, actor, modpackService, modrinthService, bundle_id, blocked.lock,
                                    reason=NOTHING_DECIDED if nothing_decided else None,
                                    explain=from_dialog or bool(decisions))
-    linked = str((await modpackService.bundle_get(bundle_id)).id)
-    servers = [s for s in await pterodactylService.server_find() if s.bundle_id == linked]
-    return await _builds(request, actor, modpackService, bundle_id, success=f"Build {build.number} creado",
-                         next_servers=servers)
+    # The build is a job now (E9): the banner shows it and the page reloads when it ends. The
+    # dialog, if this came from it, closes: its content is emptied.
+    response = render(request, "_notice_oob.html", actor, message=BUILD_QUEUED)
+    response.headers["HX-Trigger"] = JOB_STARTED
+    response.headers["HX-Retarget"] = "#build-dialog"
+    response.headers["HX-Reswap"] = "innerHTML"
+    return response
+
+@router.get("/modpacks/{bundle_id}/builds/dialogo")
+@inject
+async def build_dialog(
+        bundle_id: str,
+        request: Request,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
+        ):
+    """The build dialog after a build job that its check blocked (E9): from the pack resolved from the
+    catalog, with why."""
+    lock = await modpackService.resolve(bundle_id, actor)
+    return await _build_dialog(request, actor, modpackService, modrinthService, bundle_id, lock, explain=True)
 
 def _builds_page(request: Request, bundle_id: str) -> Response:
     """Go to the builds of the modpack: htmx cannot follow a redirect to a page, it is told where to go."""
@@ -732,7 +763,7 @@ async def update_build(
         ):
     """Create a build with the same call as the builds section: it resolves again, so the result may
     differ from the check (pins, replacements). It does not recommend it nor deploy it."""
-    await modpackService.build_create(bundle_id, actor)
+    await modpackService.build_request(bundle_id, actor)
     return _builds_page(request, bundle_id)
 
 @router.post("/modpacks/{bundle_id}/builds/{number}/recommend")
