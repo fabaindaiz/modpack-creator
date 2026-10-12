@@ -2,7 +2,7 @@
 
 No es una lista de enlaces: cada entrada dice qué aporta **a este proyecto**, y cuando contradice
 algo ya decidido, lo dice. Una fuente entra cuando cambió o confirmó una decisión, no por estar
-bien escrita. Todas se leyeron en la fuente primaria el 2026-10-01.
+bien escrita. Cada entrada dice cuándo se leyó; las que no lo dicen, el 2026-10-01.
 
 ## Las APIs externas
 
@@ -206,9 +206,20 @@ bien escrita. Todas se leyeron en la fuente primaria el 2026-10-01.
   **Lo que confirma:** para sincronizar un servidor en marcha, packwiz encaja mejor que `.mrpack`.
 
 - **[CurseForge — fingerprints](https://docs.curseforge.com/rest-api/)** — `POST /v1/fingerprints`
-  usa murmur2 y exige una API key aprobada. Solo importa si aparecen mods que no están en Modrinth.
+  usa murmur2 y sirve para identificar jars sueltos. **No se usa:** la importación de CurseForge
+  pasa los `fileID` del manifiesto a sha1 con `POST /v1/mods/files` (ver «CurseForge Core API»).
 
 ## Investigaciones completas
+
+- `research/2026-10-09-api-modrinth-detalle.md`: `update_individual`, `GET /versions?ids=` con
+  changelog, el límite GCRA y sus cabeceras (M1–M6, d-7985ee-6dc34c).
+- `research/2026-10-09-curseforge-prism-y-deuda-panel.md`: la clave de CurseForge, `files` → sha1,
+  el zip de Prism (T5, T6).
+- `research/2026-10-09-auditoria-requests.md`: cuántas requests hace cada acción (d-7985ee-a6a410,
+  d-7985ee-cfc81f).
+- `research/2026-10-09-importar-modpacks.md`: formatos y códigos para compartir (d-7985ee-ec808c).
+- `research/2026-10-12-construccion-de-modpacks.md` y `research/2026-10-12-minecraft-y-sus-jugadores.md`:
+  contexto del caso de uso; nunca bajar un mod (d-7985ee-6dc34c), proteger mundos (i-7985ee-e87afa).
 
 Las fuentes de estos informes no se repiten aquí: cada uno cita las suyas y dice qué cambió.
 

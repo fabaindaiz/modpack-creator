@@ -8,6 +8,11 @@ este archivo en el mismo cambio que lo termina. Los ids se acuñan con
 
 ## Dónde estamos
 
+**2026-10-12, rama `feat/pendientes-t1` (sin mergear ni empujar):** T1, T4 con la regla de no
+retroceder (d-7985ee-6dc34c), T3, T7, T6 (Prism) con el tope de disco temporal y T5 (CurseForge con
+clave), y los arreglos de su revisión. Falta T8 (espera O1). Ver i-7985ee-805517 y
+`.claude/logs/agent-changelog.md` (s-7985ee-6f74e1). Hasta 0.2.0, todo en `main`.
+
 Al cierre de la sesión de usabilidad del panel (2026-10-04 y 2026-10-05; detalle en
 `.claude/logs/agent-changelog.md`, s-7985ee-aaa17f, y las entradas de abajo). **Todo está en
 `main` y empujado a `origin`; nada está desplegado.** `.env.default` ya trae
@@ -753,14 +758,17 @@ JSON con `request_id` y `job_id`.
   - móvil: navegación compacta y tablas como tarjetas;
   - selectores de la versión de Minecraft y del loader al crear un pack (F09; investigado:
     `docs/research/2026-10-05-versiones-mc-y-loaders.md`);
-  - advertir bajas de versión (F27; investigado: `docs/research/2026-10-05-bajas-de-version.md`);
+  - advertir bajas de versión (F27; investigado: `docs/research/2026-10-05-bajas-de-version.md`):
+    desde d-7985ee-6dc34c solo un pin baja un mod; falta advertir ese caso y la baja de un mod con
+    datos en el mundo (i-7985ee-e87afa);
   - el diálogo de actualización directa que advierte lo que la simulación encontraría (F28);
   - enlazar URLs en changelogs (F29);
   - ~~repetir el recorrido con Modrinth real y medir de nuevo la tarea de F36~~: hecho el 2026-10-04 (ronda 2 del documento de hallazgos: de ~25 acciones a 11, de 6 cambios de página a 3);
   - llevar al repositorio el arnés de la instancia de exploración (simulador de Pterodactyl con jars reales y los guiones de Playwright): hoy vive solo en el scratchpad de una sesión y se rehízo a mano; es la decisión pendiente del dueño sobre un comando del repositorio que reemplace los guiones sueltos;
   - desplegar: antes, el dueño revoca la key `ptla_` de la prueba local, crea el grupo de operadores en authentik y hace un login real de editor y de operador.
 - **Pendientes menores que dejó la revisión de la ronda 1** (cada uno visto, ninguno bloquea):
-  - un proyecto sin ícono en Modrinth (o que Modrinth no conoce) se vuelve a pedir en cada vista de
+  - ~~un proyecto sin ícono en Modrinth (o que Modrinth no conoce) se vuelve a pedir en cada vista~~:
+    hecho en 3fabfdc (vuelve a pedir tras 24 h). El texto original: se vuelve a pedir en cada vista de
     la lista de mods; con Modrinth colgado cada vista espera los 5 s. Pide una marca "consultado, sin
     ícono" con su vigencia (el diseño `fetched_at` de
     `docs/research/2026-10-05-cache-catalogo-modrinth.md`), y eso es una enmienda a la spec;
@@ -842,7 +850,7 @@ JSON con `request_id` y `job_id`.
     estable que la anula;
   - el aviso de la importación del servidor no dice cuántas decisiones y excepciones dejó.
 
-### Importar modpacks: .mrpack y Modrinth hecho; CurseForge y Prism después — A medias (2026-10-09), sin desplegar · i-7985ee-261a79
+### Importar modpacks: .mrpack, Modrinth, Prism y CurseForge — Hecha en código (2026-10-12), sin desplegar; CurseForge sin probar con clave real · i-7985ee-261a79
 - **Hecho** (d-7985ee-ec808c; spec `docs/superpowers/specs/2026-10-09-importar-modpacks-design.md`):
   `.mrpack` subido o modpack de Modrinth por URL, slug o id, como pack nuevo o reemplazando el
   contenido; en un trabajo con avance. Lo que no está en Modrinth y los overrides se informan.
@@ -852,8 +860,10 @@ JSON con `request_id` y `job_id`.
     clave, usando sus datos solo de paso para encontrar el mismo archivo en Modrinth por sha1;
   - el zip de instancia de Prism (D1): hashear sus jars como el escaneo de un servidor;
   - una ruta `/v1` para importar.
+- **Hecho después (2026-10-12):** ~~CurseForge~~ con la clave del dueño, zip y código de perfil
+  (b5530a0); ~~Prism~~ (43dd259); ~~`/v1`~~ (0e08206, b5530a0).
 
-### Economía de requests: caché, límites y trabajos con avance — A medias (2026-10-09), sin desplegar · i-7985ee-456f19
+### Economía de requests: caché, límites y trabajos con avance — Hecha en código (2026-10-12) salvo medirla en real, sin desplegar · i-7985ee-456f19
 - **Pedido del dueño (2026-10-09):** el número de requests es muy importante; limitarlas por
   usuario sin ser estrictos si hay margen, juntarlas, cachear en la base, no recargar un pack más
   de una vez cada 5 minutos salvo a mano, y todo lo que haga varias requests en trabajos con
@@ -864,9 +874,9 @@ JSON con `request_id` y `job_id`.
   franja del pack, barra superior, «Actualizar desde Modrinth», build e importación como trabajos
   (d-7985ee-209120); selector de versiones y fichas desde el catálogo; búsqueda guardada 10 min.
 - **Lo que falta** (por ahorro, de la auditoría):
-  - importar un servidor como trabajo (i-7985ee-27db6c);
-  - changelogs en una sola request (R6; SUPUESTO por verificar: que `GET /versions?ids=` los trae);
-  - guardar la versión del loader y la lista de servidores del panel (R9);
+  - ~~importar un servidor como trabajo (i-7985ee-27db6c)~~: hecho (7c43010);
+  - ~~changelogs en una sola request (R6)~~: hecho en M6 (90ad2f7), cien por request;
+  - ~~guardar la versión del loader y la lista de servidores del panel (R9)~~: hecho (0e08206);
   - ~~la simulación descarga cada jar y la actualización real los vuelve a bajar (R7/R9)~~: hecho
     en 0.2.0 (U1, U2, U3);
   - ~~`/v1/modpack/{id}/build` sigue síncrono~~: 202 con el trabajo desde 0.2.0 (A2, U5);
@@ -1031,6 +1041,9 @@ Fricción vista al menos dos veces, con su costo.
   `.claude/settings.json` del proyecto, si el deny global lo permite, o un deny global más
   angosto (`./.env.yaml`); (b) dejarlo así y que el mensaje de `env_template` diga que la línea
   la agrega el dueño. **Chequeo:** pedirle a un agente que lea `.env.default`.
+- **Visto el 2026-10-12:** el deny no tapa un `grep -r` desde Bash: un agente de auditoría imprimió
+  sin querer una línea de `.env.default` (la de `SESSION_HTTPS_ONLY`) y avisó. Si el deny protege
+  secretos de verdad, hace falta también un hook o un deny de Bash (decisión del dueño).
 - Propuesto al bundle, en general, como `a-deny-for-secrets-catches-their-template`.
 
 ### Fricciones de la sesión del panel — Planeada

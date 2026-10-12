@@ -51,7 +51,9 @@ Antes de empezar, si el servidor aún corre la versión anterior a la fase 0, se
    - mandar `X-Forwarded-Proto` con el esquema real (`$scheme`);
    - **no reescribir `Origin`**: el chequeo compara el `Origin` del navegador con
      `esquema://host` de la API, y si el proxy lo cambia, todo POST da 403;
-   - no quitar `Sec-Fetch-Site` ni agregar su propia CSP: la API ya manda la suya.
+   - no quitar `Sec-Fetch-Site` ni agregar su propia CSP: la API ya manda la suya;
+   - dejar pasar subidas de hasta 1 GiB, el zip de una instancia de Prism (en nginx,
+     `client_max_body_size 1025m;`).
 5. **Los orígenes de `CORS_ALLOW_ORIGINS`, si hay alguno, solo leen** (d-7985ee-491c83). Pueden
    seguir haciendo un GET con la cookie, pero todo POST, PUT, PATCH o DELETE desde otro origen da
    403 en el chequeo de origen, también desde uno nombrado ahí. Un cliente en otro origen que
@@ -86,7 +88,11 @@ Nada se migra ni se reescribe. Al arrancar, Beanie crea:
   `checked_at` (descendente) y `_id` (descendente), con el que el panel lee la última revisión de
   cada modpack.
 
-Crear un índice no toca ningún documento. Tampoco se reescribe el catálogo: `ModrinthVersion`
+- desde 2026-10-12, las colecciones `LoaderVersion` (base `modpack`) y `PanelServerList` (base
+  `pterodactyl`), cada una con un índice único por `key`.
+
+Crear un índice no toca ningún documento. Los escaneos viejos cargan sin `created_at` en sus
+archivos y siguen sirviendo como caché. Tampoco se reescribe el catálogo: `ModrinthVersion`
 suma el campo opcional `changelog`, que los documentos viejos no tienen y cargan igual; se llena
 solo, la primera vez que alguien abre una vista previa de los cambios.
 

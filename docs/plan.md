@@ -137,8 +137,9 @@ Sin id todavía. Entran al roadmap cuando alguien las quiera construir.
 - **Página para jugadores** por servidor: qué versión del pack usar, con el `.mrpack` para
   descargar (exaroton).
 - **Plugin de Pelican**, si el panel migra: la misma API, pero vista dentro del panel.
-- **CurseForge**: necesita una API key aprobada y respetar `allowModDistribution`; solo si aparece
-  un mod imprescindible que no está en Modrinth.
+- ~~**CurseForge**: necesita una API key aprobada y respetar `allowModDistribution`; solo si aparece
+  un mod imprescindible que no está en Modrinth.~~ Hecha en código (2026-10-12) como importación con
+  la clave propia del dueño (i-7985ee-261a79).
 - **Sincronización con packwiz** en el arranque del servidor (opción 2): menos tráfico y estado
   verificado por el propio servidor; pide editar el egg.
 

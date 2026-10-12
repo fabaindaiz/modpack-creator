@@ -16,7 +16,7 @@ nada de eso se puede observar desde el entorno de desarrollo.
 
 - Entrada: `main.py`. Configuración: `.env.yaml` (plantilla en `.env.default`; nunca se versiona).
 - Capas: `src/routers/v1/` y `src/routers/web/` (el panel) → `src/services/` → `src/database/` y
-  `src/library/api/client/` (Modrinth, Pterodactyl). Modelos en `src/model/`. Inyección de dependencias en `src/dependences.py`.
+  `src/library/api/client/` (Modrinth, Pterodactyl, CurseForge, Discord, metas de loaders). Modelos en `src/model/`. Inyección de dependencias en `src/dependences.py`.
 - Archivos ejemplares: `src/database/modpack.py` (una clase de base de datos),
   `src/services/modrinth.py` (un servicio), `src/library/api/client/modrinth.py` (un cliente).
 
@@ -43,9 +43,10 @@ Decididas, no preferencias. `docs/decisions.md` indexa cada una con lo que la ha
 - **La configuración obligatoria falla cerrada**: `getenv` sin default lanza; nunca le pongas un
   default a `SESSION_SECRET`, `MONGODB_URI` ni a un token. Toda variable obligatoria está en
   `.env.default`. *Audit* `env_template` (d-7985ee-2e4d10).
-- **No reintentes escrituras externas.** Un POST/PATCH/PUT/DELETE a Pterodactyl o Modrinth no
-  lleva `backoff` sobre `Exception`: una respuesta perdida no dice si el servidor ya se apagó o el
-  archivo ya se borró. Los POST de Modrinth que solo leen están en `IDEMPOTENT_POSTS`. *Audit*
+- **No reintentes escrituras externas.** Un POST/PATCH/PUT/DELETE a Pterodactyl, Modrinth o
+  CurseForge no lleva `backoff` sobre `Exception`: una respuesta perdida no dice si el servidor ya se
+  apagó o el archivo ya se borró. Los POST que solo leen (los de Modrinth por hash, `POST
+  /v1/mods/files` de CurseForge) están en `IDEMPOTENT_POSTS`. *Audit*
   `retried_writes` (d-7985ee-05d032).
 - **Pterodactyl es de solo lectura salvo que se habilite.** Toda escritura del cliente de
   Pterodactyl pasa por `PterodactylAPI._write`, y sin `PTERODACTYL_WRITES: "enabled"` se rechaza
@@ -60,8 +61,8 @@ Decididas, no preferencias. `docs/decisions.md` indexa cada una con lo que la ha
 - **Sin CORS salvo orígenes nombrados**, y la sesión `SameSite=lax`, `https_only`, de horas
   (`main.py`, d-7985ee-4e4aee). Un origen de `CORS_ALLOW_ORIGINS` solo lee: toda escritura de
   otro origen da 403 en el chequeo de mismo origen (d-7985ee-491c83).
-- **Los permisos de operador viven en los servicios.** Actualizar, hacer rollback, importar y
-  asociar un servidor exigen el rol de operador (`OIDC_OPERATOR_GROUPS`), y lo chequea el servicio
+- **Los permisos de operador viven en los servicios.** Actualizar, hacer rollback, importar un
+  servidor y asociarlo exigen el rol de operador (importar un modpack es de editor) (`OIDC_OPERATOR_GROUPS`), y lo chequea el servicio
   con `operator_only`, no la ruta: si no, una ruta nueva, de `/v1` o del panel, lo salta. Una
   sesión sin `groups` es editor. Un método de servicio nuevo que escribe agrega su fila a
   `## Acciones y roles` de `docs/decisions.md` en el mismo commit: sin ella falla el barrido (con los límites de `tests/test_routes_roles.py`). *Tests* `tests/test_roles.py`, `tests/test_routes_roles.py`
@@ -85,7 +86,7 @@ Decididas, no preferencias. `docs/decisions.md` indexa cada una con lo que la ha
 ## Archivos que no se editan a mano
 
 - `.env.yaml`: secretos; ni se lee ni se edita (`.claude/settings.json`, d-7985ee-57db37).
-- `.agents/` salvo `carrier.toml`, `proposals/` y `evaluation-*.md`: lo genera el repositorio home.
+- `.agents/` salvo `carrier.toml`, `proposals/`, `incoming/` y `evaluation-*.md`: lo genera el repositorio home.
   Una mejora es una propuesta (`bundle.py propose`).
 
 ## Comandos
@@ -111,7 +112,8 @@ fallar. Los tests de base corren contra un MongoDB real: en CI siempre, en local
 `./scripts/test-mongo.sh` (d-7985ee-1a2f53). Ningún test abre una conexión sin
 `@pytest.mark.network`, y ninguno resuelve un nombre fuera de localhost (d-7985ee-1a20c1). Lo que el gate **no** cubre, y hay que decirlo en el
 reporte: los datos de producción, el login OIDC, cualquier llamada real a
-Modrinth o Pterodactyl, y el aspecto del panel: los tests miran el HTML, no cómo se ve, así que
+Modrinth, Pterodactyl o CurseForge, el límite de cuerpo del proxy (1 GiB) y el disco temporal del
+contenedor, y el aspecto del panel: los tests miran el HTML, no cómo se ve, así que
 la revisión visual (anchos de 360, 768 y 1280 px, claro y oscuro) es manual:
 `./scripts/visual-sweep.sh [salida]` (no va en el gate; requiere Docker y Chromium, ver el README,
 "Revisión visual"). La imagen Docker no la cubre `check.sh` sino el job `image` de CI (construye, importa `main`,
@@ -153,7 +155,8 @@ qué no se pudo verificar.
 | `docs/roadmap.md` | qué está en curso, qué sigue y dónde choca |
 | `docs/guia-instalacion.md` | cómo instalar en un servidor nuevo, de cero a un panel que funciona |
 | `docs/runbooks/` | pasos para el servidor que no se pueden probar en CI (migraciones de datos) |
-| `docs/research/` | las investigaciones completas: plataformas similares, resolución, Pterodactyl, arquitectura |
+| `docs/research/` | las investigaciones completas, fechadas: de plataformas y arquitectura a importar modpacks, CurseForge/Prism, requests, construcción de modpacks y jugadores |
+| `docs/superpowers/` | las specs de diseño y los planes de cada lote |
 | `docs/references.md` | qué dicen las especificaciones externas, y qué cambió aquí por eso |
 | `docs/requirements.md` | requisitos funcionales |
 | `scripts/audit.py` | las reglas estructurales, ejecutables |

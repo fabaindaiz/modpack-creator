@@ -1,8 +1,10 @@
 """Check the recommended build of a modpack for newer versions (N5).
 
-Modrinth's `POST /version_files/update` answers, for each file hash, the newest version that fits
-a game version, loaders and channels. It ignores the modpack's pins, so a pinned mod comes back
-marked `pinned` and is neither counted nor notified. A check is stored; a notification goes out
+Modrinth's `POST /version_files/update_individual` answers, for each file hash and its own loaders,
+game version and channels, the newest version by date (M1; not in the OpenAPI, see
+docs/references.md). Nothing older than the build's version is announced (d-7985ee-6dc34c). It
+ignores the modpack's pins, so a pinned mod comes back marked `pinned` and is neither counted nor
+notified. A check is stored; a notification goes out
 only when the (non-pinned) updates differ from the last ones announced for that modpack.
 """
 import hashlib

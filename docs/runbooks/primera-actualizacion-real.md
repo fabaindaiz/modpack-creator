@@ -29,16 +29,18 @@ URL de la API y `$S` el id del servidor de prueba en la API (`GET /v1/server`).
 
 ```bash
 curl -X PUT  "$API/v1/server/$S/bundle?bundle_id=$BUNDLE" -b session=...
-curl -X POST "$API/v1/server/$S/scan?full=true" -b session=...
-curl -X POST "$API/v1/server/$S/import" -b session=...
+curl -X POST "$API/v1/server/$S/import" -b session=...   # 202 con el trabajo (desde 2026-10-12)
+curl "$API/v1/job/<id del trabajo>" -b session=...          # hasta status "done"
 ```
 
+El trabajo escanea primero (ya no hace falta un `scan?full=true` antes) y deja su resultado en
+`checkpoint.import`:
 - `added`: proyectos que entraron al bundle como del admin.
 - `candidates`: confirmar cada uno (`POST .../import/confirm?path=...&project_id=...`) o dejarlo como
   archivo local (`POST .../import/local?path=...`). **Mirar el slug**: la metadata se equivoca.
 - `local`: quedaron como archivos locales: la actualización no los toca.
 
-Después, un build nuevo (`POST /v1/modpack/$BUNDLE/build`), recomendarlo, y comparar:
+Después, un build nuevo (`POST /v1/modpack/$BUNDLE/build`, 202 con el trabajo desde 0.2.0), recomendarlo, y comparar:
 `GET /v1/server/$S/compare`. Lo que diga `different_version` y `missing` es lo que la actualización
 va a cambiar.
 
