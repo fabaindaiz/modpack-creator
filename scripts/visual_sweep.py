@@ -276,10 +276,10 @@ async def seed(mongo_uri: str) -> dict[str, str]:
         date_published="2026-01-01T00:00:00Z", dependencies=[], files=[], changelog="Un arreglo pequeño").insert()
     await UpdateCheck(bundle_id=big.id, build_number=2, checked_at=datetime.now(timezone.utc),  # type: ignore[arg-type]
                       updates=[AvailableUpdate(project_id="sodium", title="Sodium", from_version="sod-1", to_version="sod-2",
-                                               from_version_id="sod-1", to_version_id="sod-2"),
+                                               from_version_id="sod-1", to_version_id="sod-2", kind="leaves_beta"),
                                AvailableUpdate(project_id="lith", title="Lithium con un nombre bastante largo",
                                                from_version="0.15.1", to_version="0.15.2",
-                                               from_version_id="lith-1", to_version_id="lith-2"),
+                                               from_version_id="lith-1", to_version_id="lith-2", kind="beta"),
                                AvailableUpdate(project_id="iris", title="Iris", from_version="1.0", to_version="1.1",
                                                pinned=True)]).insert()
     await ModpackReplacement(project_id="optifine", replacement="sodium").insert()
@@ -340,6 +340,16 @@ async def seed(mongo_uri: str) -> dict[str, str]:
         failed,
         Job(kind="server_scan", key=None, payload={"server_id": survival}, status="done", active=False,
             created_at=now - timedelta(days=1), finished_at=now - timedelta(days=1)),
+        # The server's last import (T1): its row says what it did; the server's page, what waits.
+        Job(kind="server_import", key=f"server:{survival}", payload={"server_id": survival}, status="done", active=False,
+            created_at=now - timedelta(minutes=30), finished_at=now - timedelta(minutes=29), requested_by=OLGA,
+            checkpoint={"import": {
+                "added": ["sodium", "lithium"], "local": ["/mods/own-helper.jar"], "too_large": [],
+                "on_server": ["sodium", "lithium"], "channel_exceptions": {"lithium": "beta"},
+                "candidates": [{"path": "/mods/create-addon-con-un-nombre-largo-1.2.3.jar", "sha512": "f" * 128,
+                                "metadata": None,
+                                "candidates": [{"project_id": "iris", "slug": "iris", "title": "Iris Shaders",
+                                                "via": "slug"}]}]}}),
     ]
     for job in jobs:
         await job.insert()
@@ -353,7 +363,7 @@ async def seed(mongo_uri: str) -> dict[str, str]:
     await client.close()
     return {"server": survival, "server_new": str(bare.id), "bundle": str(big.id), "pending": str(pending.id),
             "empty": str(empty.id), "job": str(failed.id), "dryrun": str(jobs[0].id), "problems": str(problems.id),
-            "fix": str(fix.id)}
+            "fix": str(fix.id), "import_job": str(jobs[-1].id)}
 
 
 def wait_ready(base: str, app: "subprocess.Popen[bytes]") -> None:
@@ -378,7 +388,8 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
              "modpack-pending": f"/modpacks/{ids['pending']}",
              "replacements": "/replacements", "servers": "/servers", "server": f"/servers/{ids['server']}",
              "server-new": f"/servers/{ids['server_new']}",
-             "jobs": "/jobs", "job": f"/jobs/{ids['job']}", "dryrun": f"/jobs/{ids['dryrun']}", "audit": "/audit"}
+             "jobs": "/jobs", "job": f"/jobs/{ids['job']}", "dryrun": f"/jobs/{ids['dryrun']}", "audit": "/audit",
+             "import": "/modpacks/importar", "import-job": f"/jobs/{ids['import_job']}"}
     report: dict[str, dict[str, Any]] = {}
     chromium = os.environ.get("PLAYWRIGHT_CHROMIUM") or None
     with sync_playwright() as p:

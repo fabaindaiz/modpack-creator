@@ -34,7 +34,9 @@
       <p class="text-xs text-zinc-600 dark:text-zinc-400">Modrinth no lo conoce por hash. Puede ser uno de estos proyectos; confirma solo si lo es.</p>
       <div class="flex flex-wrap gap-2">
         {% for candidate in item.candidates %}
-        {% set title = titles.get(candidate.project_id, candidate.title) %}
+        {# The catalog's title when it has one; an unknown id maps to itself there, so the search's own title wins then. #}
+        {% set known = titles.get(candidate.project_id) %}
+        {% set title = known if known and known != candidate.project_id else candidate.title %}
         <form hx-post="/servers/{{ server_id }}/import/confirm" hx-target="closest li" hx-swap="outerHTML" class="inline-flex flex-wrap items-center gap-1.5 rounded-md border border-zinc-200 px-2 py-1 dark:border-zinc-700">
           <input type="hidden" name="path" value="{{ item.path }}">
           <input type="hidden" name="project_id" value="{{ candidate.project_id }}">

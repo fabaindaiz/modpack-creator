@@ -977,6 +977,8 @@ def test_detail_and_import_survive_a_failing_title_lookup() -> None:
     fakes.ptero.pending = fakes.ptero.import_result
     pending = client.get(f"/servers/{SERVER_ID}")
     assert pending.status_code == 200 and "C1" in pending.text
+    # Without the catalog's title, the candidate's own (from the search) names it, not its id.
+    assert "Odd Mod" in pending.text
 
 
 # La fila de trabajo.
@@ -1482,3 +1484,22 @@ def test_the_refresh_button_is_there_even_when_the_panel_never_answered() -> Non
     text = client.get("/servers").text
     section = text[text.index('id="altas"'):]
     assert "No se pudo consultar el panel" in section and 'hx-post="/servers/lista"' in section
+
+
+def test_a_candidate_modrinth_does_not_know_by_id_keeps_its_own_title() -> None:
+    # Visual sweep (2026-10-12): an id the catalog lacks maps to itself among the titles, and the
+    # candidate read «iris (iris)» instead of the search's «Iris Shaders».
+    client, fakes = setup(OPERATOR)
+
+    async def none_known(project_ids: list[str]) -> dict[str, ModrinthProject]:
+        return {}
+
+    import main
+
+    class Unknown(FakeModrinth):
+        projects_filled = staticmethod(none_known)  # type: ignore[assignment]
+
+    main.container.modrinthService.override(providers.Object(Unknown()))
+    fakes.ptero.pending = fakes.ptero.import_result
+    text = importar(client.get(f"/servers/{SERVER_ID}").text)
+    assert ">Odd Mod<" in text
