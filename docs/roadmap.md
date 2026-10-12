@@ -872,7 +872,7 @@ JSON con `request_id` y `job_id`.
   - ~~`/v1/modpack/{id}/build` sigue síncrono~~: 202 con el trabajo desde 0.2.0 (A2, U5);
   - medir en real cuántas requests hace una sesión (hoy son cuentas leyendo el código).
 
-### Pendientes del 2026-10-09: investigados, decididos y en curso — A medias (2026-10-09) · i-7985ee-805517
+### Pendientes del 2026-10-09: investigados, decididos y en curso — A medias (2026-10-12): falta T8 · i-7985ee-805517
 - Plan y decisiones del dueño (T1–T8): `docs/superpowers/plans/2026-10-09-pendientes.md`. Cubre
   i-7985ee-27db6c (importar un servidor), la revisión de actualizaciones con excepciones, las cachés
   del loader y de la lista de servidores, `/v1` con trabajos, el limitador con las cabeceras de
@@ -888,7 +888,10 @@ JSON con `request_id` y `job_id`.
 - **2026-10-12, rama `feat/pendientes-t1`:** T1 hecho (importar un servidor como trabajo, con S5);
   T4 hecho (M1–M3, M6) y la regla nueva del dueño **«un mod nunca retrocede de versión»**
   (d-7985ee-6dc34c), que enmendó M2 y d-7985ee-b1ce87: pisos del build vigente y del último escaneo
-  de cada servidor vinculado. Siguen T3, T7, T6, T5; T8 espera O1. Investigaciones del día:
+  de cada servidor vinculado. Después, en la misma rama: T3 (limitador con cabeceras, loader 24 h,
+  lista del panel 5 min con todas sus páginas, `/v1` con trabajos), T7 (B1, B3–B5), T6 (Prism) con
+  el tope de disco temporal de las subidas, y T5 (CurseForge con la clave del dueño, sin probar en
+  real). Solo T8 espera O1. Investigaciones del día:
   `docs/research/2026-10-12-construccion-de-modpacks.md` y `2026-10-12-minecraft-y-sus-jugadores.md`.
 
 ### La VM de podman de 2 GiB mata a mongod cuando corren dos instancias — Planeada · i-7985ee-9b250c

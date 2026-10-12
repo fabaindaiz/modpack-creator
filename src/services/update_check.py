@@ -161,7 +161,13 @@ class UpdateCheckService():
             assert entry.file is not None  # `entries` keeps only the ones with a file
             hash = entry.file.sha512
             kind, latest = "", None
-            if newer(stable.get(hash)) and current.version_type not in bundle.channels:
+            on_beta = current.version_type not in bundle.channels
+            if entry.project_id in exceptions and not on_beta:
+                # Already on a stable: the resolver keeps it on stables (the floor fits the pack's
+                # channels), so only a newer stable is an update; a beta would never be built.
+                if newer(stable.get(hash)):
+                    latest = stable[hash]
+            elif newer(stable.get(hash)) and on_beta:
                 kind, latest = "leaves_beta", stable[hash]
             elif newer(found.get(hash)):
                 latest = found[hash]

@@ -477,3 +477,15 @@ def test_latest_many_with_several_checks_per_bundle_returns_only_the_newest(mong
 
     found, ids = mongo(scenario)
     assert found == {ids[0]: 5, ids[1]: 5}
+
+
+@pytest.mark.network
+def test_a_mod_with_an_exception_already_on_a_stable_does_not_hear_of_betas(mongo: MongoRunner) -> None:
+    # Code review (2026-10-12): the resolver keeps it on stables (one fits), so a newer beta would be
+    # announced every day and never built.
+    async def scenario() -> UpdateCheck:
+        api = FakeModrinth({"h-I": [version_doc("i-b9", "I", "2.0-beta.9", type="beta")]})
+        bundle_id = await bundle_with([entry("I", "i-r1", "1.0")], channels=["release"], exceptions={"I": "beta"})
+        return await make(api).compute(bundle_id)
+
+    assert mongo(scenario).updates == []

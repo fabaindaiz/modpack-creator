@@ -24,7 +24,8 @@ LOADER_PREFIXES = ("neoforge", "forge", "fabric", "quilt")
 class CfFile:
     project_id: int
     file_id: int
-    # `required: false` in the manifest: it comes in «Por decidir» (C4).
+    # `required: false` in the manifest. Kept as read: like every CurseForge file (the manifest says
+    # nothing of the server), it comes in «Por decidir», which is what C4 asks.
     required: bool
 
 
@@ -41,10 +42,12 @@ class CfContent:
 
 
 def is_curseforge(file: IO[bytes]) -> bool:
-    """Whether the zip has a CurseForge `manifest.json` at its root."""
+    """Whether the zip has a CurseForge `manifest.json` at its root and is not an .mrpack (whose
+    index wins: a conversion may leave a manifest behind)."""
     try:
         with zipfile.ZipFile(file) as archive:
-            return MANIFEST in archive.namelist()
+            names = archive.namelist()
+            return MANIFEST in names and "modrinth.index.json" not in names
     except (zipfile.BadZipFile, OSError, EOFError):
         return False
     finally:

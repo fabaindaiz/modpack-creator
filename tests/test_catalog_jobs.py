@@ -288,3 +288,20 @@ def test_the_loader_version_is_asked_once_a_day_forced_by_the_refresh_and_kept_i
 
     within_a_day, forced, kept = mongo(scenario)
     assert within_a_day == 1 and forced == 2 and kept == "0.19.5"
+
+
+def test_a_refresh_whose_loader_meta_is_down_still_ends_done(mongo: MongoRunner) -> None:
+    # Code review (2026-10-12): with nothing kept, a failing meta failed the whole catalog job, whose
+    # resolution was already saved.
+    async def scenario() -> str:
+        service, _, _, bundle_id = await setup()
+
+        async def down(loader: str, game_version: str) -> str:
+            raise RuntimeError("meta down")
+
+        service.loaderAPI.loader_version = down  # type: ignore[method-assign]
+        job = await service.catalog_refresh(bundle_id, EDITOR)
+        await run_jobs(service)
+        return (await JobDatabase().get(str(job.id))).status
+
+    assert mongo(scenario) == "done"

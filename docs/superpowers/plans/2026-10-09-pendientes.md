@@ -195,3 +195,10 @@ El dueño cerró el build 0.2.0 con «lo hecho + U3» y sigue el resto en una se
   reversible). Lo que no cabe da «Hay otra importación subiendo; intenta en un momento».
 - **Investigación pedida:** construcción de modpacks completa, para contexto
   (`docs/research/2026-10-12-construccion-de-modpacks.md`).
+
+## Estado (2026-10-12, rama `feat/pendientes-t1`)
+
+T1, T4 (con la regla de no retroceder), T3, T7, T6 y T5 hechos, cada uno en su commit con el gate
+con MongoDB. T8 espera O1. Lo que no se probó en real está en `.claude/logs/agent-changelog.md`
+(s-7985ee-6f74e1).
+

@@ -337,8 +337,8 @@ class PterodactylService():
     async def import_request(self, server_id: str, actor: Actor) -> Job:
         """
         "Importar" (T1): the server's import job, which waits its turn and shows how far it is; one
-        per server (the key it shares with its scans and updates): asking again gives the running
-        job. 409 now if the server is not linked to a bundle.
+        per server: asking again gives the running import. 409 now if the server is not linked to a
+        bundle, or if another job of the server (a scan, an update) holds its key.
         """
         server = await self.pterodactylDB.server_get(server_id)
         if server.bundle_id is None:
@@ -348,8 +348,10 @@ class PterodactylService():
             job = await self.jobDB.enqueue("server_import", key=key, payload={"server_id": server_id},
                                            requested_by=actor.ref())
         except HTTP_409_CONFLICT:
+            # The key is the server's: a scan, an update or a rollback holds it too. Only a running
+            # import is answered as this one; anything else is the 409 as the other actions show it.
             active = await self.jobDB.active_for(key)
-            if active is None:
+            if active is None or active.kind != "server_import":
                 raise
             return active
         await self.audit.record(actor, "server.import.request", _target(server_id), {"job_id": str(job.id)})

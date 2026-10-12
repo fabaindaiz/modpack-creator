@@ -60,3 +60,19 @@ def test_a_shared_profile_is_downloaded_capped() -> None:
 
 def test_without_a_key_it_is_off() -> None:
     assert CurseForgeAPI(api_key=None).enabled is False and CurseForgeAPI(api_key="k").enabled is True
+
+
+def test_a_redirect_from_the_shared_profile_is_not_followed_so_the_key_stays_home() -> None:
+    # Code review (2026-10-12): aiohttp drops Authorization on a redirect, not x-api-key; following
+    # one to another host would hand it the owner's key.
+    followed: list[str] = []
+
+    async def handler(request: web.Request) -> web.StreamResponse:
+        if request.path.startswith("/elsewhere"):
+            followed.append(request.headers.get("x-api-key", ""))
+            return web.Response(body=b"zip")
+        raise web.HTTPFound("/elsewhere/profile.zip")
+
+    with pytest.raises(Exception):
+        asyncio.run(serve(handler, lambda api: api.shared_profile("ABCD1234", 1024)))
+    assert followed == []

@@ -69,10 +69,6 @@ def _catalog_key(bundle_id: str) -> str:
     return f"catalog:{bundle_id}"
 
 
-def _utc(value: datetime) -> datetime:
-    """Mongo gives back naive datetimes (UTC); Modrinth's carry their zone."""
-    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
-
 def candidate(version: ModrinthVersion) -> Candidate:
     return Candidate.from_modrinth({**version.model_dump(mode="json"), "id": version.version_id})
 
@@ -844,7 +840,13 @@ class ModpackService():
                 # «Actualizar desde Modrinth» also asks the loader's meta again (U4/M4).
                 bundle = await self.modpackDB.bundle_get(bundle_id)
                 if bundle.loader_version is None:
-                    await self._loader_version(str(bundle.loader.value), bundle.version, force=True)
+                    try:
+                        await self._loader_version(str(bundle.loader.value), bundle.version, force=True)
+                    except Exception:
+                        # The resolution is saved: a meta that is down only leaves the old one (or
+                        # none, asked again at the next build), never a failed refresh.
+                        logger.warning("loader meta for %s %s failed on refresh", bundle.loader.value,
+                                       bundle.version, exc_info=True)
             await context.progress("Resolviendo el pack", 1, 1)
             return {"entries": len(lock.entries), "problems": len(lock.problems), "undecided": len(lock.undecided)}
 
@@ -917,10 +919,11 @@ class ModpackService():
             pins=bundle.pins, server_decisions=bundle.server_decisions, channel_exceptions=bundle.channel_exceptions,
             replacements=merge_replacements(global_rules, bundle.replacements), floors=floors)
 
-    async def _floors(self, bundle: ModpackBundle) -> dict[str, str]:
-        """A mod never goes back (owner, 2026-10-12, d-7985ee-6dc34c): each project's version in the
-        build in force and in the last scan of every server linked to the pack; where they differ,
-        the newest by publication date. Versions the catalog lacks come in one batch."""
+    async def _floors(self, bundle: ModpackBundle) -> dict[str, list[str]]:
+        """A mod never goes back (owner, 2026-10-12, d-7985ee-6dc34c): each project's versions in the
+        build in force and in the last scan of every server linked to the pack. Only MongoDB is
+        read: which of them is the floor (the newest that fits the target) the resolver decides,
+        fetching through its usual path any version the catalog lacks."""
         seen: dict[str, set[str]] = {}
         in_force = bundle.recommended_build or bundle.latest_build
         if in_force is not None:
@@ -931,17 +934,7 @@ class ModpackService():
             for file in scan.files if scan is not None else []:
                 if file.project_id and file.version_id:
                     seen.setdefault(file.project_id, set()).add(file.version_id)
-        contested = sorted({v for versions in seen.values() if len(versions) > 1 for v in versions})
-        dates: dict[str, datetime] = {}
-        if contested:
-            known = await self.modrinthDB.version_find_by_version_ids(contested)
-            missing = [v for v in contested if v not in {k.version_id for k in known}]
-            fetched = await self.modrinthAPI.version_get_many(missing) if missing else []
-            if fetched:
-                await self.modrinthDB.version_upsert_many(fetched)
-            dates = {v.version_id: _utc(v.date_published) for v in [*known, *fetched]}
-        oldest = datetime.min.replace(tzinfo=timezone.utc)
-        return {project: max(sorted(versions), key=lambda v: dates.get(v, oldest)) for project, versions in seen.items()}
+        return {project: sorted(versions) for project, versions in seen.items()}
 
     async def _resolve(self, request: ResolveRequest, check: bool = False, prior: Sequence[str] = (),
                        local_only: bool = False, report: Optional[Report] = None) -> Lock:

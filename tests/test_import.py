@@ -314,3 +314,21 @@ def test_importing_is_one_job_per_server_and_its_pending_candidates_outlive_a_re
     assert (job.kind, job.key) == ("server_import", f"server:{job.payload['server_id']}") and again.id == job.id
     assert before is not None and sorted(c.path for c in before.candidates) == ["/mods/create.jar", "/mods/lithium-dev.jar"]
     assert after is not None and [c.path for c in after.candidates] == ["/mods/create.jar"]
+
+
+def test_importing_while_another_job_of_the_server_runs_is_the_409_it_gives(mongo: MongoRunner) -> None:
+    # Code review (2026-10-12): a scan or an update holds the server's key; importing answered that
+    # job as if it were the import, and nothing was imported.
+    from fastapi import HTTPException
+
+    from src.database.jobs import JobDatabase
+
+    async def scenario() -> tuple[int, str]:
+        service, server_id, _ = await linked_server({"lithium-dev.jar": fabric_jar("lithium", "Lithium")})
+        await JobDatabase().enqueue("server_scan", key=f"server:{server_id}", payload={"server_id": server_id})
+        with pytest.raises(HTTPException) as busy:
+            await service.import_request(server_id, OPERATOR)
+        return busy.value.status_code, str(busy.value.detail)
+
+    status, detail = mongo(scenario)
+    assert status == 409 and "active job" in detail

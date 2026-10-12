@@ -11,9 +11,9 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Literal, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 ADMIN = "admin"
 CHANNEL_RANK = {"release": 0, "beta": 1, "alpha": 2}
@@ -82,6 +82,10 @@ class CandidateDependency(BaseModel):
     dependency_type: str
 
 
+def _as_utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
 class Candidate(BaseModel):
     """One version of a project, with what resolution needs and nothing else."""
     project_id: str
@@ -95,6 +99,12 @@ class Candidate(BaseModel):
     environment: Optional[str]
     dependencies: list[CandidateDependency]
     file: Optional[CandidateFile]
+
+    @field_validator("date_published")
+    @classmethod
+    def _utc(cls, value: datetime) -> datetime:
+        """MongoDB gives dates back without a zone (UTC); Modrinth sends them with one: always UTC."""
+        return _as_utc(value)
 
     @classmethod
     def from_modrinth(cls, version: Mapping[str, Any]) -> "Candidate":
@@ -183,10 +193,19 @@ class ResolveRequest(BaseModel):
     # Project id → the least stable channel it also accepts ("beta" or "alpha"), only while none of
     # its versions fits in the pack's channels: once one does, the exception has no effect.
     channel_exceptions: dict[str, str] = {}
-    # Project id → its version in the build in force: a mod never goes back (owner's rule,
-    # 2026-10-12). A free choice only takes versions published at or after it, and keeps it when
-    # none is; a pin may go lower. A floor for another game version or loader does not count.
-    floors: dict[str, str] = {}
+    # Project id → the versions it has in the build in force and on the linked servers: a mod never
+    # goes back (owner's rule, 2026-10-12, d-7985ee-6dc34c). The floor is the newest of them that
+    # fits the target (one for another game version or loader does not count); a free choice only
+    # takes versions published at or after it, and keeps it when none is. A pin may go lower.
+    floors: dict[str, list[str]] = {}
+
+    @field_validator("floors", mode="before")
+    @classmethod
+    def _floor_lists(cls, value: Any) -> Any:
+        """A single version id per project reads as a list of one."""
+        if isinstance(value, dict):
+            return {k: [v] if isinstance(v, str) else v for k, v in value.items()}
+        return value
 
 
 def request_digest(request: ResolveRequest) -> str:
@@ -367,16 +386,20 @@ class _Run:
                 requested_by=_asked(requester), detail=(
                 f"un proyecto de tipo {project_type} no entra en un modpack; pedido por {requester}")))
             return None
-        floor: Optional[Candidate] = None
-        if project_id in self.request.floors:
-            floor_id = self.request.floors[project_id]
-            if floor_id not in self.catalog.gone:
-                floor = self.catalog.by_id.get(floor_id)
-                if floor is None:
-                    self.needs_versions.add(floor_id)
-                    return None
-                if not self.request.target.fits(floor, project_type):
-                    floor = None
+        fitting_floors: list[Candidate] = []
+        missing_floors = False
+        for floor_id in self.request.floors.get(project_id, []):
+            if floor_id in self.catalog.gone:
+                continue
+            known = self.catalog.by_id.get(floor_id)
+            if known is None:
+                self.needs_versions.add(floor_id)
+                missing_floors = True
+            elif self.request.target.fits(known, project_type):
+                fitting_floors.append(known)
+        if missing_floors:
+            return None
+        floor = max(fitting_floors, key=lambda c: _as_utc(c.date_published)) if fitting_floors else None
         allowed = [c for c in self.catalog.by_project[project_id] if self.request.target.allows(c, project_type)]
         if floor is not None:
             return self._take_from_floor(project_id, project_type, floor, allowed, reason, requester)
@@ -403,7 +426,7 @@ class _Run:
         """Never back: the best of the versions at or after the floor, the pack's channels first and
         then its exception's; with none, the floor itself, whatever its channel."""
         def newer(found: list[Candidate]) -> list[Candidate]:
-            return [c for c in found if c.date_published >= floor.date_published]
+            return [c for c in found if _as_utc(c.date_published) >= _as_utc(floor.date_published)]
 
         pool = newer(allowed)
         if not pool and project_id in self.request.channel_exceptions:

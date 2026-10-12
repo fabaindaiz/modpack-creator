@@ -73,3 +73,6 @@ def test_is_curseforge_tells_a_cf_zip_from_others() -> None:
     with zipfile.ZipFile(other, "w") as archive:
         archive.writestr("modrinth.index.json", "{}")
     assert is_curseforge(io.BytesIO(cf_zip(manifest()))) and not is_curseforge(other)
+    # A .mrpack that also carries a manifest.json (some conversions leave one) is still a .mrpack.
+    both = io.BytesIO(cf_zip(manifest(), {"modrinth.index.json": b"{}"}))
+    assert not is_curseforge(both)

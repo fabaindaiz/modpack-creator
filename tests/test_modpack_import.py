@@ -504,9 +504,15 @@ def test_a_profile_code_is_downloaded_by_the_job_and_one_that_fails_says_so(mong
         bad_done, _ = await s.service.import_status(str(bad.id))
         with pytest.raises(HTTPException) as malformed:
             await s.service.import_curseforge_code("../x", EDITOR)
-        return good_done, report, bad_done, malformed.value.status_code
+        cf.profiles["BROKEN99"] = b"not a zip"
+        broken = await s.service.import_curseforge_code("BROKEN99", EDITOR)
+        await run_jobs(s)
+        broken_done, _ = await s.service.import_status(str(broken.id))
+        return good_done, report, bad_done, malformed.value.status_code, broken_done
 
-    good, report, bad, malformed = mongo(scenario)
+    good, report, bad, malformed, broken = mongo(scenario)
+    # A zip CurseForge did send but that is not valid says what is wrong with it, not "no respondió".
+    assert broken.status == "failed" and broken.error == "El archivo no es un zip de CurseForge: no es un zip"
     assert good.status == "done" and report is not None and len(report.projects) == 2
     assert bad.status == "failed" and bad.error == "CurseForge no respondió al código; expórtalo como .zip"
     assert malformed == 422

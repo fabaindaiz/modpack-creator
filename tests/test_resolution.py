@@ -447,7 +447,7 @@ def test_floors_leave_the_digest_as_it_was_before_they_existed() -> None:
     data["target"]["channels"] = sorted(data["target"]["channels"])
     old = hashlib.sha256(json_module.dumps(data, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     assert request_digest(plain) == old
-    assert request_digest(plain.model_copy(update={"floors": {"P": "v"}})) == old  # a new build is no edit
+    assert request_digest(plain.model_copy(update={"floors": {"P": ["v"]}})) == old  # a new build is no edit
 
 
 def test_digest_without_exceptions_is_the_one_stored_before_they_existed() -> None:
@@ -513,3 +513,22 @@ def test_incompatible_names_both_sides() -> None:
 def test_a_problem_saved_before_these_fields_still_parses() -> None:
     old = Problem.model_validate({"kind": "unresolvable", "project_id": "P", "detail": "x"})
     assert (old.alternative, old.requested_by, old.conflict_with) == (None, [], None)
+
+
+def test_dates_with_and_without_a_zone_compare_as_utc() -> None:
+    # Code review (2026-10-12): the catalog mixes versions read back from MongoDB (naive, UTC) with
+    # ones just fetched from Modrinth (aware); comparing them with a floor raised TypeError.
+    stored = cand("P", "old", days=1).model_copy(update={"date_published": (EPOCH + timedelta(days=1)).replace(tzinfo=None)})
+    fetched = cand("P", "new", days=5)
+    lock = resolve(request("P", floors={"P": "new"}), catalog(stored, fetched))
+    assert chosen(lock) == {"P": "new"}
+    assert Candidate.model_validate(stored.model_dump()).date_published.tzinfo is not None
+
+
+def test_the_floor_is_the_newest_candidate_that_fits_the_target() -> None:
+    # Code review (2026-10-12): a newer version for another Minecraft must not take the floor's
+    # place; the one that fits still holds the mod.
+    versions = [cand("P", "rel-1", days=1), cand("P", "beta-5", type="beta", days=5),
+                cand("P", "other-9", days=9, game="1.21.1")]
+    lock = resolve(request("P", channel_exceptions={"P": "beta"}, floors={"P": ["beta-5", "other-9"]}), catalog(*versions))
+    assert chosen(lock) == {"P": "beta-5"}

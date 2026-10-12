@@ -6,7 +6,9 @@ shared-profile download is **not** documented (C5, owner's decision against the 
 it is kept apart here, one method, so its failing never touches the rest. Nothing CurseForge sends
 is stored: a file id becomes a sha1 that Modrinth is asked about.
 """
-from typing import Any, Optional
+from typing import Optional
+
+from aiohttp import ClientResponse
 
 import backoff
 
@@ -18,6 +20,20 @@ from src.library.utils import getenv
 
 CURSEFORGE_API_URL = getenv("CURSEFORGE_API_URL", "https://api.curseforge.com/")
 SHA1 = 1  # HashAlgo: 1 = Sha1, 2 = Md5
+
+
+class _ProfileResponse(CappedStreamResponse):
+    """The profile's bytes, and only from a 2xx: a redirect is not followed (the key would go with
+    it), so its status is a failure here, never a body taken for the zip."""
+
+    async def handle(self, response: ClientResponse) -> None:
+        if not 200 <= response.status < 300:
+            raise ProfileUnavailable(f"CurseForge answered {response.status} for the profile")
+        await super().handle(response)
+
+
+class ProfileUnavailable(Exception):
+    """CurseForge did not give the profile's zip."""
 
 
 class CurseForgeAPI(HttpAPI):
@@ -44,7 +60,9 @@ class CurseForgeAPI(HttpAPI):
     async def shared_profile(self, code: str, max_bytes: int) -> bytes:
         """The zip of a CurseForge profile code (undocumented endpoint, C5), at most `max_bytes`:
         TooLarge past it. One attempt: a code lives 7 days and asking again changes nothing."""
+        # No redirect is followed: aiohttp drops Authorization on one, not x-api-key, and another
+        # host must never get the owner's key (code review, 2026-10-12).
         handler = await self._request(method=METHOD.GET, path=f"v1/shared-profile/{code}",
-                                      response=CappedStreamResponse(max_bytes))
+                                      response=_ProfileResponse(max_bytes), allow_redirects=False)
         data: bytes = handler.stream
         return data

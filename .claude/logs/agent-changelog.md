@@ -5,6 +5,59 @@ introducción. Los commits de este repositorio fueron `wip` sin cuerpo: el *por 
 no quedaba en ninguna parte, y una sesión no ve lo que otra aprendió. La referencia del formato
 está al final del archivo, para que nada entre este párrafo y la primera entrada capture texto.
 
+## 2026-10-12 · s-7985ee-6f74e1 — Pendientes del 2026-10-09: T1, T4, T3, T7, T6, T5 y la regla de no retroceder
+
+**Qué.** En la rama `feat/pendientes-t1`, desde `main` (0.2.0), sin mergear. Un commit por tema, todos
+con el gate con MongoDB (`./scripts/test-mongo.sh`), de 1151 a 1222 tests:
+- **T1** importar un servidor como trabajo con avance, con S5 (la metadata de los jars del escaneo);
+  lo pendiente vive en el trabajo y se ve al recargar; `/v1` responde 202.
+- **T4** el chequeo diario en una request (`update_individual`, M1), sin anunciar nada anterior al
+  lock (M2), con insignias «beta» y «estable: deja la beta»; M3 releer las versiones del lock al
+  crear un build; M6 changelogs en lote y guardados.
+- **Regla nueva del dueño: un mod nunca retrocede de versión** (d-7985ee-6dc34c). Enmendó M2 y
+  d-7985ee-b1ce87: el resolvedor recibe pisos del build vigente y del último escaneo de cada
+  servidor vinculado.
+- **T3** el limitador lee `X-Ratelimit-Remaining` y pausa 2 s ante un 429 sin `Retry-After` (M5); la
+  versión del loader guardada 24 h (U4/M4); la lista de servidores del panel guardada 5 min con todas
+  sus páginas (U6; antes leía solo 50); `/v1` con trabajos para el catálogo y las importaciones (U5/S7).
+- **T7** la pestaña se conserva (B1), el 404 dentro del panel lateral (B3), la dependencia que solo
+  es problema (B4), los conteos de lo marcado al importar (B5).
+- **T6** importar el zip de una instancia de Prism (hasta 1 GiB, leído desde el temporal sin abrir los
+  mundos); **tope de disco temporal** de las subidas (`IMPORT_TMP_MAX_MIB`, 4096), pedido del dueño.
+- **T5** CurseForge con la clave propia del dueño: zip y código de perfil (C5, endpoint no documentado
+  y aislado).
+- **Investigaciones** pedidas a mitad de sesión: `docs/research/2026-10-12-construccion-de-modpacks.md`
+  y `docs/research/2026-10-12-minecraft-y-sus-jugadores.md`; sus recomendaciones de proteger mundos
+  quedaron en el roadmap después de T8 (i-7985ee-e87afa).
+
+**Por qué.** El dueño pidió continuar los pendientes en el orden acordado; durante la sesión agregó
+la regla de no retroceder, las dos investigaciones y la pregunta por el disco temporal.
+
+**Qué salió mal en el camino.**
+- Un `git checkout` de `src/services/pterodactyl.py`, escrito como borrador de un comando, deshizo
+  el trabajo sin commitear de T1 en ese archivo. Se reconstruyó reproduciendo las ediciones desde
+  la transcripción de la sesión y se verificó con los tests de servicio (64 pasaron) y mypy.
+- Dos `sed` por número de línea pisaron la línea equivocada (una edición anterior había corrido las
+  líneas): uno borró la importación de `OIDC_OPERATOR_GROUPS` en `src/dependences.py` y lo
+  detectaron mypy y el barrido de roles. Desde ahí, solo reemplazos por texto con verificación.
+- La VM de podman se cayó dos veces (una al matar una tarea de fondo vieja) y un gate falló por eso,
+  no por los tests; otro proyecto corría tests en la misma máquina y alargó los gates.
+- Algunos tests se escribieron junto con el código y no se vieron fallar por su aserción (el lector
+  de CurseForge, la reserva de disco, el contrato de `update_individual`): fallaban al importar.
+
+**Qué quedó sin hacer.** T8 (overrides) espera O1. Proteger los mundos al desplegar
+(i-7985ee-e87afa). El barrido visual no captura las pantallas nuevas (importar con Prism y CurseForge,
+la antigüedad de la lista del panel, las insignias de actualizaciones, los pendientes de importar).
+
+**Qué no se pudo verificar.** Ninguna llamada real a Modrinth (`update_individual` no está en la
+OpenAPI: su contrato sale del código de labrinth y una sonda), Pterodactyl (la paginación de la
+lista) ni CurseForge (sin la clave del dueño; el código de perfil usa un endpoint no documentado);
+el login OIDC; el tope de 1 GiB en el proxy del dueño (la guía lo dice); los datos de producción.
+
+**Fricciones contadas en este registro** (búsqueda, no memoria): «podman» aparece en 16 líneas y
+«murió» en 5; esta sesión la VM se cayó 2 veces más. Un archivo restaurado con `git checkout` sin
+querer y dos `sed` por número de línea son nuevos aquí.
+
 ## 2026-10-09 · s-7985ee-1bc897 — Observaciones de un tester, importador de modpacks y economía de requests
 
 **Qué.** Todo en la rama `fix/tester-feedback`, sin mergear:

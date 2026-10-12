@@ -243,10 +243,14 @@ class ModpackImportService():
         assert self.curseforge is not None
         try:
             data = await self.curseforge.shared_profile(code, LIMITS.max_bytes)
-            content = read_cf_zip(data, LIMITS)
         except Exception as error:
             logger.warning("CurseForge profile code %s failed", code, exc_info=True)
             raise HTTP_422_UNPROCESSABLE_ENTITY(CF_CODE_FAILED) from error
+        try:
+            content = read_cf_zip(data, LIMITS)
+        except MrpackError as error:
+            # CurseForge answered; what it sent is not a valid pack: say what is wrong with it.
+            raise HTTP_422_UNPROCESSABLE_ENTITY(str(error)) from error
         return await self.run_curseforge(content, actor, into, f"{content.name} {content.version_id}".strip())
 
     async def run_curseforge(self, content: CfContent, actor: Actor, into: Optional[str], source: str) -> ImportReport:

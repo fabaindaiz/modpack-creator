@@ -160,13 +160,13 @@ def test_a_channel_exception_is_refused_for_a_bad_channel_or_a_project_the_pack_
 def test_the_request_carries_the_build_in_force_as_floors(mongo: MongoRunner) -> None:
     # A mod never goes back (owner, 2026-10-12): every project of the recommended build, else the
     # latest, is a floor of the next resolution; a pack without builds has none.
-    async def scenario() -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    async def scenario() -> tuple[dict[str, list[str]], dict[str, list[str]], dict[str, list[str]]]:
         service, bundle_id = await bundle(RecordedModrinthAPI(), "iris")
         stored = await ModpackDatabase().bundle_get(bundle_id)
         before = (await service._request(stored)).floors
         build = await service.build_create(bundle_id, actor=EDITOR)
         after = (await service._request(await ModpackDatabase().bundle_get(bundle_id))).floors
-        return before, after, {e.project_id: e.version_id for e in build.lock.entries}
+        return before, after, {e.project_id: [e.version_id] for e in build.lock.entries}
 
     before, after, locked = mongo(scenario)
     assert before == {} and after == locked and SODIUM in after
@@ -185,7 +185,7 @@ def test_what_a_linked_server_runs_is_a_floor_too_and_the_newer_one_wins(mongo: 
         return ScanFile(path=path, size=1, modified_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
                         status="identified" if version_id else "unknown", project_id=project_id, version_id=version_id)
 
-    async def scenario() -> tuple[dict[str, str], dict[str, str], dict[str, Any]]:
+    async def scenario() -> tuple[dict[str, list[str]], dict[str, list[str]], dict[str, Any]]:
         api = RecordedModrinthAPI()
         service, bundle_id = await bundle(api, "iris")
         server = await PterodactylDatabase().server_insert(PterodactylServer(
@@ -201,5 +201,42 @@ def test_what_a_linked_server_runs_is_a_floor_too_and_the_newer_one_wins(mongo: 
         return without_build, with_build, dates
 
     without_build, with_build, dates = mongo(scenario)
-    assert without_build == {SODIUM: "v4PSXean"}
-    assert with_build[SODIUM] == max(dates, key=lambda i: dates[i]) and IRIS in with_build
+    assert without_build == {SODIUM: ["v4PSXean"]}
+    # Both are the floor's candidates: the resolver takes the newest that fits.
+    assert with_build[SODIUM] == sorted(dates) and IRIS in with_build
+
+
+def test_a_server_version_for_another_target_never_displaces_the_builds_floor(mongo: MongoRunner) -> None:
+    # Code review (2026-10-12): a newer version for another Minecraft won the floor, the resolver
+    # dropped it as not fitting, and the project was left with no floor at all.
+    from datetime import datetime, timezone
+
+    from src.database.modrinth import ModrinthDatabase
+    from src.database.pterodactyl import PterodactylDatabase
+    from src.library.scan import ScanFile
+    from src.model.modrinth import ModrinthVersion
+    from src.model.pterodactyl import PterodactylServer, ServerScan
+
+    async def scenario() -> tuple[str, str]:
+        api = RecordedModrinthAPI()
+        service, bundle_id = await bundle(api, "iris")
+        await service.build_create(bundle_id, actor=EDITOR)
+        build = await service.build_get(bundle_id, 1)
+        locked = next(e.version_id for e in build.lock.entries if e.project_id == SODIUM)
+        other = ModrinthVersion.parse(
+            id="OTHERMC1", project_id=SODIUM, author_id="a", name="x", version_number="9.9", version_type="release",
+            status="listed", downloads=1, game_versions=["1.21.1"], loaders=["fabric"], featured=False,
+            date_published="2030-01-01T00:00:00Z", dependencies=[], files=[], changelog=None)
+        await ModrinthDatabase().version_upsert_many([other])
+        server = await PterodactylDatabase().server_insert(PterodactylServer(
+            identifier="1a2b3c4d", internal_id=1, uuid="1a2b3c4d-0000", name="Survival", node="n1", description="",
+            status=None, is_suspended=False, is_installing=False, is_transferring=False, bundle_id=bundle_id))
+        await PterodactylDatabase().scan_insert(ServerScan(
+            server_id=server.id, directory="/mods", scanned_at=datetime(2026, 10, 1, tzinfo=timezone.utc),  # type: ignore[arg-type]
+            full=False, files=[ScanFile(path="/mods/s.jar", size=1, modified_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
+                                        status="identified", project_id=SODIUM, version_id="OTHERMC1")]))
+        second = await service.build_create(bundle_id, actor=EDITOR)
+        return next(e.version_id for e in second.lock.entries if e.project_id == SODIUM), locked
+
+    again, locked = mongo(scenario)
+    assert again == locked  # the newer one is for 1.21.1: it is not the floor, and nothing goes back
