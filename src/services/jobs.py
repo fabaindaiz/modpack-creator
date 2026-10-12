@@ -17,6 +17,10 @@ from src.services.audit import AuditSink
 from src.library.utils import as_utc, utcnow
 from src.services.pterodactyl import PterodactylService
 
+# How often a periodic scan is a full one when SCAN_FULL_EVERY_DAYS is not set (S4): the creation
+# time in the cache key sees a restored backup, so the full one is a rarer safety net.
+FULL_SCAN_DEFAULT_DAYS = 30
+
 Clock = Callable[[], datetime]
 Handler = Callable[[Job, "JobContext"], Awaitable[None]]
 logger = logging.getLogger("modpack.jobs")
@@ -325,7 +329,8 @@ class JobService():
         server_id = job.payload["server_id"]
 
         async def scan() -> dict[str, Any]:
-            result = await self.pterodactylService.scan(server_id, actor=None, full=bool(job.payload.get("full")))
+            result = await self.pterodactylService.scan(server_id, actor=None, full=bool(job.payload.get("full")),
+                                                        report=context.progress)
             return {"scan_id": str(result.id), "files": len(result.files)}
         await context.step("scan", scan)
 

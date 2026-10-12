@@ -26,7 +26,7 @@ from starlette.middleware.sessions import SessionMiddleware
 import src.model as model
 import asyncio
 from datetime import timedelta
-from src.services.jobs import Handler, JobWorker
+from src.services.jobs import FULL_SCAN_DEFAULT_DAYS, Handler, JobWorker
 from src.dependences import Dependences
 from src.services.update_check import schedule_from_env
 
@@ -59,7 +59,7 @@ async def lifespan(app: FastAPI):
     if scan_every:
         scheduler = asyncio.create_task(container.jobService().run_scheduler(
             stop, every=timedelta(hours=float(scan_every)),
-            full_every=timedelta(days=float(getenv("SCAN_FULL_EVERY_DAYS", "7")))))
+            full_every=timedelta(days=float(getenv("SCAN_FULL_EVERY_DAYS", str(FULL_SCAN_DEFAULT_DAYS))))))
     # The daily check of each modpack's recommended build, only if UPDATE_CHECK_AT is set.
     update_scheduler = None
     if update_schedule is not None:

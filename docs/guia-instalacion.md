@@ -102,7 +102,7 @@ como números, y la API ignora lo que no es texto (o no arranca, en `UPDATE_CHEC
 | `OIDC_ALLOWED_EMAILS` | emails verificados que entran sin estar en un grupo, separados por coma |
 | `DISCORD_WEBHOOK_URL` | avisos de actualizaciones, escaneos y trabajos |
 | `UPDATE_CHECK_AT`, `UPDATE_CHECK_TZ` | revisión diaria de versiones nuevas: `"04:30"`, `"America/Santiago"` |
-| `SCAN_EVERY_HOURS`, `SCAN_FULL_EVERY_DAYS` | escaneo periódico de los servidores (sin la primera, no hay); uno completo cada N días (por defecto 7) |
+| `SCAN_EVERY_HOURS`, `SCAN_FULL_EVERY_DAYS` | escaneo periódico de los servidores (sin la primera, no hay); uno completo cada N días (por defecto 30: la fecha de creación de cada jar ya detecta una restauración) |
 | `MODRINTH_TOKEN`, `MODRINTH_AGENT` | token de Modrinth y `User-Agent` propio (Modrinth pide uno que identifique al proyecto) |
 | `CORS_ALLOW_ORIGINS` | otros orígenes que **solo leen** la API (d-7985ee-491c83) |
 | `SESSION_MAX_AGE` | duración de la sesión en segundos (por defecto 43200, 12 h) |

@@ -166,3 +166,11 @@ El dueño cerró el build 0.2.0 con «lo hecho + U3» y sigue el resto en una se
   - `.env.default` y `.env.yaml` no se leen (permisos del dueño): una variable nueva se le pide.
 - **Pendiente del dueño, fuera del código:** volver a importar el servidor del tester tras desplegar
   (registra «En el servidor» y las excepciones de canal); la clave de CurseForge (T5); O1 (T8).
+
+## Decisiones de la sesión siguiente (dueño, 2026-10-12)
+
+- **U3, riesgo:** lo sembrado se marca sin confirmar y el siguiente escaneo normal lo baja y hashea
+  una vez (2 requests al panel por jar instalado, fuera de la ventana de la actualización).
+- **T1, textos aprobados:** «Importación del servidor»; «Leyendo los jars del servidor: i de K»,
+  «Leyendo metadatos de jars: i de U», «Buscando en Modrinth: i de U», «Agregando al modpack»;
+  «Pendientes de tu decisión (n)»; el botón «Importar» ya no dice «Escanea primero».

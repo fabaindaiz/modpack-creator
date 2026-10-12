@@ -195,7 +195,7 @@ class FakeScans:
     def __init__(self) -> None:
         self.scanned: list[tuple[str, bool]] = []
 
-    async def scan(self, server_id: str, actor: Any, full: bool = False) -> Any:
+    async def scan(self, server_id: str, actor: Any, full: bool = False, report: Any = None) -> Any:
         self.scanned.append((server_id, full))
         return type("Scan", (), {"id": "scan-1", "files": [1, 2, 3]})()
 

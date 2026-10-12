@@ -348,3 +348,65 @@ def test_refreshing_a_server_from_the_panel_keeps_its_bundle(mongo: MongoRunner)
 
     name, bundle_id = mongo(scenario)
     assert name == "Renamed" and bundle_id is not None
+
+
+# T1 (docs/superpowers/plans/2026-10-09-pendientes.md): S4, S5, U3 y el avance.
+
+
+def _fabric_jar(mod_id: str, name: str) -> bytes:
+    import io
+    import json
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("fabric.mod.json", json.dumps({"schemaVersion": 1, "id": mod_id, "name": name, "version": "1"}))
+    return buffer.getvalue()
+
+
+def test_a_scan_keeps_creation_times_and_the_metadata_of_unknown_jars_only(mongo: MongoRunner) -> None:
+    async def scenario() -> dict[str, tuple[Any, ...]]:
+        panel = FakePanel()
+        panel.files = {"fabric-api.jar": (b"fabric api", T0), "create.jar": (_fabric_jar("create", "Create"), T0)}
+        service, server_id = await setup(panel, HashModrinthAPI({sha1(b"fabric api"): FABRIC_API_VERSIONS[0]}))
+        scan = await service.scan(server_id, actor=EDITOR)
+        return {f.path: (f.created_at, f.metadata_read, f.metadata.mod_id if f.metadata else None) for f in scan.files}
+
+    files = mongo(scenario)
+    assert files["/mods/create.jar"] == (T0, True, "create")
+    assert files["/mods/fabric-api.jar"] == (T0, False, None)  # identified: no metadata kept
+
+
+def test_a_seeded_jar_is_downloaded_once_by_the_next_scan(mongo: MongoRunner) -> None:
+    # U3's risk (owner, 2026-10-12): seeded hashes are confirmed by the next scan.
+    async def scenario() -> tuple[list[str], list[str], list[str]]:
+        panel = FakePanel()
+        panel.files = {"a.jar": (b"a", T0)}
+        service, server_id = await setup(panel, HashModrinthAPI({sha1(b"a"): FABRIC_API_VERSIONS[0]}))
+        seeds = {"/mods/a.jar": (1, sha1(b"a"), hashlib.sha512(b"a").hexdigest())}
+        rounds = []
+        for use_seeds in (True, False, False):
+            panel.calls.clear()
+            await service.scan(server_id, actor=None, seeds=seeds if use_seeds else None)
+            rounds.append([c for c in panel.calls if c.startswith("download")])
+        return rounds[0], rounds[1], rounds[2]
+
+    seeded, confirming, after = mongo(scenario)
+    assert seeded == [] and confirming == ["download /mods/a.jar"] and after == []
+
+
+def test_a_scan_says_how_far_it_is(mongo: MongoRunner) -> None:
+    async def scenario() -> list[tuple[str, int, int]]:
+        panel = FakePanel()
+        panel.files = {"a.jar": (b"a", T0), "b.jar": (b"b", T0)}
+        service, server_id = await setup(panel, HashModrinthAPI({}))
+        seen: list[tuple[str, int, int]] = []
+
+        async def report(label: str, done: int, total: int) -> None:
+            seen.append((label, done, total))
+
+        await service.scan(server_id, actor=None, report=report)
+        return seen
+
+    seen = mongo(scenario)
+    assert seen[0] == ("Leyendo los jars del servidor", 0, 2) and seen[-1] == ("Leyendo los jars del servidor", 2, 2)

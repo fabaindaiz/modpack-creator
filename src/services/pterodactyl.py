@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Awaitable, Callable
 import hashlib
 import logging
 from datetime import datetime, timezone
@@ -31,6 +32,9 @@ SCAN_MAX_BYTES = 128 * 1024 * 1024
 # signed URL and the download): a large first scan is paced by this and by the panel.
 SCAN_CONCURRENCY = 4
 SCAN_DIRECTORY = "/mods"
+READING_JARS = "Leyendo los jars del servidor"
+# What a long task hears as it goes: what it processes, done and total (a job's progress).
+Report = Callable[[str, int, int], Awaitable[None]]
 IMPORT_FAILED = ("El modpack quedó creado y vinculado a este servidor, pero la importación de sus mods falló. "
                  "Vuelve a intentarlo con «Importar».")
 
@@ -111,7 +115,8 @@ class PterodactylService():
 
     async def scan(self, server_id: str, actor: Optional[Actor], directory: str = SCAN_DIRECTORY,
                    full: bool = False, record_drift: bool = True,
-                   seeds: Optional[dict[str, tuple[int, str, str]]] = None) -> ServerScan:
+                   seeds: Optional[dict[str, tuple[int, str, str]]] = None,
+                   report: Optional[Report] = None) -> ServerScan:
         """
         Scan a directory of a server: which jars it has, and which Modrinth version each one is.
 
@@ -123,22 +128,28 @@ class PterodactylService():
         :param record_drift: Store how the scan compares with the server's build (F37). False for a
             real update's preflight: the update changes the server right after, so it would be stale.
         :param seeds: Path → (size, sha1, sha512) of jars the app itself just uploaded and verified
-            (U3): one listed with that size takes those hashes instead of being downloaded.
+            (U3): one listed with that size takes those hashes instead of being downloaded; it stays
+            unconfirmed, so the next scan downloads it once (owner, 2026-10-12).
+        :param report: Hears how far it is: «Leyendo los jars del servidor», done and total (T1).
         :return: The stored scan.
         """
         server = await self.pterodactylDB.server_get(server_id)
-        listing = [ListedFile(path=f"{directory.rstrip('/')}/{f.name}", size=f.size, modified_at=f.modified_at)
+        listing = [ListedFile(path=f"{directory.rstrip('/')}/{f.name}", size=f.size, modified_at=f.modified_at,
+                              created_at=f.created_at)
                    for f in await self.pterodactylAPI.server_files(server.identifier, directory)
                    if f.is_file and not f.is_symlink and f.name.endswith(".jar")]
         previous = await self.pterodactylDB.scan_latest(server_id, directory)
         kept, to_hash, too_large = plan_scan(listing, previous.files if previous else [], full, SCAN_MAX_BYTES)
-        seeded = [ScanFile(**f.model_dump(), status="unknown", sha1=seeds[f.path][1], sha512=seeds[f.path][2])
+        seeded = [ScanFile(**f.model_dump(), status="unknown", sha1=seeds[f.path][1], sha512=seeds[f.path][2],
+                           confirmed=False)
                   for f in to_hash if seeds and f.path in seeds and seeds[f.path][0] == f.size]
         seeded_paths = {f.path for f in seeded}
-        hashed = [*seeded, *await self._hash(server.identifier, [f for f in to_hash if f.path not in seeded_paths])]
+        hashed = [*seeded, *await self._hash(server.identifier, [f for f in to_hash if f.path not in seeded_paths],
+                                             report)]
         # Modrinth may know today a jar it did not know before: unknown ones are asked about again.
         known = [f for f in kept if f.status == "identified"]
-        identified = await self._identify([*hashed, *(f for f in kept if f.status == "unknown")])
+        identified = [f if f.status == "unknown" else f.model_copy(update={"metadata": None, "metadata_read": False})
+                      for f in await self._identify([*hashed, *(f for f in kept if f.status == "unknown")])]
         files = sorted([*known, *identified, *too_large], key=lambda f: f.path)
         stored = await self.pterodactylDB.scan_insert(ServerScan(
             server_id=server.id, directory=directory, scanned_at=datetime.now(timezone.utc),  # type: ignore[arg-type]
@@ -164,17 +175,26 @@ class PterodactylService():
         await self.pterodactylDB.scan_set_drift(server_id, drift)
         return scan.model_copy(update={"drift": drift})
 
-    async def _hash(self, identifier: str, files: list[ListedFile]) -> list[ScanFile]:
-        """Download each file and hash its bytes. The bytes are hashed, never opened or loaded."""
+    async def _hash(self, identifier: str, files: list[ListedFile], report: Optional[Report] = None) -> list[ScanFile]:
+        """Download each file and hash its bytes, and read its mod metadata as data (S5): the bytes are
+        hashed and parsed, never loaded. An identified jar drops the metadata afterwards."""
         limit = asyncio.Semaphore(SCAN_CONCURRENCY)
+        done = 0
+        if report is not None:
+            await report(READING_JARS, 0, len(files))
 
         async def one(file: ListedFile) -> ScanFile:
+            nonlocal done
             async with limit:
                 data = await self.pterodactylAPI.server_files_download(identifier, file.path)
+            done += 1
+            if report is not None:
+                await report(READING_JARS, done, len(files))
             if len(data) > SCAN_MAX_BYTES:
                 return ScanFile(**file.model_dump(), status="too_large")
             return ScanFile(**file.model_dump(), status="unknown",
-                            sha1=hashlib.sha1(data).hexdigest(), sha512=hashlib.sha512(data).hexdigest())
+                            sha1=hashlib.sha1(data).hexdigest(), sha512=hashlib.sha512(data).hexdigest(),
+                            metadata=read_mod_metadata(data), metadata_read=True)
 
         return list(await asyncio.gather(*[one(f) for f in files]))
 

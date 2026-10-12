@@ -151,3 +151,43 @@ def test_a_local_file_of_the_build_explains_an_unknown_jar() -> None:
     assert [f.path for f in result.local] == ["/mods/private.jar"]
     assert [f.path for f in result.unknown] == ["/mods/stranger.jar"]
     assert compare([private], [], local_files=[local]).in_sync
+
+
+# T1 (docs/superpowers/plans/2026-10-09-pendientes.md): S4, S5 y el riesgo de U3.
+
+T_CREATED = datetime(2026, 9, 1, tzinfo=timezone.utc)
+
+
+def test_a_jar_restored_with_its_old_mtime_but_a_new_ctime_is_hashed_again() -> None:
+    # S4: a backup restore keeps the modification time; the creation time (Wings' ctime) changes.
+    before = ScanFile(path="/mods/a.jar", size=1, modified_at=T_CREATED, created_at=T_CREATED, status="identified", sha1="s")
+    now = ListedFile(path="/mods/a.jar", size=1, modified_at=T_CREATED, created_at=T_CREATED + timedelta(days=3))
+    kept, to_hash, _ = plan_scan([now], [before], full=False, max_bytes=100)
+    assert kept == [] and to_hash == [now]
+
+
+def test_a_scan_stored_before_creation_times_still_serves_as_cache() -> None:
+    # Deploying this must not turn the next scan into a full one: an old entry has no created_at.
+    before = ScanFile(path="/mods/a.jar", size=1, modified_at=T_CREATED, status="identified", sha1="s")
+    now = ListedFile(path="/mods/a.jar", size=1, modified_at=T_CREATED, created_at=T_CREATED)
+    kept, to_hash, _ = plan_scan([now], [before], full=False, max_bytes=100)
+    assert [k.path for k in kept] == ["/mods/a.jar"] and to_hash == []
+    assert kept[0].created_at == T_CREATED  # learnt now, so the next restore is seen
+
+
+def test_a_seeded_jar_not_confirmed_yet_is_hashed_once_by_the_next_scan() -> None:
+    # U3's risk (owner, 2026-10-12): what the update seeded by size is downloaded once later.
+    before = ScanFile(path="/mods/a.jar", size=1, modified_at=T_CREATED, status="identified", sha1="s", confirmed=False)
+    now = ListedFile(path="/mods/a.jar", size=1, modified_at=T_CREATED)
+    kept, to_hash, _ = plan_scan([now], [before], full=False, max_bytes=100)
+    assert kept == [] and to_hash == [now]
+
+
+def test_a_kept_jar_keeps_its_metadata() -> None:
+    from src.library.jarmeta import ModMetadata
+
+    meta = ModMetadata(loader="fabric", mod_id="create", name="Create")
+    before = ScanFile(path="/mods/a.jar", size=1, modified_at=T_CREATED, status="unknown", sha1="s",
+                      metadata=meta, metadata_read=True)
+    kept, _, _ = plan_scan([ListedFile(path="/mods/a.jar", size=1, modified_at=T_CREATED)], [before], False, 100)
+    assert kept[0].metadata == meta and kept[0].metadata_read is True

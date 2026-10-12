@@ -96,3 +96,11 @@ def test_the_worker_runs_every_kind_a_service_queues() -> None:
 
     kinds = set(main.job_handlers(main.container))
     assert {"catalog_refresh", "build_create", "modpack_import", "update_check", "server_scan", "server_update", "server_rollback", "notify"} <= kinds
+
+
+def test_a_full_scan_runs_every_30_days_by_default() -> None:
+    # S4 (owner, 2026-10-09): with the creation time in the cache key, a restore is seen without a
+    # weekly full scan (about 301 panel requests per server).
+    from src.services.jobs import FULL_SCAN_DEFAULT_DAYS
+
+    assert FULL_SCAN_DEFAULT_DAYS == 30

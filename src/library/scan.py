@@ -9,6 +9,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any, Literal, Optional, Protocol
 from pydantic import BaseModel, field_validator
+from src.library.jarmeta import ModMetadata
 
 ScanStatus = Literal["identified", "unknown", "too_large"]
 
@@ -18,12 +19,17 @@ class ListedFile(BaseModel):
     path: str
     size: int
     modified_at: datetime
+    # Wings' ctime (S4): a restored backup keeps the modification time but not this. None on scans
+    # stored before it was kept, which still serve as cache.
+    created_at: Optional[datetime] = None
 
-    @field_validator("modified_at")
+    @field_validator("modified_at", "created_at")
     @classmethod
-    def _as_stored(cls, value: datetime) -> datetime:
+    def _as_stored(cls, value: Optional[datetime]) -> Optional[datetime]:
         """In UTC, to the millisecond: as MongoDB gives it back, which drops the zone and the
         microseconds. Otherwise no file read back from a scan would match the panel's listing."""
+        if value is None:
+            return None
         value = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
         return value.replace(microsecond=value.microsecond // 1000 * 1000)
 
@@ -38,6 +44,13 @@ class ScanFile(ListedFile):
     sha512: Optional[str] = None
     project_id: Optional[str] = None
     version_id: Optional[str] = None
+    # What the jar says it is (fabric.mod.json, mods.toml…), read as data while hashing it (S5): an
+    # import needs it for an unknown jar, and the scan already holds its bytes.
+    metadata: Optional[ModMetadata] = None
+    metadata_read: bool = False
+    # False when the hashes came from the build instead of the bytes (an update's seeded rescan, U3):
+    # the next scan downloads it once to confirm them (owner, 2026-10-12).
+    confirmed: bool = True
 
 
 def plan_scan(listing: Iterable[ListedFile], previous: Iterable[ScanFile], full: bool,
@@ -54,13 +67,15 @@ def plan_scan(listing: Iterable[ListedFile], previous: Iterable[ScanFile], full:
         too large to download. A kept file that was unknown keeps its hashes, so it can be asked
         about again without downloading it.
     """
-    cached = {} if full else {f.key(): f for f in previous if f.sha1 and f.status in ("identified", "unknown")}
+    cached = {} if full else {f.key(): f for f in previous
+                              if f.sha1 and f.status in ("identified", "unknown") and f.confirmed}
     kept: list[ScanFile] = []
     to_hash: list[ListedFile] = []
     too_large: list[ScanFile] = []
     for file in listing:
-        if file.key() in cached:
-            kept.append(cached[file.key()])
+        hit = cached.get(file.key())
+        if hit is not None and (hit.created_at is None or file.created_at is None or hit.created_at == file.created_at):
+            kept.append(hit.model_copy(update={"created_at": file.created_at}) if hit.created_at is None else hit)
         elif file.size > max_bytes:
             too_large.append(ScanFile(**file.model_dump(), status="too_large"))
         else:
