@@ -11,7 +11,7 @@ adapted = [
   "roadmap headings carry the id after the middle dot (### <idea> · i-...), because bundle.py ids only reads a heading definition there; the method template puts it first",
   "the root file's fourth and fifth lines (parallel tool calls, the user's decisions asked as principle 15 says) are written in Spanish in AGENTS.md's method section, with a sixth the owner added: a declined entry is put before the owner again when a newer release brings the same proposal or its reason no longer holds",
   "secrets are kept off the agent by the project's permission denies and by a Bash sandbox with a deny-read list in .claude/settings.json (tested with a canary), not by a hook; docker, podman and the two scripts that use its socket run outside the sandbox",
-  "the session log's entry keeps its Spanish fields (Qué, Por qué, Qué salió mal, Qué quedó sin hacer, Qué no se pudo verificar); the method's Cards, Review and Learned slots are written inside them until the log adopts them",
+  "the session log's entry keeps its Spanish fields; the method's Cards relied on, Review and Learned slots are its Tarjetas y chequeos, Revisión and Aprendido fields, defined in the log's format section",
 ]
 declined = [
   "nested area instruction files: the source is about twelve thousand lines, but the area rules still fit in the root file's invariants; revisit when one area grows rules no other needs",

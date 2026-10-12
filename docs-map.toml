@@ -1,0 +1,39 @@
+# Qué documento tiene que moverse cuando cambia qué código (principio 16 del bundle; bundle.py docs-drift).
+# Ninguna regla bloquea todavía: avisan, y su tasa de escape (`docs-drift --report --since 7d`) dice
+# cuáles conviene volver bloqueantes o angostar. Un commit que no necesita tocar el documento lo dice
+# con una línea `docs-unchanged: <motivo>`.
+
+[[doc]]
+path = "AGENTS.md"
+watches = ["scripts/audit.py", ".claude/settings.json", "pyproject.toml", "src/dependences.py", "main.py",
+           ".github/workflows/*.yml", "scripts/*.sh"]
+reason = "las invariantes, lo que las hace cumplir, los comandos y el gate"
+blocks = false
+
+[[doc]]
+path = "docs/decisions.md"
+watches = ["scripts/audit.py", ".claude/settings.json", "src/library/auth/*.py", "src/services/*.py"]
+reason = "cada decisión dice qué la hace cumplir, y la tabla de Acciones y roles sigue a los métodos de servicio"
+blocks = false
+refs = false
+
+[[doc]]
+path = "docs/references.md"
+watches = ["src/library/api/client/*.py"]
+reason = "cada llamada externa se contrasta con su especificación, anotada aquí"
+blocks = false
+refs = false
+
+[[doc]]
+path = "docs/guia-instalacion.md"
+watches = ["main.py", "src/library/api/client/*.py", "src/routers/web/modpacks.py", "docker/**", "pyproject.toml"]
+reason = "las variables de .env.yaml, el compose, el proxy y la versión"
+blocks = false
+refs = false
+
+[[doc]]
+path = "docs/runbooks/desplegar-panel.md"
+watches = ["docker/**", "src/model/**/*.py", "src/model/__init__.py"]
+reason = "qué cambia en MongoDB y en el compose al desplegar"
+blocks = false
+refs = false

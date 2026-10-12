@@ -4,7 +4,9 @@ Ideas aceptadas, todavía no construidas. **No es una promesa ni una orden de tr
 va a chocar cada una, escrito ahora que está claro. Ninguna entrada se borra; cambia de estado
 (Planeada · A medias · Hecha · Cerrada por medición · Bloqueada afuera). Terminar un ítem edita
 este archivo en el mismo cambio que lo termina. Los ids se acuñan con
-`python .agents/tools/bundle.py id i "<idea>"` y no cambian.
+`python .agents/tools/bundle.py id i "<idea>"` y no cambian. Un ítem grande (más de una sesión o del
+orden de 1e5 tokens) lleva una línea **Estimación**: en qué entregas se corta y cuánto cuesta en tiempo
+y tokens, con en qué se apoya (bundle 0.0.30); `close` la compara después con lo que costó.
 
 ## Dónde estamos
 
@@ -934,7 +936,12 @@ JSON con `request_id` y `job_id`.
   exportar el pack base no hacen falta los binarios), los lados (O5) y qué trae la importación
   (O6).
 
-### Mapa de documentos y `docs-drift` en el gate — Planeada (2026-10-12) · i-7985ee-020ca9
+### Mapa de documentos y `docs-drift` en el gate — Hecha (2026-10-12) · i-7985ee-020ca9
+- **En qué quedó:** `docs-map.toml` en la raíz mapea AGENTS.md, decisions, references, la guía y el
+  runbook de despliegue contra el código que describen; ninguna regla bloquea todavía.
+  `bundle.py verify` (en el gate) revisa el mapa y las rutas que AGENTS.md nombra; `docs-drift
+  --range BASE..HEAD` avisa en un cierre, y `--report --since 7d` dirá qué reglas volver
+  bloqueantes. Las ranuras del registro y la línea *Estimación* también quedaron.
 - **Origen:** el bundle 0.0.30/0.0.31 trae `bundle.py docs-drift` y `docs-map.toml` (qué documento
   describe qué código, y si un cambio sin él bloquea o avisa). La auditoría del 2026-10-12 encontró
   muchos documentos desfasados que esto habría atrapado.
@@ -948,6 +955,10 @@ JSON con `request_id` y `job_id`.
   corre el dueño con `!`.
 
 ### Proteger los mundos al desplegar — Planeada (2026-10-12), después de T8 · i-7985ee-e87afa
+- **Estimación:** tres entregas (rollback por backup; migración de MC/loader; manifiesto desplegado
+  con rutas intocables), una sesión cada una, del orden de 3e5 tokens en total; se apoya en lo que
+  costaron T1 y T4 en la sesión del 2026-10-12, y supone que la prueba de punta a punta sigue
+  siendo con un panel simulado.
 - **Origen:** las investigaciones del 2026-10-12 (`docs/research/2026-10-12-construccion-de-modpacks.md`
   R3–R8, R12–R13; `2026-10-12-minecraft-y-sus-jugadores.md`, «Qué implica», 1, 5, 6, 11, 12). El
   dueño las dejó para después de T8 (2026-10-12): hoy la app es de solo lectura sobre los servidores.

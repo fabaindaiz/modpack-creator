@@ -122,9 +122,9 @@ El entorno es hatch con Python 3.12 (`pyproject.toml`); las dependencias salen d
 ## Verificación
 
 **El gate es CI** (`.github/workflows/check.yml`, d-7985ee-fd2a8d): un cambio no está listo si
-`./scripts/check.sh` no pasa. Los tests se escriben antes que el código que describen, y se ven
+`scripts/check.sh` no pasa. Los tests se escriben antes que el código que describen, y se ven
 fallar. Los tests de base corren contra un MongoDB real: en CI siempre, en local solo con
-`./scripts/test-mongo.sh` (d-7985ee-1a2f53). Ningún test abre una conexión sin
+`scripts/test-mongo.sh` (d-7985ee-1a2f53). Ningún test abre una conexión sin
 `@pytest.mark.network`, y ninguno resuelve un nombre fuera de localhost (d-7985ee-1a20c1). Lo que el gate **no** cubre, y hay que decirlo en el
 reporte: los datos de producción, el login OIDC, cualquier llamada real a
 Modrinth, Pterodactyl o CurseForge, el límite de cuerpo del proxy (1 GiB) y el disco temporal del

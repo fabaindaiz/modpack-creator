@@ -1604,6 +1604,12 @@ y las APIs reales no se tocaron. CI todavía no corrió: el workflow existe, per
 **Desvío del plan.** Dónde lo construido se aparta de lo aprobado, y la medición que lo decidió.
 **No verificado.** Lo que no se pudo comprobar en este entorno, y dónde espera la pregunta.
 **Medido.** El número, si se afirmó algo.
+**Tarjetas y chequeos.** Las tarjetas de `.agents/knowledge/` en que se apoyó, y los chequeos que corrieron.
+**Revisión.** Quién revisó, en contexto limpio o no, hallazgos por gravedad y qué quedó diferido.
+**Aprendido.** General (para la cosecha) y local (con dónde quedó), cerrando con `Captured: …`.
 ```
+
+Las tres últimas son las ranuras *Cards relied on*, *Review* y *Learned* del bundle (0.0.26), en
+español (`carrier.toml` `adapted`).
 
 El id se acuña una vez con `python .agents/tools/bundle.py id s "<título>"` y no se recalcula.
