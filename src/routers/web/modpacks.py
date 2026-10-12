@@ -16,6 +16,7 @@ from src.model.modrinth.project import ModrinthEnvironment
 from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
 from src.library.utils import as_utc
+from src.library.prism_import import is_prism
 from src.web import BUNDLE_REF, JOB_STARTED, MODRINTH_REF, WebRoute, get_web_actor, render
 
 logger = logging.getLogger("modpack.web")
@@ -340,7 +341,10 @@ async def modpack_create(
 # An upload is refused by its declared size before the form is read: Starlette 1.7 caps the form's
 # text fields, not its files, which it would spool whole. The margin is the form around the file.
 IMPORT_MAX_BYTES = 50 * 1024 * 1024
-IMPORT_MAX_REQUEST = IMPORT_MAX_BYTES + 1024 * 1024
+# A Prism instance's zip may be much bigger (T6/P1): read from the upload's temporary file, its
+# worlds never opened. A .mrpack is still refused past IMPORT_MAX_BYTES once read.
+PRISM_MAX_BYTES = 1024 * 1024 * 1024
+IMPORT_MAX_REQUEST = PRISM_MAX_BYTES + 1024 * 1024
 
 @router.get("/modpacks/importar")
 @inject
@@ -362,15 +366,17 @@ async def modpack_import(
     content of `into`. The answer is the report, into the form's #import-result."""
     declared = request.headers.get("content-length", "")
     if not declared.isdigit() or int(declared) > IMPORT_MAX_REQUEST:
-        raise HTTP_413_CONTENT_TOO_LARGE("El archivo pesa más de 50 MiB")
+        raise HTTP_413_CONTENT_TOO_LARGE("El archivo pesa más de 1 GiB")
     form = await request.form(max_files=1, max_fields=4)
     into = str(form.get("into") or "") or None
     if into is not None and not re.fullmatch(BUNDLE_REF, into):
         raise HTTP_422_UNPROCESSABLE_ENTITY("Ese modpack no existe")
     upload, ref = form.get("archivo"), str(form.get("ref") or "").strip()
     if isinstance(upload, UploadFile) and upload.filename:
-        data = await upload.read(IMPORT_MAX_BYTES + 1)
-        job = await importService.import_mrpack(data, actor, into=into)
+        if is_prism(upload.file):
+            job = await importService.import_prism(upload.file, actor, into=into)
+        else:
+            job = await importService.import_mrpack(await upload.read(IMPORT_MAX_BYTES + 1), actor, into=into)
     elif ref:
         job = await importService.import_modrinth(ref[:500], actor, into=into)
     else:

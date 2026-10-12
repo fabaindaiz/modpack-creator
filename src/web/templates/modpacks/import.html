@@ -3,7 +3,7 @@
 {% block title %}Importar modpack{% endblock %}
 
 {% block content %}
-{% call ui.page_header("Importar modpack", "Un .mrpack o un modpack publicado en Modrinth se convierte en un modpack nuevo.") %}
+{% call ui.page_header("Importar modpack", "Un .mrpack, el zip de una instancia de Prism o un modpack publicado en Modrinth se convierte en un modpack nuevo.") %}
 {{ ui.link_button("Volver a los modpacks", "/modpacks") }}
 {% endcall %}
 {% with into=none %}{% include "modpacks/_import_form.html" %}{% endwith %}

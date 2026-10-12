@@ -7,6 +7,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from src.exceptions import HTTP_413_CONTENT_TOO_LARGE, HTTP_422_UNPROCESSABLE_ENTITY, CatalogPending
 from src.routers.web.modpacks import IMPORT_MAX_BYTES, IMPORT_MAX_REQUEST
+from src.library.prism_import import is_prism
 from src.web import BUNDLE_REF
 from src.model.jobs import Job
 from src.model.users import Actor
@@ -201,15 +202,18 @@ async def modpack_import_modrinth(
 @inject
 async def modpack_import_mrpack(
         request: Request,
-        archivo: UploadFile = File(..., description="The .mrpack, 50 MiB at most"),
+        archivo: UploadFile = File(..., description="A .mrpack (50 MiB at most) or a Prism instance zip (1 GiB)"),
         into: Optional[str] = Query(None, description="A pack whose content it replaces; a new pack if empty"),
         importer: ModpackImportService = Depends(Provide[Dependences.modpackImportService]),
         actor: Actor = Depends(get_current_actor),
         ):
-    """Import an uploaded .mrpack, as the panel does: read now, identified in a job. Past 50 MiB, 413."""
+    """Import an uploaded .mrpack or Prism instance zip, as the panel does: read now, identified in a
+    job. A .mrpack past 50 MiB is a 422; any upload past 1 GiB, 413."""
     declared = request.headers.get("content-length", "")
     if not declared.isdigit() or int(declared) > IMPORT_MAX_REQUEST:
-        raise HTTP_413_CONTENT_TOO_LARGE("El archivo pesa más de 50 MiB")
+        raise HTTP_413_CONTENT_TOO_LARGE("El archivo pesa más de 1 GiB")
+    if is_prism(archivo.file):
+        return await importer.import_prism(archivo.file, actor, into=_into(into))
     return await importer.import_mrpack(await archivo.read(IMPORT_MAX_BYTES + 1), actor, into=_into(into))
 
 @router.post("/modpack/{id}/resolve", response_model=Lock, responses={202: {"model": Job}})

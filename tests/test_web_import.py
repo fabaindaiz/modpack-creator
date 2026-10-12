@@ -1,5 +1,6 @@
 """Importar un modpack desde el panel (spec 2026-10-09-importar-modpacks): la página, el formulario
 en el detalle de un pack, la subida con su tope y el informe. El servicio es un doble."""
+import io
 from typing import Any, Optional
 
 import pytest
@@ -16,7 +17,7 @@ from src.services.modpack_import import ImportReport
 from tests._actors import EDITOR
 from tests.test_web_modpacks import BUNDLE_ID, HTMX, setup_all, visible
 
-UPLOAD_LIMIT = 50 * 1024 * 1024
+UPLOAD_LIMIT = 1024 * 1024 * 1024  # a Prism zip (T6/P1); a .mrpack is still 50 MiB once read
 
 
 class FakeImport:
@@ -34,6 +35,12 @@ class FakeImport:
 
     async def import_mrpack(self, data: bytes, actor: Actor, into: Optional[str] = None) -> Job:
         self.calls.append(("import_mrpack", data, actor, into))
+        if self.error:
+            raise self.error
+        return self.job
+
+    async def import_prism(self, file: Any, actor: Actor, into: Optional[str] = None) -> Job:
+        self.calls.append(("import_prism", file.read(), actor, into))
         if self.error:
             raise self.error
         return self.job
@@ -72,7 +79,7 @@ def test_the_list_links_to_the_import_page_and_the_page_offers_a_file_and_a_modr
     assert 'href="/modpacks/importar"' in client.get("/modpacks").text
     text = client.get("/modpacks/importar").text
     assert 'hx-post="/modpacks/importar"' in text and 'hx-encoding="multipart/form-data"' in text
-    assert 'type="file"' in text and 'name="archivo"' in text and 'accept=".mrpack"' in text
+    assert 'type="file"' in text and 'name="archivo"' in text and 'accept=".mrpack,.zip"' in text
     assert 'name="ref"' in text and 'name="into"' not in text
 
 
@@ -128,7 +135,7 @@ def test_an_upload_declared_past_the_limit_is_refused_before_reading_it() -> Non
     client, fake = setup()
     response = client.post("/modpacks/importar", data={"ref": "x"},
                            headers={**HTMX, "Content-Length": str(UPLOAD_LIMIT + 2 * 1024 * 1024)})
-    assert response.status_code == 413 and "50 MiB" in response.text and fake.calls == []
+    assert response.status_code == 413 and "1 GiB" in response.text and fake.calls == []
 
 
 def test_a_refusal_of_the_service_reaches_the_panel_in_its_words() -> None:
@@ -173,3 +180,34 @@ def test_v1_refuses_an_mrpack_past_the_limit_before_reading_it() -> None:
     response = v1_client(fake).post("/v1/modpack/import/mrpack", files={"archivo": ("p.mrpack", b"x", "application/zip")},
                                     headers={"Content-Length": str(UPLOAD_LIMIT + 2 * 1024 * 1024)})
     assert response.status_code == 413 and fake.calls == []
+
+
+def prism_bytes() -> bytes:
+    import zipfile
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("instance.cfg", "name=Aventura\n")
+        archive.writestr("mmc-pack.json", "{}")
+    return buffer.getvalue()
+
+
+def test_a_prism_zip_in_the_same_field_goes_to_the_prism_import() -> None:
+    # T6 (owner, 2026-10-12): one field takes a .mrpack or a Prism instance, told apart by content.
+    client, fake = setup()
+    data = prism_bytes()
+    response = client.post("/modpacks/importar", headers=HTMX, files={"archivo": ("Aventura.zip", data, "application/zip")})
+    assert response.status_code == 200 and fake.calls == [("import_prism", data, EDITOR, None)]
+
+
+def test_the_form_and_the_report_speak_of_prism() -> None:
+    client, fake = setup()
+    page = " ".join(visible(client.get("/modpacks/importar").text).split())
+    assert "Un .mrpack, el zip de una instancia de Prism o un modpack publicado en Modrinth se convierte en un modpack nuevo." in page
+    assert "Archivo .mrpack o zip de Prism" in page
+    assert ".mrpack hasta 50 MiB. El zip de Prism hasta 1 GiB: los mundos no se leen; exportarlo sin saves/ sube más rápido." in page
+    assert 'accept=".mrpack,.zip"' in client.get("/modpacks/importar").text
+    assert "Reemplazar con un .mrpack o un zip de Prism…" in client.get(f"/modpacks/{BUNDLE_ID}").text
+    fake.report.disabled = 3
+    fake.job.status, fake.job.active = "done", False
+    shown = " ".join(visible(client.get(f"/modpacks/importar/{fake.job.id}", headers=HTMX).text).split())
+    assert "Desactivados en Prism: 3 (quedan «Desactivado»)" in shown

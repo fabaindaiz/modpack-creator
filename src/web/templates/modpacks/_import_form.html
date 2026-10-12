@@ -1,4 +1,4 @@
-{# Import a modpack (spec 2026-10-09-importar-modpacks): an uploaded .mrpack or a modpack published on
+{# Import a modpack (spec 2026-10-09-importar-modpacks): an uploaded .mrpack or Prism instance zip (T6) or a modpack published on
    Modrinth. Without `into` it creates a pack; with it (a bundle id) it replaces that pack's content.
    The report answers into #import-result. #}
 {% import "_macros.html" as ui %}
@@ -8,10 +8,10 @@
     class="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
     {% if into %}<input type="hidden" name="into" value="{{ into }}">{% endif %}
     <div>
-      <label for="import-file{{ '-' ~ into if into else '' }}" class="text-sm font-medium">Archivo .mrpack</label>
-      <input id="import-file{{ '-' ~ into if into else '' }}" name="archivo" type="file" accept=".mrpack" required
+      <label for="import-file{{ '-' ~ into if into else '' }}" class="text-sm font-medium">Archivo .mrpack o zip de Prism</label>
+      <input id="import-file{{ '-' ~ into if into else '' }}" name="archivo" type="file" accept=".mrpack,.zip" required
         class="mt-1 block w-full text-sm text-zinc-700 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5 file:text-sm file:font-medium dark:text-zinc-300 dark:file:bg-zinc-800 dark:file:text-zinc-100">
-      <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Hasta 50 MiB.</p>
+      <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">.mrpack hasta 50 MiB. El zip de Prism hasta 1 GiB: los mundos no se leen; exportarlo sin saves/ sube más rápido.</p>
     </div>
     {{ ui.button("Importar archivo", type="submit") }}
   </form>

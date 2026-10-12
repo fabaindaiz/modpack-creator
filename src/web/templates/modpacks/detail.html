@@ -64,7 +64,7 @@
 
     {% call ui.section("Contenido del pack", id="import-section") %}
     <details class="space-y-3">
-      <summary class="cursor-pointer text-sm font-medium">Reemplazar con un .mrpack…</summary>
+      <summary class="cursor-pointer text-sm font-medium">Reemplazar con un .mrpack o un zip de Prism…</summary>
       <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-400">Los mods del pack se reemplazan con los del archivo; lo que agregaste a mano se queda.</p>
       <div class="mt-3">{% with into=bundle_id %}{% include "modpacks/_import_form.html" %}{% endwith %}</div>
     </details>

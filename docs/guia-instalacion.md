@@ -133,7 +133,10 @@ El proxy tiene que:
 - reenviar `Host` tal como lo mandó el navegador;
 - mandar `X-Forwarded-Proto` con el esquema real;
 - **no** reescribir `Origin` ni quitar `Sec-Fetch-Site`;
-- no agregar su propia CSP.
+- no agregar su propia CSP;
+- dejar pasar subidas de hasta **1 GiB**: el zip de una instancia de Prism (importar un modpack) llega
+  hasta ahí. nginx corta en 1 MiB por defecto (`client_max_body_size`). Caddy y Traefik no ponen
+  límite salvo que se configure uno (SUPUESTO, de memoria: verificarlo en la versión instalada).
 
 Si reescribe `Origin`, todo POST del panel da 403.
 
@@ -146,6 +149,7 @@ server {
     # ssl_certificate y ssl_certificate_key: los del nombre del panel
 
     location / {
+        client_max_body_size 1025m;  # el zip de una instancia de Prism, hasta 1 GiB
         proxy_pass http://<API_BIND_IP>:8000;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto $scheme;

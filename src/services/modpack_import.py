@@ -6,16 +6,18 @@ Modrinth call for every hash it lacks, and the projects in one more. Nothing is 
 recorded as with a server import (d-7985ee-58801d): env.server seeds the server decision and a beta
 or alpha outside the pack's channels the channel exception, only where nothing is set.
 """
+import asyncio
 import hashlib
 import re
 from dataclasses import asdict, dataclass, field
-from typing import Any, Optional
+from typing import IO, Any, Optional
 from urllib.parse import urlparse
 from fastapi import HTTPException
 from src.database import ModpackDatabase, ModrinthDatabase
 from src.library.api.client.download import Downloader, TooLarge
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.mrpack_import import IndexFile, MrpackContent, MrpackError, MrpackLimits, OverrideJar, read_mrpack
+from src.library.prism_import import PrismLimits, read_prism
 from src.database.jobs import JobDatabase
 from src.model.jobs import Job
 from src.services.jobs import Handler, JobContext, JobFailed
@@ -32,6 +34,7 @@ from src.services.modpack import ModpackService
 from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT, HTTP_422_UNPROCESSABLE_ENTITY
 
 LIMITS = MrpackLimits()
+PRISM_LIMITS = PrismLimits()
 # A published modpack's file is only fetched from Modrinth's CDN.
 DOWNLOAD_HOST = "cdn.modrinth.com"
 MODRINTH_URL = re.compile(r"/(?:modpack|project)/([A-Za-z0-9_.-]+)(?:/version/([A-Za-z0-9_.+-]+))?/?")
@@ -51,6 +54,8 @@ class ImportReport:
     overrides: dict[str, int] = field(default_factory=dict)
     decisions: dict[str, bool] = field(default_factory=dict)
     channel_exceptions: dict[str, str] = field(default_factory=dict)
+    # Jars a Prism instance had turned off (`.jar.disabled`, T6/P2): they come in «Desactivado».
+    disabled: int = 0
 
 
 class ModpackImportService():
@@ -79,6 +84,25 @@ class ModpackImportService():
         for another Minecraft version or loader. Either way, no job.
         """
         content = _read(data)
+        if into is not None:
+            _same_target(await self.modpackDB.bundle_get(into), content)
+        job, new = await self._job(actor, {"content": asdict(content), "into": into, "source": _label(content)})
+        if new:
+            await self.audit.record(actor, "bundle.import.request", _target(into),
+                                    {"source": _label(content), "job_id": str(job.id)})
+        return job
+
+    async def import_prism(self, file: IO[bytes], actor: Actor, into: Optional[str] = None) -> Job:
+        """
+        Import the zip of a Prism instance (T6): read now from the upload's file (its worlds never
+        opened, P1), in a thread since it hashes every jar, and identified on Modrinth by the
+        person's import job, as an .mrpack. 422 naming why if it is not an instance; 409 for another
+        Minecraft version or loader.
+        """
+        try:
+            content = await asyncio.to_thread(read_prism, file, PRISM_LIMITS)
+        except MrpackError as error:
+            raise HTTP_422_UNPROCESSABLE_ENTITY(str(error)) from error
         if into is not None:
             _same_target(await self.modpackDB.bundle_get(into), content)
         job, new = await self._job(actor, {"content": asdict(content), "into": into, "source": _label(content)})
@@ -218,9 +242,11 @@ class ModpackImportService():
             target = await self.modpackDB.bundle_get(into)
             _same_target(target, content)
         found = await self._identify([f.sha512 for f in content.files] + [j.sha512 for j in content.override_jars])
-        project_ids = list(dict.fromkeys(found[h].project_id for h in
-                                         [f.sha512 for f in content.files] + [j.sha512 for j in content.override_jars]
-                                         if h in found and MODRINTH_ID.fullmatch(found[h].project_id)))
+        hinted = await self._hinted(content.hinted_versions)
+        project_ids = list(dict.fromkeys([*(found[h].project_id for h in
+                                            [f.sha512 for f in content.files] + [j.sha512 for j in content.override_jars]
+                                            if h in found and MODRINTH_ID.fullmatch(found[h].project_id)),
+                                          *(v.project_id for v in hinted if MODRINTH_ID.fullmatch(v.project_id))]))
         unknown = [f.path for f in content.files if f.sha512 not in found] + \
                   [j.path for j in content.override_jars if j.sha512 not in found]
         if target is None:
@@ -234,8 +260,13 @@ class ModpackImportService():
             version = found.get(file.sha512)
             if version is not None and file.server in SERVER_ENV and version.project_id in project_ids:
                 decisions.setdefault(version.project_id, SERVER_ENV[file.server])
+        disabled = [j for j in content.override_jars if j.disabled]
+        for jar in disabled:
+            version = found.get(jar.sha512)
+            if version is not None and version.project_id in project_ids:
+                decisions.setdefault(version.project_id, False)
         exceptions: dict[str, str] = {}
-        for version in found.values():
+        for version in [*found.values(), *hinted]:
             channel = version.version_type.value
             if channel in EXCEPTION_CHANNELS and channel not in target.channels and version.project_id in project_ids:
                 exceptions[version.project_id] = channel
@@ -243,7 +274,21 @@ class ModpackImportService():
         excepted = await self.modpackDB.bundle_keys_set_missing(bundle_id, "channel_exceptions", exceptions)
         return ImportReport(bundle_id=bundle_id, created=into is None, source=source, projects=project_ids,
                             unknown=unknown, overrides=dict(content.overrides), decisions=decided,
-                            channel_exceptions=excepted)
+                            channel_exceptions=excepted, disabled=len(disabled))
+
+    async def _hinted(self, version_ids: list[str]) -> list[ModrinthVersion]:
+        """The versions packwiz metafiles name for jars the archive lacks (T6/P4): the catalog first,
+        then one batch from Modrinth. One it does not return is left out: a hint, not a requirement."""
+        if not version_ids:
+            return []
+        known = {v.version_id: v for v in await self.modrinthDB.version_find_by_version_ids(version_ids)}
+        missing = [v for v in version_ids if v not in known]
+        if missing:
+            fetched = await self.modrinthAPI.version_get_many(missing)
+            if fetched:
+                await self.modrinthDB.version_upsert_many(fetched)
+            known.update({v.version_id: v for v in fetched})
+        return [known[v] for v in version_ids if v in known]
 
     async def _identify(self, hashes: list[str]) -> dict[str, ModrinthVersion]:
         """The version each sha512 is a file of: the catalog first, then one Modrinth call for the rest,

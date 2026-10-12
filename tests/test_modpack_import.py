@@ -85,6 +85,10 @@ class FakeModrinth:
         project_id = next(p["id"] for p in self.projects.values() if slug in (p["id"], p["slug"]))
         return [ModrinthVersion.parse(**v) for v in self.versions if v["project_id"] == project_id]
 
+    async def version_get_many(self, ids: list[str]) -> list[ModrinthVersion]:
+        self.calls.append(("version_get_many", tuple(ids)))
+        return [ModrinthVersion.parse(**v) for v in self.versions if v["id"] in ids]
+
     async def version_get(self, id: str) -> ModrinthVersion:
         self.calls.append(("version_get", id))
         found = next((v for v in self.versions if v["id"] == id), None)
@@ -371,3 +375,42 @@ def test_a_job_that_modrinth_refuses_ends_failed_with_the_reason(mongo: MongoRun
 
     done, report = mongo(scenario)
     assert done.status == "failed" and "no conoce" in (done.error or "") and report is None
+
+
+def prism_zip() -> io.BytesIO:
+    """A Prism instance for 1.20.1 fabric: Sodium on, Lithium turned off, Beta Lib only named by its
+    packwiz metafile, and a jar Modrinth does not know."""
+    buffer = io.BytesIO()
+    pack = {"formatVersion": 1, "components": [{"uid": "net.minecraft", "version": "1.20.1"},
+                                               {"uid": "net.fabricmc.fabric-loader", "version": "0.16.10"}]}
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("instance.cfg", "name=Aventura\n")
+        archive.writestr("mmc-pack.json", json.dumps(pack))
+        archive.writestr("minecraft/mods/sodium.jar", SODIUM[2])
+        archive.writestr("minecraft/mods/lithium.jar.disabled", LITHIUM[2])
+        archive.writestr("minecraft/mods/private.jar", "not on modrinth")
+        archive.writestr("minecraft/mods/.index/lib.pw.toml",
+                         'name = "Beta Lib"\nfilename = "lib.jar"\n\n[update.modrinth]\nmod-id = "Ha28R6CL"\nversion = "libb"\n')
+        archive.writestr("minecraft/saves/Mundo/level.dat", b"world")
+    buffer.seek(0)
+    return buffer
+
+
+def test_a_prism_instance_imports_as_a_job_with_its_disabled_mods_off_and_its_hints(mongo: MongoRunner) -> None:
+    # T6 (owner, 2026-10-09): P2 a .jar.disabled comes in «Desactivado»; P4 a .pw.toml whose jar is
+    # not in the zip names its Modrinth version.
+    async def scenario() -> tuple[Any, ...]:
+        s = Scenario()
+        s.api.versions.append(version("libb", LIB[0], "lib jar 2", kind="beta"))
+        job = await s.service.import_prism(prism_zip(), EDITOR)
+        await run_jobs(s)
+        done, report = await s.service.import_status(str(job.id))
+        bundle = await s.modpackDB.bundle_get(report.bundle_id) if report else None
+        return done, report, bundle
+
+    done, report, bundle = mongo(scenario)
+    assert done.status == "done" and report is not None and bundle is not None
+    assert (bundle.name, bundle.version, bundle.loader) == ("Aventura", "1.20.1", MinecraftLoaders.fabric)
+    assert sorted(report.projects) == sorted([SODIUM[0], LITHIUM[0], LIB[0]])
+    assert bundle.server_decisions == {LITHIUM[0]: False} and report.disabled == 1
+    assert report.unknown == ["minecraft/mods/private.jar"] and report.overrides == {"minecraft/saves": 1}

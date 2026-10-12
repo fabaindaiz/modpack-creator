@@ -48,6 +48,8 @@ class OverrideJar:
     sha512: str
     # Which override folder it came from: "both", "server" or "client".
     side: str
+    # A mod Prism turned off (`.jar.disabled`, T6/P2): it comes in «Desactivado».
+    disabled: bool = False
 
 
 @dataclass
@@ -61,6 +63,8 @@ class MrpackContent:
     override_jars: list[OverrideJar] = field(default_factory=list)
     # Every other override file, counted by its root and first folder ("overrides/config").
     overrides: dict[str, int] = field(default_factory=dict)
+    # Modrinth version ids a packwiz metafile names for a jar the archive does not have (T6/P4).
+    hinted_versions: list[str] = field(default_factory=list)
 
 
 def read_mrpack(data: bytes, limits: MrpackLimits = MrpackLimits()) -> MrpackContent:
