@@ -18,19 +18,30 @@
       "Edit(./.agents/method/**)",
       "Edit(./.agents/knowledge/**)",
       "Edit(./.agents/tools/**)",
-      "Edit(./.agents/agents/**)",
-      "Edit(./.agents/incoming/**)"
+      "Edit(./.agents/agents/**)"
     ]
   },
   "sandbox": {
     "enabled": true,
     "filesystem": {
-      "denyRead": ["./.env.yaml"]
+      "denyRead": [
+        "./.env.yaml"
+      ]
     },
     "network": {
       "allowLocalBinding": true
     },
     "allowUnsandboxedCommands": false,
-    "excludedCommands": ["docker *", "podman *", "./scripts/test-mongo.sh", "./scripts/visual-sweep.sh"]
+    "excludedCommands": [
+      "docker *",
+      "podman *",
+      "./scripts/test-mongo.sh",
+      "./scripts/visual-sweep.sh"
+    ]
+  },
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
   }
 }

@@ -34,6 +34,9 @@ dependencies = [
 bundle = [
   "python .agents/tools/bundle.py verify",
   "python .agents/tools/bundle.py ids docs/decisions.md docs/roadmap.md .claude/logs/agent-changelog.md",
+  # Desde el bundle 0.0.29 y 0.0.27: la columna Status del log de decisiones, y ningún commit que acredite a un asistente.
+  "python .agents/tools/bundle.py decisions docs/decisions.md",
+  "python .agents/tools/bundle.py trailers",
 ]
 audit = "python scripts/audit.py"
 typecheck = "mypy main.py src tests scripts"

@@ -7,7 +7,490 @@ Every release of the agent-guides bundle, newest first. The format follows
 release may change the format a carrier depends on (SemVer §4); a carrier reads what changed since the
 version it holds with `bundle.py changelog --since <its version>`.
 
-## [Unreleased]
+## [0.0.31] - 2026-10-09
+
+**What a carrier runs at this update.** In each carrier, first read `declined` in `carrier.toml`: `install-skills`
+now reads it, so an entry that begins `skills` or `skill <name>` makes it skip them without asking, where it used
+to install them again; an entry meant as prose may now match, so reword it. Then follow `prompt-update.md` as it
+now reads: the prune's table is built and approved before the replace, and `export --replace` does the copy.
+Run `bundle.py verify`; if it warns that `.claude/settings.json` has no `attribution` setting with empty
+`commit` and `pr`, set it (`prompt-context.md`, *Attribution is a setting, not a sentence*). Before updating, grep the
+carrier's own scripts for the names under *Removed* below.
+
+### Added
+
+- **`method/meta.md` and `bundle.py home`** (*under review*): what a home is, how a release reaches a carrier and
+  what each process does with a proposal, read on demand (linked from harvest and update, in no read list).
+  `bundle.py home` prints, from local files, the home and parent of the release held, `upstream`, the last lineage
+  entries, the proposals waiting and whether `incoming/` holds anything. It also says how a diverging line opens its
+  own meta-session. A carrier does nothing.
+- **A lineage of the releases a repository followed** (*under review*): the README's frontmatter gains `parent`, the
+  tag the release followed, beside `home`; `carrier.toml` gains `lineage`, one `VERSION HOME DATE` entry per release
+  taken, appended by `export --replace` and `proposals --prune` once per version and never by a home. The append
+  edits `carrier.toml` as text, keeping its comments and order. A carrier writes nothing by hand.
+- **Consented local usage data: `bundle.py usage`** (*under review*): `show`, `set`, `add`, `use`, `forget`,
+  `brief`, `summary`, `report` and `needs-consent`. It stays on the machine, outside every repository and never in
+  git; the default is nothing, and `usage set` takes a level (none, counts, full) or a category on or off. Records
+  expire after 90 days, a preference renewing when used. Nothing is stored before the answer: `close` asks once,
+  with the text it shows, stores only what the answer allows, and does not ask again that session unanswered.
+  The tool writes only in a state folder, refuses a path inside a repository, and a sentinel rule in `verify` and the
+  privacy check fails any usage record or consent file that reaches a tracked or staged file. Harvest may show
+  `usage summary`; a preference never enters a proposal. A carrier that never answers changes nothing.
+- **A long background agent states its price first** (*under review*): its estimate of time and tokens, and its
+  model, before it runs; when it returns the actual is compared, and with consent both are recorded
+  (`usage add agent_costs`; `prompt-context.md`).
+- **The long skills open with a pre-review** (*under review*): `close`, `decision-review` and `user-walk` first
+  ask, in one message, the important questions still open for them (at most four, from cheap reads) and, unless asked
+  for by name, whether to run in full; the answers are written where they belong even when the process is declined.
+- **A guide to starting each process and a `next` skill** (*under review*): `method/guide.md` says what to say to
+  start each process, in any language; `/next` advises which one fits. The update installs the skill.
+
+### Changed
+
+- **Layout:** for a carrier coming from 0.0.26 or earlier, two changes no earlier section named: since 0.0.27 the
+  index's *By phase of work* rows name each note as a backticked slug, not a link (its card is
+  `knowledge/cards/<slug>.md`), and since 0.0.30 `knowledge/areas/` is gone (a note is reached through its card).
+  An audit of the carrier's own that parses those rows or reads the area pages fails after this update while
+  `verify` passes: point it at the slug and the card, or drop the check and rely on `bundle.py verify`.
+- **`decision-review` and `user-walk` say more of what they are for** (trigger eval, `d-5ed7e8-7a95b5`):
+  `decision-review` also when asked to go over proposals or decisions again or to reconsider one;
+  `user-walk` whenever a request is about what a person does or meets in the app, interaction changes included.
+  The knowledge reviewer's description drops its topic list, which it reads from the index when it starts.
+- **The shipped tool carries no comments**: the build strips them from `tools/bundle.py` (docstrings stay); the
+  home's original keeps them. It is one file smaller and behaves the same.
+- **The method's prose is shorter, its rules the same**: a light pass over the largest method files made one line
+  of what took two and restated nothing; every rule, number and command stays. `prompt-update.md`
+  reads (a)-(e) in order, with the incoming tool, the writes before approval and the prune's classification each
+  stated once; a branch for the update is cut with `--no-track`, so a plain push never goes to the old branch.
+- **The security hook for the `researcher` agent bounds its scratch folder**: a job folder must be absolute, and
+  one equal to the user's home or containing it is no root; a refusal names the roots and the shape that runs.
+- **Merging and pushing from a worktree**: a session told to merge does it from its worktree, a fast-forward, and
+  never hands the command back; it publishes only when a push was asked too (`close` §*Rules*, `prompt-sync.md`).
+- **A permission rule catches a by-product edit, never intended work** (`prompt-context.md`, artifact 4; bootstrap
+  Phase 5): `deny` only on a file that only a tool writes, `ask` on generated files and the guards, no rule on
+  originals or the carrier's own files; an exception is a path left without a rule, never an allow.
+- **Every carrier's root map sends the user's decisions to principle 15's way of asking**; six notes gained
+  evidence from the proposals received.
+- **`privacy` does not warn on a quote of the bundle's own text** or the tool's own string literals; a private quote,
+  or one that only contains a bundle phrase, still warns. `check-local` and `align` name a path with no bundle.
+
+### Removed
+
+- **Helpers only the home used leave `tools/bundle.py`.** `write_checksums`, `checksums_text`, `read_pack`,
+  `PACK_LIMIT` and `carrier_ids` moved to the home's `release.py`; the `Sessions` type alias, `surface_files`,
+  `entry_template` and `count_mentions` were deleted. No subcommand lost a flag. A carrier is affected only if its
+  own scripts import them: grep its scripts and CI for those names, and call `bundle.py` as a command instead.
+
+### Fixed
+
+- **A path with no bundle no longer stops `check-local`**: it is named as not read; a write over such a path, or a
+  read where none carries a bundle, still stops. `gather` counts carriers read, not carriers listed.
+- **`export --replace` ignores caches and finder metadata** and keeps the carrier's own files, the legacy outbox
+  included; it refreshes a folder that holds only a release.
+- **`install-skills` skips what `carrier.toml` declines**, reads quoted names and skips non-strings.
+- **`new entry` reads separated labels** and leaves a log in another language its own fields.
+- **`core.hooksPath` pointing at the repository's own hooks folder** by an absolute path, or from a linked
+  worktree at the main checkout's, is no longer warned about.
+- **A usage record missing a required key** is skipped by every reader instead of raising; an unknown category is
+  refused before consent is read, listing the valid ones; `usage set level none` says whether data is kept and that
+  `usage forget` erases it; `usage add CATEGORY` alone prints the fields.
+- **The usage guard reads the staged copy too**; `needs-consent` applies retention and prints `ask` or
+  `ok: <categories>`; `usage brief` renews the preferences it prints; `home` with no `carrier.toml` says so.
+- **Notes' cues say the mechanism**; the build refuses a product noun in one.
+
+## [0.0.30] - 2026-10-08
+
+### Added
+
+- **Experimental support for Cursor and GitHub Copilot: `bundle.py surfaces`.** A carrier that lists them in
+  `carrier.toml` (`surfaces = ["cursor", "copilot"]`) runs `bundle.py surfaces --write`, which writes their copies
+  of what Claude Code reads: each `.claude/rules/` file as a Cursor `.mdc` rule and a Copilot instructions file (its
+  `paths:` as their globs), each `.claude/agents/` file as a Cursor subagent (read-only when it cannot edit) and a
+  Copilot custom agent (its tools in Copilot's names), and a Copilot pointer to `AGENTS.md` where none was written by
+  hand. Each copy names its source; `verify` fails a copy that is stale, edited or orphaned, and a file written by hand
+  is never overwritten without `--force`. The update says how to fold a carrier's hand-written rules into their
+  sources first. Not yet: hooks for the surfaces that do not import Claude Code's, which stay in git hooks and CI, and
+  any measurement in those assistants. A carrier that lists nothing changes nothing.
+- **`bundle.py docs-drift`: documentation drift caught by a script, not by review** (*under review*). A carrier keeps
+  `docs-map.toml` at its root: each document agents load or follow, the globs it describes, a reason, and whether a
+  change without it blocks or warns. `--range BASE..HEAD` fails a blocking rule unless a commit in the range says
+  `docs-unchanged: <reason>`, a rename counting on both sides; `--staged` warns at pre-commit; `--map` and `--refs`
+  run inside `verify` when a map exists; `--report --since 7d` gives each rule's triggers, escapes and escape rate,
+  the documents left behind and the pairs history suggests, never adding one. Principle 16 and `close` point at it.
+  A carrier with no map is unaffected; writing one is the next harvest's step.
+- **`bundle.py lookup WORDS` (also `--files`, `--diff RANGE`)** ranks the index's *about to do* rows against a
+  change, with a `cues` list now in each note, and prints one to three rows with their cards. It is an aid beside
+  the index, not a replacement: its offline recall (two in three at the top three) is under the nine in ten the
+  wiring would need, so the root file's knowledge line still reads the index.
+- **A `researcher` agent** (`agents/researcher.md`, *under review*): delegated research on a cheaper model at medium
+  effort, 40 turns at most, a five-minute cache and no root files, reading and fetching only, a report of at most
+  800 words with every claim's source and its assumptions marked. A hook in its own frontmatter
+  (`bundle.py research-hook`) lets its shell run reads and `curl` into a temporary folder outside the repository,
+  nothing else; the host runs it only in a trusted folder. The update installs it beside the reviewer.
+- **`bundle.py close --base REF`**: the closing checklist's deterministic part in one command (verify, trailers,
+  record ids, decisions, docs-drift, local memory), failing on any, with what stays the writer's named.
+
+### Changed
+
+- **A large plan carries its estimate** (*under review*): one that takes more than a session or about 1e5 tokens or
+  more says, before it starts, the release it is cut into and its cost in time and tokens (money where the human pays
+  per token), with what each rests on; the roadmap's item format has an *Estimate* line, and `close` compares the
+  estimate with what it took. The session loop's step 1 states it.
+- **The release is smaller, and nothing it removed was read.** The area pages (`knowledge/areas/`) are no longer
+  shipped: the index routes to the cards, and each card links its note, which is how `verify` now reaches a note.
+  `knowledge/OPEN.md` lists waiting candidates by slug and kind, `proposals/RECEIVED.md` keeps the verdicts of the
+  last two releases (older ids still prune), and the changelog a release ships starts at the oldest registered carrier's version (the home keeps the whole).
+  A carrier does nothing; a link it wrote to an area page now fails `verify`, and points at the card instead.
+- **`carrier.toml` may name the session log** (`log = "docs/agent-log.md"`); `new entry` and `count` read it, so a
+  carrier whose log lives elsewhere stops passing `--log`.
+- **`new entry` reads a log as it is**: its format under any heading, fields written as bulleted bold labels, and the
+  heading level the log's entries use.
+
+- **Closing for a host that reserves merging to a person** (*under review*): `close` knows *ready for review*: it
+  prepares the evidence, moves the item to review and stops; after approval it merges, removes the worktree before
+  the branch, and closes the item.
+- **A plan may be a working artifact** (*under review*): kept local and removed with its worktree, provided each kind
+  of content first moves to the record that survives it (`close` §8 has the table). A plan's ledger is a status
+  table (task, state, commit), and a plan of several tasks maps its criteria to its tasks both ways.
+- **An external tracker can be the roadmap's source** (*under review*): the roadmap then holds only what the tracker
+  cannot, each item citing its key (artifact 8 and the adoption table).
+- **The host's own tools stay off the bundle** (*under review*): bootstrap and update exclude `.agents/` from the
+  repository's linters, formatters and ratchets.
+- **A proposal answered on privacy is rewritten, not edited** (*under review*): harvest and `close` say how.
+- **A check run in a worktree** needs an environment bound to it, or its result is read as unproven (*under review*).
+- **The bootstrap asks its objectives first** (*under review*): an empty repository is asked at once, one with
+  content gets a short look of about five minutes so that the first question proposes what it is for, what the
+  initialisation delivers and how deep, and which questions its research answers. Phase 2 is scoped to those
+  answers and writes each finding as it lands to one dated research document, the only file before Phase 3; the
+  bootstrap is accepted by a first real task. The pre-flight keeps five questions: language joins readers.
+- **The root artifact is `AGENTS.md`** (*under review*): artifact 1 is the one source every assistant reads, with a
+  root `CLAUDE.md` whose first line is `@AGENTS.md`, since Claude Code reads `AGENTS.md` only when there is no
+  `CLAUDE.md`; artifact 5 is the session log, at `.claude/logs/agent-changelog.md` unless `log` names another path;
+  the bootstrap's checklist, Phase 3 and the session loop say "the root file". A carrier whose rules live in
+  `CLAUDE.md` changes nothing.
+- **Copies that disagreed now agree, and evaluate stops restating what it loads**: a second friction in one
+  repository is a reason to propose, not admission evidence; the bootstrap's step 6 names `docs-map.toml`; its
+  whole-branch review carries principle 19's caveat on the evidence; `decision-review` says ten minutes, as §15
+  does. Evaluate points at the ladder, the three agents and which document to run instead of restating them.
+- **What Cursor and Copilot read, checked again** (`prompt-context.md`, *What each surface can actually do*): both
+  now read `AGENTS.md` and, for compatibility, Claude Code's skill and subagent folders and most of its hooks; the
+  CLIs of both also read `CLAUDE.md`; Copilot runs hooks in VS Code too. So the one-source design reaches all three,
+  and what is generated is only what has no common place: per-area rules and a subagent's tool limit. A carrier
+  changes nothing unless it lists them in `surfaces` (above).
+- **Three rules the prompts stated differently, decided** (*under review*): evaluate runs first on every repository
+  but an empty one; in adopt mode the first pass creates only what has no home, and each file the host already has
+  is extended in a session of its own (principle 19); a harvest closes only its own session's work, and names the
+  uncommitted work it did not do in its opening question, leaving it alone unless told otherwise.
+
+- **A review turn has a fixed shape** (`prompt-context.md` §15, `decision-review`): three to five short blocks of
+  prose, one more answer, *review more*, opening a second level, the assumptions shown before an irreversible
+  decision and a check of what will happen after a costly one, and the fitting skills offered before a plan.
+- **A complex task is routed by its signals** (*under review*): one signal goes straight to its skill, two or more
+  read the catalogue in `method/skills/README.md`, now one row per role with what separates neighbours, and at most
+  three are offered. A carrier lists the roles it has installed in `carrier.toml` (`[skills]`), and `verify` fails a
+  name that is not installed; the README also advises trimming the host's skill listing.
+- **`decision-review` and `user-walk` ask to be invoked before the session reads the material**, and `user-walk`
+  now names a question about what a person meets when a step is slow, abandoned or cut off, which a trigger eval
+  found it missing; both are measured again before this release ships.
+
+- **The reviewer checks once per card and stops** (`agents/knowledge-reviewer.md`, step 5): the first reads batched,
+  a check that needs a planted fault, a scratch copy or a new test returned as the test the author must write, and
+  a stated point to stop. Measured before it shipped: about seven tenths of the reviewer's cost, recall equal
+  (the home's `evals/REPORT.md` §4.15). The update copies the reviewer again, as it does every release.
+- **Cheaper turns, nothing else changed** (`prompt-context.md`, *Models, reasoning levels and cost*): the reviewer
+  agent takes the five-minute prompt cache (`experimental.cacheTtl`), as headless runs should; nothing dynamic goes in
+  what is always loaded, and the build refuses a method skill that names a model, since switching it for a turn
+  misses the whole cache; the root file gains a short fourth line asking for independent tool calls in one message.
+  Re-run the bootstrap's Phase 4 wording into the root file. Measured beside 0.0.29 in one run: about eight tenths
+  of its cost, and over two runs the same discriminating passes (the home's `evals/REPORT.md` §4.16).
+
+### Removed
+
+- The deprecated `bundle.py digest` alias: run `bundle.py verify`.
+
+### Fixed
+
+- **A minted carrier names its home as `upstream`**, which the release's `README.md` now states as `home`; an empty
+  `upstream`, which marks a home, fails `verify` anywhere else. Every registered carrier already holds the home's
+  id, so none turns red; a new one gets it at `carrier-id --mint` (or `--upstream ID`).
+- `release.py align` compares a carrier with the tagged release it holds, so work built in the home after a release
+  no longer unaligns every carrier.
+- `release.py register` remembers a linked worktree as the repository it belongs to, never the scratch path.
+- `bundle.py decisions --migrate` dates a row by the author date of the commit that first wrote it, which a history
+  rewrite keeps; the committer date it read was reset by one, dating every row to the rewrite.
+- An extension written alone in Enforced in (the `.mdc` rules) is no longer read as a missing file.
+
+## [0.0.29] - 2026-10-05
+
+The decisions log as a decision record a tool reads, confidential records that never leave a carrier, and the
+owner's decisions on the research of the same day. Its update migrates the carrier's decisions log
+(`prompt-update.md`) and adds `bundle.py decisions` to its gate. The parts marked *under review* are re-judged
+at the next harvest.
+
+### Added
+
+- **A Status column in the decisions log** (artifact 6): `<state> <date> · <decider>`, with `proposed`,
+  `accepted`, `declined`, `deprecated` and `superseded by d-…` in fixed English words. Only a person accepts or
+  declines; an agent changing a person's decision writes a `proposed` row. The decider is a stable alias, an
+  agent's session or `found`, and names stay in the private folder (*under review*).
+- **`unconfirmed:` and `accepting:` in Why**: a reason no person gave is marked, and a decision's own cost is
+  written (*under review*). Criteria for when a decision deserves a row (*under review*), and a section for what
+  looks deliberate and is not.
+- **`bundle.py decisions FILE`**: fails on a Status that does not parse, a supersession not written both ways and
+  an agent's acceptance over a person's decision; warns on proposed rows, unconfirmed reasons and an enforcer path
+  that names no file. `--migrate` gives a four-column log its Status column, each row dated from the commit that
+  first wrote it.
+- **A private folder per carrier** (`.private/` at the root, or `private_folder` in `carrier.toml`): no tool or harvest
+  reads it; each file opens with a sentinel line the privacy check fails on anywhere else; a push of the carrier
+  does not read it; `verify` fails when a carrier declared `visibility = "public"` tracks it in git.
+- **The home reads every proposal for privacy again** in `gather` and `intake`, and does not take in one that
+  fails or carries a warning nobody answered with `privacy-allow`; the harvest and the close ask the human.
+
+- **§*Long runs and delegates*** (`prompt-context.md`): what stops a delegate that did nothing wrong (a sleeping
+  machine fires every wall-clock timer at wake, the stall watchdog, a lost hand-off), how to run a long gate, gates
+  serialised behind one lock, three lines in every delegate brief.
+- **A test in the gate asserts behaviour, never speed** (principle 18): waits wait for their condition, a timeout is a
+  hang detector, a speed that matters is counted or measured apart; the ratchet note says the same of thresholds.
+- **`check-local` warns** when the committed settings lack the empty `attribution` setting, or when a hooks folder
+  exists and `core.hooksPath` does not point at it.
+- **A note under review, `a-rewrite-cleans-only-what-refs-reach`**: published attribution lines are left and
+  documented; a rewrite, when chosen, is range-limited, leased and followed on every other machine.
+- **Two more occurrences** in `a-check-must-be-seen-to-fail` and a second form of `derived-copy-goes-stale-silently`.
+
+### Fixed before it was carried
+
+A read-only review of each reachable carrier against this release, run before it was carried, found these; they
+are fixed in it:
+
+- `bundle.py decisions` on a log that does not exist refuses in one line instead of a traceback, and a dotted key
+  or symbol in Enforced in (`permissions.deny`) is no longer read as a missing file.
+- `--migrate` gives the Status column only to the tables in the log's own header and names any other, such as an
+  open, half-decided section, whose rows a person maps to `proposed`.
+- The installed skills point at `.agents/method/prompt-context.md` by its full path, which a carrier's own pointer
+  check resolves, and `close` runs the decisions check on the log the root file names.
+- The update procedure warns that a carrier's own audit reading the log by column position goes on passing after
+  the migration while checking the wrong cell.
+- The private folder's default is `.private/` at the root, not under `docs/`, which a site generator publishes.
+
+### Changed
+
+- **An offered whole-branch review** states that its evidence is uncontrolled, proves each finding or reports it
+  unconfirmed, and records findings confirmed and rejected with tokens and minutes in the entry's *Review*.
+- **`report` says how far its estimate is off**: characters over four run about 1.4× low for bundle text; budgets
+  stay in that unit.
+- **Adopting a host that keeps ADR files**: the files stay; an index row per record maps its status to the
+  method's, and the mapping is recorded in `adapted`.
+
+## [0.0.28] - 2026-10-05
+
+Fixes from a fresh-context review of 0.0.27 before it was published, and the first results of the research the
+same session ran on what was left open. A carrier that took 0.0.27 takes this one the same way.
+
+### Fixed
+
+- **`privacy --commits` crashed on a path with a space, a quote or a backslash** (a traceback that blocked the push
+  hook); paths are read NUL-separated, and any git failure is a one-line refusal. It now also reads the lines a merge
+  commit writes itself.
+- **`trailers` with no upstream read published commits and advised rewriting them**; it now reads only commits on no
+  remote, accepts rev-list options as its range (`trailers --all`), names a flagged commit that is already published
+  and leaves rewriting it to the owner, and catches any `…-by:` trailer naming an assistant without flagging prose.
+- **`count` folded a recurrence recorded in the same words as a copy**; it counts every entry and marks word-for-word
+  repeats for the reader to judge (the close skill says how).
+- **The home's pre-push hook** checks a new ref against the remote being pushed to, and reads annotated tags.
+- **The user-deny warning** anchors a `./` rule at the repository root and says it reports every committed file the
+  rule matches.
+- **`memory-diff`** no longer takes a manifest, a lockfile or three shared words as holding a rule.
+- **A second review of these fixes** found four more, fixed here: `privacy --commits` read a file or a path that is
+  not UTF-8 with a traceback, refused a commit that moves a submodule's pointer, and never read a file whose type
+  changed; `trailers` in a repository with no commit was refused instead of reading nothing. The home's pre-push
+  hook resolves a push by URL to its configured remote, or reads every commit it sends, and strips only a real
+  signature from a tag's message.
+- **Step 2 and the working invocation** said to ask "all at once", against principle 15's decision review; they say
+  together, or one per turn in a decision review.
+
+### Changed
+
+- **The three skills' descriptions lead with their trigger and name the neighbour that wins today**; a carrier adds
+  the human's phrases as `when_to_use` in `LOCAL.md` rather than replacing `description` (`method/skills/README.md`).
+  A bare push is not a trigger of `close`; the close is offered once before a push that ends a plan.
+- **`a-decoder-that-degrades-to-plausible-output-needs-an-out-of-band-check`** cites the wrapper format whose check its
+  first occurrence left out, with a synthetic run that confirms it; seven experiments are queued for the five new notes
+  that had none, and one for a gate's timing under load.
+
+## [0.0.27] - 2026-10-05
+
+How the maintainer actually decides becomes part of the method: questions run in named modes, every
+option is shown by example, and two skills carry the long procedures (`decision-review`, `user-walk`).
+This release also takes in two hundred and twenty-one proposals from eight carriers, the most any release
+has gathered: seven notes admitted after their literature was checked, twenty-four notes grown, method
+changes in eight themes the maintainer reviewed one by one, and seventy-eight refusals recorded.
+
+**Marked *one carrier's evidence*:** a method change below that rests on one carrier's harvest. It is
+published by the maintainer's ruling and reviewed at the next release.
+
+**A carrier updating to 0.0.27 runs `python3 .agents/tools/bundle.py install-skills`** (two new skills),
+**sets `attribution` to `{"commit": "", "pr": "", "sessionUrl": false}` in its committed
+`.claude/settings.json`**, and wires `bundle.py trailers` into its gate or a commit hook (artifact 4,
+*Attribution is a setting, not a sentence*). `bundle.py privacy` now prints a WARN, never a silent pass,
+on a machine with no private-terms list.
+
+### Added
+
+- **Four question modes, and every option shown by example** (principle 15). The pre-flight, the decision
+  review, the fact interview and parked questions each have a shape; the inventory of decisions goes
+  together and the human's decisions go one per turn. Every option carries a concrete case at the same
+  fidelity, its price in the repository's units, what it forecloses, and a reason; a middle ground when it
+  is real. What the user sees, the stack and the owner's content stay theirs even when reversible. Measured
+  across one maintainer's sessions on one machine: most decisions go through questions, a recommendation is
+  taken about seven times in ten, free text carries most corrections, and rulings walked after a plan ran
+  were mostly changed (`meta/reviews/2026-10-05-working-practices.md` in the home).
+- **`decision-review`**, a skill: read first, list every decision tagged the human's or the agent's, walk
+  the human's one per turn by example, recompute after each answer, record before any plan.
+- **`user-walk`**, a skill: the ideal flows, then every delay, interruption, setback, failure and misuse
+  listed before any is handled, a premortem, each case kept turned into a failing test; and observations
+  from real use answered by name, reproduced, fixed test-first and swept for their class.
+- **Which installed skill fits which moment** (`method/skills/README.md`): brainstorming, then
+  `decision-review`, `user-walk`, a plan, test-first work, and at the plan's end the whole-branch review
+  offered, then `close`.
+- **Seven notes, each admitted from two to four repositories with its literature checked**:
+  `refusal-must-not-read-like-an-answer`, `readout-per-silent-outcome`, `documented-defaults-drift-from-code`,
+  `a-decoder-that-degrades-to-plausible-output-needs-an-out-of-band-check`, `a-request-accepted-is-not-an-effect`,
+  `a-version-bump-spends-the-forward-compatibility-it-was-protecting`, and
+  `a-surviving-guard-mutation-means-a-missing-input`, narrowed by the literature to four explanations.
+- **Tools.** `bundle.py turns` prints what the human said in the local session transcripts (typed turns,
+  mid-turn messages, question rounds with free text marked, skills invoked), for the harvest's reading.
+  `bundle.py trailers` fails on a commit message that credits an assistant. `bundle.py privacy --commits
+  RANGE` checks what a push sends, and the home's `.githooks/pre-push` runs it with `trailers`. `verify`
+  warns when a user-level deny rule covers a committed file.
+
+### Changed
+
+- **The whole-branch review is offered** (principle 19, the session loop's step 4): at the end of every
+  multi-task plan, one question with its cost (minutes and about 1e5 tokens). Five repositories found
+  defects a green suite missed this way. The card-driven reviewer stays on request.
+- **A rule acts only where the action reads it** (the enforcement ladder): `close` is offered in one
+  question before a push or deploy that ends a plan, when it has not run; "push everything" is no longer
+  one of its triggers (*one carrier's evidence* for the trigger change).
+- **Denies** (artifact 4): a deny stops the agent's typed spelling, not the same effect inside a script or
+  a process that already holds the file; user and project denies merge, and a deny at any level wins.
+- **Attribution is a setting, not a sentence** (artifact 4, bootstrap Phase 5, close step 5): a rule that
+  lives only in one machine's memory or user-level file reverts silently on another machine; it moves into
+  the repository and is enforced by a hook or the gate.
+- **Tests** (principle 18): a mutation is checked to have applied exactly once and to build before the test
+  is read; the call site is broken too; an expected-failure mark names its exception; defects found at
+  adoption are checks that must fail (the last two *one carrier's evidence*).
+- **Measurement** (principle 6): a cost or constraint is measured before it decides; what would invalidate
+  a measurement is written before the number is read.
+- **The bootstrap**: a guide a person runs with no disposable copy carries a tested undo and is run once
+  for real with approval; a reference that resolves is not thereby the right one, and a fetch that answers
+  through a model returns a summary even at the primary address; tool-parsed headings follow the tool's
+  language, and documents follow the repository's; a worktree inside the repository is named in the
+  brief (*one carrier's evidence*); commits group by context, and a grouping the human asked for wins; a
+  scripted edit checks every anchor before it writes.
+- **Precisions**: the fact interview asks one fact per question and never records a reason not given;
+  exemptions are keyed on content, not line numbers (principle 2); an enforcer is a check that runs and
+  can fail (principle 1, *one carrier's evidence*); a gender nobody gave becomes "they" (§20, *one
+  carrier's evidence*); a delegate's change to a check is a finding the controller reviews (*one carrier's
+  evidence*).
+- **`bundle.py count`** folds an event copied into several entries and says it counts entries, not
+  incidents. **`bundle.py privacy`** says how many terms it read and a short hash of the list.
+- **Knowledge.** Twenty-four notes gained occurrences, boundaries or remedies; eight queued candidates were
+  folded into them; `a-check-must-be-seen-to-fail`'s census was executed in two repositories;
+  `derived-over-chosen-identifiers` saw its first collision. `knowledge/OPEN.md` lists what each still lacks.
+
+### Fixed
+
+- `memory-diff` held a memory wherever a code span it names appeared; it now requires the rule itself and
+  reports *partly held* otherwise.
+- `new entry` dropped the method's fields when a log states its own format; it appends them and names them.
+- The tools die with a traceback under Python older than 3.11; they refuse in one line.
+- The roadmap template put an item's id before the middle dot, where `ids` does not read it.
+- `release.py carriers` wrote an empty-id record for a repository with no `carrier.toml`.
+- `privacy` failed a repository on its own name.
+
+## [0.0.26] - 2026-10-03
+
+The method's procedures start shipping as skills, and the close is the first. This release also takes in
+sixty-six proposals from two carriers, each with a verdict: method changes, eight notes grown, three
+candidates queued and one reopened, six standing preferences left to the maintainer's profile, ten refused
+by their own harvests, and one experiment run.
+
+**Marked *one carrier's evidence*:** a method change below that rests on one carrier's harvest. It is
+published by the maintainer's ruling and reviewed at the exit of the redesign's phase 1, when entries
+written by two carriers show whether each field is filled.
+
+**A carrier updating to 0.0.26 runs `python3 .agents/tools/bundle.py install-skills` after copying the
+release**, since its live update procedure predates step 3c. **`bundle.py verify` now fails on an installed
+skill that is stale or edited by hand**: a carrier that installed a skill from an earlier draft, or edited
+one, is red until it installs again. A skill never installed is not checked, so nothing turns the gate red
+for its absence; install it anyway. A carrier with its own skill of the same name moves its rules into
+`LOCAL.md` first, then installs with `--force` (`method/skills/README.md`).
+
+### Added
+
+- **The method's skills, installed as a base plus the carrier's `LOCAL.md`.** `method/skills/<name>/SKILL.md`
+  ships the base; `bundle.py install-skills` writes `.claude/skills/<name>/SKILL.md` merged with the
+  carrier's `LOCAL.md` (frontmatter key by key; a `##` section replaces, removes or adds), and refuses
+  to overwrite a skill the carrier wrote. `install-skills --check`, and `verify`, fail on an installed
+  skill that is stale or edited by hand. The update installs them again (step 3c).
+- **`close`, the first skill**: every part of the request, the documents true again, the changelog
+  entry, frictions counted, local memory moved into the repository, open device questions a build can
+  answer, the hand-off, then the gate, with the commit run on the gate's own exit status (never through a
+  filter, or only under `pipefail`).
+- **The bookkeeping a close runs, as commands.** `bundle.py new entry TITLE --write` writes the
+  changelog entry's skeleton with its minted id from the log's own format, or the method's; `bundle.py
+  count SYMPTOM FILE...` counts the entries that mention a friction; `bundle.py memory-diff` lists the
+  assistant's local memories the repository holds nowhere.
+
+### Changed
+
+- **The changelog entry has slots for what sessions were writing outside it** (*one carrier's evidence*).
+  Artifact 5 adds *Cards relied on, and the checks that ran*, *Review* (who, isolated or not, findings by
+  severity, what was deferred) and *Learned* (general, for the harvest; local, with where each was routed;
+  ending with the closing review's `Captured: …` line). Where a host's plan template wins, the card lookup
+  is mapped into it in one line (bootstrap Phase 4, principle 19), or the step quietly stops.
+- **The boundary of "review on request" is stated, in principle 19** (*one carrier's evidence*). It was
+  measured for the knowledge reviewer on one task's diff, not for a whole-branch review after a multi-task
+  plan, nor against what a missed defect costs; a host workflow that reviews by default stays, and its
+  findings go in the entry's *Review*.
+- **The closing review counts by searching, not from memory** (*one carrier's evidence*). Friction and
+  procedures done by hand are counted in the log and any ledger, and the count is written; a procedure an
+  earlier session also did by hand is proposed as a skill, with its cost. A new row: a fact living only in
+  local memory, an ignored ledger or a scratch file goes to the repository document that owns it (the
+  hand-off must work from another machine). Step 6 gains *a new dated record → its folder's index*, and
+  artifact 9 names that index check among the cheap ones.
+- **Deny rules, and red after the code** (*one carrier's evidence*). Artifact 4: deny per destructive
+  subcommand (a prefix also refuses the read-only forms; a rule for one form misses its neighbours; a
+  global option written before the subcommand passes a prefix rule), and a command with one denied part is
+  refused whole, so an edit is never chained to it and the tree's status is read before tests. Principle
+  18: where the tree may not be stashed, see the red by moving the implementation aside and back, or by
+  mutating; undo by editing forward, proved with `git diff --exit-code`.
+- **A delegated agent that downloads or writes gets its own scratch directory outside the repository**,
+  and a destructive step there first checks that its target resolves inside it (two repositories).
+- **A relayed claim is checked before it is repeated** (principle 6, two repositories): what an agent
+  reported, what a record says or what an incomplete search did not find is read first-hand before it goes
+  to the human or into another brief.
+- **A carrier's audit leaves the bundle's shape to `verify`** (artifact 9): it checks only how the
+  repository uses the bundle, because an audit that re-implements a release's layout turns red, or
+  vacuous, on the next one.
+- **Hearing the request** (principle 15, and one line in step 7; *one carrier's evidence*): every part of
+  the message, mid-turn ones included, is done or named as not done, and free text overrides the offered
+  options.
+- **The harvest reads what was said, not only what was recorded** (*one carrier's evidence*): the human's
+  messages in the session transcripts, mid-turn messages and question answers included, the assistant's
+  local memory and ignored ledgers, privacy-filtered; and it extracts what was asked to research,
+  corrected, stressed, requested again and got wrong again.
+- **Knowledge.** `a-check-must-be-seen-to-fail`: zero subjects after a layout moved, zero tests run, a
+  threshold's cut placed between a measured good and a measured bad output, and a planted violation in the
+  codebase's own idiom; its census was run once. `a-default-scope-is-the-widest-one` found its second tool
+  (a device task with no serial). `sweep-the-rendered-extremes`, `test-double-fidelity`,
+  `derived-copy-goes-stale-silently`, `derive-state-from-one-clock`, `same-answer-or-refuse` and
+  `absence-is-a-third-value` gained occurrences; `knowledge/OPEN.md` lists what each still lacks.
+
+### Fixed
+
+- **The update keeps only the top-level `incoming/README.md`** when it empties `incoming/`; the release
+  copy holds many files of that name (*one carrier's evidence*).
 
 ## [0.0.25] - 2026-09-29
 
@@ -37,178 +520,4 @@ repository's own procedure when a method prompt is pasted. This release closes t
 - `knowledge/INDEX.md` said a learning not yet admitted is a row in `tracking/candidates.md`, the outbox
   0.0.24 removed; it now says a proposal in `proposals/`, written by `bundle.py propose`.
 
-## [0.0.24] - 2026-09-29
-
-What a carrier learns now travels as proposals, and this release is the first to take them in: twenty
-proposals from four carriers, and five rows that a carrier on the layout before 0.0.22 had added over its
-release, each with a verdict. Four notes grew; the rest wait in the queue (`knowledge/OPEN.md`) for what
-they lack.
-
-### Changed
-
-- **What a carrier learns goes back as proposals, one file each.** The harvest writes every candidate,
-  extension and experiment run with `bundle.py propose` into `.agents/proposals/p-<hex>.md`, a file that is
-  never edited. Its header marks it as a proposal and says where it comes from, as a patch names its base:
-  the carrier's id, the release it held (`base`) and that release's `SHA256SUMS` digest. The home gathers
-  them, is the only one that integrates them, and lists every one it took in, by id, in the next release's
-  `proposals/RECEIVED.md`; the carrier removes those itself (`bundle.py proposals --prune`). Nothing the home
-  runs deletes a carrier's proposal. `proposals/README.md` has the fields and the whole path.
-- **The update settles the proposals** (`method/prompt-update.md`, step 3a): an old outbox is converted, and
-  what the home received is pruned. **A carrier updating from 0.0.22 or 0.0.23 runs
-  `python3 .agents/tools/bundle.py proposals --from-outbox` and then `--prune` after copying the release**,
-  since its live update procedure predates the step; `bundle.py verify` fails until the old outbox is
-  converted.
-- **`upstream` in `carrier.toml` names where the carrier takes releases from; it is empty only in the
-  home.** A carrier whose `upstream` is empty, as a plain copy of the folder or `carrier-id --mint` leaves
-  it, sets it by hand: the carriers reached by this release name the home by its carrier id. A folder
-  copied from another repository also carries that repository's `carrier.toml` and proposals: delete
-  both and mint an id of your own before writing anything.
-- **Knowledge.** `validate-each-transformation-run`: the projection is taken at the level the consumer
-  reads, so a file checked by its checksum is compared in bytes, line endings included.
-  `absence-is-a-third-value`: a lookup that defaults a missing key to an empty list turns "not reached"
-  into "nothing found"; keep the two apart up to the guard. `copied-instruction-claims-its-origin`: a bundle
-  designed to travel is not exempt by design alone; its per-repository record copied whole was read as the
-  copy's own three times. `absent-constraint-widens`: an equivalence test is only as discriminating as the
-  cases its world holds.
-
-### Added
-
-- `bundle.py propose` writes one proposal; `bundle.py proposals` lists them with what the home received,
-  and `--prune`, `--pack FILE` (one file, for a home that cannot open this repository) and `--from-outbox`.
-- `bundle.py verify` fails on a proposal that does not read back whole, on one edited after it was written
-  (its id seals everything it says), on one written under another carrier's id, on anything else in
-  `proposals/`, and on an outbox of 0.0.22 or 0.0.23 not yet converted.
-- Converting an old outbox keeps every row: a table with aligned columns or blank lines between rows is
-  read whole, a row whose cells do not fit becomes a proposal that says what was missing, and the
-  conversion refuses, removing nothing, when a table file holds text that is not a row.
-
-### Removed
-
-- **The outbox tables**, `tracking/candidates.md` and `tracking/experiments.md`, and `bundle.py outbox
-  --reset`. Their rows become proposals, each with the id the home already gave it if it gathered them.
-
-### Fixed
-
-- **Converting a carrier from the layout before 0.0.22 no longer depends on a gather to keep what it
-  learned**: the rows it added to its tracking tables become proposals before the tables go, and the
-  conversion is refused when the release it holds has no tag to tell its rows from the release's. **A
-  carrier on such an untagged release is converted by hand first**: its README and method headers are
-  brought to one set of `adopted`, `upstream`, `adapted` and `declined`, the home runs `release.py lost`
-  against the carrier's own commit that took its release and takes in every line it prints, and only then
-  is `tracking/` removed and the splice run.
-
-## [0.0.23] - 2026-09-28
-
-Measured before it was built: a cost smoke test of 0.0.22 found that
-reading a summary first sent sessions into whole area indexes, at about 2.8 times the cost of working without
-the bundle, while the knowledge still made the difference on the tasks where the unaided agent fails. A
-first candidate of this release, with every review in a subagent by default, measured several times that
-again for the same passes, and was changed before it was tagged.
-
-### Changed
-
-- **The coding session runs in phases**: plan, build, verify, close. On a change that touches state, a
-  contract, data, security or verification, the plan looks the change up in `knowledge/INDEX.md` and opens
-  only the cards it links, and the verify step runs their checks.
-- **A review in a fresh context, on request.** A `knowledge-reviewer` subagent reviews a diff against the
-  cards in a context of its own, citing evidence from the repository for each and running its check; the
-  author fixes only its findings, with at most two re-reviews. It runs only when the user asks; a change
-  that deletes or rewrites stored data, moves money or touches authentication offers it in its report.
-- **One lookup reaches one card.** Each note has a card of a few hundred characters in `knowledge/cards/`,
-  linked from `knowledge/INDEX.md` by phase and by what you are about to do; the area indexes are for
-  browsing.
-- A card shows **Applies if** (the precondition, and where the fact that decides it is usually found) when
-  its note has one, and names the notes that **share its principle**; the area indexes list those groups.
-- The root file's knowledge line sends a change to the index and its cards, and a review asked for to the
-  reviewer; the bootstrap installs it and the update refreshes it. **A carrier updating from 0.0.22 installs it on this update**, since its live update
-  procedure has no such step: copy `.agents/agents/knowledge-reviewer.md` into the assistant's agent folder
-  (Claude Code: `.claude/agents/`), and rewrite the root file's knowledge line as `prompt-bootstrap.md`
-  Phase 4 words it.
-- Every file of the release says in its first lines that it is generated, and is never edited here: an
-  improvement is a candidate in `tracking/`.
-- A document that tells an agent what to run is verified by running it (the session loop's verify step).
-- *Adopting into a repository that already works* and *Reordering without breaking*, which the update
-  never used, left the section of `prompt-context.md` it reads.
-
-### Added
-
-- `.agents/agents/knowledge-reviewer.md`, the reviewer's definition, generated from the knowledge topics.
-- Budgets for the reviewer's load and for the largest card (`bundle.py report --check`).
-
-### Fixed
-
-- The privacy rule that fails a record id beside a domain noun read the bundle's word *card* as a payment
-  card; it now names the payment-card wordings instead (issuing, prepaid, cardholder, card-present, the
-  hyphenated forms). A standard's number (*RFC 7396*) is not read as an exact count.
-- `verify` fails a card that `knowledge/INDEX.md` does not link to, and reads a file named `.DS_Store`
-  unless it is what a file browser writes.
-- The reviewer's load in `report` counts its own definition, which the subagent loads as its prompt.
-- A release as it arrives is refused when it carries anything in `incoming/`.
-
-### Predictions
-
-Written before measuring, to be tested on this release in the home's experiments with the pilots' model,
-all arms with subagents available: on trivial tasks at most 1.2 times the cost of working without
-the bundle (refuted above 1.4); on the others at most 2 times (refuted above 2.3); the three tasks that
-discriminated in the pilots still passed with the bundle (refuted at half or fewer). The first candidate,
-with the review by default, refuted the second at about 8 times; the same three predictions are tested
-again on this one, with a fourth: no session calls the reviewer without being asked (refuted if more
-than one in the run does).
-
-**Measured** on this release before it was tagged, in the home's experiments: trivial tasks cost about
-the same as without the bundle (holds); the others about 2.3 times, just past the line (**refuted**, by a
-small margin, and tagged anyway by decision, as it costs less than 0.0.22 and passes at least as often);
-the discriminating tasks passed every time (holds); no session called the reviewer unasked (holds). The
-wording of the root file's line was tightened after the measurement and is not measured.
-
-## [0.0.22] - 2026-09-25
-
-The first release under Semantic Versioning. Releases before it were numbered `v20`, `v21`; the home
-repository tags them `v0.0.20` and `v0.0.21`, and keeps their method changelog.
-
-### Changed
-
-- **`.agents/` holds only what a carrier runs.** Coding sessions, harvests, updates, bootstrap and
-  evaluation read from it; the full notes, the literature, the roadmap, the release records and the
-  procedures that build and carry a release stay in the home repository.
-- **The knowledge is generated.** Each note ships short (claim, mechanism, boundary, cost), and every index
-  table is built from the notes' own fields. The area indexes gained a *Not when* column: a card is the
-  claim, where it stops applying, and the check. Rows are ordered by topic, then by note, no longer by
-  hand.
-- **Versions and integrity use industry formats.** One Semantic Versioning version for the whole bundle, in
-  the README's frontmatter; `SHA256SUMS` in the GNU coreutils format, which `sha256sum -c` verifies without
-  this tool; this changelog in Keep a Changelog format.
-- **A carrier's own fields live in `carrier.toml`**, which no release writes: its id, when it adopted the
-  bundle, where it pulls from, what it adapted and what it declined.
-- **`tracking/` is this carrier's outbox**: only what its harvest learned since the last release, refusals
-  included (a row whose *Lacks* is `refused: <reason>`). The home reads it at the next release;
-  `knowledge/OPEN.md` lists what the home is still waiting for.
-- **The coding session consults the knowledge only when a change touches state, a contract, data, security
-  or verification**, applies the card before opening a note, and follows the repository where it states an
-  invariant that contradicts a note. `knowledge/INDEX.md` left the session's fixed load.
-- A release arrives in `incoming/release/`, written by `bundle.py export` in a repository that holds it.
-- `bundle.py` needs Python 3.11 or newer.
-
-### Added
-
-- `bundle.py verify`: checksums, links, routing, session reads, privacy, invisible characters, hidden and
-  stray files, the outbox, the carrier file and `incoming/`, in one command; `--release` checks a release
-  as it arrives, with the same refusals as `incoming/` applied to every file it carries.
-- `bundle.py export DEST`: this bundle's shipped files and `SHA256SUMS`, never this repository's own.
-- `bundle.py changelog --since X.Y.Z`, `bundle.py outbox --reset`, `bundle.py report --check` (static budgets).
-- `incoming/` is refused when it holds invisible or bidirectional Unicode (in text or names), text that is
-  not UTF-8, symbolic links, executable files, assistant, git or editor configuration and instruction files,
-  or scripts other than the bundle's tool.
-- Frontmatter is read as a documented subset of YAML: a plain value that YAML parsers would read as another
-  type or refuse (`yes`, `1.0`, a date, `a: b`) must be quoted.
-
-### Deprecated
-
-- `bundle.py digest --check`: an alias of `verify` through 0.0.x.
-
-### Removed
-
-- Lineages, ancestries, fork points, per-document versions and the body digest recipe; `bundle.py stamp`
-  and `bundle.py id g|m|k`. A fork is a git fork.
-- The merge and sync procedures, the roadmap, the literature and the layout survey, which the home keeps.
-- Retired notes: the home keeps them, so a carrier never pays for a note that was withdrawn.
+Versions before 0.0.25, which no registered carrier holds, are in the home repository's `sources/bundle/CHANGELOG.md`, at any release tag.

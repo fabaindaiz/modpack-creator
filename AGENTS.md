@@ -159,6 +159,13 @@ qué no se pudo verificar.
 - **Los procedimientos propios de este repositorio mandan.** Un procedimiento de `.agents/method/`
   nunca reemplaza uno de aquí; donde nombra un archivo, formato, paso o regla de commit que este
   repositorio define distinto, gana el de aquí y `.agents/carrier.toml` `adapted` lo registra.
+- **Las llamadas a herramientas independientes van juntas**, en un mismo mensaje.
+- **Las decisiones del dueño se preguntan como dice `.agents/method/prompt-context.md` §15:** en un
+  mensaje, cada opción con un ejemplo y su precio, la recomendada primero; si son más de las que caben
+  en un mensaje, con la skill `decision-review`.
+- **Un rechazo de `declined` se reconsidera** cuando una release nueva trae otra vez la misma
+  propuesta, o un motivo que ya no se sostiene (dueño, 2026-10-12): se vuelve a poner frente al dueño,
+  no se descarta en silencio.
 
 ## Mapa
 

@@ -934,6 +934,19 @@ JSON con `request_id` y `job_id`.
   exportar el pack base no hacen falta los binarios), los lados (O5) y qué trae la importación
   (O6).
 
+### Mapa de documentos y `docs-drift` en el gate — Planeada (2026-10-12) · i-7985ee-020ca9
+- **Origen:** el bundle 0.0.30/0.0.31 trae `bundle.py docs-drift` y `docs-map.toml` (qué documento
+  describe qué código, y si un cambio sin él bloquea o avisa). La auditoría del 2026-10-12 encontró
+  muchos documentos desfasados que esto habría atrapado.
+- **Lo que falta:** escribir `docs-map.toml` (AGENTS.md, decisions, references, la guía, los runbooks
+  contra sus globs) y sumarlo al gate. También, del mismo bundle: las ranuras *Cards*, *Review* y
+  *Learned* del registro de sesión (hoy van dentro de los campos en español, ver `carrier.toml`
+  `adapted`) y la línea *Estimate* en los ítems grandes del roadmap.
+- **Fricción vista al actualizar (2026-10-12):** el sandbox de Bash niega escribir los archivos del
+  bundle (por los deny `Edit` de `.claude/settings.json`), `.claude/skills/`, `.claude/agents/` y el
+  propio settings; esos pasos de la actualización, y cambiar de rama cuando el settings difiere, los
+  corre el dueño con `!`.
+
 ### Proteger los mundos al desplegar — Planeada (2026-10-12), después de T8 · i-7985ee-e87afa
 - **Origen:** las investigaciones del 2026-10-12 (`docs/research/2026-10-12-construccion-de-modpacks.md`
   R3–R8, R12–R13; `2026-10-12-minecraft-y-sus-jugadores.md`, «Qué implica», 1, 5, 6, 11, 12). El
