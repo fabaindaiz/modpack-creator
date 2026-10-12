@@ -349,3 +349,83 @@ def test_update_preview_maps_a_check_to_changed_versions_with_numbers_and_skips_
     assert preview.changes.added == [] and preview.changes.removed == []
     assert preview.numbers["a2"] == "2.0" and preview.numbers["a1"] == "1.0"
     assert preview.changelogs == {"a2": "Nuevo"} and preview.failed == {"b2"}
+
+
+# Bajas de versión (F27, d-7985ee-322302): por fecha de publicación, como el piso del resolvedor.
+
+def facts(day: int, game_versions: tuple[str, ...] = ("26.3",), loaders: tuple[str, ...] = ("fabric",)) -> Any:
+    from src.library.changes import VersionFacts
+    return VersionFacts(published=datetime(2026, 9, day, tzinfo=timezone.utc), game_versions=game_versions, loaders=loaders)
+
+
+def test_direction_is_by_publication_date_and_a_branch_change_is_not_a_downgrade() -> None:
+    from src.library.changes import direction
+
+    assert direction(facts(10), facts(12)) == "up"
+    assert direction(facts(12), facts(10)) == "down"
+    assert direction(facts(10), facts(10)) == "up"  # same date: not a step back
+    assert direction(facts(12), facts(10, game_versions=("1.21.1",))) == "branch"
+    assert direction(facts(12), facts(10, loaders=("neoforge",))) == "branch"
+    assert direction(facts(12), facts(10, loaders=("fabric", "quilt"))) == "down"
+    assert direction(None, facts(10)) == "unknown" and direction(facts(10), None) == "unknown"
+    # A date MongoDB gave back without a zone is UTC.
+    from src.library.changes import VersionFacts
+    naive = VersionFacts(published=datetime(2026, 9, 11), game_versions=("26.3",), loaders=("fabric",))
+    assert direction(facts(12), naive) == "down"
+
+
+def dated(version_id: str, project_id: str, day: int, game_versions: tuple[str, ...] = ("26.3",)) -> ModrinthVersion:
+    return ModrinthVersion.parse(
+        id=version_id, project_id=project_id, author_id="a", name=version_id, version_number="n-" + version_id,
+        version_type="release", status="listed", downloads=1, game_versions=list(game_versions), loaders=["fabric"],
+        featured=False, date_published=f"2026-09-{day:02d}T00:00:00Z", dependencies=[], files=[], changelog="")
+
+
+@pytest.mark.network
+def test_a_server_preview_marks_what_would_go_back_and_a_branch_change(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        await ModrinthDatabase().version_upsert_many([
+            dated("j-new", "J", 20), dated("j-old", "J", 10), dated("s1", "S", 10), dated("s2", "S", 12),
+            dated("m-a", "M", 20), dated("m-b", "M", 5, game_versions=("1.21.1",))])
+        files = [scan_file("/mods/j.jar", "J", "j-new"), scan_file("/mods/s.jar", "S", "s1"),
+                 scan_file("/mods/m.jar", "M", "m-a"), scan_file("/mods/u.jar", "U", "u1")]
+        server_id = await seed_server(files, [entry("J", "j-old"), entry("S", "s2"), entry("M", "m-b"), entry("U", "u2")])
+        return await service(FakeAPI({})).server_change_preview(server_id, 1)
+
+    preview = mongo(scenario)
+    assert preview.directions == {"J": "down", "M": "branch"}  # S sube; U: sin datos en el catálogo
+    assert preview.downgrades == ["J"]
+
+
+@pytest.mark.network
+def test_a_server_preview_says_which_jars_would_stop_the_update_and_from_which_scan(mongo: MongoRunner) -> None:
+    # F28 (d-7985ee-83e764): what the real update's preflight would refuse, read from the last scan.
+    async def scenario() -> Any:
+        files = [scan_file("/mods/p.jar", "P", "v1"), scan_file("/mods/odd.jar", None, None, "unknown"),
+                 scan_file("/mods/x.jar", "X", "x1")]
+        server_id = await seed_server(files, [entry("P", "v2")])
+        clean = await seed_server([scan_file("/mods/p.jar", "P", "v1")], [entry("P", "v2")])
+        api = service(FakeAPI({}))
+        return await api.server_change_preview(server_id, 1), await api.server_change_preview(clean, 1)
+
+    blocked, clean = mongo(scenario)
+    assert blocked.unexplained is not None and blocked.unexplained.foreign == ["/mods/odd.jar", "/mods/x.jar"]
+    assert blocked.scanned_at is not None and blocked.scanned_at.replace(tzinfo=timezone.utc) == T0
+    assert clean.unexplained is None
+
+
+def test_the_page_marks_each_downgrade_and_counts_them() -> None:
+    from src.services.modpack import ChangePreview
+    from src.web import templates
+
+    changes = ChangeSet(added=[], removed=[], changed=[Change("J", "j1", "j0"), Change("M", "m1", "m0"), Change("S", "s1", "s2")],
+                        unchanged=0)
+    preview = ChangePreview(changes=changes, changelogs={}, failed=set(), numbers={"j1": "19.57", "j0": "19.51"},
+                            directions={"J": "down", "M": "branch"}, pinned={"J"})
+    text = templates.env.get_template("modpacks/_changes.html").render(preview=preview, titles={"J": "JEI"})
+    assert "1 baja de versión" in text and "Bajar un mod puede romper mundos y configs." in text
+    assert "baja, por un pin" in text and "cambio de rama" in text
+    item = text[text.index('data-change="S"'):]
+    assert "baja" not in item[:item.index("</li>")]
+    none = ChangePreview(changes=changes, changelogs={}, failed=set())
+    assert "baja de versión" not in templates.env.get_template("modpacks/_changes.html").render(preview=none, titles={})

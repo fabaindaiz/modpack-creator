@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import re
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 import math
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
@@ -10,7 +10,8 @@ from pydantic import BaseModel
 from src.database import ModpackDatabase, ModrinthDatabase, PterodactylDatabase
 from src.library.api.client.loaders import LoaderMetaAPI
 from src.library.api.client.modrinth import ID_CHUNK, ModrinthAPI
-from src.library.changes import ChangeSet, diff_entries
+from src.library.changes import ChangeSet, VersionFacts, diff_entries, direction
+from src.library.scan import Unexplained, compare, unexplained_for
 from src.library.mrpack import mrpack_index, write_mrpack
 from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink
 from src.database.jobs import JobDatabase
@@ -91,6 +92,39 @@ class ChangePreview(BaseModel):
     timed_out: set[str] = set()
     # Version id -> version number, for the ids in `changes`; an id without one is shown as itself.
     numbers: dict[str, str] = {}
+    # Project id -> "down" or "branch" for the changed mods that go back or change branch (F27,
+    # d-7985ee-322302); a mod that goes forward, or whose versions the catalog lacks, is absent.
+    directions: dict[str, str] = {}
+    # The changed mods whose new version is the pack's pin: a step back there is the pin's.
+    pinned: set[str] = set()
+    # Against a server only (F28, d-7985ee-83e764): the jars of its last scan, taken at `scanned_at`,
+    # that the build does not explain, which stop a real update before it writes; None if none.
+    unexplained: Optional[Unexplained] = None
+    scanned_at: Optional[datetime] = None
+
+    @property
+    def downgrades(self) -> list[str]:
+        return sorted(p for p, d in self.directions.items() if d == "down")
+
+
+@dataclass(frozen=True)
+class PinDowngrade:
+    """A pin before the mod's floor (F27, d-7985ee-c62c61): the floor's version, the pin's, and what
+    runs the floor ("el build 7", "el servidor «Survival»")."""
+    project_id: str
+    title: str
+    floor_version: str
+    floor_number: str
+    pin_version: str
+    pin_number: str
+    used_by: list[str]
+
+    @property
+    def text(self) -> str:
+        users = " y ".join(self.used_by)
+        return (f"Baja de versión: {self.title} {self.floor_number} → {self.pin_number}. "
+                f"{users[:1].upper() + users[1:]} {'usan' if len(self.used_by) > 1 else 'usa'} {self.floor_number}, "
+                "publicada después. Bajar un mod puede romper mundos y configs.")
 
 
 @dataclass(frozen=True)
@@ -125,6 +159,8 @@ class ModRow:
     # "beta" or "alpha" when the catalog's versions for the pack's Minecraft version and loader are
     # all outside the pack's channels: the most stable of them (see `outside_channel`).
     version_channel: Optional[str] = None
+    # When its pin is before the mod's floor (F27, d-7985ee-f43772): the floor's version number.
+    pin_floor: Optional[str] = None
 
 
 @dataclass
@@ -306,11 +342,14 @@ class ModpackService():
     async def bundle_get(self, bundle_id: str) -> ModpackBundle:
         return await self.modpackDB.bundle_get(bundle_id=bundle_id)
 
-    async def bundle_update(self, bundle_id: str, patch: ModpackBundlePatch, actor: Actor) -> ModpackBundle:
+    async def bundle_update(self, bundle_id: str, patch: ModpackBundlePatch, actor: Actor,
+                            confirm_downgrade: bool = False) -> ModpackBundle:
         """Change the fields sent, and the maps only at the keys sent (see ModpackBundlePatch).
 
         422, with nothing written, for a null on a field the bundle needs (it would no longer
-        load) or a map key that is not a Modrinth id (it would become a nested key).
+        load) or a map key that is not a Modrinth id (it would become a nested key). A pin before
+        its mod's floor is a DowngradeRefused (409), as in pin_set, unless `confirm_downgrade`
+        (d-7985ee-0b9ebb).
         """
         sent = patch.model_dump(exclude_unset=True)
         for name in BUNDLE_NOT_NULL:
@@ -320,6 +359,13 @@ class ModpackService():
             for key in sent.get(name) or {}:
                 if not MODRINTH_ID.fullmatch(key):
                     raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{key}' no es un id de proyecto de Modrinth")
+        new_pins = {p: v for p, v in (sent.get("pins") or {}).items() if v is not None}
+        if new_pins and not confirm_downgrade:
+            downgrades = await self.pin_downgrades(await self.modpackDB.bundle_get(bundle_id), new_pins)
+            if downgrades:
+                first = downgrades[sorted(downgrades)[0]]
+                raise DowngradeRefused(" ".join(d.text for _, d in sorted(downgrades.items())) +
+                                       " Para fijarlas igual, repite con confirm_downgrade=true.", first)
         updated = await self.modpackDB.bundle_update(bundle_id=bundle_id, patch=patch)
         await self.audit.record(actor, "bundle.update", _bundle(bundle_id))
         return updated
@@ -357,7 +403,8 @@ class ModpackService():
         await self.audit.record(actor, "bundle.decision", _bundle(bundle_id), {"decisions": decisions})
         return updated
 
-    async def pin_set(self, bundle_id: str, project_id: str, version_id: str, actor: Actor) -> ModpackBundle:
+    async def pin_set(self, bundle_id: str, project_id: str, version_id: str, actor: Actor,
+                      confirm_downgrade: bool = False) -> ModpackBundle:
         """Pin one mod of the bundle to a version, atomically; only that pin changes.
 
         A dependency can be pinned too ("Usar la beta" on its card): a project the pack's last saved
@@ -365,8 +412,9 @@ class ModpackService():
 
         422 for an id that is not a Modrinth id (it would become a nested key), a project that is
         neither the bundle's nor one its last resolution names, or a version that is not of that
-        project: the catalog is asked first, Modrinth if the catalog does not have it. Nothing is
-        written for a refused pin.
+        project: the catalog is asked first, Modrinth if the catalog does not have it. A version
+        before the mod's floor is a DowngradeRefused (409) unless `confirm_downgrade` (F27,
+        d-7985ee-c62c61); the event then says it goes back. Nothing is written for a refused pin.
         """
         for value in (project_id, version_id):
             if not MODRINTH_ID.fullmatch(value):
@@ -376,9 +424,14 @@ class ModpackService():
             raise HTTP_422_UNPROCESSABLE_ENTITY("Ese proyecto no está en el modpack ni es una de sus dependencias")
         if await self._version_project(version_id) != project_id:
             raise HTTP_422_UNPROCESSABLE_ENTITY("La versión no es de ese proyecto")
+        downgrade = (await self.pin_downgrades(bundle, {project_id: version_id})).get(project_id)
+        if downgrade is not None and not confirm_downgrade:
+            raise DowngradeRefused(downgrade.text, downgrade)
         updated = await self.modpackDB.bundle_pin_set(bundle_id, project_id, version_id)
-        await self.audit.record(actor, "bundle.pin", _bundle(bundle_id),
-                                {"project_id": project_id, "version_id": version_id})
+        details: dict[str, Any] = {"project_id": project_id, "version_id": version_id}
+        if downgrade is not None:
+            details["downgrade"] = {"from": downgrade.floor_number, "to": downgrade.pin_number}
+        await self.audit.record(actor, "bundle.pin", _bundle(bundle_id), details)
         return updated
 
     async def channel_exception_set(self, bundle_id: str, project_id: str, channel: str, actor: Actor) -> ModpackBundle:
@@ -558,6 +611,8 @@ class ModpackService():
         for_version: dict[str, list[ModrinthVersion]] = {}
         for found_version in await self.modrinthDB.version_find_for_game_version([*pack, *dependencies], bundle.version):
             for_version.setdefault(found_version.project_id, []).append(found_version)
+        # A pin can go back after it was set, when the floor rises; the page never asks Modrinth.
+        pins_back = await self.pin_downgrades(bundle, bundle.pins, fetch=False) if bundle.pins else {}
 
         def row(project_id: str, origin: Optional[str]) -> ModRow:
             found, entry = catalog.get(project_id), entries.get(project_id)
@@ -579,7 +634,8 @@ class ModpackService():
                 side=entry.server if entry else None, build_version=in_build.get(project_id),
                 newer_version=None if pinned else newer.get(project_id), pinned=pinned,
                 source_url=found.source_url if found else None, issues_url=found.issues_url if found else None,
-                version_channel=version_channel)
+                version_channel=version_channel,
+                pin_floor=pins_back[project_id].floor_number if pinned and project_id in pins_back else None)
 
         rows = [row(i, origin) for i, origin in pack.items()]
         rows += sorted((row(i, None) for i in dependencies), key=lambda r: r.title)
@@ -946,17 +1002,72 @@ class ModpackService():
         build in force and in the last scan of every server linked to the pack. Only MongoDB is
         read: which of them is the floor (the newest that fits the target) the resolver decides,
         fetching through its usual path any version the catalog lacks."""
-        seen: dict[str, set[str]] = {}
+        return {project: sorted(versions) for project, versions in (await self._floor_sources(bundle)).items()}
+
+    async def _floor_sources(self, bundle: ModpackBundle) -> dict[str, dict[str, list[str]]]:
+        """`_floors` with who runs each version: project id -> version id -> ["el build 7",
+        "el servidor «Survival»"]. Only MongoDB is read."""
+        seen: dict[str, dict[str, list[str]]] = {}
         in_force = bundle.recommended_build or bundle.latest_build
         if in_force is not None:
             for entry in (await self.modpackDB.build_get(str(bundle.id), in_force)).lock.entries:
-                seen.setdefault(entry.project_id, set()).add(entry.version_id)
+                seen.setdefault(entry.project_id, {}).setdefault(entry.version_id, []).append(f"el build {in_force}")
         for server in await self.pterodactylDB.server_find_by_bundle(str(bundle.id)):
             scan = await self.pterodactylDB.scan_latest(str(server.id), SCAN_DIRECTORY)
             for file in scan.files if scan is not None else []:
                 if file.project_id and file.version_id:
-                    seen.setdefault(file.project_id, set()).add(file.version_id)
-        return {project: sorted(versions) for project, versions in seen.items()}
+                    users = seen.setdefault(file.project_id, {}).setdefault(file.version_id, [])
+                    if f"el servidor «{server.name}»" not in users:
+                        users.append(f"el servidor «{server.name}»")
+        return seen
+
+    async def _versions_known(self, version_ids: Sequence[str]) -> dict[str, ModrinthVersion]:
+        """These versions from the catalog, and the ones it lacks from Modrinth in one request (then
+        kept). A version neither knows is absent."""
+        found = {v.version_id: v for v in await self.modrinthDB.version_find_by_version_ids(sorted(set(version_ids)))}
+        missing = sorted(set(version_ids) - found.keys())
+        if missing:
+            fetched = list(await self.modrinthAPI.version_get_many(missing))
+            if fetched:
+                await self.modrinthDB.version_upsert_many(fetched)
+            found.update({v.version_id: v for v in fetched})
+        return found
+
+    async def pin_downgrades(self, bundle: ModpackBundle, pins: Mapping[str, str],
+                             fetch: bool = True) -> dict[str, PinDowngrade]:
+        """The pins (project id -> version id) before their mod's floor (F27, d-7985ee-322302): the
+        floor is the newest of the versions the build in force and the linked servers run that is
+        for the pack's Minecraft version, and a pin goes back when it was published before it (a pin
+        for another Minecraft version or loader is a branch change, not a step back). With `fetch`,
+        a version the catalog lacks is read from Modrinth; without it, that pin is left out."""
+        sources = await self._floor_sources(bundle)
+        wanted = {p: v for p, v in pins.items() if p in sources}
+        if not wanted:
+            return {}
+        ids = [*wanted.values(), *(v for p in wanted for v in sources[p])]
+        if fetch:
+            versions = await self._versions_known(ids)
+        else:
+            versions = {v.version_id: v for v in await self.modrinthDB.version_find_by_version_ids(sorted(set(ids)))}
+        titles = {p.project_id: p.title for p in await self.modrinthDB.project_find_by_modrinth_id(sorted(wanted))}
+
+        def facts(found: ModrinthVersion) -> VersionFacts:
+            return VersionFacts(published=found.date_published, game_versions=tuple(found.game_versions),
+                                loaders=tuple(found.loaders))
+
+        found_downgrades: dict[str, PinDowngrade] = {}
+        for project_id, pin_id in wanted.items():
+            pinned = versions.get(pin_id)
+            floors = [versions[v] for v in sources[project_id] if v in versions and bundle.version in versions[v].game_versions]
+            if pinned is None or not floors:
+                continue
+            floor = max(floors, key=lambda v: as_utc(v.date_published))
+            if floor.version_id != pin_id and direction(facts(floor), facts(pinned)) == "down":
+                found_downgrades[project_id] = PinDowngrade(
+                    project_id=project_id, title=titles.get(project_id, project_id), floor_version=floor.version_id,
+                    floor_number=floor.version_number, pin_version=pin_id, pin_number=pinned.version_number,
+                    used_by=sources[project_id][floor.version_id])
+        return found_downgrades
 
     async def _resolve(self, request: ResolveRequest, check: bool = False, prior: Sequence[str] = (),
                        local_only: bool = False, report: Optional[Report] = None) -> Lock:
@@ -1272,20 +1383,30 @@ class ModpackService():
                                    {e.version_id: e.version_number for e in [*before.entries, *after.entries]})
 
     async def _preview(self, before: dict[str, str], after: dict[str, str],
-                       numbers: Optional[dict[str, str]] = None) -> ChangePreview:
+                       numbers: Optional[dict[str, str]] = None, pins: Optional[Mapping[str, str]] = None) -> ChangePreview:
         """`change_preview` on maps of project id to version id; `numbers` are the version numbers
-        already known, the others are read from the catalog (never from Modrinth)."""
+        already known, the others are read from the catalog (never from Modrinth), as are the dates
+        that tell a step back (F27). `pins` are the pack's, to tell a step back that is a pin's."""
         changes = diff_entries(before, after)
         shown = {v for c in [*changes.added, *changes.removed, *changes.changed] for v in (c.from_version, c.to_version) if v}
-        known = dict(numbers or {})
-        for stored in await self.modrinthDB.version_find_by_version_ids(sorted(shown - known.keys())):
-            known[stored.version_id] = stored.version_number
+        stored_shown = {v.version_id: v for v in await self.modrinthDB.version_find_by_version_ids(sorted(shown))}
+        known = {**{i: v.version_number for i, v in stored_shown.items()}, **(numbers or {})}
         known = {v: n for v, n in known.items() if v in shown}
+
+        def facts(version_id: Optional[str]) -> Optional[VersionFacts]:
+            found = stored_shown.get(version_id) if version_id else None
+            return None if found is None else VersionFacts(
+                published=found.date_published, game_versions=tuple(found.game_versions), loaders=tuple(found.loaders))
+
+        directions: dict[str, str] = {c.project_id: d for c in changes.changed
+                      if (d := direction(facts(c.from_version), facts(c.to_version))) in ("down", "branch")}
+        pinned = {c.project_id for c in changes.changed if pins and pins.get(c.project_id) == c.to_version}
         arriving = sorted({c.to_version for c in changes.added + changes.changed if c.to_version})
         changelogs: dict[str, Optional[str]] = {}
-        for stored in await self.modrinthDB.version_find_by_version_ids(arriving):
-            if stored.changelog is not None:
-                changelogs[stored.version_id] = stored.changelog or None
+        for version_id in arriving:
+            stored = stored_shown.get(version_id)
+            if stored is not None and stored.changelog is not None:
+                changelogs[version_id] = stored.changelog or None
         missing = [v for v in arriving if v not in changelogs]
         failed: set[str] = set()
         timed_out: set[str] = set()
@@ -1314,13 +1435,17 @@ class ModpackService():
             except asyncio.TimeoutError:
                 timed_out.update(v for v in missing if v not in changelogs and v not in failed)
         return ChangePreview(changes=changes, changelogs=changelogs, failed=failed, timed_out=timed_out,
-                             numbers=known)
+                             numbers=known, directions=directions, pinned=pinned)
 
     async def compare_builds(self, bundle_id: str, from_number: int, to_number: int) -> ChangePreview:
         """The change from one build of the bundle to another; 404 if either does not exist."""
         before = await self.modpackDB.build_get(bundle_id, from_number)
         after = before if to_number == from_number else await self.modpackDB.build_get(bundle_id, to_number)
-        return await self.change_preview(before.lock, after.lock)
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        return await self._preview({e.project_id: e.version_id for e in before.lock.entries},
+                                   {e.project_id: e.version_id for e in after.lock.entries},
+                                   {e.version_id: e.version_number for e in [*before.lock.entries, *after.lock.entries]},
+                                   pins=bundle.pins)
 
     async def update_preview(self, updates: list[AvailableUpdate]) -> ChangePreview:
         """What the updates of a check change, with the changelogs of the versions that arrive. An
@@ -1346,7 +1471,14 @@ class ModpackService():
         before = {f.project_id: f.version_id for f in scan.files
                   if f.status == "identified" and f.project_id and f.version_id}
         after = {e.project_id: e.version_id for e in build.lock.entries if e.server == "include"}
-        return await self._preview(before, after, {e.version_id: e.version_number for e in build.lock.entries})
+        bundle = await self.modpackDB.bundle_get(server.bundle_id)
+        preview = await self._preview(before, after, {e.version_id: e.version_number for e in build.lock.entries},
+                                      pins=bundle.pins)
+        # What the real update's preflight would refuse (update.py), from this scan rather than a fresh one.
+        jars = unexplained_for(compare(scan.files, build.lock.entries, build.local_files, bundle.claimed_files), bundle)
+        if jars.in_pack or jars.foreign:
+            preview.unexplained, preview.scanned_at = jars, scan.scanned_at
+        return preview
 
     # Global replacement rules (d-7985ee-86fffa).
 

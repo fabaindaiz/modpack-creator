@@ -16,7 +16,10 @@
 <li data-change="{{ change.project_id }}" class="space-y-1 px-3 py-2">
   <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
     <span class="min-w-0 font-medium break-words">{{ ui.mod_link(change.project_id, titles.get(change.project_id, change.project_id), pack=pack) }}
-      {%- if kinds is defined and change.project_id in kinds %} {{ ui.badge(UPDATE_KIND.get(kinds[change.project_id], kinds[change.project_id]), "warning") }}{% endif %}</span>
+      {%- if kinds is defined and change.project_id in kinds %} {{ ui.badge(UPDATE_KIND.get(kinds[change.project_id], kinds[change.project_id]), "warning") }}{% endif %}
+      {%- set way = preview.directions.get(change.project_id) %}
+      {%- if way == "down" %} {{ ui.badge("baja, por un pin" if change.project_id in preview.pinned else "baja", "warning") }}
+      {%- elif way == "branch" %} {{ ui.badge("cambio de rama", "neutral") }}{% endif %}</span>
     <span class="text-xs whitespace-nowrap tabular-nums text-zinc-500 dark:text-zinc-400">
       {{ numbers.get(change.from_version, change.from_version) if change.from_version else "—" }} → {{ numbers.get(change.to_version, change.to_version) if change.to_version else "—" }}
     </span>
@@ -53,6 +56,15 @@
 {% endmacro %}
 
 <div id="changes" class="space-y-4">
+  {% set downgrades = preview.downgrades %}
+  {% if downgrades %}
+  {# F27 (d-7985ee-f43772): a step back is marked where someone acts, counted first. #}
+  <p data-downgrades class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+    <span class="font-semibold">{{ downgrades | length }} {{ "baja" if downgrades | length == 1 else "bajas" }} de versión:</span>
+    {% for project_id in downgrades %}{{ titles.get(project_id, project_id) }}{% if not loop.last %}, {% endif %}{% endfor %}.
+    Bajar un mod puede romper mundos y configs.
+  </p>
+  {% endif %}
   {% if updates_only is not defined %}
   {{ group("Agregados", changes.added, True) }}
   {{ group("Quitados", changes.removed, False) }}

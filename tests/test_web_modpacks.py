@@ -14,7 +14,7 @@ from beanie import PydanticObjectId
 from dependency_injector import providers
 from fastapi.testclient import TestClient
 
-from src.exceptions import BuildBlocked, HTTP_404_NOT_FOUND, HTTP_409_CONFLICT, UpstreamError
+from src.exceptions import BuildBlocked, DowngradeRefused, HTTP_404_NOT_FOUND, HTTP_409_CONFLICT, UpstreamError
 from src.library.resolution import Alternative, Lock, LockEntry, Problem, Suggestion
 from src.library.scan import LocalFile
 from src.model.modpack import (AvailableUpdate, ModpackBuild, ModpackBundle, ModpackReplacement, ModpackResolution,
@@ -23,7 +23,7 @@ from src.model.modrinth import ModrinthProject
 from src.model.pterodactyl import PterodactylServer
 from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
-from src.services.modpack import ModList, ModpackService, ModRow, VersionOption
+from src.services.modpack import ModList, ModpackService, ModRow, PinDowngrade, VersionOption
 from src.services.modrinth import ModrinthService
 from tests._actors import EDITOR, OPERATOR, session_for
 from tests._session import session_cookie
@@ -116,6 +116,9 @@ class FakeModpack:
         self.checks_seen: list[Optional[UpdateCheck]] = []
         # What project_dependents answers (a read, not recorded): who needs a mod being removed.
         self.dependents: Optional[list[str]] = []
+        # A pin pin_set refuses as a step back unless confirmed (F27), and each call's confirmation.
+        self.downgrade: Optional[PinDowngrade] = None
+        self.confirmed: list[bool] = []
         self.versions = [VersionOption("ver-new", "0.8.14", "release", datetime(2026, 10, 1, tzinfo=timezone.utc)),
                          VersionOption("ver-beta", "0.9.0-beta.1", "beta", datetime(2026, 10, 2, tzinfo=timezone.utc))]
         self.versions_error: Optional[Exception] = None
@@ -148,8 +151,12 @@ class FakeModpack:
         self._record("bundle_update", bundle_id, patch, actor)
         return self.bundle
 
-    async def pin_set(self, bundle_id: str, project_id: str, version_id: str, actor: Actor) -> ModpackBundle:
+    async def pin_set(self, bundle_id: str, project_id: str, version_id: str, actor: Actor,
+                      confirm_downgrade: bool = False) -> ModpackBundle:
         self._record("pin_set", bundle_id, project_id, version_id, actor)
+        self.confirmed.append(confirm_downgrade)
+        if self.downgrade is not None and not confirm_downgrade:
+            raise DowngradeRefused(self.downgrade.text, self.downgrade)
         self.bundle.pins = {**self.bundle.pins, project_id: version_id}
         return self.bundle
 
@@ -937,6 +944,75 @@ def test_removing_a_mod_another_one_needs_says_what_it_kept() -> None:
     modpack.dependents = []
     text = client.delete(f"/modpacks/{BUNDLE_ID}/projects/P1", headers=HTMX).text
     assert "Sigue como dependencia" not in text
+
+
+JEI_DOWN = PinDowngrade(project_id="P2", title="JEI", floor_version="ver-57", floor_number="19.57",
+                        pin_version="ver-51", pin_number="19.51", used_by=["el build 7", "el servidor «Survival»"])
+
+
+@pytest.mark.parametrize("contexto, target, swap", [(None, "#mods", "outerHTML"), ("problemas", "#mods", "outerHTML"),
+                                                    ("dialogo", "#build-dialog", "innerHTML")])
+def test_a_pin_that_goes_back_opens_a_dialog_to_confirm_it(contexto: Optional[str], target: str, swap: str) -> None:
+    """F27 (d-7985ee-c62c61): the pin is not saved; the answer is a dialog, into #pin-dialog, that
+    describes the step back and sends the same pin again with the confirmation, to the same place."""
+    client, modpack, _ = setup()
+    modpack.downgrade = JEI_DOWN
+    data = {"project_id": "P2", "version_id": "ver-51", **({"contexto": contexto} if contexto else {})}
+    response = client.post(f"/modpacks/{BUNDLE_ID}/pins", data=data, headers=HTMX)
+    assert response.status_code == 200
+    assert response.headers["HX-Retarget"] == "#pin-dialog" and response.headers["HX-Reswap"] == "innerHTML"
+    text = response.text
+    assert "<dialog" in text and "data-autoopen" in text and "Baja de versión" in text
+    assert "JEI 19.57 → 19.51" in text and "El build 7 y el servidor «Survival» usan 19.57" in text
+    assert "Fijar igual" in text and "Cancelar" in text
+    form = re.search(r"<form[^>]*>", text)
+    assert form and f'hx-post="/modpacks/{BUNDLE_ID}/pins"' in form.group(0)
+    assert f'hx-target="{target}"' in form.group(0) and f'hx-swap="{swap}"' in form.group(0)
+    assert 'name="confirm_downgrade" value="1"' in text and 'value="ver-51"' in text
+    assert modpack.bundle.pins.get("P2") != "ver-51" and modpack.confirmed == [False]
+    # Sent with the confirmation, it is saved as any pin.
+    client.post(f"/modpacks/{BUNDLE_ID}/pins", data={**data, "confirm_downgrade": "1"}, headers=HTMX)
+    assert modpack.bundle.pins["P2"] == "ver-51" and modpack.confirmed == [False, True]
+
+
+def test_a_pin_below_its_floor_is_marked_in_the_list() -> None:
+    # d-7985ee-f43772.
+    client, modpack, _ = setup()
+    modpack.rows = [row("P1", "JEI", pinned=True, pin_floor="19.57"), row("P2", "Sodium", pinned=True)]
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    first = text[text.index('data-project="P1"'):text.index('data-project="P2"')]
+    assert "baja (piso 19.57)" in first and text.count("baja (piso") == 1
+
+
+def test_the_pack_page_has_the_place_the_pin_dialog_opens_in() -> None:
+    client, _, _ = setup()
+    assert 'id="pin-dialog"' in client.get(f"/modpacks/{BUNDLE_ID}").text
+
+
+def test_v1_patch_takes_the_confirmation_as_a_query() -> None:
+    from fastapi import FastAPI
+    from src.dependences import get_current_actor
+    from src.routers.v1 import include_routers_v1
+
+    _, modpack, _ = setup()
+    seen: list[bool] = []
+
+    async def bundle_update(bundle_id: str, patch: Any, actor: Actor, confirm_downgrade: bool = False) -> Any:
+        seen.append(confirm_downgrade)
+        if not confirm_downgrade:
+            raise DowngradeRefused(JEI_DOWN.text, JEI_DOWN)
+        return modpack.bundle
+
+    modpack.bundle_update = bundle_update  # type: ignore[method-assign]
+    app = FastAPI()
+    include_routers_v1(app)
+    app.dependency_overrides[get_current_actor] = lambda: EDITOR
+    v1 = TestClient(app, base_url="https://testserver")
+    refused = v1.patch(f"/v1/modpack/{BUNDLE_ID}", json={"pins": {"P2": "ver-51"}})
+    assert refused.status_code == 409 and "JEI 19.57 → 19.51" in refused.json()["detail"]
+    assert v1.patch(f"/v1/modpack/{BUNDLE_ID}", params={"confirm_downgrade": "true"},
+                    json={"pins": {"P2": "ver-51"}}).status_code == 200
+    assert seen == [False, True]
 
 
 def test_v1_still_answers_a_blocked_build_with_the_same_409() -> None:

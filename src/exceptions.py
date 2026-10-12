@@ -49,6 +49,13 @@ class BuildBlocked(HTTP_409_CONFLICT):
         self.lock = lock
         self.only_undecided = only_undecided
 
+class DowngradeRefused(HTTP_409_CONFLICT):
+    """A pin before the floor sent without confirming it (F27, d-7985ee-c62c61): the detail says the
+    step back; `downgrade` (a PinDowngrade) carries it, so the panel can ask to confirm."""
+    def __init__(self, detail: str, downgrade: Any):
+        super().__init__(detail)
+        self.downgrade = downgrade
+
 class CatalogPending(HTTP_409_CONFLICT):
     """The pack needs information from Modrinth the catalog lacks: a job brings it (spec
     2026-10-09-economia-de-requests, E6) and the pack resolves when it ends. `job` is that job."""

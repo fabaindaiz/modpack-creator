@@ -55,10 +55,12 @@ async def bundle_get(
 async def bundle_update(
         id: str,
         bundle: ModpackBundlePatch,
+        confirm_downgrade: bool = Query(False, description="save a pin before its mod's floor (the build in force, "
+                                                           "a linked server): without it, such a pin is a 409"),
         modpack: ModpackService = Depends(Provide[Dependences.modpackService]),
         actor: Actor = Depends(get_current_actor)
         ):
-    response = await modpack.bundle_update(bundle_id=id, patch=bundle, actor=actor)
+    response = await modpack.bundle_update(bundle_id=id, patch=bundle, actor=actor, confirm_downgrade=confirm_downgrade)
     return response
 
 @router.delete("/modpack/{id}/replacement/{project_id}", response_model=ModpackBundle)

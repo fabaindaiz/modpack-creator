@@ -10,7 +10,7 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Form, Query, Request
 from starlette.datastructures import FormData, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from src.exceptions import BuildBlocked, HTTP_404_NOT_FOUND, HTTP_413_CONTENT_TOO_LARGE, HTTP_422_UNPROCESSABLE_ENTITY, QuotaExceeded, UpstreamError
+from src.exceptions import BuildBlocked, DowngradeRefused, HTTP_404_NOT_FOUND, HTTP_413_CONTENT_TOO_LARGE, HTTP_422_UNPROCESSABLE_ENTITY, QuotaExceeded, UpstreamError
 from src.library.resolution import ADMIN, Lock
 from src.dependences import Dependences, ModpackImportService, ModpackService, ModrinthService, PterodactylService, UpdateCheckService
 from src.model.modpack import ModpackBundle, ModpackBundleCreate, ModpackBundlePatch, ProjectOrigin
@@ -585,13 +585,23 @@ async def pin_add(
         project_id: Annotated[str, Form(min_length=1, max_length=200, pattern=MODRINTH_REF)],
         version_id: Annotated[str, Form(min_length=1, max_length=200, pattern=MODRINTH_REF)],
         contexto: Annotated[Optional[Contexto], Form()] = None,
+        confirm_downgrade: Annotated[bool, Form()] = False,
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         ):
     """Pin a mod to a version of that mod: one key, written atomically by the service. From a
-    problem's card ("Usar la beta …", `contexto`), resolve again too."""
-    await modpackService.pin_set(bundle_id, project_id, version_id, actor)
+    problem's card ("Usar la beta …", `contexto`), resolve again too. A version before the mod's
+    floor is not saved: the answer is a dialog, into #pin-dialog, that describes the step back and
+    sends the same pin again with `confirm_downgrade` (F27, d-7985ee-c62c61)."""
+    try:
+        await modpackService.pin_set(bundle_id, project_id, version_id, actor, confirm_downgrade=confirm_downgrade)
+    except DowngradeRefused as refused:
+        response = render(request, "modpacks/_pin_confirm.html", actor, bundle_id=bundle_id, downgrade=refused.downgrade,
+                          version_id=version_id, contexto=contexto)
+        response.headers["HX-Retarget"] = "#pin-dialog"
+        response.headers["HX-Reswap"] = "innerHTML"
+        return response
     return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto, "Versión fijada")
 
 @router.delete("/modpacks/{bundle_id}/pins/{project_id}")

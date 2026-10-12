@@ -78,6 +78,7 @@
                 {% if row.origin == "admin" %}{{ ui.badge("agregado") }}{% elif row.origin == "pack" %}{{ ui.badge("del .mrpack") }}{% endif %}
                 {% if side %}{{ ui.badge(side[0], side[1]) }}{% endif %}
                 {% if row.pinned %}{{ ui.badge("fijado", "info") }}{% endif %}
+                {% if row.pin_floor %}{{ ui.badge("baja (piso " ~ row.pin_floor ~ ")", "warning") }}{% endif %}
               </div>
               <p class="text-xs break-words text-zinc-500 dark:text-zinc-400">
                 {%- if not in_pack %}dependencia de

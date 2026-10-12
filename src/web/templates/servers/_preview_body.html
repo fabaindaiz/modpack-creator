@@ -1,6 +1,23 @@
 {# What an update would change on a server: `preview` and `titles`, or `preview_note` (why there is none).
    Shared by the direct dialog (_update.html) and the finished dry run (_dry_run.html). #}
 {% if preview is defined and preview %}
+{% if preview.unexplained %}
+{# F28 (d-7985ee-83e764): what the real update's preflight would refuse, from the last scan; it only
+   warns (the scan may be old, and the update checks again on a fresh one). #}
+{% set jars = preview.unexplained %}
+{% set count = jars.foreign | length + jars.in_pack | length %}
+<div data-unexplained role="status" class="space-y-1 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+  <p class="font-semibold">La actualización se detendrá antes de tocar el servidor: el escaneo de {{ preview.scanned_at | ago }} tiene {{ count }} {{ "jar" if count == 1 else "jars" }} que el build no explica.</p>
+  {% if jars.foreign %}
+  <p>Importa el servidor para traer al pack:</p>
+  <ul class="list-inside list-disc font-mono text-xs break-all">{% for path in jars.foreign %}<li>{{ path }}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if jars.in_pack %}
+  <p>Ya están en el pack; crea un build que los incluya:</p>
+  <ul class="list-inside list-disc font-mono text-xs break-all">{% for path in jars.in_pack %}<li>{{ path }}</li>{% endfor %}</ul>
+  {% endif %}
+</div>
+{% endif %}
 <div class="space-y-2">
   <h3 class="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Qué cambiaría en el servidor</h3>
   {% set against_server = True %}

@@ -1,0 +1,26 @@
+{# A pin before the mod's floor, not saved (F27, d-7985ee-c62c61): a dialog, opened on arrival
+   (data-autoopen, app.js), that says the step back and sends the same pin again with the
+   confirmation, to where the first one went (the rule of _problem.html). Needs `bundle_id`,
+   `downgrade` (PinDowngrade), `version_id` and `contexto`. #}
+{% import "_macros.html" as ui %}
+{% set target, swap = ("#build-dialog", "innerHTML") if contexto == "dialogo" else ("#mods", "outerHTML") %}
+<dialog data-autoopen aria-labelledby="pin-confirm-title"
+  class="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-lg border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-zinc-950/50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+  <form class="space-y-4 p-5" hx-post="/modpacks/{{ bundle_id }}/pins" hx-target="{{ target }}" hx-swap="{{ swap }}">
+    <h2 id="pin-confirm-title" class="text-base font-semibold" autofocus tabindex="-1">Baja de versión</h2>
+    <div class="space-y-2 text-sm text-zinc-700 dark:text-zinc-300">
+      <p class="font-medium tabular-nums">{{ downgrade.title }} {{ downgrade.floor_number }} → {{ downgrade.pin_number }}</p>
+      {% set users = downgrade.used_by | join(" y ") %}
+      <p>{{ users[:1] | upper }}{{ users[1:] }} {{ "usan" if downgrade.used_by | length > 1 else "usa" }} {{ downgrade.floor_number }}, publicada después.</p>
+      <p class="text-amber-800 dark:text-amber-300">Bajar un mod puede romper mundos y configs.</p>
+    </div>
+    <input type="hidden" name="project_id" value="{{ downgrade.project_id }}">
+    <input type="hidden" name="version_id" value="{{ version_id }}">
+    <input type="hidden" name="confirm_downgrade" value="1">
+    {% if contexto %}<input type="hidden" name="contexto" value="{{ contexto }}">{% endif %}
+    <div class="flex justify-end gap-2">
+      {{ ui.button("Cancelar", kind="secondary", attrs={"data-dialog-close": ""}) }}
+      {{ ui.button("Fijar igual", kind="danger", type="submit") }}
+    </div>
+  </form>
+</dialog>

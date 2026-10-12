@@ -1140,6 +1140,23 @@ def test_changing_the_build_asks_for_its_preview_and_returns_the_fragment() -> N
     assert 'id="changes"' in response.text and "<html" not in response.text and "Arregla un crash" in response.text
 
 
+def test_the_dialog_preview_warns_of_the_jars_that_would_stop_the_update() -> None:
+    # F28 (d-7985ee-83e764): from the last scan, with its age and the fix; the button stays.
+    from src.library.scan import Unexplained
+
+    client, fakes = setup(OPERATOR)
+    fakes.modpack.preview = change_preview().model_copy(update={
+        "unexplained": Unexplained(in_pack=["/mods/local.jar"], foreign=["/mods/foo-1.2.jar", "/mods/bar.jar"]),
+        "scanned_at": datetime.now(timezone.utc) - timedelta(hours=3)})
+    text = client.get(f"/servers/{SERVER_ID}/update/preview", params={"build": 3}, headers=HTMX).text
+    assert "La actualización se detendrá antes de tocar el servidor" in text
+    assert "el escaneo de hace 3 h tiene 3 jars que el build no explica" in text
+    assert "/mods/foo-1.2.jar" in text and "/mods/bar.jar" in text and "/mods/local.jar" in text
+    assert "Importa el servidor para traer" in text and "crea un build que los incluya" in text
+    fakes.modpack.preview = change_preview()
+    assert "se detendrá" not in client.get(f"/servers/{SERVER_ID}/update/preview", params={"build": 3}, headers=HTMX).text
+
+
 def test_the_build_of_the_preview_is_a_positive_number() -> None:
     client, fakes = setup(OPERATOR)
     assert client.get(f"/servers/{SERVER_ID}/update/preview", params={"build": 0}, headers=HTMX).status_code == 422
