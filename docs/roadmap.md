@@ -10,7 +10,7 @@ y tokens, con en qué se apoya (bundle 0.0.30); `close` la compara después con 
 
 ## Dónde estamos
 
-**2026-10-12, release 0.3.0 en `main` local (sin empujar ni etiquetar todavía; tampoco hay tag
+**2026-10-12, releases 0.3.0 y 0.3.1 en `main` (sin etiquetar todavía; tampoco hay tag
 `v0.2.0`):** T1, T4 con la regla de no retroceder (d-7985ee-6dc34c), T3, T7, T6 (Prism) con el tope
 de disco temporal, T5 (CurseForge con clave), la restauración vista por la actividad del servidor
 (d-7985ee-894b2c) y el sandbox de Bash (d-7985ee-9b97fa). Después, en ramas sin mergear: el bundle
@@ -20,16 +20,15 @@ de agentes 0.0.31 (`chore/agents-0.0.31`) y los arreglos menores del roadmap
 
 **Al cierre del 2026-10-12:** la ronda 2 del panel, tanda 1 (F27, F28, F29 y las preguntas de la tanda
 A), está hecha en `feat/ronda-2-tanda-1`, encima de `fix/pendientes-menores`, encima de
-`chore/agents-0.0.31`; las tres ramas empujadas al remoto, ninguna en `main`. **Decisión del dueño
+`chore/agents-0.0.31`; todo en `main` (fast-forward a pedido del dueño, 2026-10-12). **Decisión del dueño
 (2026-10-12): el deploy es una 0.3.1 con la tanda 1**, después de su revisión en contexto limpio.
 **Para seguir, en otra máquina:** Docker o podman con su VM encendida (los tests de base y el barrido
 visual), hatch y Python 3.12, `npm install` para el barrido, Chromium de Playwright
 (`hatch run visual:playwright install chromium`), y el `.env.yaml` propio, que nunca está en el
 repositorio. La tanda 1 pasó la revisión en contexto limpio (0 críticos; los 2 importantes y 1 menor
 arreglados, 2 menores en i-7985ee-89ea1c) y la versión ya es 0.3.1, con su sección en el runbook.
-**Primer paso:** el dueño pide el merge
-a `main` (fast-forward de `feat/ronda-2-tanda-1`; toca `.claude/settings.json`, así que lo corre él con
-`!`), el push y los tags, y despliega en solo lectura con la lista «Lo siguiente, todo del dueño».
+**Primer paso:** los tags (`v0.3.1`; tampoco existen `v0.2.0` ni `v0.3.0`), si el dueño los pide,
+y el deploy en solo lectura, con la lista «Lo siguiente, todo del dueño».
 Pendientes de decisión: la tanda 2 (tablero, móvil, F09) y el hook contra heredocs (Fricciones).
 
 Al cierre de la sesión de usabilidad del panel (2026-10-04 y 2026-10-05; detalle en
