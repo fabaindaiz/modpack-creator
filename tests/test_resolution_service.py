@@ -155,3 +155,18 @@ def test_a_channel_exception_is_refused_for_a_bad_channel_or_a_project_the_pack_
         return refused.value.status_code, (await ModpackDatabase().bundle_get(bundle_id)).channel_exceptions
 
     assert mongo(scenario) == (422, {})
+
+
+def test_the_request_carries_the_build_in_force_as_floors(mongo: MongoRunner) -> None:
+    # A mod never goes back (owner, 2026-10-12): every project of the recommended build, else the
+    # latest, is a floor of the next resolution; a pack without builds has none.
+    async def scenario() -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+        service, bundle_id = await bundle(RecordedModrinthAPI(), "iris")
+        stored = await ModpackDatabase().bundle_get(bundle_id)
+        before = (await service._request(stored)).floors
+        build = await service.build_create(bundle_id, actor=EDITOR)
+        after = (await service._request(await ModpackDatabase().bundle_get(bundle_id))).floors
+        return before, after, {e.project_id: e.version_id for e in build.lock.entries}
+
+    before, after, locked = mongo(scenario)
+    assert before == {} and after == locked and SODIUM in after

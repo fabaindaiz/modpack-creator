@@ -315,3 +315,17 @@ def test_the_page_without_updates_does_not_ask_modrinth() -> None:
     checks.latest_check = check([])
     client.get(f"/modpacks/{BUNDLE_ID}/actualizaciones")
     assert modrinth.filled == []
+
+
+def test_a_beta_and_a_stable_that_ends_one_carry_their_badge() -> None:
+    # M2 (owner, 2026-10-12): the channel of what arrives is said when it matters.
+    client, _, checks = setup()
+    beta, leaves, plain = update("A", "Sodium"), update("B", "Iris"), update("C", "Lithium")
+    beta.kind, leaves.kind = "beta", "leaves_beta"
+    checks.latest_check = check([beta, leaves, plain])
+    text = client.get(f"/modpacks/{BUNDLE_ID}/actualizaciones").text
+    def row(project: str) -> str:
+        return text[text.index(f'data-change="{project}"'):].split("</li>")[0]
+
+    assert ">beta<" in row("A") and ">estable: deja la beta<" in row("B")
+    assert "beta" not in row("C")

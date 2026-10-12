@@ -322,3 +322,29 @@ def test_a_build_freezes_the_bundles_local_files_and_the_mrpack_leaves_them_out(
     local, paths = mongo(scenario)
     assert local == ["private.jar"]
     assert not any("private" in p for p in paths)
+
+
+def test_a_build_rereads_its_versions_in_one_batch_and_sees_an_edit_in_place(mongo: MongoRunner) -> None:
+    # M3: Modrinth lets an author edit a version where it is (its game versions, channel,
+    # dependencies); the version list does not change, so only reading the versions again sees it.
+    async def scenario() -> tuple[str, str, list[Any]]:
+        api = RecordedModrinthAPI()
+        service = ModpackService(modpackDB=ModpackDatabase(), modrinthDB=ModrinthDatabase(), modrinthAPI=cast(Any, api),
+                                 loaderAPI=cast(Any, FakeLoaders()), audit=RecordingAudit())
+        created = await service.bundle_create(ModpackBundle(
+            name="pack", description="", version="26.3", loader=MinecraftLoaders.fabric), actor=EDITOR)
+        bundle_id = str(created.id)
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        first = await service.build_create(bundle_id, actor=EDITOR)
+        took = next(e.version_id for e in first.lock.entries if e.project_id == IRIS)
+        for version in api.versions:
+            if version["id"] == took:
+                version["game_versions"] = ["1.21.1"]  # the author moved it to another Minecraft
+        api.calls.clear()
+        second = await service.build_create(bundle_id, actor=EDITOR)
+        again = next(e.version_id for e in second.lock.entries if e.project_id == IRIS)
+        rereads = [c for c in api.calls if c[0] == "version_get_many" and took in c[1]]
+        return took, again, rereads
+
+    took, again, rereads = mongo(scenario)
+    assert again != took and len(rereads) == 1

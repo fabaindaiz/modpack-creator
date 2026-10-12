@@ -7,12 +7,15 @@
 {% set changes = preview.changes %}
 {% set numbers = preview.numbers %}
 {% set pack = bundle_id if bundle_id is defined else None %}
+{# The channel of an update when it matters (M2): `kinds` (project id -> AvailableUpdate.kind), on the updates page. #}
+{% set UPDATE_KIND = {"beta": "beta", "alpha": "alpha", "leaves_beta": "estable: deja la beta"} %}
 
 {% macro change_item(change, show_changelog) %}
 {% set version = change.to_version %}
 <li data-change="{{ change.project_id }}" class="space-y-1 px-3 py-2">
   <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-    <span class="min-w-0 font-medium break-words">{{ ui.mod_link(change.project_id, titles.get(change.project_id, change.project_id), pack=pack) }}</span>
+    <span class="min-w-0 font-medium break-words">{{ ui.mod_link(change.project_id, titles.get(change.project_id, change.project_id), pack=pack) }}
+      {%- if kinds is defined and change.project_id in kinds %} {{ ui.badge(UPDATE_KIND.get(kinds[change.project_id], kinds[change.project_id]), "warning") }}{% endif %}</span>
     <span class="text-xs whitespace-nowrap tabular-nums text-zinc-500 dark:text-zinc-400">
       {{ numbers.get(change.from_version, change.from_version) if change.from_version else "—" }} → {{ numbers.get(change.to_version, change.to_version) if change.to_version else "—" }}
     </span>

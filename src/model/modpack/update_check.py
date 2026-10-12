@@ -19,6 +19,10 @@ class AvailableUpdate(BaseModel):
     # checks stored before these fields (their page shows no changelog).
     from_version_id: str = ""
     to_version_id: str = ""
+    # Why the channel matters (M2): "" a plain update; "beta" or "alpha", a newer one in the channel
+    # of the mod's exception; "leaves_beta", a stable that ends the exception of a mod on a beta or
+    # alpha. Empty in checks stored before this field.
+    kind: str = ""
 
     @model_validator(mode="after")
     def _title_falls_back_to_the_id(self) -> "AvailableUpdate":

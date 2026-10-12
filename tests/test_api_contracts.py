@@ -133,24 +133,17 @@ def test_latest_version_from_a_hash_posts_arrays(mongo: MongoRunner) -> None:
     assert result.version_id == "v1"
 
 
-def test_latest_versions_from_many_hashes_post_arrays_and_read_a_hash_map(mongo: MongoRunner) -> None:
-    result, seen = mongo(lambda: serve({("POST", "/version_files/update"): json_reply({"s512": VERSION})},
-                       lambda base: modrinth(base).files_update_hash_post_many(["s512"], "sha512", ["fabric"], ["1.21.1"])))
+def test_update_individual_sends_each_hash_with_its_own_filters(mongo: MongoRunner) -> None:
+    """`POST /version_files/update_individual` (no está en la OpenAPI v2.7.0): el cuerpo de
+    labrinth `ManyFileUpdateData` es `algorithm` y `hashes`, cada uno un objeto con `hash`,
+    `loaders`, `game_versions` y `version_types` (docs/references.md); responde un mapa hash → versión."""
+    items = [{"hash": "s512", "loaders": ["fabric"], "game_versions": ["26.3"], "version_types": ["release", "beta"]},
+             {"hash": "t512", "loaders": ["iris"], "game_versions": ["26.3"], "version_types": ["release"]}]
+    result, seen = mongo(lambda: serve({("POST", "/version_files/update_individual"): json_reply({"s512": VERSION})},
+                                       lambda base: modrinth(base).files_update_individual(items)))
     assert [(s.method, s.path, s.json) for s in seen] == [
-        ("POST", "/version_files/update",
-         {"hashes": ["s512"], "algorithm": "sha512", "loaders": ["fabric"], "game_versions": ["1.21.1"]})]
+        ("POST", "/version_files/update_individual", {"algorithm": "sha512", "hashes": items})]
     assert {h: v.version_id for h, v in result.items()} == {"s512": "v1"}
-
-
-def test_update_by_hashes_sends_version_types_only_when_given(mongo: MongoRunner) -> None:
-    """openapi v2.7.0 `POST /version_files/update`: `loaders` y `game_versions` obligatorios,
-    `version_types` opcional (release, beta, alpha)."""
-    _, seen = mongo(lambda: serve({("POST", "/version_files/update"): json_reply({"s512": VERSION})},
-                                  lambda base: modrinth(base).files_update_hash_post_many(
-                                      ["s512"], "sha512", ["fabric"], ["1.21.1"], version_types=["release", "beta"])))
-    assert [s.json for s in seen] == [
-        {"hashes": ["s512"], "algorithm": "sha512", "loaders": ["fabric"], "game_versions": ["1.21.1"],
-         "version_types": ["release", "beta"]}]
 
 
 def test_project_versions_ask_for_all_versions_without_changelogs(mongo: MongoRunner) -> None:

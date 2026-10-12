@@ -386,13 +386,77 @@ def test_an_exception_reaches_a_dependency_too() -> None:
     assert lock.problems == [] and chosen(lock) == {"A": "a", "D": "d-beta"} and lock.excepted == ["D"]
 
 
+# Un mod nunca retrocede de versión (regla del dueño, 2026-10-12): `floors` es la versión de cada
+# proyecto en el build vigente; una elección libre nunca toma una publicada antes.
+
+
+def test_a_newer_release_never_loses_to_an_older_one_it_replaced() -> None:
+    versions = [cand("P", "rel-1", days=1), cand("P", "rel-2", days=2), cand("P", "rel-3", days=3)]
+    assert chosen(resolve(request("P", floors={"P": "rel-2"}), catalog(*versions))) == {"P": "rel-3"}
+
+
+def test_a_beta_in_the_build_stays_while_the_only_release_is_older() -> None:
+    # The owner's example: Iris 1.8.0-beta.4 in the build, a stable 1.7.6 that is older.
+    versions = [cand("P", "1.7.6", days=1), cand("P", "1.8.0-beta.4", type="beta", days=5)]
+    lock = resolve(request("P", channel_exceptions={"P": "beta"}, floors={"P": "1.8.0-beta.4"}), catalog(*versions))
+    assert lock.problems == [] and chosen(lock) == {"P": "1.8.0-beta.4"} and lock.excepted == ["P"]
+
+
+def test_a_newer_release_ends_the_beta_and_a_newer_beta_follows_it_otherwise() -> None:
+    old = [cand("P", "1.7.6", days=1), cand("P", "1.8.0-beta.4", type="beta", days=5)]
+    asked = request("P", channel_exceptions={"P": "beta"}, floors={"P": "1.8.0-beta.4"})
+    newer_beta = resolve(asked, catalog(*old, cand("P", "1.8.0-beta.5", type="beta", days=6)))
+    assert chosen(newer_beta) == {"P": "1.8.0-beta.5"} and newer_beta.excepted == ["P"]
+    stable = resolve(asked, catalog(*old, cand("P", "1.8.0-beta.5", type="beta", days=6), cand("P", "1.8.0", days=7)))
+    assert chosen(stable) == {"P": "1.8.0"} and stable.excepted == []
+
+
+def test_a_beta_in_the_build_stays_even_in_a_pack_that_takes_betas_and_prefers_releases() -> None:
+    allow_beta = Target(game_version="26.3", loader="fabric", channels=frozenset({"release", "beta"}))
+    versions = [cand("P", "rel-1", days=1), cand("P", "beta-2", type="beta", days=2)]
+    assert chosen(resolve(request("P", target=allow_beta, floors={"P": "beta-2"}), catalog(*versions))) == {"P": "beta-2"}
+
+
+def test_a_floor_reaches_a_dependency_and_an_admin_pin_may_go_lower() -> None:
+    versions = [cand("A", "a", deps=(("D", None, "required"),)), cand("D", "d-1", days=1), cand("D", "d-2", days=2),
+                cand("P", "p-1", days=1), cand("P", "p-2", days=2)]
+    allow_beta = Target(game_version="26.3", loader="fabric", channels=frozenset({"release", "beta"}))
+    lock = resolve(request("A", "P", target=allow_beta, floors={"D": "d-2", "P": "p-2"}, pins={"P": "p-1"}),
+                   catalog(*versions, cand("D", "d-3b", type="beta", days=0)))
+    assert chosen(lock) == {"A": "a", "D": "d-2", "P": "p-1"}
+
+
+def test_a_floor_the_catalog_lacks_is_fetched_and_one_for_another_target_is_ignored() -> None:
+    versions = [cand("P", "rel-1", days=1)]
+    lock = resolve(request("P", floors={"P": "rel-9"}), catalog(*versions))
+    assert lock.needs_versions == {"rel-9"}
+    other_game = cand("P", "old-game", days=9, game="1.21.1")
+    assert chosen(resolve(request("P", floors={"P": "old-game"}), catalog(*versions, other_game))) == {"P": "rel-1"}
+
+
+def test_floors_leave_the_digest_as_it_was_before_they_existed() -> None:
+    import hashlib
+    import json as json_module
+
+    plain = digest_request()
+    data = plain.model_dump(mode="json")
+    del data["floors"]
+    if not data["channel_exceptions"]:
+        del data["channel_exceptions"]
+    data["projects"] = sorted(data["projects"])
+    data["target"]["channels"] = sorted(data["target"]["channels"])
+    old = hashlib.sha256(json_module.dumps(data, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    assert request_digest(plain) == old
+    assert request_digest(plain.model_copy(update={"floors": {"P": "v"}})) == old  # a new build is no edit
+
+
 def test_digest_without_exceptions_is_the_one_stored_before_they_existed() -> None:
     import hashlib
     import json as json_module
 
     plain = digest_request()
     data = plain.model_dump(mode="json")
-    del data["channel_exceptions"]
+    del data["channel_exceptions"], data["floors"]  # neither existed then
     data["projects"] = sorted(data["projects"])
     data["target"]["channels"] = sorted(data["target"]["channels"])
     before = hashlib.sha256(json_module.dumps(data, sort_keys=True, separators=(",", ":")).encode()).hexdigest()

@@ -9,7 +9,7 @@ from typing import Any, Optional, Sequence
 from pydantic import BaseModel
 from src.database import ModpackDatabase, ModrinthDatabase, PterodactylDatabase
 from src.library.api.client.loaders import LoaderMetaAPI
-from src.library.api.client.modrinth import ModrinthAPI
+from src.library.api.client.modrinth import ID_CHUNK, ModrinthAPI
 from src.library.changes import ChangeSet, diff_entries
 from src.library.mrpack import mrpack_index, write_mrpack
 from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink
@@ -73,8 +73,6 @@ def candidate(version: ModrinthVersion) -> Candidate:
     return Candidate.from_modrinth({**version.model_dump(mode="json"), "id": version.version_id})
 
 logger = logging.getLogger("modpack.changes")
-# How many changelogs are asked of Modrinth at once.
-CHANGELOG_CONCURRENCY = 8
 # How long a preview waits for changelogs in all (N-R2): Modrinth rate-limiting may back off for a
 # minute per request, and a page about a game server must not wait for it.
 CHANGELOG_DEADLINE = 10.0
@@ -869,13 +867,17 @@ class ModpackService():
 
     async def _request(self, bundle: ModpackBundle) -> ResolveRequest:
         global_rules = {r.project_id: r.replacement for r in await self.modpackDB.replacement_find()}
+        # A mod never goes back (owner, 2026-10-12): the build in force sets each project's floor.
+        in_force = bundle.recommended_build or bundle.latest_build
+        floors = {} if in_force is None else {
+            e.project_id: e.version_id for e in (await self.modpackDB.build_get(str(bundle.id), in_force)).lock.entries}
         return ResolveRequest(
             target=Target(game_version=bundle.version, loader=str(bundle.loader.value),
                           channels=frozenset(bundle.channels)),
             projects=[p.project_id for p in bundle.projects],
             origins={p.project_id: p.origin.value for p in bundle.projects},
             pins=bundle.pins, server_decisions=bundle.server_decisions, channel_exceptions=bundle.channel_exceptions,
-            replacements=merge_replacements(global_rules, bundle.replacements))
+            replacements=merge_replacements(global_rules, bundle.replacements), floors=floors)
 
     async def _resolve(self, request: ResolveRequest, check: bool = False, prior: Sequence[str] = (),
                        local_only: bool = False, report: Optional[Report] = None) -> Lock:
@@ -1102,6 +1104,8 @@ class ModpackService():
         bundle = await self.modpackDB.bundle_get(bundle_id)
         request = await self._request(bundle)
         lock = await self._resolve_checked(bundle, request, check=True, report=report)
+        if await self._reread_versions([e.version_id for e in lock.entries]):
+            lock = await self._resolve(request, report=report)
         await self._resolution_save(bundle, request, lock)
         _refuse_blocked(lock)
         if report is not None:
@@ -1118,6 +1122,20 @@ class ModpackService():
         if self.notifier is not None:
             await self.notifier.notify(f"📦 {bundle.name}: build {number} creado, {len(lock.entries)} archivos.")
         return build
+
+    async def _reread_versions(self, version_ids: list[str]) -> bool:
+        """M3: read the lock's versions again, a hundred a request, and store them. An author can edit
+        a version in place (game versions, loaders, channel, dependencies, files) and the project's
+        version list does not show it. True if any stored one changed in a way resolution reads."""
+        if not version_ids:
+            return False
+        fields = {"game_versions", "loaders", "version_type", "status", "dependencies", "files"}
+        stored = {v.version_id: v.model_dump(include=fields, mode="json")
+                  for v in await self.modrinthDB.version_find_by_version_ids(version_ids)}
+        fresh = await self.modrinthAPI.version_get_many(version_ids)
+        if fresh:
+            await self.modrinthDB.version_upsert_many(fresh)
+        return any(stored.get(v.version_id) != v.model_dump(include=fields, mode="json") for v in fresh)
 
     async def build_find(self, bundle_id: str) -> list[ModpackBuild]:
         return await self.modpackDB.build_find(bundle_id)
@@ -1182,50 +1200,43 @@ class ModpackService():
         changes = diff_entries(before, after)
         shown = {v for c in [*changes.added, *changes.removed, *changes.changed] for v in (c.from_version, c.to_version) if v}
         known = dict(numbers or {})
-        for version_id in sorted(shown - known.keys()):
-            stored = await self.modrinthDB.version_find_by_version_id(version_id)
-            if stored is not None:
-                known[version_id] = stored.version_number
+        for stored in await self.modrinthDB.version_find_by_version_ids(sorted(shown - known.keys())):
+            known[stored.version_id] = stored.version_number
         known = {v: n for v, n in known.items() if v in shown}
         arriving = sorted({c.to_version for c in changes.added + changes.changed if c.to_version})
-        gate = asyncio.Semaphore(CHANGELOG_CONCURRENCY)
-
-        async def fetch(version_id: str) -> tuple[str, Optional[str], bool]:
-            async with gate:
-                try:
-                    return version_id, await self._changelog(version_id), False
-                except Exception:
-                    logger.warning("changelog of %s not available", version_id, exc_info=True)
-                    return version_id, None, True
-
-        tasks = {v: asyncio.create_task(fetch(v)) for v in arriving}
-        done, pending = await asyncio.wait(tasks.values(), timeout=self.changelog_deadline) if tasks else (set(), set())
-        for task in pending:
-            task.cancel()
-        await asyncio.gather(*pending, return_exceptions=True)
         changelogs: dict[str, Optional[str]] = {}
+        for stored in await self.modrinthDB.version_find_by_version_ids(arriving):
+            if stored.changelog is not None:
+                changelogs[stored.version_id] = stored.changelog or None
+        missing = [v for v in arriving if v not in changelogs]
         failed: set[str] = set()
         timed_out: set[str] = set()
-        for version_id, task in tasks.items():
-            if task not in done:
-                timed_out.add(version_id)
-            elif task.cancelled() or task.result()[2]:
-                failed.add(version_id)
-            else:
-                changelogs[version_id] = task.result()[1]
+
+        async def fetch() -> None:
+            # M6: a hundred versions a request, changelog included (labrinth's default), instead
+            # of one request per version. A version without text is stored empty, never asked again.
+            for start in range(0, len(missing), ID_CHUNK):
+                chunk = missing[start:start + ID_CHUNK]
+                try:
+                    versions = await self.modrinthAPI.version_get_many(chunk)
+                except Exception:
+                    logger.warning("changelogs of %d versions not available", len(chunk), exc_info=True)
+                    failed.update(chunk)
+                    continue
+                versions = [v.model_copy(update={"changelog": v.changelog or ""}) for v in versions]
+                if versions:
+                    await self.modrinthDB.version_upsert_many(versions)
+                for version in versions:
+                    changelogs[version.version_id] = version.changelog or None
+                failed.update(v for v in chunk if v not in changelogs)
+
+        if missing:
+            try:
+                await asyncio.wait_for(fetch(), timeout=self.changelog_deadline)
+            except asyncio.TimeoutError:
+                timed_out.update(v for v in missing if v not in changelogs and v not in failed)
         return ChangePreview(changes=changes, changelogs=changelogs, failed=failed, timed_out=timed_out,
                              numbers=known)
-
-    async def _changelog(self, version_id: str) -> Optional[str]:
-        """The changelog of a version, None if it has none. The catalog first; else Modrinth, and
-        the version is stored with it (an empty text, so a version without one is not asked again)."""
-        stored = await self.modrinthDB.version_find_by_version_id(version_id)
-        if stored is not None and stored.changelog is not None:
-            return stored.changelog or None
-        version = await self.modrinthAPI.version_get(version_id)
-        version.changelog = version.changelog or ""
-        await self.modrinthDB.version_upsert_many([version])
-        return version.changelog or None
 
     async def compare_builds(self, bundle_id: str, from_number: int, to_number: int) -> ChangePreview:
         """The change from one build of the bundle to another; 404 if either does not exist."""

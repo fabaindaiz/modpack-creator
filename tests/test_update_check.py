@@ -21,11 +21,12 @@ from tests._actors import EDITOR, RecordingAudit
 from tests.conftest import MongoRunner
 
 
-def version_doc(version_id: str, project_id: str, number: str) -> ModrinthVersion:
+def version_doc(version_id: str, project_id: str, number: str, *, type: str = "release",
+                date: str = "2020-01-01T00:00:00Z", changelog: str | None = None) -> ModrinthVersion:
     return ModrinthVersion.parse(
         id=version_id, project_id=project_id, author_id="a", name=number, version_number=number,
-        version_type="release", status="listed", downloads=1, game_versions=["26.3"], loaders=["fabric"],
-        featured=False, date_published="2020-01-01T00:00:00Z", dependencies=[], files=[], changelog=None)
+        version_type=type, status="listed", downloads=1, game_versions=["26.3"], loaders=["fabric"],
+        featured=False, date_published=date, dependencies=[], files=[], changelog=changelog)
 
 
 def entry(project_id: str, version_id: str, number: str, project_type: str = "mod") -> LockEntry:
@@ -37,20 +38,31 @@ def entry(project_id: str, version_id: str, number: str, project_type: str = "mo
 
 
 class FakeModrinth:
-    """`POST /version_files/update`: el mejor candidato por hash, o nada; guarda lo que recibe."""
+    """`POST /version_files/update_individual`: por hash, la más nueva por fecha entre las de sus
+    canales (como Modrinth), o nada; guarda lo que recibe. `versions` vale una o varias por hash."""
 
-    def __init__(self, latest: dict[str, ModrinthVersion], failing: bool = False) -> None:
-        self.latest = latest
+    def __init__(self, latest: dict[str, Any], failing: bool = False) -> None:
+        self.latest: dict[str, list[ModrinthVersion]] = {
+            h: (v if isinstance(v, list) else [v]) for h, v in latest.items()}
         self.failing = failing
-        self.calls: list[dict[str, Any]] = []
+        self.calls: list[list[dict[str, Any]]] = []
+        self.fetched: list[list[str]] = []
+        self.known: dict[str, ModrinthVersion] = {}
 
-    async def files_update_hash_post_many(self, hashes: list[str], algorithm: str = "sha512", loaders: Sequence[str] = (),
-                                          game_versions: Sequence[str] = (), version_types: Sequence[str] = ()) -> dict[str, ModrinthVersion]:
-        self.calls.append({"hashes": sorted(hashes), "loaders": sorted(loaders), "game_versions": list(game_versions),
-                           "version_types": list(version_types)})
+    async def files_update_individual(self, hashes: list[dict[str, Any]], algorithm: str = "sha512") -> dict[str, ModrinthVersion]:
+        self.calls.append(sorted(hashes, key=lambda h: h["hash"]))
         if self.failing:
             raise RuntimeError("Modrinth down")
-        return {h: self.latest[h] for h in hashes if h in self.latest}
+        found = {}
+        for item in hashes:
+            fitting = [v for v in self.latest.get(item["hash"], []) if v.version_type in item["version_types"]]
+            if fitting:
+                found[item["hash"]] = max(fitting, key=lambda v: v.date_published)
+        return found
+
+    async def version_get_many(self, ids: list[str]) -> list[ModrinthVersion]:
+        self.fetched.append(sorted(ids))
+        return [self.known[i] for i in ids if i in self.known]
 
 
 class Recorder:
@@ -69,11 +81,23 @@ def make(api: FakeModrinth, audit: RecordingAudit | None = None, notifier: Recor
                               audit or RecordingAudit(), notifier or Recorder())
 
 
+LOCKED = "2019-01-01T00:00:00Z"
+
+
 async def bundle_with(entries: list[LockEntry], pins: dict[str, str] | None = None,
-                      channels: list[str] | None = None, recommended: int | None = 1) -> str:
+                      channels: list[str] | None = None, recommended: int | None = 1,
+                      exceptions: dict[str, str] | None = None, lock_types: dict[str, str] | None = None,
+                      catalog: bool = True) -> str:
+    """Un bundle con un build de estas entradas; sus versiones, en el catálogo con fecha LOCKED
+    (`catalog=False` las deja fuera)."""
+    if catalog:
+        await ModrinthDatabase().version_upsert_many(
+            version_doc(e.version_id, e.project_id, e.version_number, type=(lock_types or {}).get(e.project_id, "release"),
+                        date=LOCKED) for e in entries)
     bundle = await ModpackDatabase().bundle_insert(ModpackBundle(
         name="Survival", description="", version="26.3", loader=MinecraftLoaders.fabric,
-        pins=pins or {}, channels=channels or ["release", "beta"], latest_build=1, recommended_build=recommended))
+        pins=pins or {}, channels=channels or ["release", "beta"], latest_build=1, recommended_build=recommended,
+        channel_exceptions=exceptions or {}))
     await ModpackBuild.insert(ModpackBuild(
         bundle_id=PydanticObjectId(str(bundle.id)), number=1, created_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
         request=ResolveRequest(target=Target(game_version="26.3", loader="fabric"), projects=[]),
@@ -82,13 +106,18 @@ async def bundle_with(entries: list[LockEntry], pins: dict[str, str] | None = No
     return str(bundle.id)
 
 
+async def run_check(service: UpdateCheckService, bundle_id: str) -> None:
+    await service.enqueue(bundle_id, None)
+    await JobWorker(JobDatabase(), service.handlers()).run_once()
+
+
 def three_mods() -> list[LockEntry]:
     return [entry("A", "a1", "1.0"), entry("B", "b1", "1.0"), entry("C", "c1", "1.0")]
 
 
 def newer() -> dict[str, ModrinthVersion]:
     # A tiene una nueva, B ya es la última, C (fijado) también tiene una más nueva.
-    return {"h-A": version_doc("a2", "A", "2.0"), "h-B": version_doc("b1", "B", "1.0"),
+    return {"h-A": version_doc("a2", "A", "2.0"), "h-B": version_doc("b1", "B", "1.0", date=LOCKED),
             "h-C": version_doc("c2", "C", "3.0")}
 
 
@@ -105,13 +134,13 @@ def test_a_build_of_three_mods_with_one_current_and_one_pinned_gives_two_updates
                                             from_version_id="a1", to_version_id="a2"),
                              AvailableUpdate(project_id="C", from_version="1.0", to_version="3.0", pinned=True, title="C",
                                             from_version_id="c1", to_version_id="c2")]
-    # Un solo grupo de loaders (los mods), con la versión del juego y los canales del bundle.
-    assert api.calls == [{"hashes": ["h-A", "h-B", "h-C"], "loaders": ["fabric"], "game_versions": ["26.3"],
-                          "version_types": ["release", "beta"]}]
+    # Una sola llamada (M1), cada hash con sus loaders, la versión del juego y los canales del bundle.
+    assert api.calls == [[{"hash": h, "loaders": ["fabric"], "game_versions": ["26.3"], "version_types": ["release", "beta"]}
+                          for h in ("h-A", "h-B", "h-C")]]
 
 
 @pytest.mark.network
-def test_mods_shaders_and_resource_packs_are_asked_in_separate_calls(mongo: MongoRunner) -> None:
+def test_mods_shaders_and_resource_packs_go_in_one_call_each_with_its_loaders(mongo: MongoRunner) -> None:
     async def scenario() -> FakeModrinth:
         api = FakeModrinth({})
         bundle_id = await bundle_with([entry("A", "a1", "1", "mod"), entry("S", "s1", "1", "shader"),
@@ -119,10 +148,84 @@ def test_mods_shaders_and_resource_packs_are_asked_in_separate_calls(mongo: Mong
         await make(api).compute(bundle_id)
         return api
 
-    api = mongo(scenario)
-    by_loaders = {tuple(c["loaders"]): c["hashes"] for c in api.calls}
-    assert by_loaders == {("fabric",): ["h-A"], ("canvas", "iris", "optifine", "vanilla"): ["h-S"],
-                          ("minecraft",): ["h-R"]}
+    [call] = mongo(scenario).calls
+    assert {item["hash"]: item["loaders"] for item in call} == {
+        "h-A": ["fabric"], "h-S": ["canvas", "iris", "optifine", "vanilla"], "h-R": ["minecraft"]}
+
+
+@pytest.mark.network
+def test_a_version_older_than_the_build_is_never_announced(mongo: MongoRunner) -> None:
+    # A mod never goes back (owner, 2026-10-12): Modrinth answers the newest by date among the
+    # channels, which can be older than a version the build took from a wider channel.
+    async def scenario() -> UpdateCheck:
+        older = {"h-A": version_doc("a0", "A", "0.9", date="2018-06-01T00:00:00Z")}
+        bundle_id = await bundle_with([entry("A", "a1", "1.0")])
+        return await make(FakeModrinth(older)).compute(bundle_id)
+
+    assert mongo(scenario).updates == []
+
+
+@pytest.mark.network
+def test_a_mod_on_a_beta_hears_of_a_newer_beta_and_of_the_stable_that_ends_its_exception(mongo: MongoRunner) -> None:
+    # M1–M2: one call with each hash's channels (the exception's too), a second one only for the
+    # excepted mods with the pack's channels: the stable that fits ends the beta.
+    async def scenario(versions: list[ModrinthVersion]) -> tuple[UpdateCheck, FakeModrinth]:
+        api = FakeModrinth({"h-I": versions, "h-A": version_doc("a2", "A", "2.0")})
+        bundle_id = await bundle_with([entry("I", "i-b4", "1.8.0-beta.4"), entry("A", "a1", "1.0")], channels=["release"],
+                                      exceptions={"I": "beta"}, lock_types={"I": "beta"})
+        return await make(api).compute(bundle_id), api
+
+    older_stable = version_doc("i-176", "I", "1.7.6", date="2018-01-01T00:00:00Z")
+    beta_5 = version_doc("i-b5", "I", "1.8.0-beta.5", type="beta")
+    check, api = mongo(lambda: scenario([older_stable, beta_5]))
+    assert [(u.project_id, u.to_version, u.kind) for u in check.updates] == [("A", "2.0", ""), ("I", "1.8.0-beta.5", "beta")]
+    first, second = api.calls
+    assert {i["hash"]: i["version_types"] for i in first} == {"h-A": ["release"], "h-I": ["release", "beta"]}
+    assert second == [{"hash": "h-I", "loaders": ["fabric"], "game_versions": ["26.3"], "version_types": ["release"]}]
+    stable = version_doc("i-180", "I", "1.8.0", date="2021-01-01T00:00:00Z")
+    check, _ = mongo(lambda: scenario([older_stable, beta_5, stable]))
+    assert [(u.project_id, u.to_version, u.kind) for u in check.updates] == [("A", "2.0", ""), ("I", "1.8.0", "leaves_beta")]
+
+
+@pytest.mark.network
+def test_without_exceptions_there_is_one_call_and_what_arrives_is_kept_with_its_changelog(mongo: MongoRunner) -> None:
+    # M6: the versions the check brings are stored, changelog included, so the updates page asks nothing.
+    async def scenario() -> tuple[int, Any]:
+        api = FakeModrinth({"h-A": version_doc("a2", "A", "2.0", changelog="Arreglos")})
+        bundle_id = await bundle_with([entry("A", "a1", "1.0")])
+        await make(api).compute(bundle_id)
+        return len(api.calls), await ModrinthDatabase().version_find_by_version_id("a2")
+
+    calls, stored = mongo(scenario)
+    assert calls == 1 and stored is not None and stored.changelog == "Arreglos"
+
+
+@pytest.mark.network
+def test_a_build_version_the_catalog_lacks_is_read_in_one_batch_before_comparing(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[UpdateCheck, list[list[str]]]:
+        api = FakeModrinth({"h-A": version_doc("a2", "A", "2.0"), "h-B": version_doc("b0", "B", "0.5", date="2018-01-01T00:00:00Z")})
+        api.known = {"a1": version_doc("a1", "A", "1.0", date=LOCKED), "b1": version_doc("b1", "B", "1.0", date=LOCKED)}
+        bundle_id = await bundle_with([entry("A", "a1", "1.0"), entry("B", "b1", "1.0")], catalog=False)
+        return await make(api).compute(bundle_id), api.fetched
+
+    check, fetched = mongo(scenario)
+    assert fetched == [["a1", "b1"]] and [u.project_id for u in check.updates] == ["A"]
+
+
+@pytest.mark.network
+def test_the_notice_marks_a_beta_and_a_stable_that_ends_one(mongo: MongoRunner) -> None:
+    async def scenario() -> list[str]:
+        notifier = Recorder()
+        api = FakeModrinth({"h-I": [version_doc("i-180", "I", "1.8.0", date="2021-01-01T00:00:00Z")],
+                            "h-S": [version_doc("s-b2", "S", "2.0-beta.2", type="beta")]})
+        bundle_id = await bundle_with([entry("I", "i-b4", "1.8.0-beta.4"), entry("S", "s-b1", "2.0-beta.1")],
+                                      channels=["release"], exceptions={"I": "beta", "S": "beta"},
+                                      lock_types={"I": "beta", "S": "beta"})
+        await run_check(make(api, notifier=notifier), bundle_id)
+        return notifier.sent
+
+    [text] = mongo(scenario)
+    assert "I 1.8.0-beta.4→1.8.0 (estable: deja la beta)" in text and "S 2.0-beta.1→2.0-beta.2 (beta)" in text
 
 
 @pytest.mark.network
@@ -152,7 +255,7 @@ def test_the_same_updates_are_notified_once_and_different_ones_again(mongo: Mong
             await service.enqueue(bundle_id, None)
             assert await worker.run_once()
         after_two = list(notifier.sent)
-        api.latest["h-B"] = version_doc("b2", "B", "1.1")
+        api.latest["h-B"] = [version_doc("b2", "B", "1.1")]
         await service.enqueue(bundle_id, None)
         await worker.run_once()
         return after_two, list(notifier.sent), [str(c.updates) for c in [await service.latest(bundle_id)] if c]  # type: ignore[misc]

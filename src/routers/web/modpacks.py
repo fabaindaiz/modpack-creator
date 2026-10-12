@@ -758,7 +758,7 @@ async def update_page(
         await modrinthService.projects_filled([u.project_id for u in counted + pinned])
     return render(request, "modpacks/updates.html", actor, bundle=bundle, bundle_id=bundle_id, check=check,
                   preview=preview, pinned=pinned, titles={u.project_id: u.title for u in counted},
-                  nav_active="modpacks")
+                  kinds={u.project_id: u.kind for u in counted if u.kind}, nav_active="modpacks")
 
 @router.post("/modpacks/{bundle_id}/actualizaciones/buscar")
 @inject

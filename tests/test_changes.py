@@ -57,28 +57,25 @@ def version_doc(version_id: str, project_id: str, changelog: str | None = None) 
 
 
 class FakeAPI:
-    """Modrinth: `GET /version/{id}` con el changelog que se le diga; cuenta las llamadas."""
+    """Modrinth: `GET /versions?ids=` con el changelog que se le diga (M6: en lote, con changelog
+    por defecto); un id que no conoce no viene en la respuesta; uno en `failing` hace fallar el
+    lote. `calls` guarda cada lote pedido."""
 
     def __init__(self, changelogs: dict[str, str | None], failing: set[str] = frozenset()) -> None:  # type: ignore[assignment]
         self.changelogs = changelogs
         self.failing = failing
-        self.calls: list[str] = []
-        self.running = 0
-        self.peak = 0
+        self.batches: list[list[str]] = []
 
-    async def version_get(self, id: str) -> ModrinthVersion:
-        self.calls.append(id)
-        self.running += 1
-        self.peak = max(self.peak, self.running)
-        try:
-            await asyncio.sleep(0.01)
-            if id in self.failing:
-                raise RuntimeError("Modrinth down")
-            if id not in self.changelogs:
-                raise HTTP_404_NOT_FOUND(f"No version {id}")
-            return version_doc(id, "P-" + id, self.changelogs[id])
-        finally:
-            self.running -= 1
+    @property
+    def calls(self) -> list[str]:
+        return [i for batch in self.batches for i in batch]
+
+    async def version_get_many(self, ids: list[str]) -> list[ModrinthVersion]:
+        self.batches.append(list(ids))
+        await asyncio.sleep(0.01)
+        if self.failing & set(ids):
+            raise RuntimeError("Modrinth down")
+        return [version_doc(i, "P-" + i, self.changelogs[i]) for i in ids if i in self.changelogs]
 
 
 def service(api: FakeAPI) -> ModpackService:
@@ -114,7 +111,7 @@ def test_the_preview_reads_changelogs_from_modrinth_then_from_the_catalog(mongo:
     assert [c.project_id for c in first.changes.changed] == ["P"] and first.changes.unchanged == 1
     assert [c.project_id for c in first.changes.added] == ["R"]
     assert first.changelogs == {"v2": "Arregla un crash", "v3": None} and first.failed == set()
-    assert sorted(calls_first) == ["v2", "v3"] and stored == "Arregla un crash"
+    assert sorted(calls_first) == ["v2", "v3"] and stored == "Arregla un crash"  # one request (M6)
     # Lo guardado no se vuelve a pedir; una versión sin changelog tampoco (se guarda vacía).
     assert calls_second == []
 
@@ -138,19 +135,29 @@ def test_a_modrinth_failure_marks_the_version_and_never_raises(mongo: MongoRunne
             lock(entry("P", "v1"), entry("Q", "q1")), lock(entry("P", "v2"), entry("Q", "v3"), entry("Z", "ghost")))
 
     preview = mongo(scenario)
-    assert preview.failed == {"v3", "ghost"} and preview.timed_out == set()
-    assert preview.changelogs == {"v2": "bien"}
+    # One request for all: when it fails, every version it asked for is marked.
+    assert preview.failed == {"v2", "v3", "ghost"} and preview.timed_out == set() and preview.changelogs == {}
 
 
 @pytest.mark.network
-def test_modrinth_is_asked_at_most_eight_at_a_time(mongo: MongoRunner) -> None:
-    async def scenario() -> int:
-        ids = [f"v{i}" for i in range(30)]
+def test_a_version_modrinth_does_not_return_is_marked_and_the_rest_arrive(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        return await service(FakeAPI({"v2": "bien"})).change_preview(lock(), lock(entry("P", "v2"), entry("Z", "ghost")))
+
+    preview = mongo(scenario)
+    assert preview.failed == {"ghost"} and preview.changelogs == {"v2": "bien"}
+
+
+@pytest.mark.network
+def test_changelogs_come_a_hundred_versions_a_request(mongo: MongoRunner) -> None:
+    # M6: 150 changed mods after months without updating were 150 requests; now 2.
+    async def scenario() -> list[int]:
+        ids = [f"v{i:03}" for i in range(150)]
         api = FakeAPI({i: "x" for i in ids})
         await service(api).change_preview(lock(), lock(*[entry("P" + i, i) for i in ids]))
-        return api.peak
+        return sorted(len(b) for b in api.batches)
 
-    assert 1 < mongo(scenario) <= 8
+    assert mongo(scenario) == [50, 100]
 
 
 @pytest.mark.network
@@ -258,13 +265,13 @@ def test_a_server_preview_without_a_scan_is_a_conflict(mongo: MongoRunner) -> No
 
 
 class SlowAPI(FakeAPI):
-    """Modrinth limitando: las versiones lentas tardan mucho más que el plazo."""
+    """Modrinth limitando: un lote con versiones lentas tarda mucho más que el plazo."""
 
-    async def version_get(self, id: str) -> ModrinthVersion:
-        if id.startswith("slow"):
-            self.calls.append(id)
+    async def version_get_many(self, ids: list[str]) -> list[ModrinthVersion]:
+        if any(i.startswith("slow") for i in ids):
+            self.batches.append(list(ids))
             await asyncio.sleep(30)
-        return await super().version_get(id)
+        return await super().version_get_many(ids)
 
 
 @pytest.mark.network
@@ -276,6 +283,7 @@ def test_the_preview_returns_by_its_deadline_and_marks_what_it_did_not_fetch(mon
         svc = ModpackService(modpackDB=ModpackDatabase(), modrinthDB=ModrinthDatabase(), modrinthAPI=cast(Any, api),
                              loaderAPI=cast(Any, FakeLoaders()), audit=RecordingAudit(), changelog_deadline=0.3)
         started = time.monotonic()
+        await ModrinthDatabase().version_upsert_many([version_doc("v2", "P", "rápido")])
         preview = await svc.change_preview(lock(), lock(entry("P", "v2"), entry("S1", "slow1"), entry("S2", "slow2")))
         return preview, time.monotonic() - started
 
@@ -330,7 +338,7 @@ def test_update_preview_maps_a_check_to_changed_versions_with_numbers_and_skips_
     from src.model.modpack import AvailableUpdate
 
     async def scenario() -> Any:
-        api = FakeAPI({"a2": "Nuevo", "b2": None}, failing={"b2"})
+        api = FakeAPI({"a2": "Nuevo"})  # b2 does not come back
         updates = [AvailableUpdate(project_id="A", from_version="1.0", to_version="2.0", from_version_id="a1", to_version_id="a2"),
                    AvailableUpdate(project_id="B", from_version="1.0", to_version="2.0", from_version_id="b1", to_version_id="b2"),
                    AvailableUpdate(project_id="OLD", from_version="1", to_version="2")]  # sin ids: antes de guardarlos

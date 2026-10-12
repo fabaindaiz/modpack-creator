@@ -24,12 +24,27 @@ bien escrita. Todas se leyeron en la fuente primaria el 2026-10-01.
 
   **Lo que confirma:** `project_versions` en `src/library/api/client/modrinth.py`, que pide
   `include_changelog=false`: una versión del listado llega **sin** `changelog`, y la vista previa
-  de cambios lo pide con `GET /version/{id}` (`version_get`). `files_update_hash_post_many` manda
-  `version_types` solo si hay canales (los del modpack).
+  de cambios los pide en lote con `GET /versions?ids=` (`version_get_many`, cien por request),
+  que trae `changelog` por defecto (M6, 2026-10-12; fuente abajo).
 
-  **Lo que confirma:** los tres POST por hash de `src/library/api/client/modrinth.py`, con
+  **Lo que confirma:** los POST por hash de `src/library/api/client/modrinth.py`, con
   `tests/test_api_contracts.py` (S6). Las respuestas de los lotes son un mapa hash → versión
   (`HashVersionMap`), no una lista.
+
+- **labrinth (el servidor de Modrinth), código fuente** — leído para
+  `docs/research/2026-10-09-api-modrinth-detalle.md` y probado en vivo (sondas S2, S3, S6).
+  `POST /v2/version_files/update_individual` **no está en la OpenAPI v2.7.0**: cuerpo
+  `ManyFileUpdateData { algorithm, hashes: [{hash, loaders, game_versions, version_types}] }`
+  (`routes/v2/version_file.rs`), respuesta mapa hash → versión, la más nueva **por fecha** entre
+  las que cumplen los filtros de ese hash (incluye `unlisted`). `GET /v2/versions?ids=` acepta
+  `include_changelog` (por defecto `true`; tampoco lo documenta la OpenAPI).
+
+  **Lo que cambió aquí por eso (2026-10-12):** el chequeo diario usa `files_update_individual`,
+  una request para todo el pack y una segunda solo para los mods con excepción de canal (M1); como
+  Modrinth elige por fecha, el chequeo descarta lo publicado antes que la versión del lock
+  (d-7985ee-6dc34c). `files_update_hash_post_many` (`/version_files/update`) dejó de usarse y se
+  quitó. Contrato: `tests/test_api_contracts.py`
+  (`test_update_individual_sends_each_hash_with_its_own_filters`).
 
 - **Modrinth en vivo, grabado el 2026-10-01** (`tests/fixtures/modrinth/`). `environment` es una
   lista en el proyecto (`["client_only"]`) y un string en la versión. En el proyecto, la spec

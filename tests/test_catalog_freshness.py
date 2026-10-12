@@ -170,7 +170,8 @@ def test_a_build_checks_even_inside_the_window(mongo: MongoRunner) -> None:
         return {e.project_id: e.version_id for e in build.lock.entries}["BBBB"], api.calls
 
     picked, calls = mongo(scenario)
-    assert picked == "b2" and [c[0] for c in calls] == ["project_get_many", "version_get_many"]
+    # The check, its new version, and M3's batched re-read of the lock's versions.
+    assert picked == "b2" and [c[0] for c in calls] == ["project_get_many", "version_get_many", "version_get_many"]
 
 
 def test_what_was_fetched_stays_even_if_a_later_call_fails(mongo: MongoRunner) -> None:

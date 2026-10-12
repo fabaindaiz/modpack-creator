@@ -136,18 +136,13 @@ class ModrinthAPI(HttpAPI):
         return ModrinthVersion.parse(**handler.json)
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_retryable)
-    async def files_update_hash_post_many(self, hashes: list[str], algorithm: str = "sha512", loaders: Sequence[str] = (), game_versions: Sequence[str] = (), version_types: Sequence[str] = ()) -> dict[str, ModrinthVersion]:
-        # `version_types` (release, beta, alpha) is optional in openapi v2.7.0: sent only if given.
-        body: dict[str, Any] = {
-            "hashes": hashes,
-            "algorithm": algorithm,
-            "loaders": list(loaders),
-            "game_versions": list(game_versions)
-        }
-        if version_types:
-            body["version_types"] = list(version_types)
+    async def files_update_individual(self, hashes: list[dict[str, Any]], algorithm: str = "sha512") -> dict[str, ModrinthVersion]:
+        """POST /version_files/update_individual: like /version_files/update, but each hash brings its
+        own `loaders`, `game_versions` and `version_types`, all in one request (M1). Not in the
+        OpenAPI v2.7.0; its body is labrinth's `ManyFileUpdateData` (docs/references.md). Only reads."""
         handler: JsonResponse = await self._request(
             method=METHOD.POST,
-            path='version_files/update',
-            json=body)
+            path='version_files/update_individual',
+            json={"algorithm": algorithm, "hashes": [dict(item) for item in hashes]})
         return {hash: ModrinthVersion.parse(**item) for hash, item in handler.json.items()}
+

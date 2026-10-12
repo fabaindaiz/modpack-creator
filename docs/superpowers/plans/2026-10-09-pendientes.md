@@ -174,3 +174,13 @@ El dueño cerró el build 0.2.0 con «lo hecho + U3» y sigue el resto en una se
 - **T1, textos aprobados:** «Importación del servidor»; «Leyendo los jars del servidor: i de K»,
   «Leyendo metadatos de jars: i de U», «Buscando en Modrinth: i de U», «Agregando al modpack»;
   «Pendientes de tu decisión (n)»; el botón «Importar» ya no dice «Escanea primero».
+- **Un mod nunca retrocede de versión** (regla del dueño: bajar un mod rompe un modpack). Rige
+  el aviso y los builds: el chequeo diario nunca anuncia una versión anterior a la del lock, y el
+  resolvedor nunca toma para un mod una versión anterior a la del build previo, salvo un pin
+  explícito. Una excepción de canal sigue vigente hasta que haya una estable **más nueva** que la
+  instalada. **Enmienda M2**, que anunciaba «siempre» la release que anula una excepción aunque
+  fuera más vieja, y el «queda sin efecto sola» de d-7985ee-b1ce87.
+- **M2, textos:** la beta nueva de un mod con excepción lleva la insignia «beta»; la estable que
+  anula la excepción, «estable: deja la beta»; en Discord, el mismo texto entre paréntesis.
+- **Investigación pedida:** construcción de modpacks completa, para contexto
+  (`docs/research/2026-10-12-construccion-de-modpacks.md`).

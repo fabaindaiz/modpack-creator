@@ -134,7 +134,8 @@ def test_a_buildable_pack_leaves_one_build_job_that_checks_and_freezes(mongo: Mo
     first, again, done, latest, calls, events = mongo(scenario)
     assert first.id == again.id and (first.kind, first.key) == ("build_create", f"build:{first.payload['bundle_id']}")
     assert done.status == "done" and done.checkpoint["build"] == {"number": 1} and latest == 1
-    assert calls == ["project_get_many"]  # the build's check: one batched request, nothing new
+    # The build's check (one batched request, nothing new) and M3's re-read of the lock's versions.
+    assert calls == ["project_get_many", "version_get_many"]
     assert "build.request" in events and "build.create" in events
 
 

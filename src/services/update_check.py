@@ -9,7 +9,6 @@ import hashlib
 import asyncio
 import logging
 import re
-from collections import defaultdict
 from datetime import datetime, time, timezone, tzinfo
 from typing import Any, Optional
 from zoneinfo import ZoneInfo
@@ -20,7 +19,7 @@ from src.database.modrinth import ModrinthDatabase
 from src.database.update_check import UpdateCheckDatabase
 from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
 from src.library.api.client.modrinth import ModrinthAPI
-from src.library.resolution import Target
+from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Target
 from src.library import utils
 from src.library.utils import getenv, getenv_opt, utcnow
 from src.model.audit import AuditTarget
@@ -31,6 +30,8 @@ from src.services.audit import AuditSink
 from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink
 
 DISCORD_LIMIT = 2000
+# How the notice marks an update whose channel matters (M2; owner, 2026-10-12).
+KIND_NOTE = {"beta": " (beta)", "alpha": " (alpha)", "leaves_beta": " (estable: deja la beta)"}
 NO_BUILD = "Este modpack todavía no tiene build: crea uno para poder buscar actualizaciones."
 DEFAULT_TZ = "America/Santiago"
 CHECK_AT = re.compile(r"([01]\d|2[0-3]):([0-5]\d)")
@@ -108,35 +109,84 @@ class UpdateCheckService():
 
     async def compute(self, bundle_id: str) -> UpdateCheck:
         """Ask Modrinth about the files of the recommended build (else the latest). Not stored.
-        Raises if Modrinth fails; 409 if the modpack has no build."""
+        Raises if Modrinth fails; 409 if the modpack has no build.
+
+        One `update_individual` request for every file, each with its loaders and its channels: the
+        pack's, widened to its exception's for a mod that has one (M1). Only if some mod has an
+        exception, a second request for those with the pack's channels alone: what it finds is the
+        stable that ends the exception. Nothing published before the build's version is announced:
+        a mod never goes back (d-7985ee-6dc34c). What arrives is kept in the catalog, changelog
+        included (M6)."""
         bundle = await self.modpackDB.bundle_get(bundle_id)
         number = bundle.recommended_build or bundle.latest_build
         if number is None:
             raise HTTP_409_CONFLICT(f"Bundle '{bundle_id}' has no build")
         build = await self.modpackDB.build_get(bundle_id, number)
         target = Target(game_version=bundle.version, loader=bundle.loader.value)
-        # One call per set of loaders: mods, shaders and resource packs are not loaded by the same.
-        groups: dict[tuple[str, ...], list[Any]] = defaultdict(list)
-        for entry in build.lock.entries:
-            if entry.file is not None:
-                groups[tuple(sorted(target.loaders(entry.project_type)))].append(entry)
+        entries = [e for e in build.lock.entries if e.file is not None]
+        exceptions = bundle.channel_exceptions
+
+        def query(entry: Any, channels: list[str]) -> dict[str, Any]:
+            return {"hash": entry.file.sha512, "loaders": sorted(target.loaders(entry.project_type)),
+                    "game_versions": [bundle.version], "version_types": channels}
+
+        def widened(project_id: str) -> list[str]:
+            limit = CHANNEL_RANK.get(exceptions.get(project_id, ""), -1)
+            return bundle.channels + [c for c in EXCEPTION_CHANNELS
+                                      if CHANNEL_RANK[c] <= limit and c not in bundle.channels]
+
+        found = await self.api.files_update_individual([query(e, widened(e.project_id)) for e in entries]) \
+            if entries else {}
+        excepted = [e for e in entries if e.project_id in exceptions]
+        stable = await self.api.files_update_individual([query(e, list(bundle.channels)) for e in excepted]) \
+            if excepted else {}
+        arrived = [v for v in [*found.values(), *stable.values()]]
+        if arrived:
+            await self.modrinthDB.version_upsert_many(
+                v.model_copy(update={"changelog": v.changelog or ""}) for v in arrived)
+        locked = await self._locked_versions([e.version_id for e in entries])
+
         updates: list[AvailableUpdate] = []
-        for loaders, entries in sorted(groups.items()):
-            found = await self.api.files_update_hash_post_many(
-                [e.file.sha512 for e in entries], "sha512", loaders, [bundle.version], bundle.channels)
-            for entry in entries:
-                latest = found.get(entry.file.sha512)
-                if (latest is not None and latest.project_id == entry.project_id
-                        and latest.version_id != entry.version_id):
-                    updates.append(AvailableUpdate(
-                        project_id=entry.project_id, from_version=entry.version_number,
-                        to_version=latest.version_number, pinned=entry.project_id in bundle.pins,
-                        from_version_id=entry.version_id, to_version_id=latest.version_id))
+        for entry in entries:
+            current = locked.get(entry.version_id)
+            if current is None:
+                logger.warning("update check: %s is not in Modrinth; its updates cannot be dated", entry.version_id)
+                continue
+
+            def newer(version: Any) -> bool:
+                return (version is not None and version.project_id == entry.project_id
+                        and version.version_id != entry.version_id
+                        and _as_utc(version.date_published) > _as_utc(current.date_published))
+
+            assert entry.file is not None  # `entries` keeps only the ones with a file
+            hash = entry.file.sha512
+            kind, latest = "", None
+            if newer(stable.get(hash)) and current.version_type not in bundle.channels:
+                kind, latest = "leaves_beta", stable[hash]
+            elif newer(found.get(hash)):
+                latest = found[hash]
+                kind = latest.version_type if latest.version_type not in bundle.channels else ""
+            if latest is not None:
+                updates.append(AvailableUpdate(
+                    project_id=entry.project_id, from_version=entry.version_number,
+                    to_version=latest.version_number, pinned=entry.project_id in bundle.pins,
+                    from_version_id=entry.version_id, to_version_id=latest.version_id, kind=kind))
         updates.sort(key=lambda u: u.project_id)
         titles = {p.project_id: p.title for p in await self.modrinthDB.project_find_by_modrinth_id([u.project_id for u in updates])}
         for update in updates:
             update.title = titles.get(update.project_id) or update.project_id
         return UpdateCheck(bundle_id=PydanticObjectId(bundle_id), build_number=number, checked_at=utcnow(), updates=updates)
+
+    async def _locked_versions(self, version_ids: list[str]) -> dict[str, Any]:
+        """The build's versions, by id, from the catalog; the ones it lacks in one batch from Modrinth."""
+        known = {v.version_id: v for v in await self.modrinthDB.version_find_by_version_ids(version_ids)}
+        missing = [i for i in version_ids if i not in known]
+        if missing:
+            fetched = await self.api.version_get_many(missing)
+            if fetched:
+                await self.modrinthDB.version_upsert_many(fetched)
+            known.update({v.version_id: v for v in fetched})
+        return known
 
     async def enqueue(self, bundle_id: str, actor: Optional[Actor]) -> Job:
         """Queue a check of a modpack; 409 if it already has an active job (the key is shared with
@@ -250,6 +300,6 @@ class UpdateCheckService():
     async def _message(self, bundle_id: str, check: UpdateCheck) -> str:
         bundle = await self.modpackDB.bundle_get(bundle_id)
         shown = [u for u in check.updates if not u.pinned]
-        listing = ", ".join(f"{u.title} {u.from_version}→{u.to_version}" for u in shown)
+        listing = ", ".join(f"{u.title} {u.from_version}→{u.to_version}{KIND_NOTE.get(u.kind, '')}" for u in shown)
         text = f"🔎 {bundle.name} (build {check.build_number}): {len(shown)} mods con actualización — {listing}"
         return text[:DISCORD_LIMIT]

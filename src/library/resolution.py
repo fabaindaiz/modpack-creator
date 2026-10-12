@@ -183,6 +183,10 @@ class ResolveRequest(BaseModel):
     # Project id → the least stable channel it also accepts ("beta" or "alpha"), only while none of
     # its versions fits in the pack's channels: once one does, the exception has no effect.
     channel_exceptions: dict[str, str] = {}
+    # Project id → its version in the build in force: a mod never goes back (owner's rule,
+    # 2026-10-12). A free choice only takes versions published at or after it, and keeps it when
+    # none is; a pin may go lower. A floor for another game version or loader does not count.
+    floors: dict[str, str] = {}
 
 
 def request_digest(request: ResolveRequest) -> str:
@@ -192,6 +196,9 @@ def request_digest(request: ResolveRequest) -> str:
     # Left out when empty: every resolution saved before the field existed keeps its digest.
     if not data["channel_exceptions"]:
         del data["channel_exceptions"]
+    # The floors follow the build in force, not what the admin asked for: a new build must not
+    # make the saved resolution read as stale.
+    del data["floors"]
     data["projects"] = sorted(data["projects"])
     data["target"]["channels"] = sorted(data["target"]["channels"])
     text = json.dumps(data, sort_keys=True, separators=(",", ":"))
@@ -360,7 +367,19 @@ class _Run:
                 requested_by=_asked(requester), detail=(
                 f"un proyecto de tipo {project_type} no entra en un modpack; pedido por {requester}")))
             return None
+        floor: Optional[Candidate] = None
+        if project_id in self.request.floors:
+            floor_id = self.request.floors[project_id]
+            if floor_id not in self.catalog.gone:
+                floor = self.catalog.by_id.get(floor_id)
+                if floor is None:
+                    self.needs_versions.add(floor_id)
+                    return None
+                if not self.request.target.fits(floor, project_type):
+                    floor = None
         allowed = [c for c in self.catalog.by_project[project_id] if self.request.target.allows(c, project_type)]
+        if floor is not None:
+            return self._take_from_floor(project_id, project_type, floor, allowed, reason, requester)
         if not allowed and project_id in self.request.channel_exceptions:
             allowed = self._excepted(project_id, project_type)
         if not allowed:
@@ -377,6 +396,23 @@ class _Run:
                     f"en los canales {', '.join(sorted(self.request.target.channels))}; pedido por {requester}")))
             return None
         best = min(allowed, key=_preference)
+        return self._take(best, reason, requester, exact=False)
+
+    def _take_from_floor(self, project_id: str, project_type: str, floor: Candidate, allowed: list[Candidate],
+                         reason: str, requester: str) -> Optional[Candidate]:
+        """Never back: the best of the versions at or after the floor, the pack's channels first and
+        then its exception's; with none, the floor itself, whatever its channel."""
+        def newer(found: list[Candidate]) -> list[Candidate]:
+            return [c for c in found if c.date_published >= floor.date_published]
+
+        pool = newer(allowed)
+        if not pool and project_id in self.request.channel_exceptions:
+            pool = newer(self._excepted(project_id, project_type))
+        best = min(pool, key=_preference) if pool else floor
+        if not self.request.target.allows(best, project_type):
+            self.excepted.add(project_id)
+        else:
+            self.excepted.discard(project_id)
         return self._take(best, reason, requester, exact=False)
 
     def _excepted(self, project_id: str, project_type: str) -> list[Candidate]:
