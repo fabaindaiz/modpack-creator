@@ -270,3 +270,10 @@ def test_the_scheduler_does_not_queue_before_the_hour(mongo: MongoRunner) -> Non
         return len(await make().schedule(local(2026, 7, 10, 3, 0), AT, SCL))
 
     assert mongo(scenario) == 0
+
+
+@pytest.mark.parametrize("line", ["UPDATE_CHECK_AT:\n", "UPDATE_CHECK_AT: null\n", 'UPDATE_CHECK_AT: ""\n'])
+def test_an_empty_or_null_update_check_at_means_off(env_file: Callable[[str], None], line: str) -> None:
+    # Roadmap: an empty or null value must mean "off", not fail asking for quotes.
+    env_file(line)
+    assert schedule_from_env() is None

@@ -66,7 +66,8 @@ Con la clave de un administrador cualquiera abre todo el panel. Por eso:
 1. Crear un usuario **no admin** (por ejemplo `modpack-bot`).
 2. Agregarlo como **subusuario** de cada servidor que la app tenga que ver. Para este release, de
    solo lectura, bastan `file.read` (listar `mods/`), `file.read-content` (bajar un jar para
-   hashearlo) y `backup.read` (la simulación lista los backups). Los permisos de escritura vienen
+   hashearlo), `backup.read` (la simulación lista los backups) y `activity.read` (el escaneo mira si
+   hubo una restauración; sin él, cada escaneo es completo, d-7985ee-894b2c). Los permisos de escritura vienen
    después, en el paso 10.
 3. Con ese usuario, crear una clave de la **Client API** (`ptlc_…`). En "Allowed IPs" poner la IP
    pública con que sale este servidor.
@@ -102,7 +103,7 @@ como números, y la API ignora lo que no es texto (o no arranca, en `UPDATE_CHEC
 | `OIDC_ALLOWED_EMAILS` | emails verificados que entran sin estar en un grupo, separados por coma |
 | `DISCORD_WEBHOOK_URL` | avisos de actualizaciones, escaneos y trabajos |
 | `UPDATE_CHECK_AT`, `UPDATE_CHECK_TZ` | revisión diaria de versiones nuevas: `"04:30"`, `"America/Santiago"` |
-| `SCAN_EVERY_HOURS`, `SCAN_FULL_EVERY_DAYS` | escaneo periódico de los servidores (sin la primera, no hay); uno completo cada N días (por defecto 30: la fecha de creación de cada jar ya detecta una restauración) |
+| `SCAN_EVERY_HOURS`, `SCAN_FULL_EVERY_DAYS` | escaneo periódico de los servidores (sin la primera, no hay); uno completo cada N días (por defecto 7: la actividad del servidor ve una restauración, pero no una transferencia entre nodos ni una reinstalación desde el panel de admin) |
 | `MODRINTH_TOKEN`, `MODRINTH_AGENT` | token de Modrinth y `User-Agent` propio (Modrinth pide uno que identifique al proyecto) |
 | `CORS_ALLOW_ORIGINS` | otros orígenes que **solo leen** la API (d-7985ee-491c83) |
 | `SESSION_HTTPS_ONLY` | `"false"` solo sin TLS (pruebas locales); por defecto `"true"` |

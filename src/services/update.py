@@ -193,6 +193,13 @@ class UpdateService():
             await context.step("staging", lambda: self._staging(job, ident, plan, ops))
         except JobFailed as failed:
             await self._notify(f"⛔ {server.name} no se actualizó: {failed}", dry_run)
+            if not dry_run:
+                # Nothing was written: the preflight scan's comparison is true, record it (it recorded
+                # none) so the dashboard does not read "Sin comparar" (round 1 review).
+                try:
+                    await self.servers.record_drift(str(server.id))
+                except Exception:
+                    logger.warning("recording the comparison after a failed update failed", exc_info=True)
             raise
         await context.step("save", lambda: self._save(ident, ops))
         await context.step("stop", lambda: self._stop(ident, ops))

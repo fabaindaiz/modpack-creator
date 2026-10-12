@@ -240,3 +240,18 @@ def test_a_server_version_for_another_target_never_displaces_the_builds_floor(mo
 
     again, locked = mongo(scenario)
     assert again == locked  # the newer one is for 1.21.1: it is not the floor, and nothing goes back
+
+
+def test_a_shader_the_catalog_did_not_know_asks_for_its_versions_with_shader_loaders(mongo: MongoRunner) -> None:
+    # Roadmap (round 1 review): a shader or resource pack the catalog did not know was asked for its
+    # versions with a mod's loaders. Its type is read first, so its own loaders are used.
+    async def scenario() -> list[Any]:
+        api = RecordedModrinthAPI()
+        service, bundle_id = await bundle(api, "complementary-reimagined")
+        await ModrinthVersion.find().delete()
+        api.calls.clear()
+        await service.resolve_fetching(bundle_id)
+        return [c for c in api.calls if c[0] == "project_versions"]
+
+    [call] = mongo(scenario)
+    assert "fabric" not in call[1][1] and "iris" in call[1][1]

@@ -547,3 +547,25 @@ def test_app_js_opens_the_panel_and_leaves_modified_clicks_to_the_browser() -> N
     for marker in ("ctrlKey", "metaKey", "shiftKey", "button"):
         assert marker in text, marker
     assert "focus()" in text
+
+
+def test_sanitize_detail_hides_credentials_outside_urls_too() -> None:
+    # Roadmap (round 1 review): a bearer token or a key=value credential outside a URL reached the
+    # folding detail; it shows as [oculto].
+    from src.web import sanitize_detail
+
+    text = sanitize_detail("401: Authorization: Bearer ptlc_abc123 failed; token=xyz api_key=k1 x-api-key: k2 ok=1")
+    assert "ptlc_abc123" not in text and "xyz" not in text and "k1" not in text and "k2" not in text
+    assert "Bearer [oculto]" in text and "token=[oculto]" in text and "ok=1" in text
+
+
+def test_a_form_disables_its_submit_buttons_while_it_is_sent() -> None:
+    # Roadmap (round 1 review): a form's submit button showed no busy state and a double submit was
+    # possible. app.js disables them while an htmx form's request runs (and gives them back after),
+    # and once a plain form is sent (after the browser read the button's value).
+    import main
+    from fastapi.testclient import TestClient
+
+    text = TestClient(main.app, base_url="https://testserver").get("/static/app.js").text
+    assert "htmx:beforeRequest" in text and "button[type=submit]" in text and "data-busy" in text
+    assert "addEventListener('submit'" in text and "setTimeout" in text

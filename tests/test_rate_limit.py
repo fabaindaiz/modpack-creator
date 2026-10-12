@@ -53,6 +53,8 @@ def run(limited: int, call: Any, monkeypatch: pytest.MonkeyPatch, retry_after: s
                 return await call(api)
             except HTTP_429_TOO_MANY_REQUESTS as error:
                 return error
+            finally:
+                await api.close()
 
     result = asyncio.run(main())
     return result, waits, len(seen)

@@ -43,6 +43,8 @@ class FakePanel:
     def __init__(self) -> None:
         self.files: dict[str, tuple[bytes, datetime]] = {}
         self.calls: list[str] = []
+        self.activity: list[tuple[str, datetime]] = []
+        self.activity_error: Exception | None = None
 
     async def server_files(self, server_id: str, directory: str) -> list[PterodactylFile]:
         self.calls.append(f"list {directory}")
@@ -56,9 +58,6 @@ class FakePanel:
     async def server_files_download(self, server_id: str, filepath: str) -> bytes:
         self.calls.append(f"download {filepath}")
         return self.files[filepath.rsplit("/", 1)[-1]][0]
-
-    activity: list[tuple[str, datetime]] = []
-    activity_error: Exception | None = None
 
     async def server_activity(self, server_id: str, events: list[str]) -> list[tuple[str, datetime]]:
         self.calls.append("activity")
@@ -460,3 +459,83 @@ def test_when_the_activity_cannot_be_read_the_scan_is_full(mongo: MongoRunner) -
         return (await service.scan(server_id, actor=None)).full
 
     assert mongo(scenario) is True
+
+
+def test_a_comparison_that_breaks_leaves_the_scan_stored_without_drift(mongo: MongoRunner) -> None:
+    # Roadmap (round 1 review): _store_drift caught only HTTPException; comparing is a nicety there.
+    async def scenario() -> tuple[Any, Any]:
+        panel = FakePanel()
+        panel.files = {"fabric-api.jar": (b"fabric api", T0)}
+        service, server_id = await setup(panel, HashModrinthAPI({}))
+
+        async def broken(server_id: str) -> Any:
+            raise KeyError("lock")
+
+        service.drift = broken  # type: ignore[method-assign]
+        scan = await service.scan(server_id, actor=None)
+        return scan.drift, await service.scan_latest(server_id)
+
+    drift, latest = mongo(scenario)
+    assert drift is None and latest is not None
+
+
+@pytest.mark.parametrize("status", [409, 429])
+def test_a_busy_or_limited_panel_raises_instead_of_scanning_everything(mongo: MongoRunner, status: int) -> None:
+    # 409: restoring, installing or moving (scan later). 429 (code review, 2026-10-12): a full scan
+    # would make the limit worse; the job retries with its backoff instead.
+    from fastapi import HTTPException
+
+    async def scenario() -> tuple[int, list[str]]:
+        panel = FakePanel()
+        panel.files = {"fabric-api.jar": (b"fabric api", T0)}
+        service, server_id = await setup(panel, HashModrinthAPI({}))
+        await service.scan(server_id, actor=None)
+        panel.calls.clear()
+        panel.activity_error = HTTPException(status_code=status, detail="busy")
+        with pytest.raises(HTTPException) as raised:
+            await service.scan(server_id, actor=None)
+        return raised.value.status_code, list(panel.calls)
+
+    code, calls = mongo(scenario)
+    assert code == status and calls == ["activity"]  # nothing listed, nothing downloaded
+
+
+def test_an_event_before_the_last_scan_does_not_make_it_full_and_a_very_old_scan_does(mongo: MongoRunner) -> None:
+    from datetime import timedelta
+
+    async def scenario() -> tuple[bool, list[str], bool]:
+        panel = FakePanel()
+        panel.files = {"fabric-api.jar": (b"fabric api", T0)}
+        service, server_id = await setup(panel, HashModrinthAPI({}))
+        first = await service.scan(server_id, actor=None)
+        panel.activity = [("server:backup.restore-complete", first.scanned_at - timedelta(minutes=10))]
+        quiet = await service.scan(server_id, actor=None)
+        # A scan older than the activity keeps (90 days) is full without asking for the activity.
+        from src.model.pterodactyl import ServerScan
+        await ServerScan.get_pymongo_collection().update_many(
+            {}, {"$set": {"scanned_at": quiet.scanned_at - timedelta(days=200)}})
+        panel.calls.clear()
+        old = await service.scan(server_id, actor=None)
+        return quiet.full, list(panel.calls), old.full
+
+    quiet_full, calls, old_full = mongo(scenario)
+    assert quiet_full is False
+    assert old_full is True and "activity" not in calls
+
+
+def test_the_baseline_is_when_the_scan_started(mongo: MongoRunner) -> None:
+    # Code review (2026-10-12): a restore between listing and the end of a long scan would be missed
+    # if the scan were dated by its end.
+    from datetime import datetime, timezone
+
+    async def scenario() -> tuple[Any, Any]:
+        panel = FakePanel()
+        panel.files = {"fabric-api.jar": (b"fabric api", T0)}
+        service, server_id = await setup(panel, HashModrinthAPI({}))
+        started = datetime(2026, 10, 12, 12, 0, tzinfo=timezone.utc)
+        service.clock = lambda: started  # type: ignore[assignment]
+        scan = await service.scan(server_id, actor=None)
+        return scan.scanned_at, started
+
+    scanned_at, started = mongo(scenario)
+    assert scanned_at.replace(tzinfo=None) == started.replace(tzinfo=None)

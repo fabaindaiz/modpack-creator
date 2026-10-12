@@ -189,9 +189,17 @@ def upstream_message(service: str, status: int) -> str:
     return f"{service} respondió con un error ({status})."
 
 
+# A credential written outside a URL: a bearer token, or a key=value / key: value whose key names one.
+_BEARER = re.compile(r"(?i)\b(bearer)\s+[^\s,;]+")
+_SECRET_PAIR = re.compile(r"(?i)\b((?:x-)?(?:api[-_]?key|token|secret|password|passwd|authorization)\s*[=:]\s*)(?!bearer\b)[^\s,;&]+")
+
+
 def sanitize_detail(text: str) -> str:
-    """The upstream's text without the query of any URL (it can carry a token), cut to 500 characters."""
-    return _URL_QUERY.sub(r"\1", text)[:DETAIL_LIMIT]
+    """The upstream's text without the query of any URL and without a credential written outside one
+    (a bearer token, a `token=` or `api-key:` value), cut to 500 characters."""
+    text = _URL_QUERY.sub(r"\1", text)
+    text = _BEARER.sub(r"\1 [oculto]", text)
+    return _SECRET_PAIR.sub(r"\1[oculto]", text)[:DETAIL_LIMIT]
 
 
 def _notice_response(request: Request, message: str, status: int, detail: Optional[str] = None,

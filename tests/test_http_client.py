@@ -27,8 +27,12 @@ async def _authorization_headers_seen() -> list[str | None]:
         base_url = str(server.make_url("/"))
         with_token = HttpAPI(base_url=base_url, session_auth=TokenAuthorization("pterodactyl-token"))
         without_token = HttpAPI(base_url=base_url)
-        await with_token._request(METHOD.GET, "resource")
-        await without_token._request(METHOD.GET, "resource")
+        try:
+            await with_token._request(METHOD.GET, "resource")
+            await without_token._request(METHOD.GET, "resource")
+        finally:
+            await with_token.close()
+            await without_token.close()
     return seen
 
 
@@ -83,8 +87,11 @@ def test_status_error_is_an_upstream_error_naming_the_service() -> None:
         app.router.add_get("/resource", missing)
         async with TestServer(app) as server:
             api = FakePterodactylAPI(base_url=str(server.make_url("/")))
-            with pytest.raises(UpstreamError) as caught:
-                await api._request(METHOD.GET, "resource")
+            try:
+                with pytest.raises(UpstreamError) as caught:
+                    await api._request(METHOD.GET, "resource")
+            finally:
+                await api.close()
             return caught.value
 
     error = asyncio.run(run())

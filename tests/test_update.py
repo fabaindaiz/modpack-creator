@@ -525,3 +525,41 @@ def test_jars_go_up_in_batches_that_never_pass_the_limit() -> None:
     assert [[name for name, _ in batch] for batch in batches] == [["a", "b"], ["c"], ["d"], ["e"]]
     # Each part counted with its multipart overhead: 40 + 50 + 2 x 10 passes 100.
     assert [[n for n, _ in b] for b in upload_batches(sizes[:2], limit=100, overhead=10)] == [["a"], ["b"]]
+
+
+def test_the_scheduled_scan_after_a_real_update_does_not_announce_in_sync_again(mongo: MongoRunner) -> None:
+    # Roadmap (round 1 review): after "✅ actualizado", the next scheduled scan also sent
+    # "✅ coincide". The rescan that ends the update records its comparison, so it is not news.
+    from src.services.jobs import JobService
+
+    async def scenario() -> tuple[list[str], Any]:
+        s = await setup()
+        await s.run(dry_run=False)
+        before = list(s.recorder.sent)
+        jobs = JobService(jobDB=JobDatabase(), pterodactylService=s.update.servers, pterodactylDB=PterodactylDatabase(),
+                          audit=RecordingAudit(), notifier=cast(Any, s.recorder))
+        job = await jobs.enqueue_scan(s.server_id, actor=None)
+        worker = JobWorker(JobDatabase(), jobs.handlers(), owner="w2", clock=lambda: NOW)
+        while await worker.run_once():
+            pass
+        done = await Job.get(job.id)
+        return s.recorder.sent[len(before):], done.checkpoint if done else None
+
+    after, checkpoint = mongo(scenario)
+    assert after == [] and checkpoint["drift"] == {"notified": False}
+
+
+def test_a_real_update_that_fails_before_any_write_leaves_the_comparison_recorded(mongo: MongoRunner) -> None:
+    # Roadmap (round 1 review): a real update's preflight scan records no comparison; when staging
+    # then failed, the dashboard read "Sin comparar" until the next scan. The server was not touched,
+    # so that scan's comparison is true: it is recorded, with no new request to the panel.
+    async def scenario() -> tuple[str, Any, int]:
+        s = await setup()
+        s.downloader.contents = {url: b"tampered" for url in s.contents}
+        listed_before = len(s.panel.calls) if hasattr(s.panel, "calls") else 0
+        job = await s.run(dry_run=False)
+        latest = await PterodactylDatabase().scan_latest(s.server_id, "/mods")
+        return job.status, latest.drift if latest else None, listed_before
+
+    status, drift, _ = mongo(scenario)
+    assert status == "failed" and drift is not None and drift.startswith("⚠️")

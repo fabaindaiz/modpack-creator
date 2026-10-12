@@ -471,5 +471,7 @@ def test_a_finished_import_row_carries_its_full_report() -> None:
                           checkpoint={"import": report})]
     shown = " ".join(visible(client.get(f"/jobs/{jobs.jobs[0].id}/row").text).split())
     assert "Mods agregados: 2" in shown and "Archivos locales registrados: 1" in shown
+    # The added mods by name, from one catalog fill (code review, 2026-10-12: they showed as ids).
+    assert "Sodium" in shown and "Lithium" in shown
     # B5: «Marcados «En el servidor»: N · Aceptan beta: N», there too.
     assert "Marcados «En el servidor»: 1 · Aceptan beta: 0" in shown

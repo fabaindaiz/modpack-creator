@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any, Optional
 from dependency_injector.wiring import Provide, inject
@@ -11,6 +12,7 @@ from src.model.users import Actor
 from src.routers.web.servers import preview_context
 from src.web import WebRoute, get_web_actor, render
 
+logger = logging.getLogger("modpack.web")
 router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
 
 JOBS_SHOWN = 50
@@ -53,7 +55,8 @@ async def _server_names(pterodactylService: PterodactylService) -> dict[str, str
     return {str(server.id): server.name for server in await pterodactylService.server_find()}
 
 async def _server_context(job: Job, pterodactylService: PterodactylService,
-                          jobService: Optional[JobService] = None) -> dict[str, Any]:
+                          jobService: Optional[JobService] = None,
+                          modrinthService: Optional[ModrinthService] = None) -> dict[str, Any]:
     """A job about a server carries the server's name (for the real run's confirmation hint); a
     server that is gone just shows no hint. With `jobService`, a finished dry run also carries the
     server's pending rollback, if any: its real run discards it (R17) and the dialog says so."""
@@ -70,8 +73,23 @@ async def _server_context(job: Job, pterodactylService: PterodactylService,
         if job.kind == "server_import" and job.status == "done" and isinstance(job.checkpoint.get("import"), dict):
             # The import's full report lives in its finished row (owner, 2026-10-12): the
             # server's page keeps only what waits for a decision.
-            context["import_result"] = ImportResult(**job.checkpoint["import"])
+            result = ImportResult(**job.checkpoint["import"])
+            context["import_result"] = result
+            context["import_titles"] = await _import_titles(modrinthService, result) if modrinthService else {}
     return context
+
+async def _import_titles(modrinthService: ModrinthService, result: ImportResult) -> dict[str, str]:
+    """The added mods' and candidates' titles, in one catalog fill; an id the fill cannot name, or a
+    fill that fails, shows as itself (a nicety on a finished job's row)."""
+    ids = list(dict.fromkeys([*result.added, *(c.project_id for item in result.candidates for c in item.candidates)]))
+    if not ids:
+        return {}
+    try:
+        found = await modrinthService.projects_filled(ids)
+    except Exception:
+        logger.warning("titles of a finished import failed", exc_info=True)
+        return {}
+    return {i: found[i].title for i in ids if i in found}
 
 @router.get("/jobs")
 @inject
@@ -104,11 +122,12 @@ async def job_page(
         actor: Actor = Depends(get_web_actor),
         jobService: JobService = Depends(Provide[Dependences.jobService]),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
+        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         ):
     """One job in full: the shared detail, with its plan and, for an operator, the real run."""
     job = await jobService.get(job_id)
     return render(request, "activity/job.html", actor, job=job, nav_active="jobs",
-                  **await _server_context(job, pterodactylService, jobService))
+                  **await _server_context(job, pterodactylService, jobService, modrinthService))
 
 @router.get("/jobs/{job_id}/row")
 @inject
@@ -118,13 +137,14 @@ async def job_row(
         actor: Actor = Depends(get_web_actor),
         jobService: JobService = Depends(Provide[Dependences.jobService]),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
+        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         ):
     """One job's detail: what an active detail polls. A finished one also tells the page
     (`HX-Trigger: job-finished`), so its sections reload (F19): only once, since a finished row
     does not poll again, and never for an active one, which would reload the page every 2 s."""
     job = await jobService.get(job_id)
     response = render(request, "activity/_job_row.html", actor, job=job,
-                      **await _server_context(job, pterodactylService, jobService))
+                      **await _server_context(job, pterodactylService, jobService, modrinthService))
     if not job.active:
         response.headers["HX-Trigger"] = JOB_FINISHED
     return response

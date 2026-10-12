@@ -1503,3 +1503,16 @@ def test_a_candidate_modrinth_does_not_know_by_id_keeps_its_own_title() -> None:
     fakes.ptero.pending = fakes.ptero.import_result
     text = importar(client.get(f"/servers/{SERVER_ID}").text)
     assert ">Odd Mod<" in text
+
+
+def test_a_long_server_name_prefills_the_new_modpack_within_its_limit() -> None:
+    # Roadmap (round 1 review): a server name over 120 characters filled the field past its
+    # maxlength, and sending it gave a 422 with no explanation.
+    import re
+
+    client, fakes = setup(OPERATOR)
+    unlinked(fakes)
+    fakes.ptero.server = server(name="N" * 200, bundle_id=None)
+    text = client.get(f"/servers/{SERVER_ID}").text
+    value = re.search(r'id="new-modpack-name"[^>]*value="([^"]*)"', text)
+    assert value is not None and len(value.group(1)) == 120

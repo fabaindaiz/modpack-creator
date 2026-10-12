@@ -303,6 +303,41 @@
   window.addEventListener('load', openLinkedMod);
   window.addEventListener('hashchange', openLinkedMod);
 
+  // A form's submit buttons are busy while it is sent: no double submit (round 1 review). An htmx
+  // form gets them back when its request ends; a plain form leaves the page, and its buttons are
+  // disabled only after the browser has read the clicked one's value.
+  function submitButtons(form) {
+    return form.tagName === 'FORM' ? form.querySelectorAll('button[type=submit]:not([disabled])') : [];
+  }
+  document.addEventListener('htmx:beforeRequest', function (evt) {
+    submitButtons(evt.detail.elt).forEach(function (button) {
+      button.disabled = true;
+      button.setAttribute('data-busy', '');
+    });
+  });
+  document.addEventListener('htmx:afterRequest', function (evt) {
+    var form = evt.detail.elt;
+    if (form.tagName !== 'FORM') {
+      return;
+    }
+    form.querySelectorAll('button[data-busy]').forEach(function (button) {
+      button.disabled = false;
+      button.removeAttribute('data-busy');
+    });
+  });
+  document.addEventListener('submit', function (evt) {
+    var form = evt.target;
+    if (!(form instanceof HTMLFormElement) || form.hasAttribute('hx-post') || form.hasAttribute('hx-put')) {
+      return;
+    }
+    setTimeout(function () {
+      submitButtons(form).forEach(function (button) {
+        button.disabled = true;
+        button.setAttribute('data-busy', '');
+      });
+    }, 0);
+  });
+
   // On a narrow screen the section nav scrolls sideways: keep the current section in view.
   var current = document.querySelector('nav[aria-label="Secciones"] [aria-current="page"]');
   if (current) {

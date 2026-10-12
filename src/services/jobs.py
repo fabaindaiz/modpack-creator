@@ -17,9 +17,10 @@ from src.services.audit import AuditSink
 from src.library.utils import as_utc, utcnow
 from src.services.pterodactyl import PterodactylService
 
-# How often a periodic scan is a full one when SCAN_FULL_EVERY_DAYS is not set (S4): the creation
-# time in the cache key sees a restored backup, so the full one is a rarer safety net.
-FULL_SCAN_DEFAULT_DAYS = 30
+# How often a periodic scan is a full one when SCAN_FULL_EVERY_DAYS is not set (owner, 2026-10-12):
+# the server's activity sees a restored backup, but not a move between nodes, a reinstall from the
+# admin panel or activity pruned early; a weekly full scan bounds those.
+FULL_SCAN_DEFAULT_DAYS = 7
 
 Clock = Callable[[], datetime]
 Handler = Callable[[Job, "JobContext"], Awaitable[None]]

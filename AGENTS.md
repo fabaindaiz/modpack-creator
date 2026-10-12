@@ -99,8 +99,10 @@ Decididas, no preferencias. `docs/decisions.md` indexa cada una con lo que la ha
 
 - `.env.yaml`: secretos; ni se lee ni se edita. Lo hacen cumplir los permisos de
   `.claude/settings.json` (lo que nombra el archivo) y su sandbox de Bash, que niega leerlo también a
-  un `grep -r` o a un script: probado con un canario (d-7985ee-57db37, d-7985ee-9b97fa). Docker, podman
-  y los dos scripts que los usan corren fuera del sandbox (`excludedCommands`).
+  un `grep -r` o a un script: probado con un canario (d-7985ee-57db37, d-7985ee-9b97fa). Docker, podman,
+  `scripts/test-mongo.sh` y `scripts/visual-sweep.sh` corren fuera del sandbox (`excludedCommands`),
+  escritos tal cual, sin argumentos ni redirecciones; `build.sh`, `run.sh`, `stop.sh` y `update.sh`
+  también usan docker y se corren con `!`.
 - `.agents/` salvo `carrier.toml`, `proposals/`, `incoming/` y `evaluation-*.md`: lo genera el repositorio home.
   Una mejora es una propuesta (`bundle.py propose`).
 

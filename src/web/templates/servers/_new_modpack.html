@@ -24,7 +24,7 @@
   <form class="space-y-2" hx-post="/servers/{{ server_id }}/modpack{{ '' if actor.is_operator else '/borrador' }}" hx-target="#new-modpack" hx-swap="outerHTML">
     <div>
       <label for="new-modpack-name" class="font-medium">Nombre</label>
-      <input id="new-modpack-name" name="name" type="text" required maxlength="120" value="{{ server.name }}" class="{{ FIELD }}">
+      <input id="new-modpack-name" name="name" type="text" required maxlength="120" value="{{ server.name[:120] }}" class="{{ FIELD }}">
     </div>
     <div class="grid grid-cols-2 gap-2">
       <div>

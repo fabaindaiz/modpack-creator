@@ -10,10 +10,13 @@ y tokens, con en qué se apoya (bundle 0.0.30); `close` la compara después con 
 
 ## Dónde estamos
 
-**2026-10-12, rama `feat/pendientes-t1` (sin mergear ni empujar):** T1, T4 con la regla de no
-retroceder (d-7985ee-6dc34c), T3, T7, T6 (Prism) con el tope de disco temporal y T5 (CurseForge con
-clave), y los arreglos de su revisión. Falta T8 (espera O1). Ver i-7985ee-805517 y
-`.claude/logs/agent-changelog.md` (s-7985ee-6f74e1). Hasta 0.2.0, todo en `main`.
+**2026-10-12, release 0.3.0 en `main` local (sin empujar ni etiquetar todavía; tampoco hay tag
+`v0.2.0`):** T1, T4 con la regla de no retroceder (d-7985ee-6dc34c), T3, T7, T6 (Prism) con el tope
+de disco temporal, T5 (CurseForge con clave), la restauración vista por la actividad del servidor
+(d-7985ee-894b2c) y el sandbox de Bash (d-7985ee-9b97fa). Después, en ramas sin mergear: el bundle
+de agentes 0.0.31 (`chore/agents-0.0.31`) y los arreglos menores del roadmap
+(`fix/pendientes-menores`). Falta T8 (espera O1). Ver i-7985ee-805517 y
+`.claude/logs/agent-changelog.md` (s-7985ee-6f74e1).
 
 Al cierre de la sesión de usabilidad del panel (2026-10-04 y 2026-10-05; detalle en
 `.claude/logs/agent-changelog.md`, s-7985ee-aaa17f, y las entradas de abajo). **Todo está en
@@ -111,8 +114,8 @@ Al cierre de la sesión de usabilidad del panel (2026-10-04 y 2026-10-05; detall
 - **Pendiente de código:**
   - ~~`load_env` registra el valor de una clave ya presente en el entorno y vuelca todo con
     `verbose`~~: hecho el 2026-10-05 en `release-1-prep`, solo claves (`tests/test_load_env.py`);
-  - un `UPDATE_CHECK_AT:` vacío o nulo debe significar "apagado" y no fallar con "ponlo entre
-    comillas";
+  - ~~un `UPDATE_CHECK_AT:` vacío o nulo debe significar "apagado"~~: hecho el 2026-10-12 (un
+    valor nulo en `.env.yaml` es una clave ausente);
   - los menores diferidos del registro (consulta de títulos por fragmento, espera secuencial del
     tablero, índices de auditoría por `target_id` y acción, un pin que sobrevive a quitar el
     proyecto);
@@ -123,7 +126,8 @@ Al cierre de la sesión de usabilidad del panel (2026-10-04 y 2026-10-05; detall
     mod" y la regla se borra con `DELETE /v1/modpack/{id}/replacement/{project_id}` (decisión del
     dueño). También da 422 un `null` en un campo que el bundle necesita (antes lo guardaba y el
     bundle dejaba de cargar) y una clave que no es un id de Modrinth. `tests/test_bundle_patch.py`;
-  - el docstring de `src/library/scan.py` exagera el punto ciego de la caché (un restore con otra
+  - ~~el docstring de `src/library/scan.py` exagera el punto ciego de la caché~~ (reescrito con
+    d-7985ee-894b2c) (un restore con otra
     hora sí se nota; solo se pierde una edición con el mismo tamaño y la misma hora al
     milisegundo): corregir el texto, el código no cambia;
   - packwiz, tras el punto de control de la fase 2.
@@ -776,23 +780,25 @@ JSON con `request_id` y `job_id`.
     `docs/research/2026-10-05-cache-catalogo-modrinth.md`), y eso es una enmienda a la spec;
   - ~~el diálogo de decisiones del build no es modal~~: hecho en i-7985ee-593c92 (R6, con
     `docs/research/2026-10-05-dialogos-accesibles-htmx.md`);
-  - los botones de envío de un formulario (no los `ui.button` con `hx-post`) no muestran estado
-    ocupado ni se deshabilitan: un doble envío es posible;
-  - `sanitize_detail` solo quita la consulta de las URLs: un `Bearer x` o un `token=` sueltos, fuera
-    de una URL, pasarían al detalle plegable;
-  - `_store_drift` solo atrapa `HTTPException`;
-  - después de una actualización real rechazada o fallida a medias, el último escaneo queda sin drift
-    y el tablero dice "Sin comparar" hasta el próximo escaneo;
-  - los resultados de la búsqueda siguen abiertos después de agregar un mod;
-  - tras una actualización real, el siguiente escaneo programado manda a Discord un "✅ coincide"
-    además del "✅ actualizado";
-  - ruido "Unclosed" de aiohttp en `test_http_client` y `test_rate_limit` (anterior a la ronda);
-  - `project_versions` pide los loaders de "mod" para un shader o un resourcepack que el catálogo
-    no conoce;
+  - ~~los botones de envío de un formulario no muestran estado ocupado~~: hecho el 2026-10-12
+    (`app.js` los deshabilita mientras se envía el formulario);
+  - ~~`sanitize_detail` solo quita la consulta de las URLs~~: hecho el 2026-10-12 (también un
+    `Bearer …` o un `token=` sueltos quedan «[oculto]»);
+  - ~~`_store_drift` solo atrapa `HTTPException`~~: hecho el 2026-10-12;
+  - ~~después de una actualización real que falla antes de escribir, el tablero dice "Sin
+    comparar"~~: hecho el 2026-10-12 (se registra la comparación del escaneo previo, sin requests);
+  - los resultados de la búsqueda siguen abiertos después de agregar un mod (pregunta al dueño,
+    2026-10-12: sirve para agregar varios seguidos);
+  - ~~tras una actualización real, el escaneo programado manda otro "✅ coincide"~~: ya resuelto por
+    el reescaneo de U3; test de regresión el 2026-10-12;
+  - ~~ruido "Unclosed" de aiohttp en `test_http_client` y `test_rate_limit`~~: hecho el 2026-10-12;
+  - ~~`project_versions` pide los loaders de "mod" para un shader~~: ya resuelto (el tipo se lee
+    antes); test de regresión el 2026-10-12;
   - carrera en `bundle_for_server`: si vincular falla después de crear, queda un pack sin vincular
-    (auditado) y un error genérico, y reintentar crea un segundo pack;
-  - un servidor con nombre de más de 120 caracteres rellena el campo del pack nuevo por encima de su
-    `maxlength`, y enviarlo da un 422 sin explicación.
+    (auditado) y un error genérico, y reintentar crea un segundo pack (pregunta al dueño, 2026-10-12:
+    deshacer la creación o reusar el pack);
+  - ~~un servidor con nombre de más de 120 caracteres rellena el campo del pack nuevo por encima de
+    su `maxlength`~~: hecho el 2026-10-12 (se corta a 120).
 - **Lo que choca:** el barrido no ve Modrinth ni Pterodactyl reales ni el login OIDC; la ficha pide
   las versiones de un mod a Modrinth al abrirse (una llamada por ficha, solo al abrirla).
 
@@ -823,7 +829,7 @@ JSON con `request_id` y `job_id`.
     - el `#mods` detrás del diálogo se redibuja siempre en "Todos";
     - partir en lotes de 100 los ids que van a `project_get_many` (hecho el 2026-10-09 en el
       resolvedor y el relleno de fichas, i-7985ee-456f19);
-    - `projects_by_id` y `project_version_update_filter` quedaron sin uso;
+    - ~~`projects_by_id` y `project_version_update_filter` quedaron sin uso~~ (ya no existen);
     - el 404 del panel lateral va a `#notices`;
   - la ficha de una dependencia que solo figura como problema dice "Ningún modpack lo usa"
     (visto en el barrido): la consulta mira las dependencias resueltas, no los problemas.
@@ -953,6 +959,16 @@ JSON con `request_id` y `job_id`.
   bundle (por los deny `Edit` de `.claude/settings.json`), `.claude/skills/`, `.claude/agents/` y el
   propio settings; esos pasos de la actualización, y cambiar de rama cuando el settings difiere, los
   corre el dueño con `!`.
+
+### Lo que dejó la revisión de la release 0.3.0 — Planeada (2026-10-12) · i-7985ee-89ea1c
+- Sin `activity.read`, cada escaneo es completo y solo queda un aviso en el log: guardar en el escaneo
+  por qué fue completo, o avisar una vez en la ficha del servidor.
+- Una transferencia entre nodos no deja evento: guardar el `node` del servidor en el escaneo y forzar
+  el completo cuando cambia (la investigación de la actividad lo sugiere).
+- `bundle.py trailers` en CI lee 0 commits (el clon es superficial y no hay upstream): para que cuente
+  allí, `fetch-depth: 0` y el rango `origin/main..HEAD`.
+- La fila de una importación terminada muestra «Pendientes de tu decisión (N)» del momento en que
+  terminó; la ficha del servidor baja ese número al decidir, la fila no.
 
 ### Proteger los mundos al desplegar — Planeada (2026-10-12), después de T8 · i-7985ee-e87afa
 - **Estimación:** tres entregas (rollback por backup; migración de MC/loader; manifiesto desplegado

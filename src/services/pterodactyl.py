@@ -191,6 +191,9 @@ class PterodactylService():
         :return: The stored scan.
         """
         server = await self.pterodactylDB.server_get(server_id)
+        # The scan is dated when it starts: the next one asks the activity since then, so a restore
+        # during a long scan is not missed (code review, 2026-10-12).
+        started = self.clock()
         previous = await self.pterodactylDB.scan_latest(server_id, directory)
         if previous is not None and not full:
             full = await self._restored_since(server.identifier, previous)
@@ -211,13 +214,20 @@ class PterodactylService():
                       for f in await self._identify([*hashed, *(f for f in kept if f.status == "unknown")])]
         files = sorted([*known, *identified, *too_large], key=lambda f: f.path)
         stored = await self.pterodactylDB.scan_insert(ServerScan(
-            server_id=server.id, directory=directory, scanned_at=datetime.now(timezone.utc),  # type: ignore[arg-type]
+            server_id=server.id, directory=directory, scanned_at=started,  # type: ignore[arg-type]
             full=full, files=files))
         if record_drift and directory == SCAN_DIRECTORY:
             stored = await self._store_drift(server_id, stored)
         if actor is not None:
             await self.audit.record(actor, "server.scan", _target(server_id), {"directory": directory, "full": full})
         return stored
+
+    async def record_drift(self, server_id: str) -> None:
+        """Record on the latest scan how it compares with the build, with no request to the panel: for
+        a real update that failed before writing, whose preflight scan recorded none (round 1 review)."""
+        latest = await self.pterodactylDB.scan_latest(server_id, SCAN_DIRECTORY)
+        if latest is not None:
+            await self._store_drift(server_id, latest)
 
     async def _store_drift(self, server_id: str, scan: ServerScan) -> ServerScan:
         """Record on a new scan how it compares with the server's build (F37), whoever scanned:
@@ -226,7 +236,8 @@ class PterodactylService():
         step compares again and decides what to announce against the scan before this one."""
         try:
             drift = await self.drift(server_id)
-        except HTTPException:
+        except Exception:
+            # Any failure, not only an HTTP one (code review of round 1): the scan stays, without drift.
             logger.warning("comparing a new scan with its build failed", exc_info=True, extra={"server_id": server_id})
             return scan
         if drift is None:
@@ -245,7 +256,9 @@ class PterodactylService():
         try:
             events = await self.pterodactylAPI.server_activity(identifier, RESTORE_EVENTS)
         except HTTPException as error:
-            if error.status_code == 409:
+            # 409: restoring, installing or moving; 429: a full scan would make the limit worse. Both
+            # are raised, and the job tries again with its backoff (code review, 2026-10-12).
+            if error.status_code in (409, 429):
                 raise
             logger.warning("activity of %s unreadable: the scan is full", identifier, exc_info=True)
             return True

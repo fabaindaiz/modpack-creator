@@ -24,6 +24,10 @@ def load_env(path: str = ".env", verbose: bool = False):
         if key in os.environ:
             logger.info(f"key already in environ, {path} ignored for it: {key}")
             continue
+        if value is None:
+            # `KEY:` or `KEY: null` is no value: the key stays unset, as if absent, without a warning.
+            SKIPPED_NON_STRING.discard(key)
+            continue
         if not isinstance(value, str):
             # The key only, never the value: it may be a secret.
             SKIPPED_NON_STRING.add(key)
