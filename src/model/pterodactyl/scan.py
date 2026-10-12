@@ -41,6 +41,10 @@ class ImportResult(BaseModel):
     candidates: list[ImportCandidate]
     local: list[str]
     too_large: list[str]
+    # What it recorded as running (B5, d-7985ee-58801d): the mods it marked «En el servidor» and the
+    # channel exceptions it set, only where the admin had decided nothing.
+    on_server: list[str] = []
+    channel_exceptions: dict[str, str] = {}
 
 class BundleForServer(BaseModel):
     """A bundle made for a server: created and linked, and what importing the server did, or why

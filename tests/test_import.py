@@ -190,16 +190,18 @@ def test_importing_never_overrides_a_decision_the_admin_made(mongo: MongoRunner)
 @pytest.mark.parametrize("channel, expected", [("beta", {IRIS: "beta"}), ("alpha", {IRIS: "alpha"}), ("release", {})])
 def test_a_beta_running_on_the_server_becomes_a_channel_exception(
         mongo: MongoRunner, channel: str, expected: dict[str, str]) -> None:
-    async def scenario() -> tuple[dict[str, str], list[Any]]:
+    async def scenario() -> tuple[dict[str, str], list[Any], Any]:
         audit = RecordingAudit()
         service, server_id, bundle_id = await linked_server({"iris.jar": b"iris jar"}, iris_channel=channel, audit=audit)
-        await service.import_server(server_id, actor=OPERATOR)
+        result = await service.import_server(server_id, actor=OPERATOR)
         bundle = await ModpackBundle.get(bundle_id)
         assert bundle is not None
-        return bundle.channel_exceptions, [e[2] for e in audit.events if e[0] == "server.import"]
+        return bundle.channel_exceptions, [e[2] for e in audit.events if e[0] == "server.import"], result
 
-    exceptions, [details] = mongo(scenario)
+    exceptions, [details], result = mongo(scenario)
     assert exceptions == expected and details["channel_exceptions"] == expected
+    # B5: the report says what it marked (owner, 2026-10-09).
+    assert result.channel_exceptions == expected and result.on_server == [IRIS]
 
 
 def test_importing_keeps_an_exception_the_admin_already_set(mongo: MongoRunner) -> None:

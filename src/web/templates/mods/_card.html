@@ -79,12 +79,13 @@
       {% for use in page.uses %}
       <li class="space-y-1 px-3 py-2">
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <a href="/modpacks/{{ use.bundle_id }}" class="{{ LINK }} wrap-anywhere">{{ use.bundle_name }}</a>
+          <a href="/modpacks/{{ use.bundle_id }}{{ '?vista=problemas' if use.problem else '' }}" class="{{ LINK }} wrap-anywhere">{{ use.bundle_name }}</a>
           {% if use.origin == "admin" %}{{ ui.badge("agregado") }}{% elif use.origin == "pack" %}{{ ui.badge("del .mrpack") }}{% endif %}
         </div>
         {% if use.origin is none %}
         <p class="text-xs break-words text-zinc-500 dark:text-zinc-400">dependencia de
           {%- for name in use.dependency_of %} {{ ui.mod_link(use.requested_by[loop.index0] if loop.index0 < use.requested_by | length else None, name, desde=back, pack=pack) }}{% if not loop.last %},{% endif %}{% else %} otro mod{% endfor -%}
+          {%- if use.problem %}, con problema{% endif %}
         </p>
         {% endif %}
         {% if use.recommended or use.latest %}

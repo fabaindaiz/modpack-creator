@@ -3,7 +3,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Optional
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Form, Query, Request
 from starlette.datastructures import FormData, UploadFile
@@ -130,6 +130,12 @@ def _https_url(url: Any) -> Optional[str]:
 def _vista(value: str) -> str:
     return value if value in VISTAS else "todos"
 
+def _vista_from(request: Request) -> str:
+    """The tab the page is on (B1): the tabs push `?vista=` to the page's URL, and htmx names that URL
+    in HX-Current-URL. Unknown or absent: "todos"."""
+    query = urlsplit(request.headers.get("HX-Current-URL", "")).query
+    return _vista(parse_qs(query).get("vista", ["todos"])[0])
+
 _NAME_TOKEN = re.compile(r"[A-Za-z0-9_\-]+")
 
 def humanize(detail: str, titles: dict[str, str]) -> str:
@@ -210,15 +216,15 @@ async def _acted(request: Request, actor: Actor, modpackService: ModpackService,
     """The answer to an action on the pack's mods. Without `contexto`, #mods as always; from a
     problem's card the pack is resolved again (after every action, so what is left is current):
     from the Mods tab ("problemas") #mods answers in that view, from the build dialog ("dialogo")
-    the dialog answers, recalculated from that lock, with #mods ("todos") and #builds behind it
-    redrawn out of band. Never a build: that is the owner's click."""
+    the dialog answers, recalculated from that lock, with #mods (in the page's tab, B1) and #builds
+    behind it redrawn out of band. Never a build: that is the owner's click."""
     if contexto is None:
-        return await _mods(request, actor, modpackService, updateCheckService, bundle_id)
+        return await _mods(request, actor, modpackService, updateCheckService, bundle_id, vista=_vista_from(request))
     lock = await modpackService.resolve(bundle_id, actor)
     if contexto == "dialogo":
         # mod_list (inside) fills the catalog once for every mod the page and the dialog name: the
         # resolution it reads is the one just saved, this lock.
-        context = await _mods_context(modpackService, updateCheckService, bundle_id)
+        context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request))
         mods = context["mods"]
         return _dialog(request, actor, lock, done=success, mods_oob=True, builds_oob=True,
                        builds=await modpackService.build_find(bundle_id),
@@ -462,7 +468,7 @@ async def project_add(
     projects = await modpackService.project_add(bundle_id, [ref], ProjectOrigin.admin, actor)
     added = [p.project_id for p in projects if p.project_id not in before]
     from_hit = request.headers.get("HX-Trigger") == f"hit-add-{ref}" and any(p.project_id == ref for p in projects)
-    context = await _mods_context(modpackService, updateCheckService, bundle_id)
+    context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request))
     names = ", ".join(context["titles"].get(i, i) for i in added)
     return render(request, "modpacks/_mods.html", actor, success=f"Agregado: {names}" if names else None,
                   info=None if names else "Ese mod ya estaba en el modpack", hit=ref if from_hit else None, **context)

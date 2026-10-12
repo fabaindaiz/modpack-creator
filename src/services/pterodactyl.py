@@ -435,6 +435,7 @@ class PterodactylService():
         if result.added:
             await self._add_projects(str(bundle.id), result.added)
         on_server, exceptions = await self._running(bundle, scan)
+        result.on_server, result.channel_exceptions = on_server, exceptions
         await self.audit.record(actor, "server.import", _target(server_id), {
             "bundle_id": str(bundle.id), "added": result.added, "local": result.local,
             "candidates": [c.path for c in result.candidates], "on_server": on_server,

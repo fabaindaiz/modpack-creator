@@ -98,6 +98,7 @@ def test_an_uploaded_mrpack_queues_its_import_and_shows_it_until_the_report() ->
     assert "Importado: 3 mods de Aventura 2.0" in shown
     assert "No están en Modrinth (2)" in shown and "mods/privado.jar" in shown and "overrides/mods/propio.jar" in shown
     assert "Súbelos al servidor a mano; al importar el servidor quedan como archivos locales." in shown
+    assert "Marcados «En el servidor»: 0 · Aceptan beta: 1" in shown  # B5: P1 was marked off, P3 takes betas
     assert "Overrides sin importar: 37 archivos" in shown and "config/ (31)" in shown and "kubejs/ (6)" in shown
     assert f'href="/modpacks/{BUNDLE_ID}"' in response.text
 

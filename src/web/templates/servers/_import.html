@@ -11,6 +11,7 @@
       {% if result.local %}<span class="text-zinc-600 dark:text-zinc-400">(Modrinth no los conoce: quedan en el pack tal cual)</span>{% endif %}</li>
     <li>Pendientes de tu decisión (<strong>{{ result.candidates | length }}</strong>)</li>
   </ul>
+  <div class="text-sm">{{ ui.running_counts(result.on_server | length, result.channel_exceptions) }}</div>
   {% if result.local %}
   <ul class="space-y-0.5 text-xs break-all text-zinc-600 dark:text-zinc-400">{% for path in result.local %}<li>Archivo local: <span class="font-mono">{{ path }}</span></li>{% endfor %}</ul>
   {% endif %}

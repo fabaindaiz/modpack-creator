@@ -382,3 +382,23 @@ def test_all_versions_let_modrinth_failing_through(mongo: MongoRunner) -> None:
             await slow.service.mod_versions_all("P")
 
     mongo(scenario)
+
+
+def test_a_dependency_that_is_only_a_problem_is_used_by_its_pack(mongo: MongoRunner) -> None:
+    # B4 (owner, 2026-10-09): a dependency without a version for the pack has no lock entry, only a
+    # problem; its card said "Ningún modpack lo usa".
+    from src.library.resolution import Problem
+
+    async def scenario() -> Any:
+        s = Scenario(FakeModrinth())
+        await s.modrinthDB.project_upsert_many([project("P", "P title"), project("X", "X title")])
+        b = await s.bundle("B", [("X", ProjectOrigin.pack)])
+        saved = lock(entry("X", "1"))
+        saved.problems = [Problem(kind="unresolvable", project_id="P", requested_by=["X"], detail="sin versión")]
+        bundle = await s.modpackDB.bundle_get(b)
+        await s.modpackDB.resolution_save(ModpackResolution(bundle_id=bundle.id, resolved_at=NOW,  # type: ignore[arg-type]
+                                                            request_digest="d", lock=saved))
+        return (await s.service.mod_page("P")).uses
+
+    uses = mongo(scenario)
+    assert [(u.bundle_name, u.origin, u.dependency_of, u.problem) for u in uses] == [("B", None, ["X title"], True)]

@@ -6,7 +6,7 @@ import re
 from typing import Any, Optional
 
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 
 from src.dependences import Dependences, ModpackService
@@ -15,6 +15,8 @@ from src.model.users import Actor
 from src.routers.web.modpacks import _https_url, _icon, abbreviate_downloads, environment_label
 from src.web import BUNDLE_REF, MODRINTH_REF, WebRoute, get_web_actor, render, sanitize_detail, upstream_message
 
+# B3 (owner, 2026-10-09): what the side panel says of a mod Modrinth does not know.
+UNKNOWN_MOD = "Modrinth no conoce este mod."
 logger = logging.getLogger("modpack.web")
 router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
 
@@ -97,9 +99,15 @@ async def mod_panel(
         logger.warning("mod panel of %s: Modrinth failed", project_id, exc_info=True)
         message, detail = _failure(error)
         return render(request, "mods/_panel.html", actor, page=None, project_id=project_id, back=back, pack=pack,
-                      failure=message, detail=detail)
+                      failure=message, detail=detail, retry=True)
+    except HTTPException as error:
+        if error.status_code != 404:
+            raise
+        # B3: inside the panel, not behind it; trying again would not change anything.
+        return render(request, "mods/_panel.html", actor, page=None, project_id=project_id, back=back, pack=pack,
+                      failure=UNKNOWN_MOD, detail=None, retry=False)
     return render(request, "mods/_panel.html", actor, page=page, project_id=page.project.project_id, back=back,
-                  pack=page.pack.bundle_id if page.pack else None, failure=None, detail=None, **_helpers())
+                  pack=page.pack.bundle_id if page.pack else None, failure=None, detail=None, retry=False, **_helpers())
 
 
 @router.get("/mods/{project_id}/versiones")

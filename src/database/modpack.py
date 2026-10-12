@@ -313,9 +313,11 @@ class ModpackDatabase():
 
     async def resolution_find_with_dependency(self, project_id: str) -> list[ModpackResolution]:
         """The saved resolutions that brought this project in as a dependency: an entry of it without
-        an origin (one with an origin was asked for by the pack)."""
+        an origin (one with an origin was asked for by the pack), or a problem about it (a dependency
+        without a version has no entry, B4)."""
         return await ModpackResolution.find(
-            {"lock.entries": {"$elemMatch": {"project_id": project_id, "origin": None}}}).to_list()
+            {"$or": [{"lock.entries": {"$elemMatch": {"project_id": project_id, "origin": None}}},
+                     {"lock.problems.project_id": project_id}]}).to_list()
 
     @staticmethod
     def _bundle_oid(bundle_id: str) -> PydanticObjectId:

@@ -172,6 +172,17 @@ def test_a_mod_modrinth_does_not_know_is_a_404_in_spanish() -> None:
     assert response.status_code == 404 and "Modrinth no conoce el mod NOPE" in response.text
 
 
+def test_a_mod_modrinth_does_not_know_says_so_inside_the_panel() -> None:
+    # B3 (owner, 2026-10-09): opened from the side panel, the 404 stays in the panel (it used to
+    # fall behind the modal, into #notices), without "Reintentar" and with the way back.
+    client, fake = setup()
+    fake.error = HTTP_404_NOT_FOUND("Modrinth no conoce el mod NOPE")
+    response = client.get("/mods/NOPE/panel?desde=PREV", headers=HTMX)
+    assert response.status_code == 200 and 'role="alert"' in response.text
+    assert "Modrinth no conoce este mod." in response.text and "Reintentar" not in response.text
+    assert 'hx-get="/mods/PREV/panel"' in response.text
+
+
 @pytest.mark.parametrize("error", [UpstreamError("Modrinth", 502, raw="Bad gateway"), TimeoutError()])
 @pytest.mark.parametrize("path,htmx", [("/mods/AANobbMI", False), ("/mods/AANobbMI/panel", True),
                                        ("/mods/AANobbMI/versiones", True)])
@@ -298,3 +309,15 @@ def test_a_page_without_a_pack_marks_nothing() -> None:
     client, fake = setup()
     text = client.get("/mods/AANobbMI").text
     assert fake.packs == [None] and "✓" not in text and "no soporta" not in text
+
+
+def test_a_pack_where_the_mod_is_only_a_problem_says_so_and_opens_its_problems() -> None:
+    # B4 (owner, 2026-10-09): "<pack> · dependencia de <mod>, con problema".
+    client, fake = setup()
+    fake.page = mod_page(uses=[ModUse(bundle_id=str(BUNDLE_B), bundle_name="Pack B", origin=None, dependency_of=["Iris"],
+                                      recommended=None, latest=None, requested_by=["YL57xq9U"], problem=True)])
+    text = client.get("/mods/AANobbMI").text
+    shown = " ".join(visible(text).split())
+    # visible() turns the name's link into spaces around it.
+    assert "dependencia de Iris , con problema" in shown and "Ningún modpack lo usa" not in shown
+    assert f'href="/modpacks/{BUNDLE_B}?vista=problemas"' in text

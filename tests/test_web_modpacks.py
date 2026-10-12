@@ -873,6 +873,23 @@ def dialog_part(text: str) -> str:
     return text[:text.index("</dialog>")]
 
 
+def test_an_action_keeps_the_tab_the_page_was_on() -> None:
+    # B1 (owner, 2026-10-09): after a dialog action or adding a mod, #mods stays in the page's tab;
+    # htmx names the page's URL (the tabs push ?vista=) in HX-Current-URL. Unknown or none: "Todos".
+    client, modpack, _ = setup()
+    modpack.lock = lock(entry("P1"), problems=[Problem(kind="no_file", project_id="P1", detail="x")])
+    on = {**HTMX, "HX-Current-URL": f"https://testserver/modpacks/{BUNDLE_ID}?vista=problemas"}
+    text = client.delete(f"/modpacks/{BUNDLE_ID}/projects/P2", params={"contexto": "dialogo"}, headers=on).text
+    behind = text[text.index('<div id="mods"'):]
+    assert 'aria-current="page"' in tab(behind, "problemas")
+    added = client.post(f"/modpacks/{BUNDLE_ID}/projects", data={"ref": "P3"},
+                        headers={**HTMX, "HX-Current-URL": f"https://testserver/modpacks/{BUNDLE_ID}?vista=decidir"}).text
+    assert 'aria-current="page"' in tab(added, "decidir")
+    odd = client.post(f"/modpacks/{BUNDLE_ID}/projects", data={"ref": "P3"},
+                      headers={**HTMX, "HX-Current-URL": f"https://testserver/modpacks/{BUNDLE_ID}?vista=xyz"}).text
+    assert 'aria-current="page"' in tab(odd, "todos")
+
+
 def test_a_dialog_action_also_redraws_the_mods_and_builds_behind_it() -> None:
     """Closing the dialog after an action shows the pack as it now is: #mods (in "Todos") and
     #builds go out of band in the same answer, from the same resolution."""

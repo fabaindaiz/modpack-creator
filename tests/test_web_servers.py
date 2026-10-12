@@ -1456,3 +1456,13 @@ def test_v1_import_answers_202_with_the_servers_import_job() -> None:
     response = TestClient(app, base_url="https://testserver").post(f"/v1/server/{SERVER_ID}/import")
     assert response.status_code == 202 and response.json()["kind"] == "server_import"
     assert only(fakes.ptero.calls, "import_request")[1:] == (str(SERVER_ID), OPERATOR)
+
+
+def test_the_import_report_counts_what_it_marked_on_the_server_and_the_betas() -> None:
+    # B5 (owner, 2026-10-09): «Marcados «En el servidor»: N · Aceptan beta: N».
+    client, fakes = setup(OPERATOR)
+    fakes.ptero.pending = fakes.ptero.import_result.model_copy(
+        update={"on_server": ["P5", "C1"], "channel_exceptions": {"C1": "beta"}})
+    text = client.get(f"/servers/{SERVER_ID}").text
+    shown = " ".join(visible(text[text.index('id="importar"'):]).split())
+    assert "Marcados «En el servidor»: 2 · Aceptan beta: 1" in shown

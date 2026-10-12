@@ -14,9 +14,11 @@
   <div class="space-y-2 text-sm" role="alert">
     <p class="text-amber-800 dark:text-amber-300">{{ failure }}</p>
     {% if detail %}<p class="font-mono text-xs break-words text-zinc-500 dark:text-zinc-400">{{ detail }}</p>{% endif %}
+    {% if retry %}
     {{ ui.button("Reintentar", kind="secondary", small=True,
                  attrs={"hx-get": "/mods/" ~ project_id ~ "/panel" ~ ("?" ~ retry_query if retry_query else ""),
                         "hx-target": "#mod-drawer-body", "hx-swap": "innerHTML"}) }}
+    {% endif %}
   </div>
   {% else %}
   {% set compact = True %}

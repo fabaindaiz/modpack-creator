@@ -225,3 +225,10 @@
 {% macro when(value) %}
 {% if value %}<time datetime="{{ value.isoformat() }}" class="whitespace-nowrap tabular-nums">{{ value.strftime("%Y-%m-%d %H:%M") }}</time>{% else %}<span class="text-zinc-400 dark:text-zinc-500">—</span>{% endif %}
 {% endmacro %}
+
+{# What an import recorded as running (B5, owner 2026-10-09): `on_server` the mods marked «En el
+   servidor», `exceptions` project id -> the channel it now accepts. #}
+{% macro running_counts(on_server, exceptions) %}
+{%- set alphas = exceptions.values() | select("equalto", "alpha") | list | length -%}
+<p>Marcados «En el servidor»: {{ on_server }} · Aceptan beta: {{ exceptions | length - alphas }}{% if alphas %} · Aceptan alpha: {{ alphas }}{% endif %}</p>
+{%- endmacro %}

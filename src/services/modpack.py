@@ -175,6 +175,9 @@ class ModUse:
     latest: Optional[tuple[int, str]]
     # The ids of the projects in `dependency_of`, in its order: each name opens its card.
     requested_by: list[str] = field(default_factory=list)
+    # True when the pack's resolution has a problem about the mod (B4): a dependency it could not
+    # give a version, for one.
+    problem: bool = False
 
 
 # What a bundle id looks like (a MongoDB ObjectId): anything else names no pack.
@@ -244,6 +247,8 @@ class _ModLocal:
     # (server, scanned at, identified version id), by server name.
     servers: list[tuple[PterodactylServer, datetime, Optional[str]]]
     numbers: dict[str, str]
+    # The bundles whose saved resolution has a problem about the mod (B4).
+    problem: set[str] = field(default_factory=set)
 
 
 def _related(project_id: str, local: _ModLocal, named: Sequence[str]) -> list[str]:
@@ -670,10 +675,15 @@ class ModpackService():
             if d.dependency_type == ModrinthDependencyType.required and d.project_id and d.project_id != project_id))
         bundles = {str(b.id): b for b in await self.modpackDB.bundle_find_with_project(project_id)}
         requested: dict[str, list[str]] = {}
+        problem: set[str] = set()
         for resolution in await self.modpackDB.resolution_find_with_dependency(project_id):
             owner = str(resolution.bundle_id)
-            requested[owner] = [r for e in resolution.lock.entries if e.project_id == project_id and e.origin is None
-                                for r in e.requested_by]
+            asked = [r for e in resolution.lock.entries if e.project_id == project_id and e.origin is None
+                     for r in e.requested_by]
+            about = [p for p in resolution.lock.problems if p.project_id == project_id]
+            if about:
+                problem.add(owner)
+            requested[owner] = list(dict.fromkeys([*asked, *(r for p in about for r in p.requested_by)]))
         extra = [i for i in requested if i not in bundles]
         if extra:
             bundles.update({str(b.id): b for b in await self.modpackDB.bundle_find(extra).to_list()})
@@ -694,7 +704,8 @@ class ModpackService():
         identified = [v for _, _, v in servers if v]
         numbers = {v.version_id: v.version_number for v in await self.modrinthDB.version_find_by_version_ids(identified)}
         return _ModLocal(versions=versions, dependencies=dependencies, bundles=list(bundles.values()),
-                         requested=requested, in_builds=in_builds, servers=servers, numbers=numbers)
+                         requested=requested, in_builds=in_builds, servers=servers, numbers=numbers,
+                         problem={b for b in problem if b in requested})
 
     @staticmethod
     def _mod_page(project: ModrinthProject, local: _ModLocal, catalog: dict[str, ModrinthProject],
@@ -715,7 +726,8 @@ class ModpackService():
                                dependency_of=[title(r) for r in local.requested.get(bundle_id, [])],
                                recommended=built(bundle_id, using.recommended_build),
                                latest=built(bundle_id, using.latest_build),
-                               requested_by=list(local.requested.get(bundle_id, []))))
+                               requested_by=list(local.requested.get(bundle_id, [])),
+                               problem=bundle_id in local.problem))
         servers = [ServerUse(server_id=str(server.id), server_name=server.name,
                              version=local.numbers.get(version_id) if version_id else None, scanned_at=scanned_at)
                    for server, scanned_at, version_id in local.servers]
