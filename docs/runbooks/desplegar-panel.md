@@ -12,6 +12,23 @@ Antes de empezar, si el servidor aún corre la versión anterior a la fase 0, se
 `MONGO_VERSION` y las contraseñas, y el volumen `mongodb-data` ya en uso. Nunca
 `docker compose … down -v` (d-7985ee-398653).
 
+## De 0.2.0 a 0.3.0 (2026-10-12)
+
+Sigue siendo de solo lectura (`PTERODACTYL_WRITES` vacía). Ninguna variable obligatoria nueva; lo
+que hay que mirar antes de `./scripts/update.sh`:
+- **Proxy:** dejar pasar subidas de hasta 1 GiB (el zip de Prism; paso 4). Sin eso, importar un zip
+  grande da 413 en el proxy, no en la app.
+- **Disco del contenedor:** las subidas de importación se escriben en `/tmp` del contenedor mientras
+  dura la petición, hasta `IMPORT_TMP_MAX_MIB` juntas (opcional, por defecto 4096 MiB). Que el disco
+  del host tenga ese espacio libre.
+- **CurseForge (opcional):** `CURSEFORGE_API_KEY` en `.env.yaml`, la clave propia pedida con el
+  formulario de CurseForge. Sin ella el panel no ofrece CurseForge (d-7985ee-9473a9).
+- **La clave de Pterodactyl** tiene que poder leer la actividad de cada servidor (`activity.read`; el
+  dueño y un root admin la tienen siempre): el escaneo la mira para detectar una restauración. Sin
+  ese permiso, cada escaneo es completo (d-7985ee-894b2c).
+- **MongoDB:** dos colecciones nuevas, `LoaderVersion` y `PanelServerList` (§2). Nada se migra; la
+  versión anterior ignora los campos nuevos, así que «Volver atrás» sigue valiendo.
+
 ## 1. Antes de desplegar
 
 1. **Crear el grupo de operadores en authentik** (por ejemplo `modpack-operators`) y poner en él a

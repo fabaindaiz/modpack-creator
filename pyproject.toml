@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "modpack-creator"
-version = "0.2.0"
+version = "0.3.0"
 description = "API para crear y gestionar modpacks de Minecraft"
 readme = "README.md"
 # `type X = ...` (PEP 695) en src/model/: el código no importa antes de 3.12.

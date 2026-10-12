@@ -58,6 +58,24 @@ el login OIDC; el tope de 1 GiB en el proxy del dueño (la guía lo dice); los d
 «murió» en 5; esta sesión la VM se cayó 2 veces más. Un archivo restaurado con `git checkout` sin
 querer y dos `sed` por número de línea son nuevos aquí.
 
+**Segunda parte (misma sesión): revisión, actualización meta y release 0.3.0.** Una revisión de la
+rama encontró 9 defectos, arreglados con test primero (fechas con y sin zona en los pisos, un piso de
+otro target que borraba el válido, una beta anunciada que el build nunca toma, importar con otro
+trabajo activo, el meta del loader caído, el código de CurseForge, la clave que seguiría una
+redirección). Una auditoría de toda la documentación contra el código dio la actualización meta.
+Decisiones del dueño, una por turno: la restauración se detecta por la actividad del servidor y no
+por el ctime (S4 era un error mío: Wings hace `chown` al arrancar y eso cambia el ctime; probado en
+Linux), tres invariantes nuevas en AGENTS.md, el servidor muestra solo lo pendiente, y un sandbox de
+Bash que deja `.env.yaml` ilegible incluso a un `grep -r` (un agente de auditoría había impreso una
+línea de `.env.default`; probado con un canario). La release 0.0.31 del bundle quedó en
+`.agents/incoming/release/`, verificada y sin aplicar. El barrido visual suma las pantallas nuevas
+(152 capturas, 0 problemas; una corrida previa tuvo un fallo intermitente del clic central en el
+panel de mods, que no se repitió) y encontró que un candidato sin título en el catálogo mostraba su
+id. Qué salió mal: el permiso denegó una comparación con la copia del bundle de otro repositorio (no
+se rodeó); el sandbox nuevo pidió ajustar pytest (`--ignore=.env.yaml`) y permitir puertos locales;
+los scripts excluidos del sandbox solo lo están escritos exactamente así, sin argumentos ni
+redirecciones.
+
 ## 2026-10-09 · s-7985ee-1bc897 — Observaciones de un tester, importador de modpacks y economía de requests
 
 **Qué.** Todo en la rama `fix/tester-feedback`, sin mergear:
