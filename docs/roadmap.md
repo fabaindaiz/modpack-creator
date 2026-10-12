@@ -758,6 +758,10 @@ JSON con `request_id` y `job_id`.
   decidir, el aviso de error dentro de `[data-form-notice]`, el de éxito que se va solo, y la
   recarga de `#server-main` al terminar un trabajo sin un error de consola (la CSP rechazaba el
   `style` que htmx copiaba al asentar; `attributesToSettle` ya no lo incluye).
+- **Revisión de decisiones de la ronda 2 (2026-10-12), en dos tandas.** Tanda 1 decidida (F27, F28,
+  F29 y las cuatro preguntas de la tanda A): d-7985ee-c62c61, f43772, 83e764, 7bccf8, 881689, b8e927,
+  d4bc8e, 0b9ebb, 322302 y 58228f; falta su plan y el código. Tanda 2 por revisar: el tablero, el
+  móvil y F09 (nueve decisiones del dueño, con maquetas).
 - **Lo que falta (ronda 2, fuera de alcance de la ronda 1):**
   - el tablero "necesita atención" (investigado: `docs/research/2026-10-05-tablero-necesita-atencion.md`,
     con 4 preguntas para el dueño al final);
@@ -766,9 +770,10 @@ JSON con `request_id` y `job_id`.
     `docs/research/2026-10-05-versiones-mc-y-loaders.md`);
   - advertir bajas de versión (F27; investigado: `docs/research/2026-10-05-bajas-de-version.md`):
     desde d-7985ee-6dc34c solo un pin baja un mod; falta advertir ese caso y la baja de un mod con
-    datos en el mundo (i-7985ee-e87afa);
-  - el diálogo de actualización directa que advierte lo que la simulación encontraría (F28);
-  - enlazar URLs en changelogs (F29);
+    datos en el mundo (i-7985ee-e87afa). Decidido (tanda 1): confirmar al fijar y marcar en lista, vista
+    previa y diálogo (d-7985ee-c62c61, d-7985ee-f43772);
+  - el diálogo de actualización directa que advierte lo que la simulación encontraría (F28). Decidido (tanda 1): avisar los jars sin explicar, botón activo (d-7985ee-83e764);
+  - enlazar URLs en changelogs (F29). Decidido (tanda 1): d-7985ee-58228f;
   - ~~repetir el recorrido con Modrinth real y medir de nuevo la tarea de F36~~: hecho el 2026-10-04 (ronda 2 del documento de hallazgos: de ~25 acciones a 11, de 6 cambios de página a 3);
   - llevar al repositorio el arnés de la instancia de exploración (simulador de Pterodactyl con jars reales y los guiones de Playwright): hoy vive solo en el scratchpad de una sesión y se rehízo a mano; es la decisión pendiente del dueño sobre un comando del repositorio que reemplace los guiones sueltos;
   - desplegar: antes, el dueño revoca la key `ptla_` de la prueba local, crea el grupo de operadores en authentik y hace un login real de editor y de operador.
@@ -788,7 +793,7 @@ JSON con `request_id` y `job_id`.
   - ~~después de una actualización real que falla antes de escribir, el tablero dice "Sin
     comparar"~~: hecho el 2026-10-12 (se registra la comparación del escaneo previo, sin requests);
   - los resultados de la búsqueda siguen abiertos después de agregar un mod (pregunta al dueño,
-    2026-10-12: sirve para agregar varios seguidos);
+    2026-10-12: sirve para agregar varios seguidos). Decidido: quedan abiertos (d-7985ee-7bccf8);
   - ~~tras una actualización real, el escaneo programado manda otro "✅ coincide"~~: ya resuelto por
     el reescaneo de U3; test de regresión el 2026-10-12;
   - ~~ruido "Unclosed" de aiohttp en `test_http_client` y `test_rate_limit`~~: hecho el 2026-10-12;
@@ -796,7 +801,7 @@ JSON con `request_id` y `job_id`.
     antes); test de regresión el 2026-10-12;
   - carrera en `bundle_for_server`: si vincular falla después de crear, queda un pack sin vincular
     (auditado) y un error genérico, y reintentar crea un segundo pack (pregunta al dueño, 2026-10-12:
-    deshacer la creación o reusar el pack);
+    deshacer la creación o reusar el pack). Decidido: deshacer (d-7985ee-b8e927);
   - ~~un servidor con nombre de más de 120 caracteres rellena el campo del pack nuevo por encima de
     su `maxlength`~~: hecho el 2026-10-12 (se corta a 120).
 - **Lo que choca:** el barrido no ve Modrinth ni Pterodactyl reales ni el login OIDC; la ficha pide
