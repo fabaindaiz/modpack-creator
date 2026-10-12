@@ -15,6 +15,7 @@ from fastapi import HTTPException
 from src.database.modpack import ModpackDatabase
 from src.database.pterodactyl import PterodactylDatabase
 from src.model.modpack import ModpackBundle
+from src.model.modpack.project import PackProject, ProjectOrigin
 from src.model.utils import MinecraftLoaders
 from src.services.pterodactyl import PterodactylService
 from tests._actors import EDITOR, OPERATOR, RecordingAudit
@@ -148,3 +149,75 @@ def test_import_failure_leaves_the_pack_linked_and_says_so(mongo: MongoRunner) -
     assert result.import_error is not None and "importación" in result.import_error
     assert "panel down" not in result.import_error
     assert events == ["bundle.create", "server.bundle"]
+
+
+async def racing_service(audit: RecordingAudit) -> tuple[PterodactylService, str, str]:
+    """A server without a pack whose link another operator takes right after this pack is created
+    (d-7985ee-b8e927): the insert links another pack before returning."""
+    service, server_id = await scanned_server(audit)
+    other = await ModpackDatabase().bundle_insert(ModpackBundle(
+        name="Del otro", description="", version="26.3", loader=MinecraftLoaders.fabric))
+    insert = service.modpackDB.bundle_insert
+
+    async def racing_insert(bundle: ModpackBundle) -> ModpackBundle:
+        created = await insert(bundle)
+        await PterodactylDatabase().server_set_bundle(server_id, str(other.id))
+        return created
+
+    service.modpackDB.bundle_insert = racing_insert  # type: ignore[method-assign]
+    return service, server_id, str(other.id)
+
+
+@pytest.mark.network
+def test_a_lost_race_deletes_the_new_pack_and_keeps_the_other_link(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Any, ...]:
+        audit = RecordingAudit()
+        service, server_id, other = await racing_service(audit)
+        with pytest.raises(HTTPException) as caught:
+            await service.bundle_for_server(server_id, "Creativo", "26.3", MinecraftLoaders.fabric, True, OPERATOR)
+        server = await PterodactylDatabase().server_get(server_id)
+        names = sorted(b.name for b in await ModpackBundle.find_all().to_list())
+        return caught.value, server.bundle_id == other, names, [e[0] for e in audit.events]
+
+    error, kept, names, events = mongo(scenario)
+    assert error.status_code == 409
+    assert "otro operador" in error.detail and "«Creativo»" in error.detail and "se borró" in error.detail
+    assert kept and names == ["Del otro"]
+    assert events == ["bundle.create", "bundle.delete"]
+
+
+@pytest.mark.network
+def test_a_lost_race_whose_delete_fails_still_says_what_happened(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Any, ...]:
+        audit = RecordingAudit()
+        service, server_id, other = await racing_service(audit)
+
+        async def broken(bundle_id: str) -> bool:
+            raise RuntimeError("mongo hiccup")
+
+        service.modpackDB.bundle_delete_empty = broken  # type: ignore[method-assign]
+        with pytest.raises(HTTPException) as caught:
+            await service.bundle_for_server(server_id, "Creativo", "26.3", MinecraftLoaders.fabric, True, OPERATOR)
+        names = sorted(b.name for b in await ModpackBundle.find_all().to_list())
+        return caught.value, names, [e[0] for e in audit.events]
+
+    error, names, events = mongo(scenario)
+    assert error.status_code == 409 and "otro operador" in error.detail and "no se pudo borrar" in error.detail
+    assert names == ["Creativo", "Del otro"]
+    assert events == ["bundle.create"]
+
+
+@pytest.mark.network
+def test_deleting_an_empty_pack_refuses_one_with_projects_or_builds(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[bool, bool, bool, int]:
+        db = ModpackDatabase()
+        empty = await db.bundle_insert(ModpackBundle(name="a", description="", version="26.3", loader=MinecraftLoaders.fabric))
+        built = await db.bundle_insert(ModpackBundle(name="b", description="", version="26.3", loader=MinecraftLoaders.fabric,
+                                                     latest_build=1))
+        used = await db.bundle_insert(ModpackBundle(name="c", description="", version="26.3", loader=MinecraftLoaders.fabric))
+        await db.bundle_projects_add(str(used.id), [PackProject(project_id=SODIUM, origin=ProjectOrigin.admin)])
+        return (await db.bundle_delete_empty(str(empty.id)), await db.bundle_delete_empty(str(built.id)),
+                await db.bundle_delete_empty(str(used.id)), await ModpackBundle.count())
+
+    deleted, deleted_built, deleted_used, left = mongo(scenario)
+    assert deleted and not deleted_built and not deleted_used and left == 2

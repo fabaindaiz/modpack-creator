@@ -475,9 +475,31 @@ class ModpackService():
         return replaced
 
     async def project_remove(self, bundle_id: str, project_id: str, actor: Actor) -> list[PackProject]:
-        remaining = await self.modpackDB.bundle_project_remove(bundle_id, project_id)
-        await self.audit.record(actor, "bundle.project.remove", _bundle(bundle_id), {"project_id": project_id})
+        """Remove a project from the pack. Its pin, server decision and channel exception go with it,
+        in the same write, unless the last saved resolution brings it as a dependency of another mod;
+        without a saved resolution they stay, since nothing says nobody needs it (d-7985ee-881689).
+        The event names what was cleared."""
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        clear = MODRINTH_ID.fullmatch(project_id) is not None and await self.project_dependents(bundle_id, project_id) == []
+        cleared: dict[str, Any] = {}
+        if clear:
+            for name, values in (("pin", bundle.pins), ("server_decision", bundle.server_decisions),
+                                 ("channel_exception", bundle.channel_exceptions)):
+                if project_id in values:
+                    cleared[name] = values[project_id]
+        remaining = await self.modpackDB.bundle_project_remove(bundle_id, project_id, clear_keys=clear)
+        await self.audit.record(actor, "bundle.project.remove", _bundle(bundle_id),
+                                {"project_id": project_id, "cleared": cleared})
         return remaining
+
+    async def project_dependents(self, bundle_id: str, project_id: str) -> Optional[list[str]]:
+        """The other mods that, in the last saved resolution, need this one (its entry's
+        requesters); None without a saved resolution. A read."""
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        saved = await self.modpackDB.resolution_get(bundle.id) if bundle.id is not None else None
+        if saved is None:
+            return None
+        return sorted({r for e in saved.lock.entries if e.project_id == project_id for r in e.requested_by if r != project_id})
 
     async def _modrinth_projects(self, refs: list[str]) -> list[ModrinthProject]:
         """The Modrinth projects these slugs or ids name, stored in the catalog; 404 naming any

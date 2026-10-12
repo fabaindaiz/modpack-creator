@@ -114,6 +114,8 @@ class FakeModpack:
         self.saved: Optional[ModpackResolution] = None
         self.stale = False
         self.checks_seen: list[Optional[UpdateCheck]] = []
+        # What project_dependents answers (a read, not recorded): who needs a mod being removed.
+        self.dependents: Optional[list[str]] = []
         self.versions = [VersionOption("ver-new", "0.8.14", "release", datetime(2026, 10, 1, tzinfo=timezone.utc)),
                          VersionOption("ver-beta", "0.9.0-beta.1", "beta", datetime(2026, 10, 2, tzinfo=timezone.utc))]
         self.versions_error: Optional[Exception] = None
@@ -185,6 +187,9 @@ class FakeModpack:
         self._record("project_remove", bundle_id, project_id, actor)
         self.bundle.projects = [p for p in self.bundle.projects if p.project_id != project_id]
         return self.bundle.projects
+
+    async def project_dependents(self, bundle_id: str, project_id: str) -> Optional[list[str]]:
+        return self.dependents
 
     async def resolve(self, bundle_id: str, actor: Optional[Actor] = None) -> Lock:
         self._record("resolve", bundle_id, actor)
@@ -922,6 +927,18 @@ def test_the_dialog_keeps_its_success_and_the_dialog_actions_refuse_a_bundle_les
     assert response.status_code == 422 and [c[0] for c in modpack.calls] == ["project_remove", "resolve"]
 
 
+def test_removing_a_mod_another_one_needs_says_what_it_kept() -> None:
+    """d-7985ee-881689: the notice names who still brings the mod, and that its pin, decision and
+    exception stay; a mod nobody needs gets the usual answer (its row gone, no notice)."""
+    client, modpack, _ = setup()
+    modpack.dependents = ["P1"]
+    text = client.delete(f"/modpacks/{BUNDLE_ID}/projects/P2", headers=HTMX).text
+    assert "Quitado del modpack. Sigue como dependencia de Sodium: su fijación, su decisión y su excepción se mantienen." in text
+    modpack.dependents = []
+    text = client.delete(f"/modpacks/{BUNDLE_ID}/projects/P1", headers=HTMX).text
+    assert "Sigue como dependencia" not in text
+
+
 def test_v1_still_answers_a_blocked_build_with_the_same_409() -> None:
     # main.py mounts /v1 in its lifespan (it opens MongoDB): here on an app of its own, as in
     # tests/test_startup.py, with the same container (and its doubles) and the session's actor.
@@ -1385,6 +1402,19 @@ def test_compare_shows_the_four_sections_with_titles_and_changelogs() -> None:
     assert "Arregla un crash" in text and "whitespace-pre-wrap" in text
     assert "sin changelog" in text  # P3: Modrinth no tiene texto
     assert "https://modrinth.com/project/P1/changelog" in text
+
+
+def test_a_changelog_links_its_urls_and_nothing_else() -> None:
+    # F29 (d-7985ee-58228f).
+    client, modpack, _ = setup()
+
+    async def compare(bundle_id: str, de: int, a: int) -> Any:
+        return preview("Ver https://github.com/x/y/pull/9 y **negrita**")
+
+    modpack.compare_builds = compare  # type: ignore[attr-defined]
+    text = client.get(f"/modpacks/{BUNDLE_ID}/builds/compare", params={"de": 1, "a": 2}).text
+    assert '<a href="https://github.com/x/y/pull/9" rel="noopener noreferrer nofollow" target="_blank"' in text
+    assert "**negrita**" in text
 
 
 def test_compare_marks_a_changelog_modrinth_could_not_give() -> None:

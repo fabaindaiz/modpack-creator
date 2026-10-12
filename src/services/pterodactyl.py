@@ -56,6 +56,10 @@ PANEL_LIST_TTL = timedelta(minutes=5)
 PANEL_LIST_REFRESH_EVERY = timedelta(minutes=1)
 IMPORT_FAILED = ("El modpack quedó creado y vinculado a este servidor, pero la importación de sus mods falló. "
                  "Vuelve a intentarlo con «Importar».")
+# A pack created for a server that another operator linked meanwhile (d-7985ee-b8e927).
+RACE_LOST = "No se pudo vincular: otro operador vinculó un modpack a este servidor mientras se creaba este."
+RACE_UNDONE = "El modpack «{name}» que se acababa de crear se borró. Vuelve a cargar la página."
+RACE_KEPT = "El modpack «{name}» que se acababa de crear no se pudo borrar: bórralo a mano. Vuelve a cargar la página."
 
 def _utc(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
@@ -576,7 +580,9 @@ class PterodactylService():
         """
         Create a bundle for a server without one, link it and, if `import_mods`, import the server
         into it, each step with its audit event. Operators only, since linking and importing are.
-        409 if the server already has a bundle, before anything is created. If importing fails,
+        409 if the server already has a bundle, before anything is created. The link only lands
+        while the server still has none: if another operator linked one meanwhile, the new bundle,
+        still empty, is deleted and it is a 409 that says so (d-7985ee-b8e927). If importing fails,
         the bundle stays created and linked (an empty linked bundle, never a touched server: this
         only reads the panel) and the answer says so.
         """
@@ -584,8 +590,19 @@ class PterodactylService():
         if server.bundle_id is not None:
             raise HTTP_409_CONFLICT("Este servidor ya tiene modpack: vuelve a cargar la página")
         bundle = await self.modpackDB.bundle_insert(ModpackBundle(name=name, description="", version=version, loader=loader))
-        await self.audit.record(actor, "bundle.create", AuditTarget(kind="bundle", id=str(bundle.id)))
-        await self.server_link_bundle(server_id, str(bundle.id), actor)
+        bundle_target = AuditTarget(kind="bundle", id=str(bundle.id))
+        await self.audit.record(actor, "bundle.create", bundle_target)
+        if not await self.pterodactylDB.server_link_if_unlinked(server_id, str(bundle.id)):
+            try:
+                deleted = await self.modpackDB.bundle_delete_empty(str(bundle.id))
+            except Exception:
+                logger.warning("deleting a pack that lost the race to link a server failed", exc_info=True,
+                               extra={"server_id": server_id, "bundle_id": str(bundle.id)})
+                deleted = False
+            if deleted:
+                await self.audit.record(actor, "bundle.delete", bundle_target, {"reason": "server linked meanwhile"})
+            raise HTTP_409_CONFLICT(f"{RACE_LOST} {(RACE_UNDONE if deleted else RACE_KEPT).format(name=name)}")
+        await self.audit.record(actor, "server.bundle", _target(server_id), {"bundle_id": str(bundle.id)})
         import_job, import_error = None, None
         if import_mods:
             try:

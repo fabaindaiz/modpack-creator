@@ -78,6 +78,17 @@ class PterodactylDatabase():
             raise HTTP_404_NOT_FOUND(f"Server '{server_id}' not found")
         return await self.server_get(server_id)
 
+    async def server_link_if_unlinked(self, server_id: str, bundle_id: str) -> bool:
+        """Link a server to a bundle only while it has none, in one atomic update: of two packs
+        created for it at once, one links and the other learns it lost (d-7985ee-b8e927). Whether
+        it was linked; 404 if the server does not exist."""
+        oid = self._server_oid(server_id)
+        result = await PterodactylServer.get_pymongo_collection().update_one(
+            {"_id": oid, "bundle_id": None}, {"$set": {"bundle_id": bundle_id}})
+        if not result.matched_count:
+            await self.server_get(server_id)
+        return bool(result.modified_count)
+
     async def panel_list_get(self) -> Optional[PanelServerList]:
         """The panel's server list as last asked; None if never."""
         return await PanelServerList.find_one(PanelServerList.key == "panel")

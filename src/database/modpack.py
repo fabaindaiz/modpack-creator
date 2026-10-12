@@ -98,7 +98,16 @@ class ModpackDatabase():
         :return: The created ModpackBundle object.
         """
         return await ModpackBundle.create(bundle)
-    
+
+    async def bundle_delete_empty(self, bundle_id: str) -> bool:
+        """Delete a bundle only while it is empty (no projects, local or claimed files, nor builds),
+        in one atomic delete: what undoes a pack created a moment ago (d-7985ee-b8e927). Whether
+        it was deleted."""
+        result = await ModpackBundle.get_pymongo_collection().delete_one({
+            "_id": self._bundle_oid(bundle_id), "latest_build": None, "recommended_build": None,
+            "projects": {"$size": 0}, "local_files": {"$size": 0}, "claimed_files": {"$size": 0}})
+        return bool(result.deleted_count)
+
     async def bundle_projects_add(self, bundle_id: str, projects: list[PackProject]) -> list[PackProject]:
         """
         Add projects to a bundle, each only if the bundle does not have it yet.
@@ -129,12 +138,16 @@ class ModpackDatabase():
             {"_id": self._bundle_oid(bundle_id), "claimed_files.sha512": {"$ne": claim.sha512}},
             {"$push": {"claimed_files": claim.model_dump()}})
 
-    async def bundle_project_remove(self, bundle_id: str, project_id: str) -> list[PackProject]:
-        """Remove a project from a bundle; 404 if the bundle does not have it."""
+    async def bundle_project_remove(self, bundle_id: str, project_id: str, clear_keys: bool = False) -> list[PackProject]:
+        """Remove a project from a bundle; 404 if the bundle does not have it. With `clear_keys`, its
+        pin, server decision and channel exception go in the same update (d-7985ee-881689);
+        `project_id` must then be a plain Modrinth id: it becomes a key of a dotted path."""
         oid = self._bundle_oid(bundle_id)
+        update: dict[str, Any] = {"$pull": {"projects": {"project_id": project_id}}}
+        if clear_keys:
+            update["$unset"] = {f"{field}.{project_id}": "" for field in ("pins", "server_decisions", "channel_exceptions")}
         result = await ModpackBundle.get_pymongo_collection().update_one(
-            {"_id": oid, "projects.project_id": project_id},
-            {"$pull": {"projects": {"project_id": project_id}}})
+            {"_id": oid, "projects.project_id": project_id}, update)
         if not result.modified_count:
             raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' has no project '{project_id}'")
         return (await self.bundle_get(bundle_id)).projects

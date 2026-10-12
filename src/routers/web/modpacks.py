@@ -517,10 +517,23 @@ async def project_remove(
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
+        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         ):
-    """Remove a project from the pack; from a problem's card (`contexto`), resolve again too."""
+    """Remove a project from the pack; from a problem's card (`contexto`), resolve again too. When
+    another mod still brings it, its pin, decision and exception stay, and the notice says so
+    (d-7985ee-881689)."""
+    dependents = await modpackService.project_dependents(bundle_id, project_id)
     await modpackService.project_remove(bundle_id, project_id, actor)
-    return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto, "Quitado del modpack")
+    success = "Quitado del modpack"
+    if dependents:
+        titles = await _titles(modrinthService, dependents)
+        success += (f". Sigue como dependencia de {', '.join(titles[i] for i in dependents)}: "
+                    "su fijación, su decisión y su excepción se mantienen.")
+        if contexto is None:
+            # The list alone would show the mod still there, as a dependency, with no word why.
+            return await _mods(request, actor, modpackService, updateCheckService, bundle_id, info=success,
+                               vista=_vista_from(request))
+    return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto, success)
 
 @router.get("/modpacks/{bundle_id}/projects/{project_id}/versions")
 @inject

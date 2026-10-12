@@ -1,7 +1,8 @@
 {# What changes between two locks: `preview` (ChangePreview) and `titles` (project id -> title); with
    `against_server` set, between a server's scan and a build. Each mod opens its card; inside a
    pack's pages (`bundle_id` defined) from that pack.
-   The changelog is Markdown from Modrinth, shown as plain text: cut, escaped, never rendered. #}
+   The changelog is Markdown from Modrinth, shown as plain text: cut, escaped, never rendered; only
+   its http(s) URLs become links (`linkify`, F29). #}
 {% import "_macros.html" as ui %}
 {% set CHANGELOG_MAX = 4000 %}
 {% set changes = preview.changes %}
@@ -26,7 +27,7 @@
   {% elif version in preview.timed_out %}
   <p class="text-xs text-amber-700 dark:text-amber-300">tardó demasiado; vuelve a intentar</p>
   {% elif preview.changelogs.get(version) %}
-  <pre class="max-h-60 overflow-auto rounded bg-zinc-50 p-2 font-sans text-xs break-words whitespace-pre-wrap text-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">{{ preview.changelogs[version][:CHANGELOG_MAX] }}{% if preview.changelogs[version] | length > CHANGELOG_MAX %}
+  <pre class="max-h-60 overflow-auto rounded bg-zinc-50 p-2 font-sans text-xs break-words whitespace-pre-wrap text-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">{{ preview.changelogs[version][:CHANGELOG_MAX] | linkify }}{% if preview.changelogs[version] | length > CHANGELOG_MAX %}
 
 … recortado{% endif %}</pre>
   {% else %}

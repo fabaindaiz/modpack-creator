@@ -17,6 +17,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.routing import APIRoute
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup, escape
 
 from src.exceptions import CatalogPending, QuotaExceeded, UpstreamError
 from src.library.api.limiter import CURRENT_USER
@@ -117,8 +118,33 @@ def seconds_until(value: Optional[datetime]) -> int:
     return max(0, math.ceil((as_utc(value) - datetime.now(timezone.utc)).total_seconds()))
 
 
+_URL = re.compile(r"https?://[^\s<>\"'`]+")
+# What usually ends a sentence or a Markdown link around a URL, not the URL itself.
+_URL_TAIL = ".,;:!?'\")]}"
+
+
+def linkify(text: str) -> Markup:
+    """A changelog as plain text with its http(s) URLs as links (F29, d-7985ee-58228f): every piece
+    is escaped, nothing else of the Markdown is rendered, and a link opens in another tab without
+    the referrer nor a follow."""
+    parts: list[str] = []
+    last = 0
+    for match in _URL.finditer(text):
+        url = match.group(0)
+        while url and url[-1] in _URL_TAIL and not (url[-1] == ")" and url.count("(") >= url.count(")")):
+            url = url[:-1]
+        end = match.start() + len(url)
+        parts.append(str(escape(text[last:match.start()])))
+        parts.append(f'<a href="{escape(url)}" rel="noopener noreferrer nofollow" target="_blank" '
+                     f'class="text-emerald-700 underline dark:text-emerald-400">{escape(url)}</a>')
+        last = end
+    parts.append(str(escape(text[last:])))
+    return Markup("".join(parts))
+
+
 templates.env.filters["ago"] = ago
 templates.env.filters["seconds_until"] = seconds_until
+templates.env.filters["linkify"] = linkify
 
 
 class LoginRequired(Exception):

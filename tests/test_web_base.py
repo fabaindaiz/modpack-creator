@@ -559,6 +559,22 @@ def test_sanitize_detail_hides_credentials_outside_urls_too() -> None:
     assert "Bearer [oculto]" in text and "token=[oculto]" in text and "ok=1" in text
 
 
+def test_linkify_links_only_http_urls_and_escapes_the_rest() -> None:
+    # F29 (d-7985ee-58228f): a changelog stays plain text; only its http(s) URLs become links, in
+    # another tab, without the referrer or a follow.
+    from src.web import linkify
+
+    html = str(linkify('Fixed <b>crash</b> (see https://github.com/x/y/issues/1). Docs: [here](https://x.org/a?b=1&c=2), '
+                       'javascript:alert(1) ftp://f.org "https://q.org/"'))
+    assert "&lt;b&gt;crash&lt;/b&gt;" in html and "<b>" not in html
+    link = '<a href="https://github.com/x/y/issues/1" rel="noopener noreferrer nofollow" target="_blank"'
+    assert link in html and 'issues/1</a>).' in html
+    assert 'href="https://x.org/a?b=1&amp;c=2"' in html and "c=2</a>)," in html
+    assert 'href="https://q.org/"' in html and "&#34;" in html
+    assert "javascript:" in html and 'href="javascript' not in html and 'href="ftp' not in html
+    assert html.count("<a ") == 3
+
+
 def test_a_form_disables_its_submit_buttons_while_it_is_sent() -> None:
     # Roadmap (round 1 review): a form's submit button showed no busy state and a double submit was
     # possible. app.js disables them while an htmx form's request runs (and gives them back after),
