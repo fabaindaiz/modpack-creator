@@ -8,7 +8,6 @@ folder that holds `instance.cfg` (old MultiMC exports had a top folder). A `.jar
 Prism turned off (P2). A `.pw.toml` is only a hint: its Modrinth version counts when its jar is not
 in the zip (P4); identification is by hash.
 """
-import hashlib
 import json
 import stat
 import tomllib
@@ -17,7 +16,7 @@ from dataclasses import dataclass
 from typing import IO, Any, Optional
 
 from src.library.mrpack import _unsafe_path
-from src.library.mrpack_import import CHUNK, MrpackContent, MrpackError, OverrideJar, _Budget
+from src.library.mrpack_import import MrpackContent, MrpackError, OverrideJar, _Budget, _hash_jar
 
 # mmc-pack.json component uids → our loader names; anything else (intermediary, LWJGL…) is ignored.
 LOADER_UIDS = {"net.fabricmc.fabric-loader": "fabric", "org.quiltmc.quilt-loader": "quilt",
@@ -120,7 +119,7 @@ def _content(archive: zipfile.ZipFile, members: list[zipfile.ZipInfo], root: str
             continue
         first, _, below = rest.partition("/")
         if first == "mods" and "/" not in below and (below.endswith(".jar") or below.endswith(".jar.disabled")):
-            sha1, sha512 = _hash(archive, member.filename, budget)
+            sha1, sha512 = _hash_jar(archive, member.filename, budget)
             content.override_jars.append(OverrideJar(path=member.filename, sha1=sha1, sha512=sha512, side="both",
                                                      disabled=below.endswith(".disabled")))
             jars.add(below.removesuffix(".disabled"))
@@ -131,19 +130,6 @@ def _content(archive: zipfile.ZipFile, members: list[zipfile.ZipInfo], root: str
             content.overrides[key] = content.overrides.get(key, 0) + 1
     content.hinted_versions = [h["version"] for h in hints if h.get("version") and h.get("filename") not in jars]
     return content
-
-
-def _hash(archive: zipfile.ZipFile, name: str, budget: _Budget) -> tuple[str, str]:
-    """sha1 and sha512 of a member, streamed: counted against the budget, never held whole."""
-    sha1, sha512 = hashlib.sha1(), hashlib.sha512()
-    with archive.open(name) as stream:
-        while chunk := stream.read(CHUNK):
-            budget.left -= len(chunk)
-            if budget.left < 0:
-                raise MrpackError("El archivo descomprimido es demasiado grande")
-            sha1.update(chunk)
-            sha512.update(chunk)
-    return sha1.hexdigest(), sha512.hexdigest()
 
 
 def _instance_name(raw: bytes) -> Optional[str]:

@@ -28,6 +28,7 @@ IDEMPOTENT_POSTS = {
     ("src/library/api/client/modrinth.py", "files_hash_post_many"),
     ("src/library/api/client/modrinth.py", "files_update_hash_post"),
     ("src/library/api/client/modrinth.py", "files_update_individual"),
+    ("src/library/api/client/curseforge.py", "files_get_many"),
 }
 # Lo que un router puede inyectar además de un servicio: el cliente OAuth del login.
 ROUTER_ALLOWED_PROVIDERS = {"authlib_oauth"}

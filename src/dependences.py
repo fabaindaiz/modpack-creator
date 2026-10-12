@@ -22,6 +22,7 @@ from src.services.jobs import WorkerBeat
 from src.services.notify import Notifier
 from src.services.update import UpdateService
 from src.services.modpack_import import ModpackImportService
+from src.library.api.client.curseforge import CurseForgeAPI
 from src.library.api.limiter import CURRENT_USER, RateLimiter
 from src.services import (
     AuditService,
@@ -39,7 +40,7 @@ from src.model.users import (
 )
 from src.library.auth.roles import actor_from_session
 from src.services.users import OIDC_OPERATOR_GROUPS
-from src.library.utils import getenv
+from src.library.utils import getenv, getenv_opt
 from src.exceptions import *
 
 class Dependences(containers.DeclarativeContainer):
@@ -48,6 +49,8 @@ class Dependences(containers.DeclarativeContainer):
     # E4: 240 requests a minute for the whole app (Modrinth cuts at 300 per IP) and 60 per user.
     modrinthLimiter = providers.Singleton(RateLimiter, per_minute=240, per_user=60)
     modrinthAPI = providers.Singleton(ModrinthAPI, limiter=modrinthLimiter)
+    # Optional (C1): the owner's own key; without it CurseForge is off and nothing calls it.
+    curseforgeAPI = providers.Singleton(CurseForgeAPI, api_key=getenv_opt("CURSEFORGE_API_KEY"))
     pterodactylAPI = providers.Singleton(PterodactylAPI)
     loaderAPI = providers.Singleton(LoaderMetaAPI)
 
@@ -70,7 +73,7 @@ class Dependences(containers.DeclarativeContainer):
     modpackService = providers.Singleton(ModpackService, modpackDatabase, modrinthDatabase, modrinthAPI, loaderAPI, auditService, notifier, pterodactylDatabase, jobDB=jobDatabase)
     jobService = providers.Singleton(JobService, jobDatabase, pterodactylService, pterodactylDatabase, auditService, notifier)
     updateService = providers.Singleton(UpdateService, pterodactylAPI, pterodactylService, pterodactylDatabase, modpackDatabase, downloader, jobDatabase, auditService, notifier)
-    modpackImportService = providers.Singleton(ModpackImportService, modpackService, modpackDatabase, modrinthDatabase, modrinthAPI, downloader, auditService, jobDB=jobDatabase)
+    modpackImportService = providers.Singleton(ModpackImportService, modpackService, modpackDatabase, modrinthDatabase, modrinthAPI, downloader, auditService, jobDB=jobDatabase, curseforge=curseforgeAPI)
     updateCheckService = providers.Singleton(UpdateCheckService, modpackDatabase, modrinthAPI, modrinthDatabase, updateCheckDatabase, jobDatabase, auditService, notifier)
 
 async def close_clients(container: Dependences) -> None:

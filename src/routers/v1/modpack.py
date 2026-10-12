@@ -8,6 +8,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from src.exceptions import HTTP_422_UNPROCESSABLE_ENTITY, CatalogPending
 from src.routers.web.modpacks import IMPORT_MAX_BYTES, _upload_room
+from src.library.cf_import import is_curseforge
 from src.library.prism_import import is_prism
 from src.web import BUNDLE_REF
 from src.model.jobs import Job
@@ -211,7 +212,8 @@ async def modpack_import_mrpack(
         importer: ModpackImportService = Depends(Provide[Dependences.modpackImportService]),
         actor: Actor = Depends(get_current_actor),
         ):
-    """Import an uploaded .mrpack or Prism instance zip (field `archivo`), as the panel does: read now,
+    """Import an uploaded .mrpack, Prism instance zip or CurseForge zip (field `archivo`; the last
+    needs the owner's key), as the panel does: read now,
     identified in a job. A .mrpack past 50 MiB is a 422; any upload past 1 GiB, 413; past the
     temporary disk the uploads in flight may take, 429 (the form is read only after reserving it)."""
     with _upload_room(request):
@@ -221,7 +223,21 @@ async def modpack_import_mrpack(
             raise HTTP_422_UNPROCESSABLE_ENTITY("Falta el archivo (campo «archivo»)")
         if is_prism(archivo.file):
             return await importer.import_prism(archivo.file, actor, into=_into(into))
+        if is_curseforge(archivo.file):
+            return await importer.import_curseforge(await archivo.read(IMPORT_MAX_BYTES + 1), actor, into=_into(into))
         return await importer.import_mrpack(await archivo.read(IMPORT_MAX_BYTES + 1), actor, into=_into(into))
+
+@router.post("/modpack/import/curseforge", response_model=Job, status_code=202)
+@inject
+async def modpack_import_curseforge_code(
+        code: str = Query(..., min_length=1, max_length=40, description="A CurseForge profile code (it lives 7 days)"),
+        into: Optional[str] = Query(None, description="A pack whose content it replaces; a new pack if empty"),
+        importer: ModpackImportService = Depends(Provide[Dependences.modpackImportService]),
+        actor: Actor = Depends(get_current_actor),
+        ):
+    """Import a CurseForge profile code, as the panel does: a job. Only with the owner's CurseForge
+    key (422 without it); it uses an undocumented CurseForge endpoint (C5)."""
+    return await importer.import_curseforge_code(code, actor, into=_into(into))
 
 @router.post("/modpack/{id}/resolve", response_model=Lock, responses={202: {"model": Job}})
 @inject

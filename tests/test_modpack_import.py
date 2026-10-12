@@ -414,3 +414,99 @@ def test_a_prism_instance_imports_as_a_job_with_its_disabled_mods_off_and_its_hi
     assert sorted(report.projects) == sorted([SODIUM[0], LITHIUM[0], LIB[0]])
     assert bundle.server_decisions == {LITHIUM[0]: False} and report.disabled == 1
     assert report.unknown == ["minecraft/mods/private.jar"] and report.overrides == {"minecraft/saves": 1}
+
+
+# CurseForge (T5): with the owner's key, a CF zip or profile code; its file ids become sha1 in one
+# CurseForge request, and Modrinth versions in one more. What Modrinth lacks is reported (C2, C3).
+
+class FakeCurseForge:
+    def __init__(self, enabled: bool = True) -> None:
+        self.enabled = enabled
+        self.sha1 = {4567890: sha("sha1", SODIUM[2]), 5000001: sha("sha1", LITHIUM[2]), 6000002: sha("sha1", "cf only")}
+        self.profiles: dict[str, bytes] = {}
+        self.calls: list[tuple[str, Any]] = []
+
+    async def files_get_many(self, file_ids: list[int]) -> dict[int, str]:
+        self.calls.append(("files_get_many", tuple(file_ids)))
+        return {i: self.sha1[i] for i in file_ids if i in self.sha1}
+
+    async def shared_profile(self, code: str, max_bytes: int) -> bytes:
+        self.calls.append(("shared_profile", code))
+        if code not in self.profiles:
+            raise HTTPException(status_code=404, detail="not found")
+        return self.profiles[code]
+
+
+def cf_pack() -> bytes:
+    manifest = {"minecraft": {"version": "1.20.1", "modLoaders": [{"id": "fabric-0.16.10", "primary": True}]},
+                "manifestType": "minecraftModpack", "manifestVersion": 1, "name": "Aventura CF", "version": "3.0",
+                "files": [{"projectID": 394468, "fileID": 4567890, "required": True},
+                          {"projectID": 360438, "fileID": 5000001, "required": False},
+                          {"projectID": 238222, "fileID": 6000002, "required": True}],
+                "overrides": "overrides"}
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("manifest.json", json.dumps(manifest))
+        archive.writestr("overrides/mods/own.jar", b"own")
+    return buffer.getvalue()
+
+
+def with_curseforge(s: Scenario, cf: FakeCurseForge) -> None:
+    s.service.curseforge = cf  # type: ignore[assignment]
+
+
+def test_a_curseforge_zip_is_identified_by_sha1_in_a_job_and_reports_what_is_only_on_curseforge(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Any, ...]:
+        s, cf = Scenario(), FakeCurseForge()
+        with_curseforge(s, cf)
+        job = await s.service.import_curseforge(cf_pack(), EDITOR)
+        before = list(s.api.calls) + list(cf.calls)
+        await run_jobs(s)
+        done, report = await s.service.import_status(str(job.id))
+        bundle = await s.modpackDB.bundle_get(report.bundle_id) if report else None
+        return before, done, report, bundle, s.api.calls, cf.calls
+
+    before, done, report, bundle, calls, cf_calls = mongo(scenario)
+    assert before == [] and done.status == "done" and report is not None and bundle is not None
+    assert (bundle.name, bundle.version, bundle.loader) == ("Aventura CF", "1.20.1", MinecraftLoaders.fabric)
+    assert sorted(report.projects) == sorted([SODIUM[0], LITHIUM[0]])
+    assert report.curseforge_only == [{"project_id": 238222, "file_id": 6000002}]  # C3: the manifest's ids only
+    assert report.unknown == ["overrides/mods/own.jar"]
+    assert bundle.server_decisions == {}  # C4: required: false comes in «Por decidir», like the rest
+    # One CurseForge request; one Modrinth identification by sha1 (the override jar in it), then the projects.
+    assert cf_calls == [("files_get_many", (4567890, 5000001, 6000002))]
+    assert [c[0] for c in calls] == ["files_hash_post_many", "project_get_many"] and calls[0][1][0] == "sha1"
+
+
+def test_without_a_key_a_curseforge_zip_says_to_export_it_as_mrpack(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        s = Scenario()
+        with_curseforge(s, FakeCurseForge(enabled=False))
+        with pytest.raises(HTTPException) as refused:
+            await s.service.import_curseforge(cf_pack(), EDITOR)
+        return refused.value
+
+    refused = mongo(scenario)
+    assert refused.status_code == 422
+    assert refused.detail == "Esta instalación no tiene clave de CurseForge: exporta el pack como .mrpack desde Prism."
+
+
+def test_a_profile_code_is_downloaded_by_the_job_and_one_that_fails_says_so(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Any, ...]:
+        s, cf = Scenario(), FakeCurseForge()
+        cf.profiles["ABCD1234"] = cf_pack()
+        with_curseforge(s, cf)
+        good = await s.service.import_curseforge_code("ABCD1234", EDITOR)
+        await run_jobs(s)
+        good_done, report = await s.service.import_status(str(good.id))
+        bad = await s.service.import_curseforge_code("ZZZZ9999", EDITOR)
+        await run_jobs(s)
+        bad_done, _ = await s.service.import_status(str(bad.id))
+        with pytest.raises(HTTPException) as malformed:
+            await s.service.import_curseforge_code("../x", EDITOR)
+        return good_done, report, bad_done, malformed.value.status_code
+
+    good, report, bad, malformed = mongo(scenario)
+    assert good.status == "done" and report is not None and len(report.projects) == 2
+    assert bad.status == "failed" and bad.error == "CurseForge no respondió al código; expórtalo como .zip"
+    assert malformed == 422

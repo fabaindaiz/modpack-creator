@@ -7,6 +7,7 @@ recorded as with a server import (d-7985ee-58801d): env.server seeds the server 
 or alpha outside the pack's channels the channel exception, only where nothing is set.
 """
 import asyncio
+import logging
 import hashlib
 import re
 from dataclasses import asdict, dataclass, field
@@ -18,6 +19,8 @@ from src.library.api.client.download import Downloader, TooLarge
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.mrpack_import import IndexFile, MrpackContent, MrpackError, MrpackLimits, OverrideJar, read_mrpack
 from src.library.prism_import import PrismLimits, read_prism
+from src.library.cf_import import CfContent, CfFile, read_cf_zip
+from src.library.api.client.curseforge import CurseForgeAPI
 from src.database.jobs import JobDatabase
 from src.model.jobs import Job
 from src.services.jobs import Handler, JobContext, JobFailed
@@ -33,7 +36,12 @@ from src.library.utils import MODRINTH_ID
 from src.services.modpack import ModpackService
 from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT, HTTP_422_UNPROCESSABLE_ENTITY
 
+logger = logging.getLogger("modpack.import")
 LIMITS = MrpackLimits()
+NO_CURSEFORGE_KEY = "Esta instalación no tiene clave de CurseForge: exporta el pack como .mrpack desde Prism."
+CF_CODE_FAILED = "CurseForge no respondió al código; expórtalo como .zip"
+# A CurseForge profile code: letters and digits (8 in the ones seen; the format is not documented).
+CF_CODE = re.compile(r"[A-Za-z0-9]{4,32}")
 PRISM_LIMITS = PrismLimits()
 # A published modpack's file is only fetched from Modrinth's CDN.
 DOWNLOAD_HOST = "cdn.modrinth.com"
@@ -56,6 +64,8 @@ class ImportReport:
     channel_exceptions: dict[str, str] = field(default_factory=dict)
     # Jars a Prism instance had turned off (`.jar.disabled`, T6/P2): they come in «Desactivado».
     disabled: int = 0
+    # Files of a CurseForge pack Modrinth does not have (C2, C3): the manifest's ids, nothing of CurseForge's.
+    curseforge_only: list[dict[str, int]] = field(default_factory=list)
 
 
 class ModpackImportService():
@@ -67,8 +77,11 @@ class ModpackImportService():
             downloader: Downloader,
             audit: AuditSink,
             jobDB: Optional[JobDatabase] = None,
+            curseforge: Optional[CurseForgeAPI] = None,
             ) -> None:
         self.jobDB = jobDB or JobDatabase()
+        # Off without the owner's key (C1): nothing calls CurseForge then.
+        self.curseforge = curseforge
         self.modpackService = modpackService
         self.modpackDB = modpackDB
         self.modrinthDB = modrinthDB
@@ -110,6 +123,49 @@ class ModpackImportService():
             await self.audit.record(actor, "bundle.import.request", _target(into),
                                     {"source": _label(content), "job_id": str(job.id)})
         return job
+
+    @property
+    def curseforge_enabled(self) -> bool:
+        return self.curseforge is not None and self.curseforge.enabled
+
+    async def import_curseforge(self, data: bytes, actor: Actor, into: Optional[str] = None) -> Job:
+        """
+        Import an uploaded CurseForge modpack zip (T5): read now, with no request; the job turns its
+        file ids into sha1 (one CurseForge request) and those into Modrinth versions. 422 without
+        the owner's key (C1) or if the zip is not valid; 409 for another Minecraft version or loader.
+        """
+        self._need_curseforge()
+        try:
+            content = read_cf_zip(data, LIMITS)
+        except MrpackError as error:
+            raise HTTP_422_UNPROCESSABLE_ENTITY(str(error)) from error
+        if into is not None:
+            _same_target(await self.modpackDB.bundle_get(into), content)
+        source = f"{content.name} {content.version_id}".strip()
+        job, new = await self._job(actor, {"cf": asdict(content), "into": into, "source": source})
+        if new:
+            await self.audit.record(actor, "bundle.import.request", _target(into), {"source": source, "job_id": str(job.id)})
+        return job
+
+    async def import_curseforge_code(self, code: str, actor: Actor, into: Optional[str] = None) -> Job:
+        """
+        Import a CurseForge profile code (C5, owner's decision: an undocumented endpoint, behind the
+        key). The job downloads the profile's zip; if CurseForge does not answer, it says so and
+        nothing else is touched. A code lives 7 days.
+        """
+        self._need_curseforge()
+        code = code.strip()
+        if not CF_CODE.fullmatch(code):
+            raise HTTP_422_UNPROCESSABLE_ENTITY("Escribe el código de perfil de CurseForge")
+        job, new = await self._job(actor, {"cf_code": code, "into": into})
+        if new:
+            await self.audit.record(actor, "bundle.import.request", _target(into),
+                                    {"source": f"curseforge:{code}", "job_id": str(job.id)})
+        return job
+
+    def _need_curseforge(self) -> None:
+        if not self.curseforge_enabled:
+            raise HTTP_422_UNPROCESSABLE_ENTITY(NO_CURSEFORGE_KEY)
 
     async def import_modrinth(self, ref: str, actor: Actor, into: Optional[str] = None) -> Job:
         """
@@ -157,6 +213,13 @@ class ModpackImportService():
                 if "ref" in payload:
                     await context.progress("Buscando el modpack en Modrinth", 0, 1)
                     report = await self.run_modrinth(payload["ref"], actor, payload.get("into"))
+                elif "cf_code" in payload:
+                    await context.progress("Bajando el perfil de CurseForge", 0, 1)
+                    report = await self.run_curseforge_code(payload["cf_code"], actor, payload.get("into"))
+                elif "cf" in payload:
+                    await context.progress("Identificando los archivos en Modrinth", 0, 1)
+                    report = await self.run_curseforge(_cf_content(payload["cf"]), actor, payload.get("into"),
+                                                       payload["source"])
                 else:
                     await context.progress("Identificando los archivos en Modrinth", 0, 1)
                     report = await self.run_content(_content(payload["content"]), actor, payload.get("into"),
@@ -175,6 +238,46 @@ class ModpackImportService():
 
     async def run_content(self, content: MrpackContent, actor: Actor, into: Optional[str], source: str) -> ImportReport:
         return await self._import(content, actor, into, source=source)
+
+    async def run_curseforge_code(self, code: str, actor: Actor, into: Optional[str]) -> ImportReport:
+        assert self.curseforge is not None
+        try:
+            data = await self.curseforge.shared_profile(code, LIMITS.max_bytes)
+            content = read_cf_zip(data, LIMITS)
+        except Exception as error:
+            logger.warning("CurseForge profile code %s failed", code, exc_info=True)
+            raise HTTP_422_UNPROCESSABLE_ENTITY(CF_CODE_FAILED) from error
+        return await self.run_curseforge(content, actor, into, f"{content.name} {content.version_id}".strip())
+
+    async def run_curseforge(self, content: CfContent, actor: Actor, into: Optional[str], source: str) -> ImportReport:
+        """A CurseForge pack: its file ids to sha1 in one CurseForge request, those and its override
+        jars to Modrinth versions in one more (stored in the catalog), then imported as an .mrpack
+        would be. What Modrinth lacks is reported by the manifest's ids (C2, C3)."""
+        if into is not None:
+            _same_target(await self.modpackDB.bundle_get(into), content)
+        assert self.curseforge is not None
+        sha1s = await self.curseforge.files_get_many([f.file_id for f in content.files]) if content.files else {}
+        wanted = list(dict.fromkeys([*sha1s.values(), *(j.sha1 for j in content.override_jars)]))
+        by_sha1 = await self.modrinthAPI.files_hash_post_many(wanted, "sha1") if wanted else {}
+        if by_sha1:
+            await self.modrinthDB.version_upsert_many(by_sha1.values())
+        files: list[IndexFile] = []
+        only_cf: list[dict[str, int]] = []
+        for file in content.files:
+            version = by_sha1.get(sha1s.get(file.file_id, ""))
+            sha512 = _sha512_of(version, sha1s.get(file.file_id, "")) if version is not None else None
+            if sha512 is None:
+                only_cf.append({"project_id": file.project_id, "file_id": file.file_id})
+                continue
+            files.append(IndexFile(path=f"curseforge/{file.project_id}/{file.file_id}", sha1=sha1s[file.file_id],
+                                   sha512=sha512, server=None))
+        jars = [j for j in content.override_jars]
+        mrpack = MrpackContent(name=content.name, version_id=content.version_id, game_version=content.game_version,
+                               loader=content.loader, loader_version=content.loader_version, files=files,
+                               override_jars=jars, overrides=dict(content.overrides))
+        report = await self._import(mrpack, actor, into, source=source, remote=False)
+        report.curseforge_only = only_cf
+        return report
 
     async def run_modrinth(self, ref: str, actor: Actor, into: Optional[str] = None) -> ImportReport:
         """
@@ -235,13 +338,17 @@ class ModpackImportService():
             raise HTTP_422_UNPROCESSABLE_ENTITY("El archivo descargado no coincide con el que publica Modrinth")
         return data
 
-    async def _import(self, content: MrpackContent, actor: Actor, into: Optional[str], source: str) -> ImportReport:
+    async def _import(self, content: MrpackContent, actor: Actor, into: Optional[str], source: str,
+                      remote: bool = True) -> ImportReport:
+        """Import read content. Without `remote`, its hashes are looked up in the catalog only (the
+        caller already asked Modrinth: a CurseForge pack, by sha1)."""
         loader = MinecraftLoaders(content.loader)
         target: Optional[ModpackBundle] = None
         if into is not None:
             target = await self.modpackDB.bundle_get(into)
             _same_target(target, content)
-        found = await self._identify([f.sha512 for f in content.files] + [j.sha512 for j in content.override_jars])
+        found = await self._identify([f.sha512 for f in content.files] + [j.sha512 for j in content.override_jars],
+                                     remote=remote)
         hinted = await self._hinted(content.hinted_versions)
         project_ids = list(dict.fromkeys([*(found[h].project_id for h in
                                             [f.sha512 for f in content.files] + [j.sha512 for j in content.override_jars]
@@ -290,14 +397,14 @@ class ModpackImportService():
             known.update({v.version_id: v for v in fetched})
         return [known[v] for v in version_ids if v in known]
 
-    async def _identify(self, hashes: list[str]) -> dict[str, ModrinthVersion]:
+    async def _identify(self, hashes: list[str], remote: bool = True) -> dict[str, ModrinthVersion]:
         """The version each sha512 is a file of: the catalog first, then one Modrinth call for the rest,
         stored in the catalog. A hash neither knows is absent."""
         wanted = list(dict.fromkeys(hashes))
         found = {h: v for v in await self.modrinthDB.version_find_by_sha512(wanted)
                  for h in wanted if any(f.hashes.sha512 == h for f in v.files)}
         missing = [h for h in wanted if h not in found]
-        if missing:
+        if missing and remote:
             fetched = await self.modrinthAPI.files_hash_post_many(missing, "sha512")
             if fetched:
                 await self.modrinthDB.version_upsert_many(fetched.values())
@@ -309,7 +416,7 @@ def _target(into: Optional[str]) -> AuditTarget:
     return AuditTarget(kind="bundle", id=into or "nuevo")
 
 
-def _same_target(target: ModpackBundle, content: MrpackContent) -> None:
+def _same_target(target: ModpackBundle, content: MrpackContent | CfContent) -> None:
     """409, with nothing changed, if the pack is for another Minecraft version or loader."""
     if (target.version, target.loader) != (content.game_version, MinecraftLoaders(content.loader)):
         raise HTTP_409_CONFLICT(
@@ -321,6 +428,17 @@ def _content(data: dict[str, Any]) -> MrpackContent:
     """A read .mrpack back from a job's payload."""
     return MrpackContent(**{**data, "files": [IndexFile(**f) for f in data["files"]],
                             "override_jars": [OverrideJar(**j) for j in data["override_jars"]]})
+
+
+def _cf_content(data: dict[str, Any]) -> CfContent:
+    """A read CurseForge zip back from a job's payload."""
+    return CfContent(**{**data, "files": [CfFile(**f) for f in data["files"]],
+                        "override_jars": [OverrideJar(**j) for j in data["override_jars"]]})
+
+
+def _sha512_of(version: ModrinthVersion, sha1: str) -> Optional[str]:
+    """The sha512 of the file of `version` whose sha1 is `sha1`."""
+    return next((f.hashes.sha512.lower() for f in version.files if f.hashes.sha1.lower() == sha1), None)
 
 
 def _read(data: bytes) -> MrpackContent:

@@ -185,3 +185,16 @@ def _overrides(archive: zipfile.ZipFile, members: list[zipfile.ZipInfo], budget:
 
 def _text(value: Any) -> Optional[str]:
     return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _hash_jar(archive: zipfile.ZipFile, name: str, budget: _Budget) -> tuple[str, str]:
+    """sha1 and sha512 of a member, streamed: counted against the budget, never held whole."""
+    sha1, sha512 = hashlib.sha1(), hashlib.sha512()
+    with archive.open(name) as stream:
+        while chunk := stream.read(CHUNK):
+            budget.left -= len(chunk)
+            if budget.left < 0:
+                raise MrpackError("El archivo descomprimido es demasiado grande")
+            sha1.update(chunk)
+            sha512.update(chunk)
+    return sha1.hexdigest(), sha512.hexdigest()

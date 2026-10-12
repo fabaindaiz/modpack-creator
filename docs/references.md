@@ -46,6 +46,21 @@ bien escrita. Todas se leyeron en la fuente primaria el 2026-10-01.
   quitó. Contrato: `tests/test_api_contracts.py`
   (`test_update_individual_sends_each_hash_with_its_own_filters`).
 
+- **CurseForge Core API** (docs.curseforge.com/rest-api; investigación
+  `docs/research/2026-10-09-curseforge-prism-y-deuda-panel.md`, A1–A3). La clave va en `x-api-key`;
+  la del dueño, pedida con el formulario de CurseForge, nunca la consola de Studios ni una clave
+  incrustada. `POST /v1/mods/files` con `{"fileIds": [...]}` devuelve `{"data": [File]}`, y cada
+  archivo trae `hashes[{value, algo}]` (1 = sha1, 2 = md5; nunca sha512). Los términos de terceros
+  prohíben compartir la clave y tienen una cláusula de competencia: es una lectura legal no
+  verificada (SUPUESTO). `GET /v1/shared-profile/{code}` **no está documentado**: el PR #5741 de
+  Prism y una sonda del 2026-10-09 lo describen como la descarga del zip del perfil.
+
+  **Lo que cambió aquí por eso (2026-10-12, T5):** `CurseForgeAPI` (`src/library/api/client/curseforge.py`)
+  solo existe con `CURSEFORGE_API_KEY`. Un zip de CurseForge pasa sus `fileID` a sha1 en una request
+  y esos sha1 a Modrinth en otra; de CurseForge no se guarda nada. El código de perfil (C5, decisión
+  del dueño) está aislado en un método: si falla, la importación lo dice y no toca nada más.
+  Contrato: `tests/test_curseforge_client.py`.
+
 - **Modrinth en vivo, grabado el 2026-10-01** (`tests/fixtures/modrinth/`). `environment` es una
   lista en el proyecto (`["client_only"]`) y un string en la versión. En el proyecto, la spec
   marca `client_side`/`server_side` como deprecados pero todavía obligatorios. Un shader trae

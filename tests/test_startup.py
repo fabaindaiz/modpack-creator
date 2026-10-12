@@ -104,3 +104,14 @@ def test_a_full_scan_runs_every_30_days_by_default() -> None:
     from src.services.jobs import FULL_SCAN_DEFAULT_DAYS
 
     assert FULL_SCAN_DEFAULT_DAYS == 30
+
+
+def test_curseforge_is_off_without_the_owners_key() -> None:
+    # C1 (owner, 2026-10-09): CURSEFORGE_API_KEY is optional; the test environment has none.
+    import os
+
+    import main
+
+    assert "CURSEFORGE_API_KEY" not in os.environ
+    assert main.container.curseforgeAPI().enabled is False
+    assert main.container.modpackImportService().curseforge_enabled is False

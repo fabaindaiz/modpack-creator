@@ -89,6 +89,8 @@ los dos, o una fila mal formada, hace fallar el test. El nombre del método no s
 | `ModpackService.pack_replace` | editor | Reemplaza la lista de mods del bundle. |
 | `ModpackImportService.import_mrpack` | editor | Importa un .mrpack subido: lo lee al instante y deja el trabajo que lo identifica en Modrinth y crea un pack o reemplaza el contenido de uno (lo que agregó el admin se queda). |
 | `ModpackImportService.import_prism` | editor | Importa el zip de una instancia de Prism (T6): lo lee al instante desde el archivo subido, sin abrir los mundos, y deja el mismo trabajo de importación; un `.jar.disabled` entra «Desactivado» y un `.pw.toml` sin su jar nombra su versión de Modrinth. |
+| `ModpackImportService.import_curseforge` | editor | Importa el zip de un modpack de CurseForge (T5), solo con la clave propia del dueño (C1): lo lee al instante y el trabajo pasa sus archivos a sha1 (una request a CurseForge) y a versiones de Modrinth; lo que no está en Modrinth se informa con los ids del manifiesto (C2, C3). |
+| `ModpackImportService.import_curseforge_code` | editor | Importa un código de perfil de CurseForge (C5, decisión del dueño): el trabajo baja el zip del perfil por un endpoint no documentado; si falla, lo dice y no toca nada más. Solo con clave. |
 | `ModpackImportService.import_modrinth` | editor | Importa un modpack publicado en Modrinth, por URL, slug o id, en un trabajo: crea un pack o reemplaza el contenido de uno. |
 | `ModpackService.project_remove` | editor | Quita un mod del bundle. |
 | `ModpackService.resolve` | editor | Calcula el lock del bundle y guarda la última resolución para mostrarla (nunca es entrada de un build); guarda en el catálogo lo que trajo de Modrinth. No toca ningún servidor. |

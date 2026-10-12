@@ -5,6 +5,15 @@
 <div class="space-y-3 rounded-lg border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-950/40 dark:text-emerald-100" data-import-report>
   <p class="font-medium">Importado: {{ report.projects | length }} mods de {{ report.source }}</p>
   {{ ui.running_counts(report.decisions.values() | select | list | length, report.channel_exceptions) }}
+  {% if report.curseforge_only %}
+  <div class="space-y-1">
+    <p class="font-medium">Solo en CurseForge ({{ report.curseforge_only | length }})</p>
+    <ul class="list-inside list-disc break-words">
+      {% for item in report.curseforge_only %}<li>proyecto {{ item.project_id }}, archivo {{ item.file_id }} →
+        <a href="https://www.curseforge.com/projects/{{ item.project_id }}" rel="noopener noreferrer" target="_blank" class="underline">curseforge.com</a></li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
   {% if report.disabled %}<p>Desactivados en Prism: {{ report.disabled }} (quedan «Desactivado»)</p>{% endif %}
   {% if report.unknown %}
   <div class="space-y-1">

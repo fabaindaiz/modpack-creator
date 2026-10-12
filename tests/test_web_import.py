@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 from beanie import PydanticObjectId
 
-from src.exceptions import HTTP_409_CONFLICT
+from src.exceptions import HTTP_409_CONFLICT, HTTP_422_UNPROCESSABLE_ENTITY
 from src.model.jobs import Job
 from src.model.users import Actor
 from src.services.modpack_import import ImportReport
@@ -37,6 +37,18 @@ class FakeImport:
         self.calls.append(("import_mrpack", data, actor, into))
         if self.error:
             raise self.error
+        return self.job
+
+    curseforge_enabled = False
+
+    async def import_curseforge(self, data: bytes, actor: Actor, into: Optional[str] = None) -> Job:
+        self.calls.append(("import_curseforge", data, actor, into))
+        if not self.curseforge_enabled:
+            raise HTTP_422_UNPROCESSABLE_ENTITY("Esta instalación no tiene clave de CurseForge: exporta el pack como .mrpack desde Prism.")
+        return self.job
+
+    async def import_curseforge_code(self, code: str, actor: Actor, into: Optional[str] = None) -> Job:
+        self.calls.append(("import_curseforge_code", code, actor, into))
         return self.job
 
     async def import_prism(self, file: Any, actor: Actor, into: Optional[str] = None) -> Job:
@@ -227,3 +239,56 @@ def test_an_upload_that_does_not_fit_the_temporary_disk_is_refused_before_readin
         web.UPLOADS.in_use = 0
     assert response.status_code == 429 and "Hay otra importación subiendo; intenta en un momento" in response.text
     assert fake.calls == []
+
+
+def cf_bytes() -> bytes:
+    import zipfile
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("manifest.json", "{}")
+    return buffer.getvalue()
+
+
+def test_with_the_key_the_form_takes_a_curseforge_zip_and_a_profile_code() -> None:
+    # T5 (owner, 2026-10-12): the same field takes the CurseForge zip; a card takes a profile code.
+    client, fake = setup()
+    fake.curseforge_enabled = True
+    page = client.get("/modpacks/importar").text
+    shown = " ".join(visible(page).split())
+    assert "Archivo .mrpack, zip de Prism o de CurseForge" in shown
+    assert "Código de perfil de CurseForge" in shown and "Importar código" in shown and "Dura 7 días desde que lo compartes." in shown
+    data = cf_bytes()
+    zipped = client.post("/modpacks/importar", headers=HTMX, files={"archivo": ("pack.zip", data, "application/zip")})
+    coded = client.post("/modpacks/importar", headers=HTMX, data={"codigo": " ABCD1234 "})
+    assert zipped.status_code == coded.status_code == 200
+    assert fake.calls == [("import_curseforge", data, EDITOR, None), ("import_curseforge_code", "ABCD1234", EDITOR, None)]
+
+
+def test_without_the_key_there_is_no_code_and_a_curseforge_zip_says_to_export_it() -> None:
+    client, fake = setup()
+    shown = " ".join(visible(client.get("/modpacks/importar").text).split())
+    assert "Archivo .mrpack o zip de Prism" in shown and "Código de perfil de CurseForge" not in shown
+    response = client.post("/modpacks/importar", headers=HTMX, files={"archivo": ("pack.zip", cf_bytes(), "application/zip")})
+    assert response.status_code == 422
+    assert "Esta instalación no tiene clave de CurseForge: exporta el pack como .mrpack desde Prism." in response.text
+
+
+def test_the_report_lists_what_is_only_on_curseforge_by_its_ids() -> None:
+    client, fake = setup()
+    fake.report.curseforge_only = [{"project_id": 238222, "file_id": 4567890}]
+    fake.job.status, fake.job.active = "done", False
+    text = client.get(f"/modpacks/importar/{fake.job.id}", headers=HTMX).text
+    shown = " ".join(visible(text).split())
+    assert "Solo en CurseForge (1)" in shown and "proyecto 238222, archivo 4567890" in shown
+    assert 'href="https://www.curseforge.com/projects/238222"' in text
+
+
+def test_v1_takes_a_curseforge_zip_and_a_profile_code_as_jobs() -> None:
+    _, fake = setup()
+    fake.curseforge_enabled = True
+    client = v1_client(fake)
+    data = cf_bytes()
+    zipped = client.post("/v1/modpack/import/mrpack", files={"archivo": ("pack.zip", data, "application/zip")})
+    coded = client.post("/v1/modpack/import/curseforge", params={"code": "ABCD1234"})
+    assert zipped.status_code == coded.status_code == 202
+    assert fake.calls == [("import_curseforge", data, EDITOR, None), ("import_curseforge_code", "ABCD1234", EDITOR, None)]

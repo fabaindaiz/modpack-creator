@@ -18,6 +18,7 @@ from src.model.modrinth.project import ModrinthEnvironment
 from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
 from src.library.utils import as_utc, getenv
+from src.library.cf_import import is_curseforge
 from src.library.prism_import import is_prism
 from src.library.upload_budget import UploadBudget, UploadBusy
 from src.web import BUNDLE_REF, JOB_STARTED, MODRINTH_REF, WebRoute, get_web_actor, render
@@ -370,9 +371,12 @@ def _upload_room(request: Request) -> Iterator[None]:
 async def modpack_import_page(
         request: Request,
         actor: Actor = Depends(get_web_actor),
+        importService: ModpackImportService = Depends(Provide[Dependences.modpackImportService]),
         ):
-    """Import a modpack as a new one: an uploaded .mrpack or one published on Modrinth."""
-    return render(request, "modpacks/import.html", actor, nav_active="modpacks")
+    """Import a modpack as a new one: an uploaded .mrpack, Prism or CurseForge zip, a CurseForge
+    profile code (with the owner's key, T5), or one published on Modrinth."""
+    return render(request, "modpacks/import.html", actor, curseforge=importService.curseforge_enabled,
+                  nav_active="modpacks")
 
 @router.post("/modpacks/importar")
 @inject
@@ -389,11 +393,16 @@ async def modpack_import(
         if into is not None and not re.fullmatch(BUNDLE_REF, into):
             raise HTTP_422_UNPROCESSABLE_ENTITY("Ese modpack no existe")
         upload, ref = form.get("archivo"), str(form.get("ref") or "").strip()
+        code = str(form.get("codigo") or "").strip()
         if isinstance(upload, UploadFile) and upload.filename:
             if is_prism(upload.file):
                 job = await importService.import_prism(upload.file, actor, into=into)
+            elif is_curseforge(upload.file):
+                job = await importService.import_curseforge(await upload.read(IMPORT_MAX_BYTES + 1), actor, into=into)
             else:
                 job = await importService.import_mrpack(await upload.read(IMPORT_MAX_BYTES + 1), actor, into=into)
+        elif code:
+            job = await importService.import_curseforge_code(code[:40], actor, into=into)
         elif ref:
             job = await importService.import_modrinth(ref[:500], actor, into=into)
         else:
@@ -427,6 +436,7 @@ async def modpack_detail(
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
+        importService: ModpackImportService = Depends(Provide[Dependences.modpackImportService]),
         ):
     """A bundle: its mods under the saved resolution, in one of their views (`vista`: every mod, the
     ones to decide, the problems; spec §3), the search to add more, and on the side its builds, the
@@ -441,7 +451,8 @@ async def modpack_detail(
     fresh = bool(builds) and as_utc(builds[0].created_at) > datetime.now(timezone.utc) - FRESH_BUILD
     return render(request, "modpacks/detail.html", actor, builds=builds, servers=servers, channel_names=CHANNELS,
                   pending=_has_pending((saved, context["mods"].stale) if saved else None),
-                  next_servers=servers if fresh else None, human_size=human_size, nav_active="modpacks", **context)
+                  next_servers=servers if fresh else None, human_size=human_size, nav_active="modpacks",
+                  curseforge=importService.curseforge_enabled, **context)
 
 @router.get("/modpacks/{bundle_id}/search")
 @inject
