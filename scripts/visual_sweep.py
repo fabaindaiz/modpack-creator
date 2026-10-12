@@ -268,6 +268,31 @@ async def seed(mongo_uri: str) -> dict[str, str]:
     await seed_builds(big)
     big.latest_build = big.recommended_build = 2
     await big.save()
+    # sod-1, the version the servers run, published after sod-2: the comparison, the updates and the
+    # server's update dialog mark sodium as a step back (F27).
+    await ModrinthVersion.parse(
+        id="sod-1", project_id="sod", author_id="a", name="sod-1", version_number="sod-1", version_type="release",
+        status="listed", downloads=1, game_versions=["26.3"], loaders=["fabric"], featured=False,
+        date_published="2026-02-01T00:00:00Z", dependencies=[], files=[], changelog="").insert()
+    # A pack whose saved pin goes back from its build (F27): the list marks it, and pinning it again
+    # opens the "Fijar igual" dialog.
+    downgrade = ModpackBundle(name="Con baja", description="", version="26.3", loader=MinecraftLoaders.fabric,
+                              projects=[PackProject(project_id="jei", origin=ProjectOrigin.admin)], pins={"jei": "jei-1951"})
+    await downgrade.insert()
+    await ModrinthProject.parse(**{**sodium, "id": "jei", "slug": "jei", "title": "Just Enough Items"}).insert()
+    for version_id, number, day in (("jei-1957", "19.57.0.450", 20), ("jei-1951", "19.51.0.418", 10)):
+        await ModrinthVersion.parse(
+            id=version_id, project_id="jei", author_id="a", name=number, version_number=number, version_type="release",
+            status="listed", downloads=1, game_versions=["26.3"], loaders=["fabric"], featured=False,
+            date_published=f"2025-09-{day}T00:00:00Z", dependencies=[], files=[], changelog="").insert()
+    await ModpackBuild(bundle_id=downgrade.id, number=1, created_at=now, loader_version="0.16.0",  # type: ignore[arg-type]
+                       request=ResolveRequest(target=Target(game_version="26.3", loader="fabric", channels=frozenset({"release"})),
+                                              projects=[]),
+                       lock=Lock(entries=[_entry("jei", "jei-1957").model_copy(update={"version_number": "19.57.0.450"})],
+                                 problems=[], suggestions=[], needs_projects=set(), needs_types=set(),
+                                 needs_versions=set())).insert()
+    downgrade.latest_build = downgrade.recommended_build = 1
+    await downgrade.save()
     # A check of the recommended build: two updates (their changelogs are in the catalog, so the page
     # needs no network; sod-2's is the long one) and a pinned one.
     await ModrinthVersion.parse(
@@ -363,7 +388,7 @@ async def seed(mongo_uri: str) -> dict[str, str]:
     await client.close()
     return {"server": survival, "server_new": str(bare.id), "bundle": str(big.id), "pending": str(pending.id),
             "empty": str(empty.id), "job": str(failed.id), "dryrun": str(jobs[0].id), "problems": str(problems.id),
-            "fix": str(fix.id), "import_job": str(jobs[-1].id)}
+            "fix": str(fix.id), "import_job": str(jobs[-1].id), "downgrade": str(downgrade.id)}
 
 
 def wait_ready(base: str, app: "subprocess.Popen[bytes]") -> None:
@@ -385,7 +410,7 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
     pages = {"home": "/", "modpacks": "/modpacks", "modpack": f"/modpacks/{ids['bundle']}",
              "compare": f"/modpacks/{ids['bundle']}/builds/compare?de=1&a=2",
              "updates": f"/modpacks/{ids['bundle']}/actualizaciones",
-             "modpack-pending": f"/modpacks/{ids['pending']}",
+             "modpack-pending": f"/modpacks/{ids['pending']}", "modpack-downgrade": f"/modpacks/{ids['downgrade']}",
              "replacements": "/replacements", "servers": "/servers", "server": f"/servers/{ids['server']}",
              "server-new": f"/servers/{ids['server_new']}",
              "jobs": "/jobs", "job": f"/jobs/{ids['job']}", "dryrun": f"/jobs/{ids['dryrun']}", "audit": "/audit",
@@ -427,6 +452,7 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
                         if who == "operator":
                             report.update(shoot_update_dialog(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                             report.update(shoot_build_dialog(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
+                            report.update(shoot_pin_dialog(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                             if (scheme, width) in MOD_CARD_CONTEXTS:
                                 prefix = f"{who}-{scheme}-{width}"
                                 # The tabs first: they resolve the pack, so the catalog has the
@@ -492,6 +518,27 @@ def shoot_build_dialog(page: Any, base: str, out: Path, ids: dict[str, str], pre
     page.screenshot(path=str(out / f"{key}.png"))
     problems = [p for p, bad in (("el diálogo de decisiones no se abrió", not opened),
                                  ("el diálogo se cerró al enviarlo sin decidir", not stays)) if bad]
+    return {key: _report(response, errors, problems)}
+
+
+def shoot_pin_dialog(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
+                     errors: list[str]) -> dict[str, dict[str, Any]]:
+    """F27: pinning a version before the build's opens the "Fijar igual" dialog in #pin-dialog
+    (the pin is not saved), and "Cancelar" closes it. The pin is sent as the version picker sends it."""
+    response = page.goto(base + f"/modpacks/{ids['downgrade']}")
+    page.wait_for_load_state("networkidle")
+    marked = page.locator("#mods :text('baja (piso 19.57.0.450)')").count() > 0
+    page.evaluate(f"htmx.ajax('POST', '/modpacks/{ids['downgrade']}/pins', "
+                  "{target: '#mods', swap: 'outerHTML', values: {project_id: 'jei', version_id: 'jei-1951'}})")
+    page.wait_for_selector("#pin-dialog dialog[open]", timeout=10_000)
+    page.wait_for_timeout(300)
+    key = f"{prefix}-pin-dialog"
+    page.screenshot(path=str(out / f"{key}.png"))
+    page.locator("#pin-dialog dialog button[data-dialog-close]").click()
+    page.wait_for_timeout(300)
+    closed = page.evaluate("document.querySelector('#pin-dialog dialog')?.open === false")
+    problems = [p for p, bad in (("la lista no marca el pin que baja", not marked),
+                                 ("«Cancelar» no cerró el diálogo", not closed)) if bad]
     return {key: _report(response, errors, problems)}
 
 

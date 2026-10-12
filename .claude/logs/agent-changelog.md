@@ -90,6 +90,27 @@ una variable de shell (`$P`) y otro partido en dos líneas al pegarlo fallaron a
 escribieron con heredocs hacia `cat > archivo`, contra la regla de AGENTS.md (no se colgó). Sin hacer:
 `docs-map.toml` (i-7985ee-020ca9).
 
+**Cuarta parte: la ronda 2 del panel, tanda 1** (rama `feat/ronda-2-tanda-1`, sobre `fix/pendientes-menores`;
+plan `docs/superpowers/plans/2026-10-12-panel-ronda-2-tanda-1.md`). Revisión de decisiones con la skill
+`decision-review`: 22 decisiones, partidas en dos tandas porque las del dueño pasaban de 15; la tanda 1
+(F27, F28, F29 y las cuatro preguntas de la tanda A) con 7 del dueño, todas la recomendada, y 3 mías
+(d-7985ee-c62c61 a d-7985ee-58228f). Hecho, test primero: un pack creado desde un servidor que pierde la
+carrera por vincularse se borra (la vinculación no era condicional: la segunda pisaba la primera, hallado
+al leer el código); quitar un mod limpia su pin, su decisión y su excepción salvo que otro mod lo traiga;
+los changelogs enlazan sus URL; una función pura dice si un cambio sube, baja o cambia de rama (por fecha,
+como el piso), la vista previa y la lista de mods marcan las bajas, y un pin que baja pide «Fijar igual»
+(en `/v1`, `?confirm_downgrade=true`); el diálogo de actualización directa avisa de los jars sin explicar
+del último escaneo. El barrido visual suma el pack «Con baja» y el diálogo del pin (165 capturas, 0
+problemas). Qué salió mal: tres comandos pasaron texto por stdin con heredocs (dos a Python, uno a `cat`)
+y uno más fue un heredoc vacío, de nuevo contra la regla de AGENTS.md (ninguno colgó; desde ahí, los
+scripts van a un archivo del scratchpad); el test de la marca en la lista de mods se corrió después de
+implementarla, sin verlo fallar; mypy rechazó un `dict` de literales que los tests no ven (lo detectó el
+gate); el barrido falló una vez por correrlo con `cd` y redirección, que lo dejan dentro del sandbox.
+No verificado: Modrinth real (una versión que el catálogo no tiene queda «sin datos» en la vista previa y
+no se marca), Pterodactyl real, y la carrera de vinculación con dos operadores reales (probada con una
+inserción que vincula otro pack en medio). Sin hacer: la tanda 2 (tablero, móvil y F09), por revisar con
+el dueño.
+
 ## 2026-10-09 · s-7985ee-1bc897 — Observaciones de un tester, importador de modpacks y economía de requests
 
 **Qué.** Todo en la rama `fix/tester-feedback`, sin mergear:

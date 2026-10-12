@@ -4,7 +4,7 @@
 cuatro preguntas que dejó la tanda A. Las decisiones están en `docs/decisions.md`: d-7985ee-c62c61,
 f43772, 83e764, 7bccf8, 881689, b8e927, d4bc8e, 0b9ebb, 322302, 58228f. d-7985ee-7bccf8 y
 d-7985ee-d4bc8e no piden código (ya es así). **Método:** cada tarea, test primero y visto fallar;
-el gate con MongoDB (`scripts/test-mongo.sh`) al cerrar cada una.
+el gate con MongoDB (`scripts/test-mongo.sh`) al cerrar cada una. **Estado (2026-10-12):** las 8 tareas hechas.
 
 ## Hallazgo al leer el código (cambia cómo se cumple d-7985ee-b8e927)
 
