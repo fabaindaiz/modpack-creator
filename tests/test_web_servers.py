@@ -104,6 +104,8 @@ class FakePterodactyl:
         self.deduced: Optional[Deduction] = None
         self.version_labels: dict[str, str] = {}
         self.for_server: BundleForServer = BundleForServer(bundle=new_bundle(), imported=None, import_error=None)
+        # What the last import job left (T1, S3); None if never imported by a job.
+        self.pending: Optional[ImportResult] = None
         self.calls: list[tuple[Any, ...]] = []
         self.error: Optional[Exception] = None
 
@@ -143,9 +145,12 @@ class FakePterodactyl:
             raise HTTP_409_CONFLICT("not linked")
         return self.comparison
 
-    async def import_server(self, server_id: str, actor: Actor) -> ImportResult:
-        self._record("import_server", server_id, actor)
-        return self.import_result
+    async def import_request(self, server_id: str, actor: Actor) -> Job:
+        self._record("import_request", server_id, actor)
+        return import_job()
+
+    async def import_pending(self, server_id: str) -> Optional[ImportResult]:
+        return self.pending
 
     async def import_confirm(self, server_id: str, path: str, project_id: str, actor: Actor) -> list[PackProject]:
         self._record("import_confirm", server_id, path, project_id, actor)
@@ -490,10 +495,11 @@ def test_import_is_always_shown_and_says_when_nothing_to_import() -> None:
     section = importar(client.get(f"/servers/{SERVER_ID}").text)
     assert "No hay nada que importar: el modpack ya explica todos los jars del último escaneo" in section
     assert "hx-post" not in section and "disabled" in section
-    # No scan: nothing to compare, and the page says how to find out.
+    # No scan: importing scans first (T1), so the button works and says so.
     fakes.ptero.scan, fakes.ptero.comparison = None, None
     section = importar(client.get(f"/servers/{SERVER_ID}").text)
-    assert "Escanea el servidor para saber qué importar" in section and "hx-post" not in section
+    assert "Importar escanea el servidor primero" in section and f'hx-post="/servers/{SERVER_ID}/import"' in section
+    assert "Escanea primero" not in section
     # Only jars too large to read: importing could not bring them either.
     fakes.ptero.scan = scan()
     fakes.ptero.comparison = Comparison(matching=[], different_version=[], missing=[], extra=[],
@@ -511,9 +517,11 @@ def test_import_is_always_shown_and_says_when_nothing_to_import() -> None:
 
 
 def test_import_result_offers_the_next_step_to_the_pack() -> None:
-    client, _ = setup(OPERATOR)
-    text = client.post(f"/servers/{SERVER_ID}/import", headers=HTMX).text
-    assert "Resolver y crear build" in text and f'href="/modpacks/{BUNDLE_ID}"' in text
+    client, fakes = setup(OPERATOR)
+    fakes.ptero.pending = fakes.ptero.import_result
+    text = client.get(f"/servers/{SERVER_ID}").text
+    section = text[text.index('id="importar"'):]
+    assert "Resolver y crear build" in section and f'href="/modpacks/{BUNDLE_ID}"' in section
 
 
 def test_drift_pre_is_gone_and_dry_run_jars_fold() -> None:
@@ -592,12 +600,21 @@ def test_the_link_notice_is_a_fixed_text_never_the_query(query: str) -> None:
     assert "data-notice-autoclose" not in notices_of(text) and "<script>" not in text
 
 
-def test_import_shows_added_local_too_large_and_candidates() -> None:
+def test_importing_queues_the_servers_import_job_and_answers_its_row() -> None:
+    # T1: the import is a job that shows its progress; its row polls until it ends.
     client, fakes = setup(OPERATOR)
     response = client.post(f"/servers/{SERVER_ID}/import", headers=HTMX)
-    assert response.status_code == 200
-    assert only(fakes.ptero.calls, "import_server")[1:] == (str(SERVER_ID), OPERATOR)
-    text = response.text
+    assert response.status_code == 200 and response.headers.get("HX-Trigger") == "job-started"
+    assert only(fakes.ptero.calls, "import_request")[1:] == (str(SERVER_ID), OPERATOR)
+    assert "Importación del servidor" in response.text and 'hx-trigger="every 2s"' in response.text
+
+
+def test_the_server_shows_what_its_last_import_left_pending() -> None:
+    # S3 (owner, 2026-10-09): the candidates outlive a reload; they live in the last import job.
+    client, fakes = setup(OPERATOR)
+    fakes.ptero.pending = fakes.ptero.import_result
+    page = client.get(f"/servers/{SERVER_ID}").text
+    text = page[page.index('id="importar"'):]
     assert "/mods/local.jar" in text and "/mods/huge.jar" in text and "/mods/odd.jar" in text
     assert "Odd Mod Project" in text or "Odd Mod" in text
     assert f'hx-post="/servers/{SERVER_ID}/import/confirm"' in text and f'hx-post="/servers/{SERVER_ID}/import/local"' in text
@@ -912,8 +929,9 @@ def test_detail_and_import_survive_a_failing_title_lookup() -> None:
     main.container.modrinthService.override(providers.Object(Down()))
     detail = client.get(f"/servers/{SERVER_ID}")
     assert detail.status_code == 200 and "P3" in detail.text
-    imported = client.post(f"/servers/{SERVER_ID}/import", headers=HTMX)
-    assert imported.status_code == 200 and "C1" in imported.text
+    fakes.ptero.pending = fakes.ptero.import_result
+    pending = client.get(f"/servers/{SERVER_ID}")
+    assert pending.status_code == 200 and "C1" in pending.text
 
 
 # La fila de trabajo.
@@ -1208,21 +1226,18 @@ def test_an_editor_cannot_create_one_for_a_linked_server() -> None:
     assert fakes.modpack.calls == []
 
 
-def test_operator_post_shows_the_result_and_next_step() -> None:
+def test_operator_post_shows_the_import_job_and_next_step() -> None:
+    # T1: the new pack's import is the server's import job; its row shows how far it is.
     client, fakes = setup(OPERATOR)
     unlinked(fakes)
-    fakes.ptero.for_server = BundleForServer(
-        bundle=new_bundle(), import_error=None,
-        imported=ImportResult(added=["J1", "A1", "F1"], local=["/mods/local.jar"], candidates=[], too_large=[]))
+    fakes.ptero.for_server = BundleForServer(bundle=new_bundle(), import_error=None, imported=None, import_job=import_job())
     response = client.post(f"/servers/{SERVER_ID}/modpack", headers=HTMX, data={**NEW_MODPACK, "import_mods": "1"})
     assert response.status_code == 200
     assert only(fakes.ptero.calls, "bundle_for_server")[1:] == \
         (str(SERVER_ID), "Creativo", "1.21.1", MinecraftLoaders.fabric, True, OPERATOR)
     assert fakes.modpack.calls == []
-    text = text_of(response.text)
-    assert "Mods agregados: 3 ( JEI , AppleSkin , FerriteCore )" in text  # each name is a link to its card
-    assert "Archivo local: /mods/local.jar" in text
-    assert "Resolver y crear build" in text and f'href="/modpacks/{NEW_BUNDLE_ID}"' in response.text
+    assert "Importación del servidor" in response.text and 'hx-trigger="every 2s"' in response.text
+    assert "Resolver y crear build" in response.text and f'href="/modpacks/{NEW_BUNDLE_ID}"' in response.text
     assert 'id="notices" hx-swap-oob="beforeend"' in response.text
 
 
@@ -1347,21 +1362,12 @@ def test_the_comparison_names_open_their_cards_with_one_fill() -> None:
 
 def test_the_import_result_names_and_candidates_open_their_cards_with_one_fill() -> None:
     client, fakes = setup(OPERATOR)
-    text = client.post(f"/servers/{SERVER_ID}/import", headers=HTMX).text
+    fakes.ptero.pending = fakes.ptero.import_result
+    text = client.get(f"/servers/{SERVER_ID}").text
     assert mod_link("P5") in text and mod_link("C1") in text
     assert 'name="project_id" value="C1"' in text  # confirming the candidate still sends its id
-    assert fakes.modrinth.filled == [["C1", "P5"]]
-
-
-def test_the_new_modpacks_imported_mods_open_their_cards() -> None:
-    client, fakes = setup(OPERATOR)
-    unlinked(fakes)
-    fakes.ptero.for_server = BundleForServer(
-        bundle=new_bundle(), import_error=None,
-        imported=ImportResult(added=["J1", "A1"], local=[], candidates=[], too_large=[]))
-    text = client.post(f"/servers/{SERVER_ID}/modpack", headers=HTMX, data={**NEW_MODPACK, "import_mods": "1"}).text
-    assert mod_link("J1") in text and mod_link("A1") in text
-    assert fakes.modrinth.filled == [["A1", "J1"]]
+    [filled] = fakes.modrinth.filled  # the page's one fill names them with the comparison's
+    assert {"C1", "P5"} <= set(filled)
 
 
 def test_the_update_preview_names_open_their_cards_with_one_fill() -> None:
@@ -1380,3 +1386,28 @@ def test_the_confirmed_candidate_opens_its_card_by_title_with_one_fill() -> None
     assert mod_link("C1") + ' hx-target="#mod-drawer-body"' in response.text
     assert ">Odd Mod Project</a>" in response.text and ">C1<" not in response.text
     assert fakes.modrinth.filled == [["C1"]]
+
+
+
+def import_job() -> Job:
+    from datetime import datetime, timezone
+    return Job.model_construct(
+        id=PydanticObjectId(), kind="server_import", key=f"server:{SERVER_ID}", status="queued", active=True,
+        payload={"server_id": str(SERVER_ID)}, created_at=datetime.now(timezone.utc), attempts=0, max_attempts=3,
+        checkpoint={}, step=None, error=None, requested_by=OPERATOR.ref(), progress=None, waiting_until=None,
+        updated_at=None, owner=None, lease_until=None, available_at=None, finished_at=None)
+
+
+def test_v1_import_answers_202_with_the_servers_import_job() -> None:
+    # U5/S7: /v1 answers the job, as update, rollback and scan do; asking again answers the same job.
+    from fastapi import FastAPI
+    from src.dependences import get_current_actor
+    from src.routers.v1 import include_routers_v1
+
+    _, fakes = setup(OPERATOR)
+    app = FastAPI()
+    include_routers_v1(app)
+    app.dependency_overrides[get_current_actor] = lambda: OPERATOR
+    response = TestClient(app, base_url="https://testserver").post(f"/v1/server/{SERVER_ID}/import")
+    assert response.status_code == 202 and response.json()["kind"] == "server_import"
+    assert only(fakes.ptero.calls, "import_request")[1:] == (str(SERVER_ID), OPERATOR)

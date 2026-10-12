@@ -3,8 +3,10 @@ from collections.abc import Awaitable, Callable
 import hashlib
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import TYPE_CHECKING, Any, Optional
 from src.database import ModpackDatabase, ModrinthDatabase, PterodactylDatabase
+from src.database.jobs import JobDatabase
+from src.model.jobs import Job
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.api.client.pterodactyl import PterodactylAPI
 from fastapi import HTTPException
@@ -22,6 +24,8 @@ from src.model.audit import AuditTarget
 from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
 from src.services.audit import AuditSink
+if TYPE_CHECKING:  # src.services.jobs imports this module: only names for annotations here
+    from src.services.jobs import Handler, JobContext
 
 logger = logging.getLogger("modpack.servers")
 
@@ -33,6 +37,9 @@ SCAN_MAX_BYTES = 128 * 1024 * 1024
 SCAN_CONCURRENCY = 4
 SCAN_DIRECTORY = "/mods"
 READING_JARS = "Leyendo los jars del servidor"
+READING_METADATA = "Leyendo metadatos de jars"
+SEARCHING = "Buscando en Modrinth"
+ADDING = "Agregando al modpack"
 # What a long task hears as it goes: what it processes, done and total (a job's progress).
 Report = Callable[[str, int, int], Awaitable[None]]
 IMPORT_FAILED = ("El modpack quedó creado y vinculado a este servidor, pero la importación de sus mods falló. "
@@ -46,7 +53,9 @@ class PterodactylService():
             modrinthDB: ModrinthDatabase,
             modpackDB: ModpackDatabase,
             audit: AuditSink,
+            jobDB: Optional[JobDatabase] = None,
             ) -> None:
+        self.jobDB = jobDB or JobDatabase()
         self.pterodactylAPI = pterodactylAPI
         self.pterodactylDB = PterodactylDB
         self.modrinthAPI = modrinthAPI
@@ -180,7 +189,7 @@ class PterodactylService():
         hashed and parsed, never loaded. An identified jar drops the metadata afterwards."""
         limit = asyncio.Semaphore(SCAN_CONCURRENCY)
         done = 0
-        if report is not None:
+        if report is not None and files:
             await report(READING_JARS, 0, len(files))
 
         async def one(file: ListedFile) -> ScanFile:
@@ -284,34 +293,104 @@ class PterodactylService():
         return server, bundle, await self.scan_latest(server_id)
 
     @operator_only
-    async def import_server(self, server_id: str, actor: Actor) -> ImportResult:
+    async def import_request(self, server_id: str, actor: Actor) -> Job:
         """
-        Bring into the server's bundle every jar of its latest scan that the bundle does not explain:
-        identified by hash, the project joins as the admin's; unknown, its metadata is read as data
-        and Modrinth is searched for candidates, which wait for the admin; without candidates, the
-        jar becomes a local file of the bundle. Running it again adds nothing new.
+        "Importar" (T1): the server's import job, which waits its turn and shows how far it is; one
+        per server (the key it shares with its scans and updates): asking again gives the running
+        job. 409 now if the server is not linked to a bundle.
         """
-        server, bundle, scan = await self._import_context(server_id)
+        server = await self.pterodactylDB.server_get(server_id)
+        if server.bundle_id is None:
+            raise HTTP_409_CONFLICT(f"Server '{server_id}' is not linked to a bundle: link it before importing")
+        key = f"server:{server_id}"
+        try:
+            job = await self.jobDB.enqueue("server_import", key=key, payload={"server_id": server_id},
+                                           requested_by=actor.ref())
+        except HTTP_409_CONFLICT:
+            active = await self.jobDB.active_for(key)
+            if active is None:
+                raise
+            return active
+        await self.audit.record(actor, "server.import.request", _target(server_id), {"job_id": str(job.id)})
+        return job
+
+    def handlers(self) -> "dict[str, Handler]":
+        return {"server_import": self._import_run}
+
+    async def _import_run(self, job: Job, context: "JobContext") -> None:
+        from src.services.jobs import JobFailed  # src.services.jobs imports this module
+
+        asked = job.requested_by
+        if asked is None:
+            raise JobFailed("Una importación sin quién la pidió no se hace: no quedaría en la auditoría")
+        # Asked by an operator: import_request is operators only, and so is importing.
+        actor = Actor(iss=asked.iss, sub=asked.sub, name=asked.name, groups=frozenset(), is_operator=True)
+
+        async def run() -> dict[str, Any]:
+            result = await self.import_server(job.payload["server_id"], actor, report=context.progress)
+            return result.model_dump(mode="json")
+
+        await context.step("import", run)
+
+    async def import_pending(self, server_id: str) -> Optional[ImportResult]:
+        """What the server's last import job left (S3): its result, with only the candidates the admin
+        has not decided yet (a jar confirmed as a project or kept as local leaves the list). None if
+        it was never imported by a job."""
+        last = await self.jobDB.last_of_kind("server_import", f"server:{server_id}")
+        if last is None or "import" not in last.checkpoint:
+            return None
+        result = ImportResult(**last.checkpoint["import"])
+        server = await self.pterodactylDB.server_get(server_id)
+        if server.bundle_id is None:
+            return result
+        bundle = await self.modpackDB.bundle_get(server.bundle_id)
+        decided = {f.sha512 for f in bundle.local_files} | {c.sha512 for c in bundle.claimed_files}
+        return result.model_copy(update={"candidates": [c for c in result.candidates if c.sha512 not in decided]})
+
+    @operator_only
+    async def import_server(self, server_id: str, actor: Actor, report: Optional[Report] = None) -> ImportResult:
+        """
+        Bring into the server's bundle every jar it has that the bundle does not explain (T1). It
+        scans first, incrementally (S1): only what changed is downloaded. Identified by hash, the
+        project joins as the admin's. Unknown, its metadata comes from the scan (an older scan's jars
+        are read once, S5): every mod id is tried as a slug in one Modrinth request, and a text
+        search only runs for the jars whose slug found no mod (S2); the candidates wait for the
+        admin. Without metadata or candidates, the jar becomes a local file of the bundle. Running it
+        again adds nothing new. `report` hears how far it is.
+        """
+        server = await self.pterodactylDB.server_get(server_id)
+        if server.bundle_id is None:
+            raise HTTP_409_CONFLICT(f"Server '{server_id}' is not linked to a bundle: link it before importing")
+        scan = await self.scan(server_id, actor=None, report=report)
+        bundle = await self.modpackDB.bundle_get(server.bundle_id)
         in_bundle = {p.project_id for p in bundle.projects}
-        local = {f.sha512 for f in bundle.local_files}
-        claimed = {c.sha512 for c in bundle.claimed_files}
+        decided = {f.sha512 for f in bundle.local_files} | {c.sha512 for c in bundle.claimed_files}
+        unread = [f for f in scan.files if f.status == "unknown" and f.sha512 and f.sha512 not in decided
+                  and not f.metadata_read]
+        if unread:
+            scan = await self._read_metadata(server.identifier, scan, unread, report)
         result = ImportResult(added=[], candidates=[], local=[], too_large=[])
+        unknown: list[ScanFile] = []
         for file in scan.files:
             if file.status == "too_large":
                 result.too_large.append(file.path)
             elif file.status == "identified" and file.project_id and file.project_id not in in_bundle:
                 in_bundle.add(file.project_id)
                 result.added.append(file.project_id)
-            elif file.status == "unknown" and file.sha512 and file.sha512 not in local | claimed:
-                data = await self.pterodactylAPI.server_files_download(server.identifier, file.path)
-                metadata = read_mod_metadata(data) if len(data) <= SCAN_MAX_BYTES else None
-                candidates = await self._candidates(metadata) if metadata else []
-                if candidates:
-                    result.candidates.append(ImportCandidate(path=file.path, sha512=file.sha512,
-                                                             metadata=metadata, candidates=candidates))
-                else:
-                    await self.modpackDB.bundle_local_file_add(str(bundle.id), _local(file))
-                    result.local.append(file.path)
+            elif file.status == "unknown" and file.sha512 and file.sha512 not in decided:
+                unknown.append(file)
+        with_metadata = [f for f in unknown if f.metadata is not None]
+        found = await self._candidates_for(with_metadata, report)
+        for file in unknown:
+            candidates = found.get(file.path, [])
+            if candidates and file.sha512 is not None:
+                result.candidates.append(ImportCandidate(path=file.path, sha512=file.sha512,
+                                                         metadata=file.metadata, candidates=candidates))
+            else:
+                await self.modpackDB.bundle_local_file_add(str(bundle.id), _local(file))
+                result.local.append(file.path)
+        if report is not None:
+            await report(ADDING, 0, 1)
         if result.added:
             await self._add_projects(str(bundle.id), result.added)
         on_server, exceptions = await self._running(bundle, scan)
@@ -320,6 +399,50 @@ class PterodactylService():
             "candidates": [c.path for c in result.candidates], "on_server": on_server,
             "channel_exceptions": exceptions})
         return result
+
+    async def _read_metadata(self, identifier: str, scan: ServerScan, files: list[ScanFile],
+                             report: Optional[Report]) -> ServerScan:
+        """Download once the unknown jars an older scan did not read (S5), read their metadata as
+        data, and keep it in the scan, so the next import downloads nothing."""
+        read: dict[str, Optional[ModMetadata]] = {}
+        for done, file in enumerate(files):
+            if report is not None:
+                await report(READING_METADATA, done, len(files))
+            data = await self.pterodactylAPI.server_files_download(identifier, file.path)
+            read[file.path] = read_mod_metadata(data) if len(data) <= SCAN_MAX_BYTES else None
+        if report is not None:
+            await report(READING_METADATA, len(files), len(files))
+        updated = [f.model_copy(update={"metadata": read[f.path], "metadata_read": True}) if f.path in read else f
+                   for f in scan.files]
+        await self.pterodactylDB.scan_set_files(scan.id, updated)
+        return scan.model_copy(update={"files": updated})
+
+    async def _candidates_for(self, files: list[ScanFile], report: Optional[Report]) -> dict[str, list[ProjectCandidate]]:
+        """Modrinth projects each jar's metadata may be (S2): every mod id as a slug, in one request;
+        a search by name only for a jar whose slug found no mod. Never accepted here: the metadata
+        named the wrong project in 1 of 9 real jars."""
+        if not files:
+            return {}
+        slugs = sorted({f.metadata.mod_id for f in files if f.metadata is not None})
+        projects = await self.modrinthDB.project_upsert_many(await self.modrinthAPI.project_get_many(slugs))
+        by_ref = {key: p for p in projects for key in (p.slug, p.project_id)}
+        found: dict[str, list[ProjectCandidate]] = {}
+        for done, file in enumerate(files):
+            if report is not None:
+                await report(SEARCHING, done, len(files))
+            assert file.metadata is not None
+            project = by_ref.get(file.metadata.mod_id)
+            if project is not None and project.project_type.value == "mod":
+                found[file.path] = [ProjectCandidate(project_id=project.project_id, slug=project.slug,
+                                                     title=project.title, via="slug")]
+                continue
+            hits = await self.modrinthAPI.search(file.metadata.name or file.metadata.mod_id, [["project_type:mod"]], limit=3)
+            found[file.path] = list({hit["project_id"]: ProjectCandidate(project_id=hit["project_id"], slug=hit["slug"],
+                                                                         title=hit["title"], via="search")
+                                     for hit in hits}.values())
+        if report is not None:
+            await report(SEARCHING, len(files), len(files))
+        return found
 
     async def _running(self, bundle: ModpackBundle, scan: ServerScan) -> tuple[list[str], dict[str, str]]:
         """Record what the server runs (owner, 2026-10-09): every identified mod goes on the server,
@@ -342,22 +465,6 @@ class PterodactylService():
             bundle_id, "server_decisions", {f.project_id: True for f in identified if f.project_id})
         excepted = await self.modpackDB.bundle_keys_set_missing(bundle_id, "channel_exceptions", exceptions)
         return sorted(decided), excepted
-
-    async def _candidates(self, metadata: ModMetadata) -> list[ProjectCandidate]:
-        """Modrinth projects a jar's metadata may be: its mod id as a slug, then a search by name.
-        Never accepted here: the metadata named the wrong project in 1 of 9 real jars."""
-        found: dict[str, ProjectCandidate] = {}
-        try:
-            project = await self.modrinthAPI.project_get(metadata.mod_id)
-            if project.project_type.value == "mod":
-                found[project.project_id] = ProjectCandidate(project_id=project.project_id, slug=project.slug,
-                                                             title=project.title, via="slug")
-        except HTTPException:
-            pass
-        for hit in await self.modrinthAPI.search(metadata.name or metadata.mod_id, [["project_type:mod"]], limit=3):
-            found.setdefault(hit["project_id"], ProjectCandidate(project_id=hit["project_id"], slug=hit["slug"],
-                                                                 title=hit["title"], via="search"))
-        return list(found.values())
 
     async def _add_projects(self, bundle_id: str, project_ids: list[str]) -> None:
         projects = await self.modrinthDB.project_upsert_many(await self.modrinthAPI.project_get_many(project_ids))
@@ -393,15 +500,16 @@ class PterodactylService():
         bundle = await self.modpackDB.bundle_insert(ModpackBundle(name=name, description="", version=version, loader=loader))
         await self.audit.record(actor, "bundle.create", AuditTarget(kind="bundle", id=str(bundle.id)))
         await self.server_link_bundle(server_id, str(bundle.id), actor)
-        imported, import_error = None, None
+        import_job, import_error = None, None
         if import_mods:
             try:
-                imported = await self.import_server(server_id, actor)
+                # T1: the server's import job, which shows its progress (never inside this request).
+                import_job = await self.import_request(server_id, actor)
             except Exception:
-                logger.warning("import after creating a bundle for a server failed", exc_info=True,
+                logger.warning("queueing the import after creating a bundle for a server failed", exc_info=True,
                                extra={"server_id": server_id, "bundle_id": str(bundle.id)})
                 import_error = IMPORT_FAILED
-        return BundleForServer(bundle=bundle, imported=imported, import_error=import_error)
+        return BundleForServer(bundle=bundle, imported=None, import_error=import_error, import_job=import_job)
 
     def _scanned(self, scan: ServerScan, path: str) -> ScanFile:
         file = next((f for f in scan.files if f.path == path), None)

@@ -1,4 +1,4 @@
-{# The result of importing a server; the fragment htmx swaps into #import-result. Included
+{# The result of importing a server; shown in #import-result by the server's page (T1: what the last import job left). Included
    elsewhere (a new modpack's result), it takes another `result_id`. With `next_bundle_id` it
    ends with the next step, to the bundle (F25); the new modpack's result has its own. Every mod it
    names, added or a candidate, opens its card. #}
@@ -9,7 +9,7 @@
       {% if result.added %}<span class="text-zinc-600 dark:text-zinc-400">({% for id in result.added %}{{ ui.mod_link(id, titles.get(id, id)) }}{{ ", " if not loop.last }}{% endfor %})</span>{% endif %}</li>
     <li>Archivos locales registrados: <strong>{{ result.local | length }}</strong>
       {% if result.local %}<span class="text-zinc-600 dark:text-zinc-400">(Modrinth no los conoce: quedan en el pack tal cual)</span>{% endif %}</li>
-    <li>Pendientes de tu decisión: <strong>{{ result.candidates | length }}</strong></li>
+    <li>Pendientes de tu decisión (<strong>{{ result.candidates | length }}</strong>)</li>
   </ul>
   {% if result.local %}
   <ul class="space-y-0.5 text-xs break-all text-zinc-600 dark:text-zinc-400">{% for path in result.local %}<li>Archivo local: <span class="font-mono">{{ path }}</span></li>{% endfor %}</ul>

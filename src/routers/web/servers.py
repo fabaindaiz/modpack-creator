@@ -11,7 +11,7 @@ from src.model.modpack import ModpackBundle
 from src.model.pterodactyl import ImportResult, PterodactylServer
 from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
-from src.web import MODRINTH_REF, WebRoute, get_web_actor, render
+from src.web import JOB_STARTED, MODRINTH_REF, WebRoute, get_web_actor, render
 
 logger = logging.getLogger("modpack.web")
 router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
@@ -64,10 +64,12 @@ async def preview_context(modpackService: ModpackService, modrinthService: Modri
     titles = await _titles(modrinthService, [c.project_id for c in changes.added + changes.removed + changes.changed])
     return {"preview": preview, "titles": titles}
 
+def _import_ids(result: ImportResult) -> list[str]:
+    """The mods an import result names: what was added and every candidate."""
+    return list(result.added) + [c.project_id for item in result.candidates for c in item.candidates]
+
 async def _import_titles(modrinthService: ModrinthService, result: ImportResult) -> dict[str, str]:
-    """The titles an import result shows: what was added and every candidate."""
-    return await _titles(modrinthService, list(result.added) + [c.project_id for item in result.candidates
-                                                                for c in item.candidates])
+    return await _titles(modrinthService, _import_ids(result))
 
 def _comparison_ids(comparison: Comparison) -> list[str]:
     return ([f.project_id for f in comparison.matching if f.project_id]
@@ -145,7 +147,10 @@ async def server_detail(
             if error.status_code not in (404, 409):
                 raise
             compare_note = str(error.detail)
-    titles = await _titles(modrinthService, _comparison_ids(comparison) if comparison else [])
+    # What the last import job left for a person to decide (T1, S3): it outlives a reload.
+    pending_import = await pterodactylService.import_pending(server_id) if server.bundle_id else None
+    titles = await _titles(modrinthService, (_comparison_ids(comparison) if comparison else [])
+                           + (_import_ids(pending_import) if pending_import else []))
     versions = await pterodactylService.compare_names(comparison) if comparison else {}
     # What importing would bring: the jars the bundle itself does not explain (F26's rule).
     to_import = unexplained_for(comparison, bundle) if comparison and bundle else None
@@ -161,6 +166,7 @@ async def server_detail(
                   bundle=bundle, scan=scan, comparison=comparison, compare_note=compare_note, titles=titles,
                   versions=versions, to_import=to_import, installed_build=installed_build, active_job=active,
                   rollback=rollback, build_number=build_number, builds=builds, deduction=deduction,
+                  pending_import=pending_import,
                   loaders=[l.value for l in MinecraftLoaders], link_notice=link_notice, nav_active="servers")
 
 @router.post("/servers/{server_id}/refresh")
@@ -229,8 +235,11 @@ async def server_new_modpack(
     name, version = _new_modpack_fields(name, version)
     outcome = await pterodactylService.bundle_for_server(server_id, name, version, loader, import_mods, actor)
     titles = await _import_titles(modrinthService, outcome.imported) if outcome.imported else {}
-    return render(request, "servers/_new_modpack_done.html", actor, server_id=server_id,
-                  bundle=outcome.bundle, outcome=outcome, titles=titles, bundles=await modpackService.bundle_find())
+    response = render(request, "servers/_new_modpack_done.html", actor, server_id=server_id,
+                      bundle=outcome.bundle, outcome=outcome, titles=titles, bundles=await modpackService.bundle_find())
+    if outcome.import_job is not None:
+        response.headers["HX-Trigger"] = JOB_STARTED
+    return response
 
 @router.post("/servers/{server_id}/modpack/borrador")
 @inject
@@ -263,15 +272,14 @@ async def server_import(
         request: Request,
         actor: Actor = Depends(get_web_actor),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
-        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         ):
-    """Bring the server's unexplained jars into its bundle; whatever needs a person's decision
-    is listed with its candidates. Operators only."""
-    result = await pterodactylService.import_server(server_id, actor)
-    titles = await _import_titles(modrinthService, result)
-    server: PterodactylServer = await pterodactylService.server_get(server_id)
-    return render(request, "servers/_import.html", actor, server_id=server_id, result=result, titles=titles,
-                  next_bundle_id=server.bundle_id)
+    """Queue the server's import (T1): it scans, reads and searches as a job, one per server.
+    The answer is its row, which polls until it ends; then the page reloads and shows what is
+    left for a person to decide. Operators only."""
+    job = await pterodactylService.import_request(server_id, actor)
+    response = _job_row(request, actor, job)
+    response.headers["HX-Trigger"] = JOB_STARTED
+    return response
 
 @router.post("/servers/{server_id}/import/confirm")
 @inject

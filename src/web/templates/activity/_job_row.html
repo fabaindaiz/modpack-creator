@@ -16,6 +16,9 @@
     <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ job.requested_by.name if job.requested_by else "programado" }}</span>
     <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ ui.when(job.created_at) }}</span>
   </div>
+  {% if job.active and job.progress %}
+  <p class="break-words text-xs text-zinc-600 dark:text-zinc-400">{{ job.progress.label }}{% if job.progress.total > 1 %}: {{ job.progress.done }} de {{ job.progress.total }}{% endif %}</p>
+  {% endif %}
   {% if job.status == "failed" and job.error %}
   <p class="break-words text-xs text-red-700 dark:text-red-300">{{ job.error }}</p>
   {% endif %}

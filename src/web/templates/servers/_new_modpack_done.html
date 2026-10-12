@@ -1,6 +1,7 @@
 {#
   The answer to "Nuevo modpack para este servidor": it replaces the form. `outcome` is what an
-  operator's create, link and import did; None when an editor only created the bundle.
+  operator's create, link and import did; None when an editor only created the bundle. The import
+  is a job (T1): its row polls here, and the server's page shows what it left to decide.
   Needs: server_id, bundle, outcome, titles, bundles (for the link selector, redrawn out of band).
 #}
 {% import "_macros.html" as ui %}
@@ -11,9 +12,12 @@
   {% set result = outcome.imported %}{% set result_id = "new-modpack-import" %}
   {% include "servers/_import.html" %}
   {% endif %}
+  {% if outcome.import_job %}
+  {% with job=outcome.import_job %}{% include "activity/_job_row.html" %}{% endwith %}
+  {% endif %}
   {% if outcome.import_error %}
   {{ ui.notice(outcome.import_error, "error") }}
-  {{ ui.button("Importar", kind="secondary", small=True, attrs={"hx-post": "/servers/" ~ server_id ~ "/import", "hx-target": "#import-result", "hx-swap": "outerHTML"}) }}
+  {{ ui.button("Importar", kind="secondary", small=True, attrs={"hx-post": "/servers/" ~ server_id ~ "/import", "hx-target": "#server-job", "hx-swap": "innerHTML"}) }}
   {% endif %}
   {% else %}
   <p>Modpack <a href="/modpacks/{{ bundle.id }}" class="font-medium hover:underline">{{ bundle.name }}</a> creado. Pide a un operador que lo vincule a este servidor e importe sus mods.</p>

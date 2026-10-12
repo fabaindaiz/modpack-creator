@@ -95,7 +95,7 @@ def test_the_worker_runs_every_kind_a_service_queues() -> None:
     import main
 
     kinds = set(main.job_handlers(main.container))
-    assert {"catalog_refresh", "build_create", "modpack_import", "update_check", "server_scan", "server_update", "server_rollback", "notify"} <= kinds
+    assert {"catalog_refresh", "build_create", "modpack_import", "server_import", "update_check", "server_scan", "server_update", "server_rollback", "notify"} <= kinds
 
 
 def test_a_full_scan_runs_every_30_days_by_default() -> None:

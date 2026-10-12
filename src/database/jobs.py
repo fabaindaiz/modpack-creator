@@ -46,6 +46,11 @@ class JobDatabase():
         cursor = Job.get_pymongo_collection().find(query, {"payload.content": 0, "checkpoint": 0}).sort("created_at", 1)
         return [Job.model_validate(document) for document in await cursor.to_list(None)]
 
+    async def last_of_kind(self, kind: str, key: str) -> Optional[Job]:
+        """The newest job of this kind and key that ended well."""
+        return await Job.find(Job.kind == kind, Job.key == key, Job.status == "done").sort(
+            [("created_at", SortDirection.DESCENDING), ("_id", SortDirection.DESCENDING)]).first_or_none()
+
     async def last_for_key(self, key: str) -> Optional[Job]:
         """The newest job of this key, active or not."""
         return await Job.find(Job.key == key).sort([("created_at", SortDirection.DESCENDING), ("_id", SortDirection.DESCENDING)]).first_or_none()

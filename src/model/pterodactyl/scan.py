@@ -2,6 +2,7 @@ from beanie import Document, Indexed, PydanticObjectId
 from datetime import datetime
 from typing import Annotated, Optional
 from pydantic import BaseModel
+from src.model.jobs import Job
 from src.library.jarmeta import ModMetadata
 from src.library.scan import ScanFile
 from src.model.modpack import ModpackBundle
@@ -46,4 +47,6 @@ class BundleForServer(BaseModel):
     it failed (the bundle stays created and linked, and importing can be tried again)."""
     bundle: ModpackBundle
     imported: Optional[ImportResult]
+    # The server's import job (T1): the import runs there and shows its progress.
+    import_job: Optional[Job] = None
     import_error: Optional[str]

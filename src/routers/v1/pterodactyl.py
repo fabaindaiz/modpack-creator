@@ -4,7 +4,7 @@ from typing import Optional
 from src.library.scan import Comparison, LocalFile
 from src.model.modpack import PackProject
 from src.model.jobs import Job
-from src.model.pterodactyl import ImportResult, PterodactylServer, ServerScan
+from src.model.pterodactyl import PterodactylServer, ServerScan
 from src.dependences import *
 
 router = APIRouter(
@@ -89,7 +89,7 @@ async def server_link_bundle(
     """Link the server to the bundle it runs: scans are compared with it by default."""
     return await pterodactylService.server_link_bundle(id, bundle_id, actor=actor)
 
-@router.post("/server/{id}/import", response_model=ImportResult)
+@router.post("/server/{id}/import", response_model=Job, status_code=202)
 @inject
 async def server_import(
         id: str,
@@ -97,10 +97,11 @@ async def server_import(
         actor: Actor = Depends(get_current_actor)
         ):
     """
-    Bring the jars of the server's latest scan that its bundle does not explain into the bundle:
-    by hash as the admin's, by metadata as candidates to confirm, the rest as local files.
+    Queue the server's import (T1, U5/S7): it scans, then brings the jars its bundle does not
+    explain into the bundle: by hash as the admin's, by metadata as candidates to confirm, the
+    rest as local files. One per server: asking again answers the running job.
     """
-    return await pterodactylService.import_server(id, actor=actor)
+    return await pterodactylService.import_request(id, actor=actor)
 
 @router.post("/server/{id}/import/confirm", response_model=list[PackProject])
 @inject

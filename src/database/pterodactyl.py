@@ -2,7 +2,8 @@ from beanie import PydanticObjectId, SortDirection
 from beanie.operators import In
 from beanie.odm.documents import FindMany
 from datetime import datetime
-from typing import Iterable, Optional
+from typing import Any, Iterable, Optional
+from src.library.scan import ScanFile
 from src.model.pterodactyl import (
     PterodactylServer,
     ServerScan,
@@ -85,6 +86,11 @@ class PterodactylDatabase():
         if directory is not None:
             query = query.find(ServerScan.directory == directory)
         return await query.sort(("scanned_at", SortDirection.DESCENDING)).to_list()
+
+    async def scan_set_files(self, scan_id: Any, files: list[ScanFile]) -> None:
+        """Replace a stored scan's files (an import kept the metadata it read, S5)."""
+        await ServerScan.get_pymongo_collection().update_one(
+            {"_id": scan_id}, {"$set": {"files": [f.model_dump() for f in files]}})
 
     async def scan_latest(self, server_id: str, directory: str) -> Optional[ServerScan]:
         scans = await ServerScan.find(ServerScan.server_id == self._server_oid(server_id),

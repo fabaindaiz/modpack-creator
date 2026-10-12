@@ -156,6 +156,7 @@ def test_editor_cannot_import_or_link(mongo: MongoRunner) -> None:
         bundle_id, _ = await build_with_fabric_api(modrinth)
         service, server_id = await server_setup(FakePanel(), modrinth, audit=audit)
         for call in (lambda: service.server_link_bundle(server_id, bundle_id, actor=EDITOR),
+                     lambda: service.import_request(server_id, actor=EDITOR),
                      lambda: service.import_server(server_id, actor=EDITOR),
                      lambda: service.import_confirm(server_id, "/mods/x.jar", LITHIUM, actor=EDITOR),
                      lambda: service.import_local(server_id, "/mods/x.jar", actor=EDITOR)):

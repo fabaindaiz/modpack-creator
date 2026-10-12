@@ -60,6 +60,9 @@ ROW = re.compile(r"^\|\s*`(?P<method>[A-Za-z_]\w*\.[A-Za-z_]\w*)`\s*\|\s*(?P<rol
 # alguna es POST; cada una con su razón. Hoy ninguna lo es, y una nueva tiene que justificarse aquí.
 UNCLASSIFIED_WRITE_ROUTES: dict[tuple[str, str], str] = {}
 UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
+# Métodos de operador que solo corre un trabajo, con el método de operador que lo encola: ninguna
+# ruta los llama, la ruta llama al que encola, y el barrido exige esa ruta en su lugar (T1).
+JOB_ONLY: dict[str, str] = {"import_server": "import_request"}
 SERVICES = Path(__file__).resolve().parent.parent / "src" / "services"
 # Filas de la tabla cuyo método no llama a `audit.record`, cada una con su razón (verificada leyendo
 # el método). Un método que escribe algo que importa audita; estos solo tocan el catálogo local o
@@ -307,6 +310,8 @@ def test_a_badly_written_table_fails_naming_the_problem() -> None:
 def test_no_operator_route_lets_an_editor_through() -> None:
     application = app()
     names = {qualname.rsplit(".", 1)[-1] for qualname in operator_methods(load_role_table())}
+    assert set(JOB_ONLY) <= names and set(JOB_ONLY.values()) <= names, "JOB_ONLY nombra métodos que no son de operador"
+    names -= set(JOB_ONLY)
     routes = operator_routes(application, names)
     # Cada método de operador tiene al menos una ruta que lo llama: si una ruta deja de
     # encontrarse (otro nombre, otra forma de llamarlo), el barrido no la pierde en silencio.

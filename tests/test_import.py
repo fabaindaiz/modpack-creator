@@ -140,7 +140,7 @@ def test_a_candidate_the_admin_rejects_becomes_a_local_file(mongo: MongoRunner) 
     assert local == ["lithium-dev.jar"] and in_sync is False
 
 
-def test_importing_needs_a_linked_server_and_a_scan(mongo: MongoRunner) -> None:
+def test_importing_needs_a_linked_server(mongo: MongoRunner) -> None:
     async def scenario() -> list[int]:
         service, server_id = await setup(FakePanel(), SearchingModrinthAPI({}))
         codes = []
@@ -212,3 +212,103 @@ def test_importing_keeps_an_exception_the_admin_already_set(mongo: MongoRunner) 
         return bundle.channel_exceptions
 
     assert mongo(scenario) == {IRIS: "alpha"}
+
+
+
+# T1 (docs/superpowers/plans/2026-10-09-pendientes.md): importar como trabajo, escaneando primero,
+# sin volver a bajar jars y buscando en lote.
+
+
+def test_importing_scans_first_and_downloads_no_jar_again(mongo: MongoRunner) -> None:
+    # S1, S5, S2: the import's scan is incremental (nothing changed: nothing downloaded), the unknown
+    # jars' metadata comes from the scan, and every slug goes in one Modrinth request; a text search
+    # only for the jars whose slug found no mod.
+    async def scenario() -> tuple[list[str], list[tuple[str, Any]], Any]:
+        service, server_id, bundle_id = await linked_server({
+            "fabric-api.jar": b"fabric api", "lithium-dev.jar": fabric_jar("lithium", "Lithium"),
+            "privado.jar": fabric_jar("privado", "Mod Privado")})
+        service.pterodactylAPI.calls.clear()
+        service.modrinthAPI.calls.clear()
+        result = await service.import_server(server_id, actor=OPERATOR)
+        return service.pterodactylAPI.calls, service.modrinthAPI.calls, result
+
+    panel_calls, modrinth_calls, result = mongo(scenario)
+    assert [c for c in panel_calls if c.startswith("download")] == []
+    assert [c[0] for c in modrinth_calls if c[0] in ("project_get", "project_get_many", "search")] == [
+        "project_get_many", "search"]
+    assert [c for c in modrinth_calls if c[0] == "search"][0][1][0] == "Mod Privado"
+    assert [(c.path, [x.project_id for x in c.candidates]) for c in result.candidates] == [("/mods/lithium-dev.jar", [LITHIUM])]
+    assert result.local == ["/mods/privado.jar"]
+
+
+def test_importing_a_server_never_scanned_scans_it_first(mongo: MongoRunner) -> None:
+    async def scenario() -> list[str]:
+        modrinth = SearchingModrinthAPI({})
+        bundle_id, version_id = await build_with_fabric_api(modrinth)
+        panel = FakePanel()
+        panel.files = {"iris.jar": (b"iris jar", T0)}
+        modrinth.known[sha1(b"iris jar")] = next(v["id"] for v in modrinth.versions if v["project_id"] == IRIS)
+        service, server_id = await setup(panel, modrinth)
+        await service.server_link_bundle(server_id, bundle_id, actor=OPERATOR)
+        return (await service.import_server(server_id, actor=OPERATOR)).added
+
+    assert mongo(scenario) == [IRIS]
+
+
+def test_a_scan_stored_before_metadata_reads_its_unknown_jars_once(mongo: MongoRunner) -> None:
+    # S5 (owner, 2026-10-09): an older scan has no metadata; the import downloads those jars once and
+    # keeps what it read, so the next import downloads nothing.
+    from src.model.pterodactyl import ServerScan
+
+    async def scenario() -> tuple[list[str], list[str]]:
+        service, server_id, bundle_id = await linked_server({"lithium-dev.jar": fabric_jar("lithium", "Lithium")})
+        await ServerScan.get_pymongo_collection().update_many(
+            {}, {"$set": {"files.$[].metadata": None, "files.$[].metadata_read": False}})
+        rounds = []
+        for _ in range(2):
+            service.pterodactylAPI.calls.clear()
+            await service.import_server(server_id, actor=OPERATOR)
+            rounds.append([c for c in service.pterodactylAPI.calls if c.startswith("download")])
+        return rounds[0], rounds[1]
+
+    first, second = mongo(scenario)
+    assert first == ["download /mods/lithium-dev.jar"] and second == []
+
+
+def test_an_import_says_how_far_it_is(mongo: MongoRunner) -> None:
+    async def scenario() -> list[str]:
+        service, server_id, bundle_id = await linked_server({"lithium-dev.jar": fabric_jar("lithium", "Lithium"),
+                                                             "privado.jar": fabric_jar("privado", "Mod Privado")})
+        seen: list[str] = []
+
+        async def report(label: str, done: int, total: int) -> None:
+            seen.append(label)
+
+        await service.import_server(server_id, actor=OPERATOR, report=report)
+        return list(dict.fromkeys(seen))
+
+    assert mongo(scenario) == ["Buscando en Modrinth", "Agregando al modpack"]
+
+
+def test_importing_is_one_job_per_server_and_its_pending_candidates_outlive_a_reload(mongo: MongoRunner) -> None:
+    # S3 (owner, 2026-10-09): the candidates live in the last import job, minus what was decided.
+    from src.database.jobs import JobDatabase
+    from src.services.jobs import JobWorker
+
+    async def scenario() -> tuple[Any, ...]:
+        service, server_id, bundle_id = await linked_server({
+            "lithium-dev.jar": fabric_jar("lithium", "Lithium"), "create.jar": fabric_jar("lithium", "Lithium Copy")})
+        job = await service.import_request(server_id, OPERATOR)
+        again = await service.import_request(server_id, OPERATOR)
+        worker = JobWorker(JobDatabase(), service.handlers(), owner="w1")
+        while await worker.run_once():
+            pass
+        before = await service.import_pending(server_id)
+        await service.import_confirm(server_id, "/mods/lithium-dev.jar", LITHIUM, actor=OPERATOR)
+        after = await service.import_pending(server_id)
+        return job, again, before, after
+
+    job, again, before, after = mongo(scenario)
+    assert (job.kind, job.key) == ("server_import", f"server:{job.payload['server_id']}") and again.id == job.id
+    assert before is not None and sorted(c.path for c in before.candidates) == ["/mods/create.jar", "/mods/lithium-dev.jar"]
+    assert after is not None and [c.path for c in after.candidates] == ["/mods/create.jar"]

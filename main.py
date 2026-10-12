@@ -34,7 +34,7 @@ def job_handlers(container: Dependences) -> dict[str, Handler]:
     """Every kind of job a service queues, with its handler: the worker runs these."""
     return {**container.jobService().handlers(), **container.updateService().handlers(),
             **container.updateCheckService().handlers(), **container.modpackService().handlers(),
-            **container.modpackImportService().handlers()}
+            **container.modpackImportService().handlers(), **container.pterodactylService().handlers()}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

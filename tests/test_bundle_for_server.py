@@ -65,6 +65,12 @@ def test_operator_creates_links_and_imports_with_audit_in_order(mongo: MongoRunn
         audit = RecordingAudit()
         service, server_id = await scanned_server(audit)
         result = await service.bundle_for_server(server_id, "Creativo", "26.3", MinecraftLoaders.fabric, True, OPERATOR)
+        # T1: the import is the server's import job, which the worker runs.
+        from src.database.jobs import JobDatabase
+        from src.services.jobs import JobWorker
+        worker = JobWorker(JobDatabase(), service.handlers(), owner="w1")
+        while await worker.run_once():
+            pass
         server = await PterodactylDatabase().server_get(server_id)
         stored = await ModpackBundle.get(result.bundle.id)
         assert stored is not None
@@ -75,10 +81,10 @@ def test_operator_creates_links_and_imports_with_audit_in_order(mongo: MongoRunn
     bundle_id = str(result.bundle.id)
     assert (result.bundle.name, result.bundle.version, result.bundle.loader) == ("Creativo", "26.3", MinecraftLoaders.fabric)
     assert linked == bundle_id
-    assert [e[0] for e in events] == ["bundle.create", "server.bundle", "server.import"]
+    assert [e[0] for e in events] == ["bundle.create", "server.bundle", "server.import.request", "server.import"]
     assert events[0][1:] == ("bundle", bundle_id)
-    assert result.imported is not None and result.import_error is None
-    assert sorted(result.imported.added) == sorted([FABRIC_API, IRIS, SODIUM])
+    assert result.imported is None and result.import_error is None
+    assert result.import_job is not None and result.import_job.kind == "server_import"
     assert projects == sorted([FABRIC_API, IRIS, SODIUM]) and local_files == ["privado.jar"]
 
 
@@ -131,7 +137,7 @@ def test_import_failure_leaves_the_pack_linked_and_says_so(mongo: MongoRunner) -
         async def broken(server_id: str, actor: Any) -> Any:
             raise RuntimeError("panel down")
 
-        service.import_server = broken  # type: ignore[method-assign]
+        service.import_request = broken  # type: ignore[method-assign, assignment]
         result = await service.bundle_for_server(server_id, "Creativo", "26.3", MinecraftLoaders.fabric, True, OPERATOR)
         server = await PterodactylDatabase().server_get(server_id)
         return result, server.bundle_id, [e[0] for e in audit.events]

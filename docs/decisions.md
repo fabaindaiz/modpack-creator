@@ -68,7 +68,8 @@ los dos, o una fila mal formada, hace fallar el test. El nombre del método no s
 | `UpdateService.enqueue_update` | operador | Encola una actualización (o su simulación) de un servidor a un build. |
 | `UpdateService.enqueue_rollback` | operador | Encola el rollback de una actualización, en modo A o B. |
 | `PterodactylService.server_link_bundle` | operador | Asocia un servidor a un bundle, o lo desasocia. |
-| `PterodactylService.import_server` | operador | Lee los mods de un servidor y agrega al bundle los identificados por hash; los ubicados por metadata quedan como candidatos y los que no se ubican, como archivos locales del bundle (d-7985ee-c8a15d). |
+| `PterodactylService.import_request` | operador | «Importar»: deja el trabajo de importación del servidor (uno por servidor, con avance), que escanea primero (incremental) y agrega al bundle los mods identificados por hash; los ubicados por metadata (slugs en lote, búsqueda solo si falla) quedan como candidatos hasta decidirse (S3) y los que no se ubican, como archivos locales del bundle (d-7985ee-c8a15d; T1). |
+| `PterodactylService.import_server` | operador | El paso del trabajo de importación: solo lo corre el trabajo que deja `import_request`, ninguna ruta lo llama (`JOB_ONLY` de `tests/test_routes_roles.py`), y sigue exigiendo operador. |
 | `PterodactylService.import_confirm` | operador | Confirma un mod importado y lo agrega al bundle del servidor. |
 | `PterodactylService.import_local` | operador | Registra un archivo local del servidor como parte del bundle. |
 | `PterodactylService.bundle_for_server` | operador | Crea un bundle para un servidor sin bundle, lo vincula y, si se pide, importa el servidor; si la importación falla, el bundle queda creado y vinculado (solo lee el panel). |
