@@ -22,6 +22,9 @@
   {% if job.status == "failed" and job.error %}
   <p class="break-words text-xs text-red-700 dark:text-red-300">{{ job.error }}</p>
   {% endif %}
+  {% if import_result is defined and import_result %}
+  {% with result=import_result, result_id="import-report-" ~ job.id, titles={}, server_id=job.payload.get("server_id"), report_only=true %}{% include "servers/_import.html" %}{% endwith %}
+  {% endif %}
   {% if dry_run and job.status == "done" %}
   {% include "servers/_dry_run.html" %}
   {% endif %}

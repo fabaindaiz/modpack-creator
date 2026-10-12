@@ -660,7 +660,7 @@ def test_the_server_shows_what_its_last_import_left_pending() -> None:
     fakes.ptero.pending = fakes.ptero.import_result
     page = client.get(f"/servers/{SERVER_ID}").text
     text = page[page.index('id="importar"'):]
-    assert "/mods/local.jar" in text and "/mods/huge.jar" in text and "/mods/odd.jar" in text
+    assert "/mods/odd.jar" in text  # the full report (local, too large) is the job's row now
     assert "Odd Mod Project" in text or "Odd Mod" in text
     assert f'hx-post="/servers/{SERVER_ID}/import/confirm"' in text and f'hx-post="/servers/{SERVER_ID}/import/local"' in text
     assert 'name="project_id" value="C1"' in text
@@ -1409,10 +1409,10 @@ def test_the_import_result_names_and_candidates_open_their_cards_with_one_fill()
     client, fakes = setup(OPERATOR)
     fakes.ptero.pending = fakes.ptero.import_result
     text = client.get(f"/servers/{SERVER_ID}").text
-    assert mod_link("P5") in text and mod_link("C1") in text
+    assert mod_link("C1") in text  # the added ones (P5) are in the job's row now (decision 3a)
     assert 'name="project_id" value="C1"' in text  # confirming the candidate still sends its id
     [filled] = fakes.modrinth.filled  # the page's one fill names them with the comparison's
-    assert {"C1", "P5"} <= set(filled)
+    assert "C1" in filled
 
 
 def test_the_update_preview_names_open_their_cards_with_one_fill() -> None:
@@ -1458,11 +1458,27 @@ def test_v1_import_answers_202_with_the_servers_import_job() -> None:
     assert only(fakes.ptero.calls, "import_request")[1:] == (str(SERVER_ID), OPERATOR)
 
 
-def test_the_import_report_counts_what_it_marked_on_the_server_and_the_betas() -> None:
-    # B5 (owner, 2026-10-09): «Marcados «En el servidor»: N · Aceptan beta: N».
+def test_after_a_reload_the_server_shows_only_what_waits_for_a_decision() -> None:
+    # Owner (2026-10-12, decision 3a): the last import's full report belongs to its job; the page
+    # keeps only the candidates, and nothing when none is left.
     client, fakes = setup(OPERATOR)
-    fakes.ptero.pending = fakes.ptero.import_result.model_copy(
-        update={"on_server": ["P5", "C1"], "channel_exceptions": {"C1": "beta"}})
-    text = client.get(f"/servers/{SERVER_ID}").text
-    shown = " ".join(visible(text[text.index('id="importar"'):]).split())
-    assert "Marcados «En el servidor»: 2 · Aceptan beta: 1" in shown
+    fakes.ptero.pending = fakes.ptero.import_result
+    section = importar(client.get(f"/servers/{SERVER_ID}").text)
+    assert "Pendientes de tu decisión" in section and "Mods agregados" not in section
+    assert "Archivos locales registrados" not in section
+    fakes.ptero.pending = fakes.ptero.import_result.model_copy(update={"candidates": []})
+    section = importar(client.get(f"/servers/{SERVER_ID}").text)
+    assert "Pendientes de tu decisión" not in section and "Mods agregados" not in section
+
+
+def test_the_refresh_button_is_there_even_when_the_panel_never_answered() -> None:
+    # Owner (2026-10-12, decision 3b).
+    client, fakes = setup()
+
+    async def down() -> list[PterodactylServer]:
+        raise RuntimeError("panel down")
+
+    fakes.ptero.server_external = down  # type: ignore[method-assign]
+    text = client.get("/servers").text
+    section = text[text.index('id="altas"'):]
+    assert "No se pudo consultar el panel" in section and 'hx-post="/servers/lista"' in section

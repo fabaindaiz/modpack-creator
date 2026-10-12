@@ -14,6 +14,7 @@ from src.model.users import Actor
 from src.model.users.actor import ActorRef
 from tests._actors import EDITOR, OPERATOR, session_for
 from tests._session import session_cookie
+from tests.test_web_modpacks import visible
 from tests.test_web_servers import BUNDLE_ID, FakeModpack, FakeModrinth, FakePterodactyl, PENDING_ROLLBACK, SERVER_ID, failed_real_update, job as make_job
 
 T0 = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
@@ -457,3 +458,18 @@ def test_job_steps_cover_every_service_step() -> None:
         steps |= set(re.findall(r'step\("([a-z_]+)"', path.read_text()))
     labels = getattr(templates.env.get_template("_macros.html").module, "JOB_STEP")
     assert steps and steps <= set(labels)
+
+
+
+def test_a_finished_import_row_carries_its_full_report() -> None:
+    # Owner (2026-10-12, decision 3a): the server's page keeps only what is pending; the job's row
+    # says what the import did.
+    client, jobs, *_ = setup()
+    report = {"added": ["P1", "P2"], "candidates": [], "local": ["/mods/own.jar"], "too_large": [],
+              "on_server": ["P1"], "channel_exceptions": {}}
+    jobs.jobs = [make_job("server_import", status="done", active=False, payload={"server_id": str(SERVER_ID)},
+                          checkpoint={"import": report})]
+    shown = " ".join(visible(client.get(f"/jobs/{jobs.jobs[0].id}/row").text).split())
+    assert "Mods agregados: 2" in shown and "Archivos locales registrados: 1" in shown
+    # B5: «Marcados «En el servidor»: N · Aceptan beta: N», there too.
+    assert "Marcados «En el servidor»: 1 · Aceptan beta: 0" in shown

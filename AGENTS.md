@@ -52,6 +52,20 @@ Decididas, no preferencias. `docs/decisions.md` indexa cada una con lo que la ha
   Pterodactyl pasa por `PterodactylAPI._write`, y sin `PTERODACTYL_WRITES: "enabled"` se rechaza
   antes de enviar nada. Leer y escanear servidores nunca lo necesita. *Audit* `ungated_writes`,
   `tests/test_write_gate.py` (d-7985ee-5739fc).
+- **Un mod nunca retrocede de versión** salvo por un pin: bajar un mod rompe mundos y configs. El
+  resolvedor toma como piso la versión del build vigente y la del último escaneo de cada servidor
+  vinculado (la más nueva que sirve para el target), y el chequeo diario no anuncia nada anterior.
+  `tests/test_resolution.py`, `tests/test_resolution_service.py`, `tests/test_update_check.py`
+  (d-7985ee-6dc34c).
+- **CurseForge solo con la clave propia del dueño** (`CURSEFORGE_API_KEY`): sin ella el cliente está
+  apagado. De CurseForge no se guarda nada (un `fileID` pasa a sha1 y se busca en Modrinth); la
+  clave nunca va incrustada, no se comparte, y no sigue redirecciones. El código de perfil (endpoint
+  no documentado) vive aislado en un método. `tests/test_curseforge_client.py`,
+  `tests/test_modpack_import.py`, `tests/test_startup.py` (d-7985ee-9473a9).
+- **Toda subida de importación reserva su disco temporal antes de leerse**: Starlette escribe el
+  archivo en `/tmp` pasado 1 MiB y un zip de Prism llega a 1 GiB. La ruta reserva su
+  `Content-Length` contra `IMPORT_TMP_MAX_MIB` y lo que no cabe se rechaza sin escribir nada.
+  `tests/test_upload_budget.py`, `tests/test_web_import.py` (d-7985ee-a40d58).
 - **Contrasta cada llamada externa con su especificación** antes de escribirla: rutas, métodos y
   forma del cuerpo están en `docs/references.md`. `tests/test_api_contracts.py` comprueba método,
   ruta y cuerpo de los clientes contra esa especificación; el gate no habla con las APIs reales.

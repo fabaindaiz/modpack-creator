@@ -1,9 +1,13 @@
-{# The result of importing a server; shown in #import-result by the server's page (T1: what the last import job left). Included
+{# The result of importing a server. With `pending_only` (the server's page after a reload, owner
+   2026-10-12) only what waits for a decision; the full report is the finished job's row. Included
    elsewhere (a new modpack's result), it takes another `result_id`. With `next_bundle_id` it
    ends with the next step, to the bundle (F25); the new modpack's result has its own. Every mod it
    names, added or a candidate, opens its card. #}
 {% import "_macros.html" as ui %}
 <div id="{{ result_id | default('import-result') }}" class="space-y-4">
+  {% if pending_only | default(false) %}
+  <p class="text-sm font-medium">Pendientes de tu decisión ({{ result.candidates | length }})</p>
+  {% else %}
   <ul class="space-y-1 text-sm">
     <li>Mods agregados: <strong>{{ result.added | length }}</strong>
       {% if result.added %}<span class="text-zinc-600 dark:text-zinc-400">({% for id in result.added %}{{ ui.mod_link(id, titles.get(id, id)) }}{{ ", " if not loop.last }}{% endfor %})</span>{% endif %}</li>
@@ -18,7 +22,8 @@
   {% if result.too_large %}
   {{ ui.notice("Estos archivos son demasiado grandes para leerlos y no se importaron: " ~ (result.too_large | join(", ")), "warning") }}
   {% endif %}
-  {% if result.candidates %}
+  {% endif %}
+  {% if result.candidates and not (report_only | default(false)) %}
   <ul class="space-y-3">
     {% for item in result.candidates %}
     <li class="space-y-2 rounded-md border border-zinc-200 p-3 text-sm dark:border-zinc-700" data-candidate="{{ item.path }}">

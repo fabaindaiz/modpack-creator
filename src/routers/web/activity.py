@@ -6,6 +6,7 @@ from fastapi.responses import HTMLResponse
 from src.exceptions import HTTP_404_NOT_FOUND, HTTP_422_UNPROCESSABLE_ENTITY
 from src.dependences import AuditService, Dependences, JobService, ModpackService, ModrinthService, PterodactylService
 from src.model.jobs import Job, is_real_update
+from src.model.pterodactyl import ImportResult
 from src.model.users import Actor
 from src.routers.web.servers import preview_context
 from src.web import WebRoute, get_web_actor, render
@@ -66,6 +67,10 @@ async def _server_context(job: Job, pterodactylService: PterodactylService,
         if jobService is not None and job.kind == "server_update" and job.status == "done" \
                 and not is_real_update(job):
             context["rollback"] = await jobService.rollback_state(server_id)
+        if job.kind == "server_import" and job.status == "done" and isinstance(job.checkpoint.get("import"), dict):
+            # The import's full report lives in its finished row (owner, 2026-10-12): the
+            # server's page keeps only what waits for a decision.
+            context["import_result"] = ImportResult(**job.checkpoint["import"])
     return context
 
 @router.get("/jobs")

@@ -115,8 +115,8 @@
         {% else %}
         {{ ui.button("Importar", attrs={"hx-post": "/servers/" ~ server_id ~ "/import", "hx-target": "#server-job", "hx-swap": "innerHTML"}) }}
         {% endif %}
-        {% if pending_import %}
-        {% with result=pending_import, next_bundle_id=server.bundle_id %}{% include "servers/_import.html" %}{% endwith %}
+        {% if pending_import and pending_import.candidates %}
+        {% with result=pending_import, next_bundle_id=server.bundle_id, pending_only=true %}{% include "servers/_import.html" %}{% endwith %}
         {% else %}
         <div id="import-result"></div>
         {% endif %}
