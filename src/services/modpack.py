@@ -546,13 +546,17 @@ class ModpackService():
         return remaining
 
     async def project_dependents(self, bundle_id: str, project_id: str) -> Optional[list[str]]:
-        """The other mods that, in the last saved resolution, need this one (its entry's
-        requesters); None without a saved resolution. A read."""
+        """The other mods that, in the last saved resolution, need this one: the requesters of its
+        entry, or of its problem when it could not be resolved. None when nothing can say: without a
+        saved resolution, or with one of the pack as it was before (its digest is not the current
+        request's), since a mod added since may need it (review, 2026-10-12). A read."""
         bundle = await self.modpackDB.bundle_get(bundle_id)
         saved = await self.modpackDB.resolution_get(bundle.id) if bundle.id is not None else None
-        if saved is None:
+        if saved is None or saved.request_digest != request_digest(await self._request(bundle)):
             return None
-        return sorted({r for e in saved.lock.entries if e.project_id == project_id for r in e.requested_by if r != project_id})
+        requesters = [*(r for e in saved.lock.entries if e.project_id == project_id for r in e.requested_by),
+                      *(r for p in saved.lock.problems if p.project_id == project_id for r in p.requested_by)]
+        return sorted({r for r in requesters if r != project_id})
 
     async def _modrinth_projects(self, refs: list[str]) -> list[ModrinthProject]:
         """The Modrinth projects these slugs or ids name, stored in the catalog; 404 naming any
@@ -1049,7 +1053,16 @@ class ModpackService():
             versions = await self._versions_known(ids)
         else:
             versions = {v.version_id: v for v in await self.modrinthDB.version_find_by_version_ids(sorted(set(ids)))}
-        titles = {p.project_id: p.title for p in await self.modrinthDB.project_find_by_modrinth_id(sorted(wanted))}
+        projects = {p.project_id: p for p in await self.modrinthDB.project_find_by_modrinth_id(sorted(wanted))}
+        titles = {i: p.title for i, p in projects.items()}
+        target = Target(game_version=bundle.version, loader=str(bundle.loader.value), channels=frozenset(bundle.channels))
+
+        def fits(found: ModrinthVersion, project_id: str) -> bool:
+            """As the resolver's floor (Target.fits): this game version, a loader the pack runs for
+            the project's type, and listed (review, 2026-10-12)."""
+            kind = projects[project_id].project_type.value if project_id in projects else "mod"
+            return (bundle.version in found.game_versions and bool(target.loaders(kind) & set(found.loaders))
+                    and str(found.status.value) == "listed")
 
         def facts(found: ModrinthVersion) -> VersionFacts:
             return VersionFacts(published=found.date_published, game_versions=tuple(found.game_versions),
@@ -1058,7 +1071,7 @@ class ModpackService():
         found_downgrades: dict[str, PinDowngrade] = {}
         for project_id, pin_id in wanted.items():
             pinned = versions.get(pin_id)
-            floors = [versions[v] for v in sources[project_id] if v in versions and bundle.version in versions[v].game_versions]
+            floors = [versions[v] for v in sources[project_id] if v in versions and fits(versions[v], project_id)]
             if pinned is None or not floors:
                 continue
             floor = max(floors, key=lambda v: as_utc(v.date_published))

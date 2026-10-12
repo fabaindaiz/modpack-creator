@@ -18,6 +18,20 @@ de agentes 0.0.31 (`chore/agents-0.0.31`) y los arreglos menores del roadmap
 (`fix/pendientes-menores`). Falta T8 (espera O1). Ver i-7985ee-805517 y
 `.claude/logs/agent-changelog.md` (s-7985ee-6f74e1).
 
+**Al cierre del 2026-10-12:** la ronda 2 del panel, tanda 1 (F27, F28, F29 y las preguntas de la tanda
+A), está hecha en `feat/ronda-2-tanda-1`, encima de `fix/pendientes-menores`, encima de
+`chore/agents-0.0.31`; las tres ramas empujadas al remoto, ninguna en `main`. **Decisión del dueño
+(2026-10-12): el deploy es una 0.3.1 con la tanda 1**, después de su revisión en contexto limpio.
+**Para seguir, en otra máquina:** Docker o podman con su VM encendida (los tests de base y el barrido
+visual), hatch y Python 3.12, `npm install` para el barrido, Chromium de Playwright
+(`hatch run visual:playwright install chromium`), y el `.env.yaml` propio, que nunca está en el
+repositorio. La tanda 1 pasó la revisión en contexto limpio (0 críticos; los 2 importantes y 1 menor
+arreglados, 2 menores en i-7985ee-89ea1c) y la versión ya es 0.3.1, con su sección en el runbook.
+**Primer paso:** el dueño pide el merge
+a `main` (fast-forward de `feat/ronda-2-tanda-1`; toca `.claude/settings.json`, así que lo corre él con
+`!`), el push y los tags, y despliega en solo lectura con la lista «Lo siguiente, todo del dueño».
+Pendientes de decisión: la tanda 2 (tablero, móvil, F09) y el hook contra heredocs (Fricciones).
+
 Al cierre de la sesión de usabilidad del panel (2026-10-04 y 2026-10-05; detalle en
 `.claude/logs/agent-changelog.md`, s-7985ee-aaa17f, y las entradas de abajo). **Todo está en
 `main` y empujado a `origin`; nada está desplegado.** `.env.default` ya trae
@@ -976,6 +990,12 @@ JSON con `request_id` y `job_id`.
   allí, `fetch-depth: 0` y el rango `origin/main..HEAD`.
 - La fila de una importación terminada muestra «Pendientes de tu decisión (N)» del momento en que
   terminó; la ficha del servidor baja ese número al decidir, la fila no.
+- De la revisión de la tanda 1 de la ronda 2 (2026-10-12), menores:
+  - quitar un mod lee la resolución dos veces (la ruta para el aviso, el servicio para borrar): entre
+    las dos, el aviso puede contradecir lo borrado, y un pin fijado en medio se borra sin figurar en
+    `cleared`. Arreglo: que `project_remove` devuelva los dependientes que usó;
+  - si el servidor se borra mientras «Crear modpack desde este servidor» corre, `server_get` da 404
+    después de crear el pack y el pack vacío queda sin vincular ni borrar.
 
 ### Proteger los mundos al desplegar — Planeada (2026-10-12), después de T8 · i-7985ee-e87afa
 - **Estimación:** tres entregas (rollback por backup; migración de MC/loader; manifiesto desplegado
@@ -1101,6 +1121,15 @@ Fricción vista al menos dos veces, con su costo.
 ### Fricciones de la sesión del panel — Planeada
 - **Comandos que esperan stdin:** un heredoc canalizado a `cat` colgó a un subagente dos veces.
   Cuesta una sesión de subagente detenida a mano. Ya es regla en `AGENTS.md`.
+  **La regla no basta (cierre del 2026-10-12, contado con `bundle.py count` en el registro):** después
+  de escrita hubo heredocs en 2026-10-05 (el revisor hacia `cat`, el barrido hacia `python3`) y dos
+  veces en 2026-10-12 (propuestas hacia `cat`; en la tanda 1, tres comandos y un heredoc vacío). Ninguno
+  colgó, pero es disciplina sin nada que la haga cumplir (peldaño 1). **Propuesta, decisión del dueño:**
+  un hook `PreToolUse` sobre Bash en `.claude/settings.json` que rechace un comando con `<<` y diga
+  «escribe el script a un archivo». Costo: un script de ~15 líneas, su test y una fila de decisión;
+  menos de una hora. Choca con el rechazo de hooks de `.agents/carrier.toml` (`declined`), cuyo motivo
+  era «revisar cuando una regla necesite correr en un evento del ciclo de vida»: este es ese caso, así
+  que por la regla del dueño ese rechazo se le vuelve a poner delante. Recomendado: el hook.
 - **Procesos que se quedan:** se encontraron procesos y contenedores sobrantes de subagentes dos
   veces. Cuesta puertos ocupados y resultados que mienten. Ya es regla en `AGENTS.md`.
 - **El gate rojo toda la sesión** (ya es i-7985ee-a900ec): el deny sobre `.env.default` dejó `audit`

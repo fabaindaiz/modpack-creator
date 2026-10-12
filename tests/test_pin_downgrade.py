@@ -16,6 +16,7 @@ from src.database.pterodactyl import PterodactylDatabase
 from src.library.scan import ScanFile
 from src.model.modpack import ModpackBundlePatch, ProjectOrigin
 from src.model.modrinth import ModrinthVersion
+from src.model.modrinth.version import ModrinthVersionStatus
 from src.model.pterodactyl import PterodactylServer, ServerScan
 from tests._actors import EDITOR
 from tests.conftest import MongoRunner
@@ -131,6 +132,28 @@ def test_what_a_linked_server_runs_is_a_floor_and_named(mongo: MongoRunner) -> N
     assert error is not None and error.status_code == 409
     assert "JEI 19.60 → 19.57" in str(error.detail) and "El servidor «Survival» usa 19.60" in str(error.detail)
     assert pins == {}
+
+
+def test_the_floor_is_chosen_as_the_resolver_does_listed_and_for_the_pack_s_loader(mongo: MongoRunner) -> None:
+    # Review (2026-10-12): a newer version for another loader, or unlisted, is no floor; the one
+    # that fits (19.57, the build's) still is, and the pin before it goes back.
+    async def scenario() -> Any:
+        s, bundle_id = await pack_with_build()
+        other_loader = version("jei-forge", "J", "19.70", 28, loaders=("forge",))
+        unlisted = version("jei-hidden", "J", "19.80", 29).model_copy(update={"status": ModrinthVersionStatus.unlisted})
+        await s.modrinthDB.version_upsert_many([other_loader, unlisted])
+        server = await PterodactylDatabase().server_insert(PterodactylServer(
+            identifier="1a2b3c4d", internal_id=1, uuid="1a2b3c4d-0000", name="Survival", node="n1", description="",
+            status=None, is_suspended=False, is_installing=False, is_transferring=False, bundle_id=bundle_id))
+        await PterodactylDatabase().scan_insert(ServerScan(
+            server_id=server.id, directory="/mods", scanned_at=datetime(2026, 10, 1, tzinfo=timezone.utc),  # type: ignore[arg-type]
+            full=False, files=[ScanFile(path=f"/mods/{v}.jar", size=1, modified_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
+                                        status="identified", project_id="J", version_id=v)
+                               for v in ("jei-forge", "jei-hidden")]))
+        return await refused(s, bundle_id, J51)
+
+    error, pins, _ = mongo(scenario)
+    assert error is not None and "JEI 19.57 → 19.51" in str(error.detail) and pins == {}
 
 
 def test_a_floor_the_catalog_lacks_is_read_from_modrinth_once(mongo: MongoRunner) -> None:

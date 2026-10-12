@@ -12,6 +12,22 @@ Antes de empezar, si el servidor aún corre la versión anterior a la fase 0, se
 `MONGO_VERSION` y las contraseñas, y el volumen `mongodb-data` ya en uso. Nunca
 `docker compose … down -v` (d-7985ee-398653).
 
+## De 0.3.0 a 0.3.1 (2026-10-12)
+
+La ronda 2 del panel, tanda 1: avisos de bajas de versión y la confirmación «Fijar igual», el aviso de
+jars sin explicar en el diálogo de actualización, enlaces en los changelogs, la carrera al crear un
+pack desde un servidor y la limpieza al quitar un mod. Sigue de solo lectura. **Ninguna variable
+nueva, ninguna colección nueva, nada se migra**; «Volver atrás» a 0.3.0 sigue valiendo. Dos cambios
+que se notan:
+- **Quitar un mod** borra también su pin, su decisión de servidor y su excepción de canal, salvo que
+  la última resolución guardada (y vigente) lo traiga como dependencia de otro mod
+  (d-7985ee-881689). La auditoría (`bundle.project.remove`) guarda lo borrado, por si hay que
+  reponerlo a mano.
+- **`PATCH /v1/modpack/{id}`** con un pin anterior al piso responde 409; para guardarlo igual,
+  `?confirm_downgrade=true` (d-7985ee-0b9ebb). Un cliente de la API que fije pines tiene que saberlo.
+
+Si se despliega desde 0.2.0, valen también los pasos de abajo.
+
 ## De 0.2.0 a 0.3.0 (2026-10-12)
 
 Sigue siendo de solo lectura (`PTERODACTYL_WRITES` vacía). Ninguna variable obligatoria nueva; lo

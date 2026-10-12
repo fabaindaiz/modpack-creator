@@ -164,7 +164,13 @@ qué no se pudo verificar.
 - **Las llamadas a herramientas independientes van juntas**, en un mismo mensaje.
 - **Las decisiones del dueño se preguntan como dice `.agents/method/prompt-context.md` §15:** en un
   mensaje, cada opción con un ejemplo y su precio, la recomendada primero; si son más de las que caben
-  en un mensaje, con la skill `decision-review`.
+  en un mensaje, con la skill `decision-review`. Se muestran todas las opciones razonables, sin filtrar
+  hacia la preferida; una combinación o una opción no recomendada se respeta y se registra (dueño,
+  2026-10-03).
+- **Antes de desarrollar o cambiar algo importante** (modelo de datos, llamadas externas, despliegue,
+  arquitectura) se lee la documentación primaria (la oficial, el código de la librería, la
+  especificación) y se dice qué dice antes de escribir código; un arreglo mecánico que un test ya
+  prueba puede seguir (dueño, 2026-10-01).
 - **Un rechazo de `declined` se reconsidera** cuando una release nueva trae otra vez la misma
   propuesta, o un motivo que ya no se sostiene (dueño, 2026-10-12): se vuelve a poner frente al dueño,
   no se descarta en silencio.

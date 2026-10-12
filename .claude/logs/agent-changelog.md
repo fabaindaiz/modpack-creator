@@ -111,6 +111,23 @@ no se marca), Pterodactyl real, y la carrera de vinculación con dos operadores 
 inserción que vincula otro pack en medio). Sin hacer: la tanda 2 (tablero, móvil y F09), por revisar con
 el dueño.
 
+**Cierre (skill `close`).** Revisión: `knowledge-reviewer` en contexto limpio sobre `1a6a47a..HEAD`,
+tarjetas derived-copy-goes-stale-silently, refusal-must-not-read-like-an-answer, order-writes-by-failure-
+residue (se sostiene), sanitised-value-must-replace-the-raw (se sostiene: `linkify` sin XSS) y
+a-surviving-guard-mutation-means-a-missing-input. 0 críticos; 2 importantes arreglados con test primero
+(una resolución guardada vieja borraba pines y excepciones que un mod agregado después necesita: ahora
+cuenta solo si su digest es el del pedido actual; una dependencia que solo figura en los problemas
+perdía su excepción: ahora también se leen los problemas); 3 menores, 1 arreglado (el piso del pin se
+elige como el del resolvedor: loader y versión listada) y 2 al roadmap (i-7985ee-89ea1c). Decisiones del
+dueño en el cierre: el deploy es una 0.3.1 con la tanda 1 (versión subida, sección del runbook), y push
+de las ramas de trabajo sin tocar `main`. Fricción contada con `bundle.py count`: los heredocs se
+repiten en cinco sesiones pese a la regla → propuesta de hook en «Fricciones» del roadmap, que pone
+delante del dueño el rechazo de hooks de `carrier.toml`. Dos memorias que vivían solo en esta máquina
+(mostrar todas las opciones; leer la documentación primaria antes de cambiar algo importante) pasaron a
+AGENTS.md. El sandbox no deja escribir los datos de uso de `bundle.py usage` (fuera del repositorio):
+no se registraron. Aprendido (local, en el roadmap): una regla de disciplina que se rompe en cinco
+sesiones necesita algo que la haga cumplir.
+
 ## 2026-10-09 · s-7985ee-1bc897 — Observaciones de un tester, importador de modpacks y economía de requests
 
 **Qué.** Todo en la rama `fix/tester-feedback`, sin mergear:
