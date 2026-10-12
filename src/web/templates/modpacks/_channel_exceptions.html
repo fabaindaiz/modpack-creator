@@ -14,7 +14,7 @@
     <li class="flex flex-wrap items-center gap-2">
       <div class="min-w-0 flex-1 break-words">
         <span class="font-medium">{{ ui.mod_link(project_id, mods.titles.get(project_id, project_id), pack=bundle_id) }}</span> acepta {{ channel }}
-        {%- if current and project_id in saved.excepted %}<span class="text-xs text-amber-800 dark:text-amber-300"> · en uso: no hay versión en los canales del pack</span>
+        {%- if current and project_id in saved.excepted %}<span class="text-xs text-amber-800 dark:text-amber-300"> · en uso: no hay una estable más nueva que la instalada</span>
         {%- elif current and project_id in chosen %}<span class="text-xs text-zinc-500 dark:text-zinc-400"> · sin efecto: ya hay versión en los canales del pack</span>{% endif %}
       </div>
       {{ ui.button("Quitar", kind="ghost", small=True, attrs={

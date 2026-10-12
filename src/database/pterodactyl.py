@@ -77,6 +77,10 @@ class PterodactylDatabase():
             raise HTTP_404_NOT_FOUND(f"Server '{server_id}' not found")
         return await self.server_get(server_id)
 
+    async def server_find_by_bundle(self, bundle_id: str) -> list[PterodactylServer]:
+        """The servers linked to this bundle."""
+        return await PterodactylServer.find(PterodactylServer.bundle_id == bundle_id).to_list()
+
     async def scan_insert(self, scan: ServerScan) -> ServerScan:
         return await ServerScan.insert(scan)
 

@@ -182,5 +182,10 @@ El dueño cerró el build 0.2.0 con «lo hecho + U3» y sigue el resto en una se
   fuera más vieja, y el «queda sin efecto sola» de d-7985ee-b1ce87.
 - **M2, textos:** la beta nueva de un mod con excepción lleva la insignia «beta»; la estable que
   anula la excepción, «estable: deja la beta»; en Discord, el mismo texto entre paréntesis.
+- **Pisos también del servidor:** lo que identificó el último escaneo de cada servidor vinculado
+  también es piso, la versión más nueva donde difiere del build (un pack importado no tiene build).
+- **Texto de la sección Canales:** «en uso: no hay una estable más nueva que la instalada».
+- **Lo de proteger mundos** (rollback por backup, migración de MC/loader, configs del admin) va al
+  roadmap después de T8 (i-7985ee-e87afa).
 - **Investigación pedida:** construcción de modpacks completa, para contexto
   (`docs/research/2026-10-12-construccion-de-modpacks.md`).

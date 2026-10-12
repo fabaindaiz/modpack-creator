@@ -884,7 +884,12 @@ JSON con `request_id` y `job_id`.
 - **Para decidir en la sesión cloud (revisión del 2026-10-09):** el reescaneo sembrado (U3) confía en
   el tamaño, y un jar con el tamaño del build pero otros bytes quedaría registrado como del build
   hasta un escaneo completo. Opciones: dejarlo (lo decidido), o que el siguiente escaneo normal
-  vuelva a hashear una vez lo sembrado.
+  vuelva a hashear una vez lo sembrado. **Decidido (2026-10-12): rehashear una vez**; hecho.
+- **2026-10-12, rama `feat/pendientes-t1`:** T1 hecho (importar un servidor como trabajo, con S5);
+  T4 hecho (M1–M3, M6) y la regla nueva del dueño **«un mod nunca retrocede de versión»**
+  (d-7985ee-6dc34c), que enmendó M2 y d-7985ee-b1ce87: pisos del build vigente y del último escaneo
+  de cada servidor vinculado. Siguen T3, T7, T6, T5; T8 espera O1. Investigaciones del día:
+  `docs/research/2026-10-12-construccion-de-modpacks.md` y `2026-10-12-minecraft-y-sus-jugadores.md`.
 
 ### La VM de podman de 2 GiB mata a mongod cuando corren dos instancias — Planeada · i-7985ee-9b250c
 - El registro la menciona 15 veces; el 2026-10-09 murió 4 veces. **Causa encontrada** (el `dmesg`
@@ -898,8 +903,11 @@ JSON con `request_id` y `job_id`.
 - Recomendación: que `test-mongo.sh` y `visual-sweep.sh` avisen si ya hay otro mongod en la VM; subir
   la VM a 4 GiB (es la máquina del dueño: lo decide él) daría margen de verdad.
 
-### Importar un servidor como trabajo con avance — Planeada · i-7985ee-27db6c
-- Hoy son ~4 requests por jar desconocido y la página espera. Recomendación: un trabajo por
+### Importar un servidor como trabajo con avance — Hecha (2026-10-12) · i-7985ee-27db6c
+- **En qué quedó:** un trabajo `server_import` por servidor que escanea primero, lee la metadata de
+  los jars del escaneo (S5), junta las búsquedas por slug en un lote y muestra su avance; lo que
+  queda por decidir vive en el trabajo y se ve al recargar (S3). `/v1` responde 202 con el trabajo.
+- **Antes:** eran ~4 requests por jar desconocido y la página esperaba. Recomendación: un trabajo por
   servidor con avance por jar, y leer la metadata de los jars durante el escaneo para juntar las
   búsquedas (R7).
 
@@ -912,6 +920,26 @@ JSON con `request_id` y `job_id`.
 - **Abierto:** qué se guarda (O1: el dueño lo consulta con el tester; su inclinación, que para
   exportar el pack base no hacen falta los binarios), los lados (O5) y qué trae la importación
   (O6).
+
+### Proteger los mundos al desplegar — Planeada (2026-10-12), después de T8 · i-7985ee-e87afa
+- **Origen:** las investigaciones del 2026-10-12 (`docs/research/2026-10-12-construccion-de-modpacks.md`
+  R3–R8, R12–R13; `2026-10-12-minecraft-y-sus-jugadores.md`, «Qué implica», 1, 5, 6, 11, 12). El
+  dueño las dejó para después de T8 (2026-10-12): hoy la app es de solo lectura sobre los servidores.
+- **Recomendaciones, por impacto:**
+  - **Rollback de un servidor que ya cargó el mundo = restaurar el backup previo** (archivos y
+    mundo), no desplegar el build viejo encima; el de solo jars, solo si no llegó a cargar.
+  - **Cambio de versión de MC o de loader = migración aparte**, con backup obligatorio y aviso de
+    que no hay vuelta (como mrpack-install, que se niega a actualizar en ese caso).
+  - **Manifiesto desplegado por servidor** (ruta → sha512, overrides incluidos): no tocar lo
+    idéntico, borrar lo que el build nuevo ya no trae, no pisar lo que el admin editó; rutas
+    intocables fijas (`world*/`, `server.properties`, `ops.json`, `whitelist.json`, `eula.txt`,
+    `*/serverconfig/`). Se cruza con i-7985ee-943b5e (O3).
+  - Una baja de un mod con datos en el mundo pide confirmación y backup (F27 hoy solo avisa).
+  - Validar el Java de la imagen según la versión de MC (8/16/17/21/25), backups con
+    `save-off`/`save-all flush`, avisos de RAM y del puerto UDP de Simple Voice Chat.
+  - Reemplazo Fabric API → QFAPI solo hasta MC 1.21: QuiltMC retiró QFAPI desde 26.1.
+  - Decir en la interfaz que ATM, RLCraft, SkyFactory y Vault Hunters solo están en CurseForge.
+  - Prueba de arranque de un build en un servidor de prueba (minutos por build: decisión del dueño).
 
 ## Seguridad y despliegue
 

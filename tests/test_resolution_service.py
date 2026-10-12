@@ -170,3 +170,36 @@ def test_the_request_carries_the_build_in_force_as_floors(mongo: MongoRunner) ->
 
     before, after, locked = mongo(scenario)
     assert before == {} and after == locked and SODIUM in after
+
+
+def test_what_a_linked_server_runs_is_a_floor_too_and_the_newer_one_wins(mongo: MongoRunner) -> None:
+    # Owner, 2026-10-12: a pack imported from a server has no build yet, and a server may run
+    # something newer than the build: the last scan of every linked server counts as well.
+    from datetime import datetime, timezone
+
+    from src.database.pterodactyl import PterodactylDatabase
+    from src.library.scan import ScanFile
+    from src.model.pterodactyl import PterodactylServer, ServerScan
+
+    def jar(path: str, project_id: str | None, version_id: str | None) -> ScanFile:
+        return ScanFile(path=path, size=1, modified_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
+                        status="identified" if version_id else "unknown", project_id=project_id, version_id=version_id)
+
+    async def scenario() -> tuple[dict[str, str], dict[str, str], dict[str, Any]]:
+        api = RecordedModrinthAPI()
+        service, bundle_id = await bundle(api, "iris")
+        server = await PterodactylDatabase().server_insert(PterodactylServer(
+            identifier="1a2b3c4d", internal_id=1, uuid="1a2b3c4d-0000", name="Survival", node="n1", description="",
+            status=None, is_suspended=False, is_installing=False, is_transferring=False, bundle_id=bundle_id))
+        await PterodactylDatabase().scan_insert(ServerScan(
+            server_id=server.id, directory="/mods", scanned_at=datetime(2026, 10, 1, tzinfo=timezone.utc),  # type: ignore[arg-type]
+            full=False, files=[jar("/mods/sodium.jar", SODIUM, "v4PSXean"), jar("/mods/x.jar", None, None)]))
+        without_build = (await service._request(await ModpackDatabase().bundle_get(bundle_id))).floors
+        await service.build_create(bundle_id, actor=EDITOR)
+        with_build = (await service._request(await ModpackDatabase().bundle_get(bundle_id))).floors
+        dates = {v["id"]: v["date_published"] for v in api.versions if v["id"] in ("v4PSXean", "bAZQdGpg")}
+        return without_build, with_build, dates
+
+    without_build, with_build, dates = mongo(scenario)
+    assert without_build == {SODIUM: "v4PSXean"}
+    assert with_build[SODIUM] == max(dates, key=lambda i: dates[i]) and IRIS in with_build

@@ -2152,7 +2152,7 @@ def test_the_channels_section_lists_each_exception_with_whether_it_is_used() -> 
     section = text[text.index('id="channels-section"'):]
     section = section[:section.index('id="local-files-section"')]
     shown = " ".join(visible(section).split())
-    assert "Sodium acepta beta" in shown and "en uso: no hay versión en los canales del pack" in shown
+    assert "Sodium acepta beta" in shown and "en uso: no hay una estable más nueva que la instalada" in shown
     assert "Lithium acepta alpha" in shown and "sin efecto: ya hay versión en los canales del pack" in shown
     assert f'hx-delete="/modpacks/{BUNDLE_ID}/channel-exceptions/P1"' in section
 
