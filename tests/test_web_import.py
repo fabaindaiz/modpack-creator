@@ -171,7 +171,8 @@ def test_v1_imports_a_modrinth_modpack_or_an_mrpack_as_a_job() -> None:
     client = v1_client(fake)
     by_ref = client.post("/v1/modpack/import/modrinth", params={"ref": "aventura", "into": str(BUNDLE_ID)})
     by_file = client.post("/v1/modpack/import/mrpack", files={"archivo": ("pack.mrpack", b"PK data", "application/zip")})
-    assert by_ref.status_code == by_file.status_code == 202 and by_ref.json()["kind"] == "modpack_import"
+    assert by_ref.status_code == by_file.status_code == 202, (by_ref.text, by_file.text)
+    assert by_ref.json()["kind"] == "modpack_import"
     assert fake.calls == [("import_modrinth", "aventura", EDITOR, str(BUNDLE_ID)), ("import_mrpack", b"PK data", EDITOR, None)]
 
 
@@ -211,3 +212,18 @@ def test_the_form_and_the_report_speak_of_prism() -> None:
     fake.job.status, fake.job.active = "done", False
     shown = " ".join(visible(client.get(f"/modpacks/importar/{fake.job.id}", headers=HTMX).text).split())
     assert "Desactivados en Prism: 3 (quedan «Desactivado»)" in shown
+
+
+def test_an_upload_that_does_not_fit_the_temporary_disk_is_refused_before_reading_it() -> None:
+    # Owner (2026-10-12): the uploads in flight may take at most IMPORT_TMP_MAX_MIB of /tmp.
+    from src.routers.web import modpacks as web
+
+    client, fake = setup()
+    data = prism_bytes()
+    web.UPLOADS.in_use = web.UPLOADS.max_bytes - 10  # another upload holds almost all of it
+    try:
+        response = client.post("/modpacks/importar", headers=HTMX, files={"archivo": ("Aventura.zip", data, "application/zip")})
+    finally:
+        web.UPLOADS.in_use = 0
+    assert response.status_code == 429 and "Hay otra importación subiendo; intenta en un momento" in response.text
+    assert fake.calls == []

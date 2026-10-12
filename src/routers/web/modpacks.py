@@ -1,5 +1,7 @@
 import logging
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Optional
@@ -15,8 +17,9 @@ from src.model.modpack import ModpackBundle, ModpackBundleCreate, ModpackBundleP
 from src.model.modrinth.project import ModrinthEnvironment
 from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
-from src.library.utils import as_utc
+from src.library.utils import as_utc, getenv
 from src.library.prism_import import is_prism
+from src.library.upload_budget import UploadBudget, UploadBusy
 from src.web import BUNDLE_REF, JOB_STARTED, MODRINTH_REF, WebRoute, get_web_actor, render
 
 logger = logging.getLogger("modpack.web")
@@ -345,6 +348,22 @@ IMPORT_MAX_BYTES = 50 * 1024 * 1024
 # worlds never opened. A .mrpack is still refused past IMPORT_MAX_BYTES once read.
 PRISM_MAX_BYTES = 1024 * 1024 * 1024
 IMPORT_MAX_REQUEST = PRISM_MAX_BYTES + 1024 * 1024
+# The temporary disk the imports being uploaded may take together (owner, 2026-10-12): each holds its
+# Content-Length from before its body is read until its answer, when Starlette deletes the file.
+UPLOADS = UploadBudget(int(getenv("IMPORT_TMP_MAX_MIB", "4096")) * 1024 * 1024)
+UPLOAD_BUSY = "Hay otra importación subiendo; intenta en un momento"
+
+@contextmanager
+def _upload_room(request: Request) -> Iterator[None]:
+    """413 past the size an import may have; 429 if the uploads in flight leave no room for it."""
+    declared = request.headers.get("content-length", "")
+    if not declared.isdigit() or int(declared) > IMPORT_MAX_REQUEST:
+        raise HTTP_413_CONTENT_TOO_LARGE("El archivo pesa más de 1 GiB")
+    try:
+        with UPLOADS.reserve(int(declared)):
+            yield
+    except UploadBusy as busy:
+        raise QuotaExceeded(UPLOAD_BUSY, 30.0) from busy
 
 @router.get("/modpacks/importar")
 @inject
@@ -364,23 +383,21 @@ async def modpack_import(
         ):
     """Import an uploaded .mrpack (`archivo`) or a Modrinth reference (`ref`): as a new pack, or as the
     content of `into`. The answer is the report, into the form's #import-result."""
-    declared = request.headers.get("content-length", "")
-    if not declared.isdigit() or int(declared) > IMPORT_MAX_REQUEST:
-        raise HTTP_413_CONTENT_TOO_LARGE("El archivo pesa más de 1 GiB")
-    form = await request.form(max_files=1, max_fields=4)
-    into = str(form.get("into") or "") or None
-    if into is not None and not re.fullmatch(BUNDLE_REF, into):
-        raise HTTP_422_UNPROCESSABLE_ENTITY("Ese modpack no existe")
-    upload, ref = form.get("archivo"), str(form.get("ref") or "").strip()
-    if isinstance(upload, UploadFile) and upload.filename:
-        if is_prism(upload.file):
-            job = await importService.import_prism(upload.file, actor, into=into)
+    with _upload_room(request):
+        form = await request.form(max_files=1, max_fields=4)
+        into = str(form.get("into") or "") or None
+        if into is not None and not re.fullmatch(BUNDLE_REF, into):
+            raise HTTP_422_UNPROCESSABLE_ENTITY("Ese modpack no existe")
+        upload, ref = form.get("archivo"), str(form.get("ref") or "").strip()
+        if isinstance(upload, UploadFile) and upload.filename:
+            if is_prism(upload.file):
+                job = await importService.import_prism(upload.file, actor, into=into)
+            else:
+                job = await importService.import_mrpack(await upload.read(IMPORT_MAX_BYTES + 1), actor, into=into)
+        elif ref:
+            job = await importService.import_modrinth(ref[:500], actor, into=into)
         else:
-            job = await importService.import_mrpack(await upload.read(IMPORT_MAX_BYTES + 1), actor, into=into)
-    elif ref:
-        job = await importService.import_modrinth(ref[:500], actor, into=into)
-    else:
-        raise HTTP_422_UNPROCESSABLE_ENTITY("Elige un archivo .mrpack o escribe la URL de un modpack de Modrinth")
+            raise HTTP_422_UNPROCESSABLE_ENTITY("Elige un archivo .mrpack o escribe la URL de un modpack de Modrinth")
     response = render(request, "modpacks/_import_job.html", actor, job=job, report=None)
     response.headers["HX-Trigger"] = JOB_STARTED
     return response

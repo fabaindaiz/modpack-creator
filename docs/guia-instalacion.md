@@ -106,6 +106,7 @@ como números, y la API ignora lo que no es texto (o no arranca, en `UPDATE_CHEC
 | `MODRINTH_TOKEN`, `MODRINTH_AGENT` | token de Modrinth y `User-Agent` propio (Modrinth pide uno que identifique al proyecto) |
 | `CORS_ALLOW_ORIGINS` | otros orígenes que **solo leen** la API (d-7985ee-491c83) |
 | `SESSION_MAX_AGE` | duración de la sesión en segundos (por defecto 43200, 12 h) |
+| `IMPORT_TMP_MAX_MIB` | disco temporal que pueden ocupar juntas las subidas de importación en curso, en MiB (por defecto 4096). Cada archivo subido se escribe en `/tmp` del contenedor (o en `TMPDIR`) pasado 1 MiB y se borra al terminar la petición; un zip de Prism llega a 1 GiB. Una subida que no cabe se rechaza antes de leerse: «Hay otra importación subiendo; intenta en un momento». Dejarlo por debajo del espacio libre de ese disco |
 | `LOG_LEVEL`, `REQUEST_TIMEOUT`, `CONNECT_TIMEOUT`, `JOBS_WORKER`, `DOCS_PATH`, `REDOCS_PATH` | ajustes finos; los valores por defecto sirven |
 
 `.env.yaml` nunca se versiona. Se monta de solo lectura en el contenedor.

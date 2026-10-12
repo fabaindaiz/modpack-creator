@@ -187,5 +187,11 @@ El dueño cerró el build 0.2.0 con «lo hecho + U3» y sigue el resto en una se
 - **Texto de la sección Canales:** «en uso: no hay una estable más nueva que la instalada».
 - **Lo de proteger mundos** (rollback por backup, migración de MC/loader, configs del admin) va al
   roadmap después de T8 (i-7985ee-e87afa).
+- **T6/T5, textos:** un solo campo de archivo para .mrpack, zip de Prism (y de CurseForge con
+  clave), con los textos aprobados; con clave, la tarjeta «Código de perfil de CurseForge».
+- **Disco temporal de las subidas (pregunta del dueño):** cada subida se escribe en `/tmp` pasado
+  1 MiB y se borra al responder; reserva su Content-Length antes de leerse contra
+  `IMPORT_TMP_MAX_MIB` (por defecto 4096, la mitad de los 8 GB de `/tmp` que mencionó el dueño;
+  reversible). Lo que no cabe da «Hay otra importación subiendo; intenta en un momento».
 - **Investigación pedida:** construcción de modpacks completa, para contexto
   (`docs/research/2026-10-12-construccion-de-modpacks.md`).
