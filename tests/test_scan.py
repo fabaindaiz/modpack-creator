@@ -158,21 +158,14 @@ def test_a_local_file_of_the_build_explains_an_unknown_jar() -> None:
 T_CREATED = datetime(2026, 9, 1, tzinfo=timezone.utc)
 
 
-def test_a_jar_restored_with_its_old_mtime_but_a_new_ctime_is_hashed_again() -> None:
-    # S4: a backup restore keeps the modification time; the creation time (Wings' ctime) changes.
+def test_a_new_ctime_alone_keeps_the_cached_hash() -> None:
+    # Wings chowns every file when the server boots (check_permissions_on_boot, on by default), and
+    # chown changes the ctime: a ctime in the cache's key re-downloaded every jar after each restart
+    # (code review, 2026-10-12). A restore is seen through the server's activity instead.
     before = ScanFile(path="/mods/a.jar", size=1, modified_at=T_CREATED, created_at=T_CREATED, status="identified", sha1="s")
     now = ListedFile(path="/mods/a.jar", size=1, modified_at=T_CREATED, created_at=T_CREATED + timedelta(days=3))
     kept, to_hash, _ = plan_scan([now], [before], full=False, max_bytes=100)
-    assert kept == [] and to_hash == [now]
-
-
-def test_a_scan_stored_before_creation_times_still_serves_as_cache() -> None:
-    # Deploying this must not turn the next scan into a full one: an old entry has no created_at.
-    before = ScanFile(path="/mods/a.jar", size=1, modified_at=T_CREATED, status="identified", sha1="s")
-    now = ListedFile(path="/mods/a.jar", size=1, modified_at=T_CREATED, created_at=T_CREATED)
-    kept, to_hash, _ = plan_scan([now], [before], full=False, max_bytes=100)
     assert [k.path for k in kept] == ["/mods/a.jar"] and to_hash == []
-    assert kept[0].created_at == T_CREATED  # learnt now, so the next restore is seen
 
 
 def test_a_seeded_jar_not_confirmed_yet_is_hashed_once_by_the_next_scan() -> None:

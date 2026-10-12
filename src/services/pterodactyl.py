@@ -45,6 +45,13 @@ ADDING = "Agregando al modpack"
 Report = Callable[[str, int, int], Awaitable[None]]
 # The panel's server list (U6; owner, 2026-10-09): asked at most this often, and «Actualizar lista»
 # at most once a minute (one resource for everyone, not per user).
+# What brings files back with old modification times (a partial match of the panel's event names;
+# the panel writes the failed restore as `server.backup.restore-failed`, hence `backup.restore`).
+RESTORE_EVENTS = ["backup.restore", "file.decompress", "reinstall"]
+# The scan's own start and the event's stamp come from two clocks; the panel purges activity after
+# 90 days (research 2026-10-12-actividad-pterodactyl).
+ACTIVITY_SLACK = timedelta(minutes=2)
+ACTIVITY_KEPT = timedelta(days=90)
 PANEL_LIST_TTL = timedelta(minutes=5)
 PANEL_LIST_REFRESH_EVERY = timedelta(minutes=1)
 IMPORT_FAILED = ("El modpack quedó creado y vinculado a este servidor, pero la importación de sus mods falló. "
@@ -184,11 +191,13 @@ class PterodactylService():
         :return: The stored scan.
         """
         server = await self.pterodactylDB.server_get(server_id)
+        previous = await self.pterodactylDB.scan_latest(server_id, directory)
+        if previous is not None and not full:
+            full = await self._restored_since(server.identifier, previous)
         listing = [ListedFile(path=f"{directory.rstrip('/')}/{f.name}", size=f.size, modified_at=f.modified_at,
                               created_at=f.created_at)
                    for f in await self.pterodactylAPI.server_files(server.identifier, directory)
                    if f.is_file and not f.is_symlink and f.name.endswith(".jar")]
-        previous = await self.pterodactylDB.scan_latest(server_id, directory)
         kept, to_hash, too_large = plan_scan(listing, previous.files if previous else [], full, SCAN_MAX_BYTES)
         seeded = [ScanFile(**f.model_dump(), status="unknown", sha1=seeds[f.path][1], sha512=seeds[f.path][2],
                            confirmed=False)
@@ -224,6 +233,26 @@ class PterodactylService():
             return scan
         await self.pterodactylDB.scan_set_drift(server_id, drift)
         return scan.model_copy(update={"drift": drift})
+
+    async def _restored_since(self, identifier: str, previous: ServerScan) -> bool:
+        """Whether files may have come back with old modification times since `previous`: a backup
+        restore, a decompress or a reinstall in the server's activity (one request), or a scan too
+        old for the activity to still hold it. If the activity cannot be read, yes: one full scan
+        costs less than a stale cache (fail closed). A 409 (restoring, installing, moving) is raised."""
+        since = _utc(previous.scanned_at)
+        if self.clock() - since > ACTIVITY_KEPT:
+            return True
+        try:
+            events = await self.pterodactylAPI.server_activity(identifier, RESTORE_EVENTS)
+        except HTTPException as error:
+            if error.status_code == 409:
+                raise
+            logger.warning("activity of %s unreadable: the scan is full", identifier, exc_info=True)
+            return True
+        except Exception:
+            logger.warning("activity of %s unreadable: the scan is full", identifier, exc_info=True)
+            return True
+        return any(_utc(stamp) >= since - ACTIVITY_SLACK for _, stamp in events)
 
     async def _hash(self, identifier: str, files: list[ListedFile], report: Optional[Report] = None) -> list[ScanFile]:
         """Download each file and hash its bytes, and read its mod metadata as data (S5): the bytes are

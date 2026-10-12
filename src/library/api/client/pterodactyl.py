@@ -1,5 +1,6 @@
 import backoff
 from aiohttp import FormData
+from datetime import datetime
 from typing import Any, Generator, Optional
 from src.library.api import HttpAPI, METHOD
 from src.library.api.handler import JsonRequest, JsonResponse, MultiPartRequest, RequestHandler, StreamResponse
@@ -72,6 +73,24 @@ class PterodactylAPI(HttpAPI):
             page += 1
         return servers
     
+    @backoff_on_rate_limit
+    @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_retryable)
+    async def server_activity(self, server_id: str, events: list[str]) -> list[tuple[str, datetime]]:
+        """The server's latest activity whose event contains one of `events` (a partial match, OR),
+        newest first, one page of 25: (event, timestamp). `GET /api/client/servers/{id}/activity`,
+        panel 1.9+; `sort` must be sent, unsorted has no guaranteed order
+        (docs/research/2026-10-12-actividad-pterodactyl.md)."""
+        handler: JsonResponse = await self._request(
+            method=METHOD.GET, path=f'client/servers/{server_id}/activity',
+            query={"filter[event]": ",".join(events), "sort": "-timestamp", "per_page": "25"})
+        found: list[tuple[str, datetime]] = []
+        for item in handler.json.get("data", []):
+            attributes = item.get("attributes", {}) if isinstance(item, dict) else {}
+            event, stamp = attributes.get("event"), attributes.get("timestamp")
+            if isinstance(event, str) and isinstance(stamp, str):
+                found.append((event, datetime.fromisoformat(stamp.replace("Z", "+00:00"))))
+        return found
+
     @backoff_on_rate_limit
     @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_retryable)
     async def server_files(self, server_id: str, directory: str) -> Generator[PterodactylFile, None, None]:

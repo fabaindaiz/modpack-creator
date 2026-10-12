@@ -46,6 +46,18 @@ bien escrita. Cada entrada dice cuándo se leyó; las que no lo dicen, el 2026-1
   quitó. Contrato: `tests/test_api_contracts.py`
   (`test_update_individual_sends_each_hash_with_its_own_filters`).
 
+- **Pterodactyl, actividad de un servidor** (código del panel v1.15.1 y de Wings v1.13.3; la Client
+  API no tiene documentación oficial). `GET /api/client/servers/{id}/activity` (desde 1.9) filtra con
+  `filter[event]` parcial y comas como OR, ordena con `sort=-timestamp` (sin él no hay orden
+  garantizado), pide `activity.read` y cuenta para el límite de 256/min del cliente. Una restauración
+  deja `server:backup.restore` y `server:backup.restore-complete` (y la errata `server.backup.restore-failed`).
+  Wings hace `chown` de todos los archivos al arrancar (`check_permissions_on_boot`, por defecto
+  activo), lo que cambia el ctime que expone como `created`. Investigación:
+  `docs/research/2026-10-12-actividad-pterodactyl.md`.
+
+  **Lo que cambió aquí por eso (2026-10-12):** la caché del escaneo no usa el ctime; el escaneo lee la
+  actividad y va completo tras una restauración (d-7985ee-894b2c).
+
 - **CurseForge Core API** (docs.curseforge.com/rest-api; investigación
   `docs/research/2026-10-09-curseforge-prism-y-deuda-panel.md`, A1–A3). La clave va en `x-api-key`;
   la del dueño, pedida con el formulario de CurseForge, nunca la consola de Studios ni una clave

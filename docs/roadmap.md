@@ -979,7 +979,8 @@ base. Además publica 27017 y 8081 al host, usa `mongo:latest` y no tiene health
 
 ### Usuario de servicio dedicado en Pterodactyl — Planeada · i-7985ee-63226e
 Una clave `ptlc_` de un usuario **no admin**, subusuario de cada servidor con los permisos justos y
-`allowed_ips`. La clave de un root admin pasa también la Application API
+`allowed_ips`. Entre los permisos, `activity.read`: el escaneo lee la actividad del servidor para
+detectar una restauración (d-7985ee-894b2c); sin él, cada escaneo sería completo. La clave de un root admin pasa también la Application API
 (`research/2026-10-operacion-pterodactyl.md` §1).
 
 ### Tests contra un MongoDB real en CI — Hecha (2026-10-01) · i-7985ee-ade111

@@ -2,8 +2,11 @@
 
 Pure functions. Pterodactyl gives no hashes (pterodactyl/panel#4894), so a jar is identified by
 the sha1 of its bytes against Modrinth, as the Modrinth App, ferium and Prism do. A jar is
-downloaded again only if its path, size or modification time changed, or on a full scan:
-restoring a backup keeps old modification times, which the cache cannot see.
+downloaded again only if its path, size or modification time changed, or on a full scan.
+Restoring a backup keeps old modification times, which the cache cannot see: the scan reads the
+server's activity first and goes full after a restore (docs/research/2026-10-12-actividad-pterodactyl.md).
+Wings' ctime (`created_at`) is kept as information only: Wings chowns every file when the server
+boots, and that changes it.
 """
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime, timezone
@@ -74,8 +77,9 @@ def plan_scan(listing: Iterable[ListedFile], previous: Iterable[ScanFile], full:
     too_large: list[ScanFile] = []
     for file in listing:
         hit = cached.get(file.key())
-        if hit is not None and (hit.created_at is None or file.created_at is None or hit.created_at == file.created_at):
-            kept.append(hit.model_copy(update={"created_at": file.created_at}) if hit.created_at is None else hit)
+        if hit is not None:
+            # The listing's ctime is information only (a boot's chown moves it): the hit keeps it fresh.
+            kept.append(hit.model_copy(update={"created_at": file.created_at or hit.created_at}))
         elif file.size > max_bytes:
             too_large.append(ScanFile(**file.model_dump(), status="too_large"))
         else:

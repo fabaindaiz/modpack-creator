@@ -280,6 +280,22 @@ def test_the_server_list_asks_a_hundred_a_page_and_follows_every_page(mongo: Mon
     assert [s.uuid for s in result] == ["uuid-10", "uuid-11", "uuid-20", "uuid-21"]
 
 
+def test_the_activity_asks_for_restore_like_events_newest_first() -> None:
+    """Pterodactyl `GET /api/client/servers/{id}/activity` (panel 1.9+; routes/api-client.php):
+    `filter[event]` is a partial match with commas as OR, `sort=-timestamp`, `per_page` up to 100;
+    each entry's `attributes` carry `event` and an ISO `timestamp`
+    (docs/research/2026-10-12-actividad-pterodactyl.md)."""
+    page = {"object": "list", "data": [
+        {"object": "activity_log", "attributes": {"event": "server:backup.restore-complete",
+                                                  "timestamp": "2026-10-12T10:00:00+00:00", "properties": {}}}]}
+    result, seen = run({("GET", "/api/client/servers/abc/activity"): json_reply(page)},
+                       lambda base: pterodactyl(base).server_activity("abc", ["backup.restore", "reinstall"]))
+    assert [(s.method, s.path, s.query) for s in seen] == [
+        ("GET", "/api/client/servers/abc/activity",
+         {"filter[event]": "backup.restore,reinstall", "sort": "-timestamp", "per_page": "25"})]
+    assert [(e, t.isoformat()) for e, t in result] == [("server:backup.restore-complete", "2026-10-12T10:00:00+00:00")]
+
+
 def test_the_server_state_reads_its_flags_and_backup_limit() -> None:
     details = {"object": "server", "attributes": {"status": None, "is_suspended": False, "is_installing": False,
                                                   "is_transferring": False, "feature_limits": {"databases": 0, "allocations": 1, "backups": 3}}}

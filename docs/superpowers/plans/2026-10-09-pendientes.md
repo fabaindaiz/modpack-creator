@@ -28,7 +28,7 @@ el dueño, tema por tema; cada decisión se anota aquí al tomarla.
 | S1 | De qué escaneo parte la importación | escanear primero, incremental |
 | S2 | Cuánto buscar por jar desconocido | slug en lote; búsqueda por texto solo si el slug no dio un mod |
 | S3 | Dónde viven los candidatos pendientes | checkpoint del último trabajo, filtrado por lo ya decidido |
-| S4 | Escaneo completo semanal | `created_at` en la clave y completo cada 30 días |
+| S4 | Escaneo completo semanal | ~~`created_at` en la clave~~ y completo cada 30 días; enmendada el 2026-10-12: la actividad del servidor, no el ctime (d-7985ee-894b2c) |
 
 ### T2 · Escaneos viejos y actualizar un servidor (S §5, U §6)
 | Id | Decisión | Recomendada |

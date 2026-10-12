@@ -57,6 +57,15 @@ class FakePanel:
         self.calls.append(f"download {filepath}")
         return self.files[filepath.rsplit("/", 1)[-1]][0]
 
+    activity: list[tuple[str, datetime]] = []
+    activity_error: Exception | None = None
+
+    async def server_activity(self, server_id: str, events: list[str]) -> list[tuple[str, datetime]]:
+        self.calls.append("activity")
+        if self.activity_error is not None:
+            raise self.activity_error
+        return list(self.activity)
+
 
 class HashModrinthAPI(RecordedModrinthAPI):
     """Modrinth por hash: cada sha1 conocido devuelve una versión real grabada, con ese sha1 en su
@@ -410,3 +419,44 @@ def test_a_scan_says_how_far_it_is(mongo: MongoRunner) -> None:
 
     seen = mongo(scenario)
     assert seen[0] == ("Leyendo los jars del servidor", 0, 2) and seen[-1] == ("Leyendo los jars del servidor", 2, 2)
+
+
+
+# A backup restore keeps old mtimes (code review, 2026-10-12; research
+# docs/research/2026-10-12-actividad-pterodactyl.md): the server's activity says so instead.
+
+
+def test_a_restore_since_the_last_scan_makes_the_next_scan_full(mongo: MongoRunner) -> None:
+    from datetime import timedelta
+
+    async def scenario() -> tuple[list[str], list[str], bool, bool]:
+        panel = FakePanel()
+        panel.files = {"fabric-api.jar": (b"fabric api", T0)}
+        service, server_id = await setup(panel, HashModrinthAPI({}))
+        first = await service.scan(server_id, actor=None)
+        panel.calls.clear()
+        quiet = await service.scan(server_id, actor=None)
+        quiet_calls = list(panel.calls)
+        panel.calls.clear()
+        panel.activity = [("server:backup.restore-complete", quiet.scanned_at + timedelta(seconds=5))]
+        restored = await service.scan(server_id, actor=None)
+        return quiet_calls, list(panel.calls), quiet.full, restored.full
+
+    quiet_calls, restored_calls, quiet_full, restored_full = mongo(scenario)
+    assert quiet_calls == ["activity", "list /mods"] and quiet_full is False
+    assert restored_calls == ["activity", "list /mods", "download /mods/fabric-api.jar"] and restored_full is True
+
+
+def test_when_the_activity_cannot_be_read_the_scan_is_full(mongo: MongoRunner) -> None:
+    # Failing closed: a restore we cannot rule out costs one full scan, never a stale cache.
+    from fastapi import HTTPException
+
+    async def scenario() -> bool:
+        panel = FakePanel()
+        panel.files = {"fabric-api.jar": (b"fabric api", T0)}
+        service, server_id = await setup(panel, HashModrinthAPI({}))
+        await service.scan(server_id, actor=None)
+        panel.activity_error = HTTPException(status_code=403, detail="forbidden")
+        return (await service.scan(server_id, actor=None)).full
+
+    assert mongo(scenario) is True
