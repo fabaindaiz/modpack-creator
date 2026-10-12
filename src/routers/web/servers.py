@@ -86,18 +86,28 @@ async def server_list(
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         ):
-    """Our servers, and the ones in the Pterodactyl panel that are not here yet."""
+    """Our servers, and the ones in the Pterodactyl panel that are not here yet. The panel's list is
+    kept 5 minutes (U6): the page says how old it is, and shows the kept one if the panel fails."""
     servers = await pterodactylService.server_find()
     names = {str(b.id): b.name for b in await modpackService.bundle_find()}
-    panel_failed = False
-    try:
-        known = {s.uuid for s in servers}
-        additions = [s for s in await pterodactylService.server_external() if s.uuid not in known]
-    except Exception:
-        logger.warning("The panel's server list failed", exc_info=True)
-        additions, panel_failed = [], True
-    return render(request, "servers/list.html", actor, servers=servers, additions=additions,
-                  panel_failed=panel_failed, bundle_names=names, nav_active="servers")
+    panel = await pterodactylService.panel_servers()
+    known = {s.uuid for s in servers}
+    additions = [s for s in panel.servers if s.uuid not in known]
+    return render(request, "servers/list.html", actor, servers=servers, additions=additions, panel=panel,
+                  panel_failed=panel.failed and panel.fetched_at is None, bundle_names=names, nav_active="servers")
+
+@router.post("/servers/lista")
+@inject
+async def server_list_refresh(
+        request: Request,
+        actor: Actor = Depends(get_web_actor),
+        pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
+        ):
+    """«Actualizar lista»: ask the panel now (once a minute) and go back to the list."""
+    await pterodactylService.panel_refresh(actor)
+    if request.headers.get("HX-Request"):
+        return Response(status_code=200, headers={"HX-Redirect": "/servers"})
+    return RedirectResponse("/servers", status_code=303)
 
 @router.post("/servers")
 @inject

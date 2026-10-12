@@ -257,6 +257,29 @@ BACKUP = {"object": "backup", "attributes": {
     "completed_at": "2026-10-01T12:01:00+00:00"}}
 
 
+def test_the_server_list_asks_a_hundred_a_page_and_follows_every_page(mongo: MongoRunner) -> None:
+    """Pterodactyl `GET /api/client?type=admin-all`: paginated, `per_page` up to 100 (50 by default),
+    with `meta.pagination.total_pages` (ClientController::index; H8 of
+    docs/research/2026-10-09-flujo-actualizacion-y-caches.md). It used to read the first page only."""
+    def server(n: int) -> dict[str, Any]:
+        return {"object": "server", "attributes": {
+            "identifier": f"id{n}", "internal_id": n, "uuid": f"uuid-{n}", "name": f"S{n}", "node": "n1",
+            "description": "", "status": None, "is_suspended": False, "is_installing": False, "is_transferring": False}}
+
+    async def pages(request: web.Request, base: str) -> web.StreamResponse:
+        page = int(request.query.get("page", "1"))
+        return web.json_response({"object": "list", "data": [server(page * 10 + i) for i in range(2)],
+                                  "meta": {"pagination": {"total": 4, "count": 2, "per_page": 100,
+                                                          "current_page": page, "total_pages": 2}}})
+
+    result, seen = mongo(lambda: serve({("GET", "/api/client"): pages},
+                                       lambda base: pterodactyl(base).server_get_many()))
+    assert [(s.path, s.query) for s in seen] == [
+        ("/api/client", {"type": "admin-all", "per_page": "100", "page": "1"}),
+        ("/api/client", {"type": "admin-all", "per_page": "100", "page": "2"})]
+    assert [s.uuid for s in result] == ["uuid-10", "uuid-11", "uuid-20", "uuid-21"]
+
+
 def test_the_server_state_reads_its_flags_and_backup_limit() -> None:
     details = {"object": "server", "attributes": {"status": None, "is_suspended": False, "is_installing": False,
                                                   "is_transferring": False, "feature_limits": {"databases": 0, "allocations": 1, "backups": 3}}}

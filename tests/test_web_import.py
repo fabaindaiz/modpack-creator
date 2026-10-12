@@ -143,3 +143,32 @@ def test_a_failed_import_says_why() -> None:
     fake.job.status, fake.job.active, fake.job.error = "failed", False, "Modrinth no conoce «x»"
     response = client.get(f"/modpacks/importar/{fake.job.id}", headers=HTMX)
     assert "No se pudo importar: Modrinth no conoce «x»" in " ".join(visible(response.text).split())
+
+
+def v1_client(fake: FakeImport) -> Any:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.dependences import get_current_actor
+    from src.routers.v1 import include_routers_v1
+
+    app = FastAPI()
+    include_routers_v1(app)
+    app.dependency_overrides[get_current_actor] = lambda: EDITOR
+    return TestClient(app, base_url="https://testserver")
+
+
+def test_v1_imports_a_modrinth_modpack_or_an_mrpack_as_a_job() -> None:
+    # U5/S7 (owner, 2026-10-09): /v1 answers 202 with the job, as the panel queues it.
+    _, fake = setup()
+    client = v1_client(fake)
+    by_ref = client.post("/v1/modpack/import/modrinth", params={"ref": "aventura", "into": str(BUNDLE_ID)})
+    by_file = client.post("/v1/modpack/import/mrpack", files={"archivo": ("pack.mrpack", b"PK data", "application/zip")})
+    assert by_ref.status_code == by_file.status_code == 202 and by_ref.json()["kind"] == "modpack_import"
+    assert fake.calls == [("import_modrinth", "aventura", EDITOR, str(BUNDLE_ID)), ("import_mrpack", b"PK data", EDITOR, None)]
+
+
+def test_v1_refuses_an_mrpack_past_the_limit_before_reading_it() -> None:
+    _, fake = setup()
+    response = v1_client(fake).post("/v1/modpack/import/mrpack", files={"archivo": ("p.mrpack", b"x", "application/zip")},
+                                    headers={"Content-Length": str(UPLOAD_LIMIT + 2 * 1024 * 1024)})
+    assert response.status_code == 413 and fake.calls == []

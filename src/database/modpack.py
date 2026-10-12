@@ -8,6 +8,7 @@ from src.library.scan import ClaimedFile, LocalFile
 from src.model.modpack import (
     BUNDLE_KEYED_FIELDS,
     BUNDLE_NULL_REMOVES,
+    LoaderVersion,
     ModpackBuild,
     ModpackBundle,
     ModpackBundlePatch,
@@ -296,6 +297,15 @@ class ModpackDatabase():
             {"$set": {"resolved_at": resolution.resolved_at, "request_digest": resolution.request_digest,
                       "lock": resolution.lock.model_dump(mode="json")}},
             on_insert=resolution)
+
+    async def loader_version_get(self, key: str) -> Optional[LoaderVersion]:
+        """The kept loader version for "loader|minecraft"; None if it was never asked."""
+        return await LoaderVersion.find_one(LoaderVersion.key == key)
+
+    async def loader_version_save(self, record: LoaderVersion) -> None:
+        """Keep a loader version, replacing the one with its key."""
+        await LoaderVersion.get_pymongo_collection().replace_one(
+            {"key": record.key}, record.model_dump(exclude={"id"}), upsert=True)
 
     async def resolution_get(self, bundle_id: PydanticObjectId) -> Optional[ModpackResolution]:
         """A bundle's latest resolution; None if it was never resolved."""

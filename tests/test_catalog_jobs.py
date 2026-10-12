@@ -256,3 +256,35 @@ def test_the_manual_refresh_makes_a_queued_catalog_job_check_modrinth(mongo: Mon
     first, refreshed, checks = mongo(scenario)
     assert refreshed.id == first and refreshed.payload["force"] is True
     assert ("project_get_many", ("AAAA", "BBBB", "LIBB")) in checks  # it did check, inside the window
+
+
+# U4/M4 (owner, 2026-10-09): the loader version is kept 24 h per loader and Minecraft version; the
+# manual refresh forces it, and the kept one serves when the meta is down.
+
+
+def test_the_loader_version_is_asked_once_a_day_forced_by_the_refresh_and_kept_if_the_meta_fails(
+        mongo: MongoRunner) -> None:
+    from src.services.modpack import LOADER_VERSION_TTL
+
+    async def scenario() -> tuple[Any, ...]:
+        service, _, clock, bundle_id = await setup()
+        loaders = service.loaderAPI
+        await service.resolve_fetching(bundle_id)
+        await service.decisions_set(bundle_id, {"AAAA": True, "BBBB": True, "LIBB": True}, EDITOR)
+        await service.build_create(bundle_id, EDITOR)
+        await service.build_create(bundle_id, EDITOR)
+        within_a_day = len(loaders.asked)  # type: ignore[attr-defined]
+        await service.catalog_refresh(bundle_id, EDITOR)
+        await run_jobs(service)
+        forced = len(loaders.asked)  # type: ignore[attr-defined]
+        clock.now += LOADER_VERSION_TTL + timedelta(minutes=1)
+
+        async def down(loader: str, game_version: str) -> str:
+            raise RuntimeError("meta down")
+
+        loaders.loader_version = down  # type: ignore[method-assign]
+        build = await service.build_create(bundle_id, EDITOR)
+        return within_a_day, forced, build.loader_version
+
+    within_a_day, forced, kept = mongo(scenario)
+    assert within_a_day == 1 and forced == 2 and kept == "0.19.5"

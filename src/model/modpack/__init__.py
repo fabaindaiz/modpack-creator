@@ -10,6 +10,7 @@ from src.model.modpack.project import (
     PackProject,
     ProjectOrigin,
 )
+from src.model.modpack.loader_version import LoaderVersion
 from src.model.modpack.update_check import AvailableUpdate, UpdateCheck
 
 __all__ = [
@@ -24,5 +25,6 @@ __all__ = [
     "PackProject",
     "ProjectOrigin",
     "AvailableUpdate",
+    "LoaderVersion",
     "UpdateCheck",
 ]

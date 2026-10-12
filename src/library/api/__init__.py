@@ -147,6 +147,8 @@ class HttpAPI:
             if self.limiter is not None:
                 await self.limiter.acquire(CURRENT_USER.get(), on_wait=ON_WAIT.get())
             async with session.request(method.value, path, headers=headers, **kwargs) as results:
+                if self.limiter is not None:
+                    self.limiter.observe_headers(results.headers)
                 await response.handle(results)
                 await validate_results(results)
                 return response

@@ -1,10 +1,13 @@
+import re
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Query, Request, UploadFile
 from typing import Optional
 from fastapi import Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from src.exceptions import CatalogPending
+from src.exceptions import HTTP_413_CONTENT_TOO_LARGE, HTTP_422_UNPROCESSABLE_ENTITY, CatalogPending
+from src.routers.web.modpacks import IMPORT_MAX_BYTES, IMPORT_MAX_REQUEST
+from src.web import BUNDLE_REF
 from src.model.jobs import Job
 from src.model.users import Actor
 from src.library.resolution import Lock
@@ -163,6 +166,51 @@ async def build_recommend(
         ):
     """Point recommended at a build; going back is pointing at an older one."""
     return await modpack.build_recommend(bundle_id=id, number=number, actor=actor)
+
+@router.post("/modpack/{id}/catalog", response_model=Job, status_code=202)
+@inject
+async def modpack_catalog(
+        id: str,
+        modpack: ModpackService = Depends(Provide[Dependences.modpackService]),
+        actor: Actor = Depends(get_current_actor),
+        ):
+    """
+    «Actualizar desde Modrinth»: the pack's catalog job, checking Modrinth now (key `catalog:<id>`,
+    the panel's). Once a minute per pack; while one is queued, that one. Poll /v1/job/{id}.
+    """
+    return await modpack.catalog_refresh(id, actor)
+
+def _into(into: Optional[str]) -> Optional[str]:
+    if into and not re.fullmatch(BUNDLE_REF, into):
+        raise HTTP_422_UNPROCESSABLE_ENTITY("Ese modpack no existe")
+    return into or None
+
+@router.post("/modpack/import/modrinth", response_model=Job, status_code=202)
+@inject
+async def modpack_import_modrinth(
+        ref: str = Query(..., min_length=1, max_length=500, description="A Modrinth modpack: URL, slug or id"),
+        into: Optional[str] = Query(None, description="A pack whose content it replaces; a new pack if empty"),
+        importer: ModpackImportService = Depends(Provide[Dependences.modpackImportService]),
+        actor: Actor = Depends(get_current_actor),
+        ):
+    """Import a modpack published on Modrinth, as the panel does: a job (`modpack_import`). Poll
+    /v1/job/{id}; its checkpoint holds the report."""
+    return await importer.import_modrinth(ref.strip(), actor, into=_into(into))
+
+@router.post("/modpack/import/mrpack", response_model=Job, status_code=202)
+@inject
+async def modpack_import_mrpack(
+        request: Request,
+        archivo: UploadFile = File(..., description="The .mrpack, 50 MiB at most"),
+        into: Optional[str] = Query(None, description="A pack whose content it replaces; a new pack if empty"),
+        importer: ModpackImportService = Depends(Provide[Dependences.modpackImportService]),
+        actor: Actor = Depends(get_current_actor),
+        ):
+    """Import an uploaded .mrpack, as the panel does: read now, identified in a job. Past 50 MiB, 413."""
+    declared = request.headers.get("content-length", "")
+    if not declared.isdigit() or int(declared) > IMPORT_MAX_REQUEST:
+        raise HTTP_413_CONTENT_TOO_LARGE("El archivo pesa más de 50 MiB")
+    return await importer.import_mrpack(await archivo.read(IMPORT_MAX_BYTES + 1), actor, into=_into(into))
 
 @router.post("/modpack/{id}/resolve", response_model=Lock, responses={202: {"model": Job}})
 @inject

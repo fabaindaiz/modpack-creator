@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, Iterable, Optional
 from src.library.scan import ScanFile
 from src.model.pterodactyl import (
+    PanelServerList,
     PterodactylServer,
     ServerScan,
 )
@@ -76,6 +77,15 @@ class PterodactylDatabase():
         if not result.matched_count:
             raise HTTP_404_NOT_FOUND(f"Server '{server_id}' not found")
         return await self.server_get(server_id)
+
+    async def panel_list_get(self) -> Optional[PanelServerList]:
+        """The panel's server list as last asked; None if never."""
+        return await PanelServerList.find_one(PanelServerList.key == "panel")
+
+    async def panel_list_save(self, servers: list[dict[str, Any]], fetched_at: datetime) -> None:
+        """Keep the panel's server list, replacing the one there was."""
+        await PanelServerList.get_pymongo_collection().replace_one(
+            {"key": "panel"}, {"key": "panel", "servers": servers, "fetched_at": fetched_at}, upsert=True)
 
     async def server_find_by_bundle(self, bundle_id: str) -> list[PterodactylServer]:
         """The servers linked to this bundle."""

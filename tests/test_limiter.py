@@ -181,3 +181,68 @@ def test_with_room_to_spare_a_user_may_go_past_their_quota() -> None:
 
     taken, seconds = asyncio.run(scenario())
     assert taken == 10 and seconds == pytest.approx(60.0)
+
+
+# M5 (owner, 2026-10-09): Modrinth's headers slow the app down; its fixed cap stays as the ceiling.
+
+
+def test_few_requests_left_at_modrinth_slow_everyone_down_by_the_refill_time() -> None:
+    # Modrinth refills 5 a second (GCRA, docs/research/2026-10-09-api-modrinth-detalle.md P3):
+    # under a floor of 30 left, the next request waits 0.2 s for each one missing.
+    async def scenario() -> tuple[list[float], list[float]]:
+        limit, clock = limiter(per_minute=100, per_user=100)
+        limit.observe(remaining=200)
+        await limit.acquire(None)
+        plenty = list(clock.slept)
+        limit.observe(remaining=10)
+        await limit.acquire(None)
+        return plenty, clock.slept
+
+    plenty, slept = asyncio.run(scenario())
+    assert plenty == [] and slept == [pytest.approx(4.0)]
+
+
+def test_a_short_pause_makes_a_panel_user_wait_instead_of_refusing_them() -> None:
+    # A few seconds of slowing down is not worth an error on the panel; a long one still is.
+    async def scenario() -> tuple[list[float], float]:
+        limit, clock = limiter(per_minute=100, per_user=100)
+        limit.pause(2)
+        await limit.acquire("ana")
+        waited = list(clock.slept)
+        limit.pause(30)
+        with pytest.raises(RateLimited) as refused:
+            await limit.acquire("ana")
+        return waited, refused.value.seconds
+
+    waited, seconds = asyncio.run(scenario())
+    assert waited == [pytest.approx(2.0)] and seconds == pytest.approx(30.0)
+
+
+async def _client_with_headers(status: int, headers: dict[str, str], limit: RateLimiter) -> None:
+    async def handler(request: web.Request) -> web.Response:
+        return web.json_response({}, status=status, headers=headers)
+
+    app = web.Application()
+    app.router.add_get("/resource", handler)
+    async with TestServer(app) as server:
+        api = HttpAPI(base_url=str(server.make_url("/")), limiter=limit)
+        try:
+            await api._request(METHOD.GET, "resource")
+        except HTTP_429_TOO_MANY_REQUESTS:
+            pass
+        finally:
+            await api.close()
+
+
+@pytest.mark.network
+def test_the_client_reads_the_remaining_header_and_a_bare_429_pauses_two_seconds() -> None:
+    async def scenario() -> tuple[float, float]:
+        limit, clock = limiter(per_minute=100, per_user=100)
+        await _client_with_headers(200, {"X-Ratelimit-Remaining": "20"}, limit)
+        after_header = limit.paused_until - clock.now
+        await _client_with_headers(429, {"X-Ratelimit-Remaining": "0"}, limit)  # Modrinth sends no Retry-After
+        return after_header, limit.paused_until - clock.now
+
+    after_header, after_429 = asyncio.run(scenario())
+    assert after_header == pytest.approx(2.0)
+    assert after_429 == pytest.approx(6.0)  # the header's 30 × 0.2 s; the bare 429 alone is 2 s

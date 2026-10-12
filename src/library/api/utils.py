@@ -6,7 +6,7 @@ from typing import Optional
 from aiohttp import ClientResponse, ConnectionTimeoutError, ClientResponseError, ServerConnectionError
 from src.library.utils import WRAP
 from src.library.api.handler.response import TooLarge
-from src.library.api.limiter import RateLimited
+from src.library.api.limiter import BARE_429_PAUSE, RateLimited
 from src.exceptions import *
 
 UNKNOWN_SERVICE = "un servicio externo"
@@ -84,7 +84,9 @@ def handle_errors(func: WRAP) -> WRAP:
                 retry_after = retry_after_seconds(e.headers.get("Retry-After") if e.headers else None)
                 limiter = getattr(args[0], "limiter", None) if args else None
                 if limiter is not None:
-                    limiter.pause(retry_after if retry_after is not None else 60.0)
+                    limiter.pause(retry_after if retry_after is not None else BARE_429_PAUSE)
+                    if e.headers:
+                        limiter.observe_headers(e.headers)
                 raise HTTP_429_TOO_MANY_REQUESTS(f"Rate limited: {e.message}", retry_after) from e
             raise UpstreamError(service, e.status, f"Request has failed with status error {e.status}: {e.message}",
                                 raw=f"{e.request_info.method} {e.request_info.url}: {e.message}") from e

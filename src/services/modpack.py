@@ -16,7 +16,7 @@ from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink
 from src.database.jobs import JobDatabase
 from src.model.jobs import Job
 from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, request_digest, resolve
-from src.model.modpack import BUNDLE_KEYED_FIELDS, AvailableUpdate, UpdateCheck, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, ProjectOrigin
+from src.model.modpack import BUNDLE_KEYED_FIELDS, AvailableUpdate, LoaderVersion, UpdateCheck, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject, ModrinthVersion, ModrinthVersionList
 from src.model.modrinth.version import ModrinthDependencyType
 from src.model.pterodactyl import PterodactylServer
@@ -80,6 +80,8 @@ logger = logging.getLogger("modpack.changes")
 # How long a preview waits for changelogs in all (N-R2): Modrinth rate-limiting may back off for a
 # minute per request, and a page about a game server must not wait for it.
 CHANGELOG_DEADLINE = 10.0
+# How long a loader version from the loader's meta is kept (U4/M4; owner, 2026-10-09).
+LOADER_VERSION_TTL = timedelta(hours=24)
 
 
 class ChangePreview(BaseModel):
@@ -826,10 +828,33 @@ class ModpackService():
 
         async def run() -> dict[str, Any]:
             lock = await self.resolve_fetching(bundle_id, report=context.progress, force=bool(job.payload.get("force")))
+            if job.payload.get("force"):
+                # «Actualizar desde Modrinth» also asks the loader's meta again (U4/M4).
+                bundle = await self.modpackDB.bundle_get(bundle_id)
+                if bundle.loader_version is None:
+                    await self._loader_version(str(bundle.loader.value), bundle.version, force=True)
             await context.progress("Resolviendo el pack", 1, 1)
             return {"entries": len(lock.entries), "problems": len(lock.problems), "undecided": len(lock.undecided)}
 
         await context.step("resolve", run)
+
+    async def _loader_version(self, loader: str, game_version: str, force: bool = False) -> Optional[str]:
+        """The loader version for this Minecraft version (U4/M4): the kept one while it is younger than
+        LOADER_VERSION_TTL, unless `force`; else the loader's meta, kept. If the meta fails, the
+        kept one, however old; with none kept, the failure."""
+        key = f"{loader}|{game_version}"
+        kept = await self.modpackDB.loader_version_get(key)
+        if kept is not None and not force and self.clock() - as_utc(kept.fetched_at) < LOADER_VERSION_TTL:
+            return kept.version
+        try:
+            version = await self.loaderAPI.loader_version(loader, game_version)
+        except Exception:
+            if kept is None:
+                raise
+            logger.warning("loader meta for %s failed; using the kept %s", key, kept.version, exc_info=True)
+            return kept.version
+        await self.modpackDB.loader_version_save(LoaderVersion(key=key, version=version, fetched_at=self.clock()))
+        return version
 
     def _stale(self, bundle: ModpackBundle) -> bool:
         """Whether the pack's Modrinth information is past the window (E1): never checked, or longer ago."""
@@ -1137,8 +1162,7 @@ class ModpackService():
         _refuse_blocked(lock)
         if report is not None:
             await report("Congelando el build", 1, 1)
-        loader_version = bundle.loader_version or await self.loaderAPI.loader_version(
-            str(bundle.loader.value), bundle.version)
+        loader_version = bundle.loader_version or await self._loader_version(str(bundle.loader.value), bundle.version)
         builds = await self.modpackDB.build_find(bundle_id)
         number = (builds[0].number if builds else 0) + 1
         build = await self.modpackDB.build_insert(ModpackBuild(

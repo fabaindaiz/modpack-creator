@@ -1,8 +1,9 @@
 import asyncio
 from collections.abc import Awaitable, Callable
 import hashlib
+import math
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING, Any, Optional
 from src.database import ModpackDatabase, ModrinthDatabase, PterodactylDatabase
 from src.database.jobs import JobDatabase
@@ -17,7 +18,7 @@ from src.library.utils import MODRINTH_ID
 from src.library.scan import ClaimedFile, Comparison, ListedFile, LocalFile, ScanFile, compare, drift_message, plan_scan
 from src.model.modpack import ModpackBundle, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject, ModrinthVersion
-from src.model.pterodactyl import BundleForServer, ImportCandidate, ImportResult, ProjectCandidate, PterodactylFile, PterodactylServer, ServerScan
+from src.model.pterodactyl import BundleForServer, PanelServers, ImportCandidate, ImportResult, ProjectCandidate, PterodactylFile, PterodactylServer, ServerScan
 from src.exceptions import *
 from src.library.auth.roles import operator_only
 from src.model.audit import AuditTarget
@@ -42,8 +43,20 @@ SEARCHING = "Buscando en Modrinth"
 ADDING = "Agregando al modpack"
 # What a long task hears as it goes: what it processes, done and total (a job's progress).
 Report = Callable[[str, int, int], Awaitable[None]]
+# The panel's server list (U6; owner, 2026-10-09): asked at most this often, and «Actualizar lista»
+# at most once a minute (one resource for everyone, not per user).
+PANEL_LIST_TTL = timedelta(minutes=5)
+PANEL_LIST_REFRESH_EVERY = timedelta(minutes=1)
 IMPORT_FAILED = ("El modpack quedó creado y vinculado a este servidor, pero la importación de sus mods falló. "
                  "Vuelve a intentarlo con «Importar».")
+
+def _utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+def _servers(kept: list[dict[str, Any]]) -> list[PterodactylServer]:
+    return [PterodactylServer.model_validate(item) for item in kept]
+
 
 class PterodactylService():
     def __init__(self,
@@ -54,7 +67,9 @@ class PterodactylService():
             modpackDB: ModpackDatabase,
             audit: AuditSink,
             jobDB: Optional[JobDatabase] = None,
+            clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
             ) -> None:
+        self.clock = clock
         self.jobDB = jobDB or JobDatabase()
         self.pterodactylAPI = pterodactylAPI
         self.pterodactylDB = PterodactylDB
@@ -66,6 +81,32 @@ class PterodactylService():
     async def server_external(self) -> list[PterodactylServer]:
         """Every server the panel key can see, straight from the panel."""
         return list(await self.pterodactylAPI.server_get_many())
+
+    async def panel_servers(self, force: bool = False) -> PanelServers:
+        """The panel's servers (U6): the kept list while younger than PANEL_LIST_TTL, unless `force`;
+        else asked now and kept. If the panel does not answer, the kept list, however old, marked."""
+        kept = await self.pterodactylDB.panel_list_get()
+        kept_at = _utc(kept.fetched_at) if kept is not None else None
+        if kept is not None and kept_at is not None and not force and self.clock() - kept_at < PANEL_LIST_TTL:
+            return PanelServers(servers=_servers(kept.servers), fetched_at=kept_at)
+        try:
+            servers = await self.server_external()
+        except Exception:
+            logger.warning("The panel's server list failed", exc_info=True)
+            return PanelServers(servers=_servers(kept.servers) if kept else [], fetched_at=kept_at, failed=True)
+        now = self.clock()
+        await self.pterodactylDB.panel_list_save([s.model_dump(mode="json", exclude={"id", "bundle_id"}) for s in servers], now)
+        return PanelServers(servers=servers, fetched_at=now)
+
+    async def panel_refresh(self, actor: Actor) -> PanelServers:
+        """«Actualizar lista»: ask the panel now, once a minute; sooner, QuotaExceeded that says when."""
+        kept = await self.pterodactylDB.panel_list_get()
+        if kept is not None:
+            left = PANEL_LIST_REFRESH_EVERY - (self.clock() - _utc(kept.fetched_at))
+            if left > timedelta(0):
+                raise QuotaExceeded(f"Se puede volver a actualizar en {math.ceil(left.total_seconds())} s",
+                                    left.total_seconds())
+        return await self.panel_servers(force=True)
 
     async def server_find(self) -> list[PterodactylServer]:
         return await self.pterodactylDB.server_find().to_list()

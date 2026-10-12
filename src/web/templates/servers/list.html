@@ -22,6 +22,13 @@
 {% endcall %}
 
 {% call ui.section("En el panel de Pterodactyl", id="altas") %}
+{% if panel.fetched_at %}
+<div class="flex flex-wrap items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+  {% if panel.failed %}{{ ui.notice("El panel no respondió; lista de " ~ (panel.fetched_at | ago), "warning") }}
+  {% else %}<span>Lista del panel de {{ panel.fetched_at | ago }}</span><span aria-hidden="true">·</span>{% endif %}
+  {{ ui.button("Actualizar lista", kind="secondary", small=True, attrs={"hx-post": "/servers/lista", "hx-swap": "none"}) }}
+</div>
+{% endif %}
 {% if panel_failed %}
 {{ ui.notice("No se pudo consultar el panel de Pterodactyl. La lista de arriba sigue siendo válida; vuelve a intentarlo en un momento.", "warning") }}
 {% else %}

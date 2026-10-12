@@ -57,14 +57,20 @@ class PterodactylAPI(HttpAPI):
 
     @backoff_on_rate_limit
     @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_retryable)
-    async def server_get_many(self) -> Generator[PterodactylServer, None, None]:
-        handler: JsonResponse = await self._request(
-            method=METHOD.GET,
-            path=f'client',
-            query={
-                "type": "admin-all"
-            })
-        return (PterodactylServer(**item.get("attributes", {})) for item in handler.json.get("data", []))
+    async def server_get_many(self) -> list[PterodactylServer]:
+        """Every server the key can see, a hundred a page, every page (H8: it read only the first 50)."""
+        servers: list[PterodactylServer] = []
+        page, total_pages = 1, 1
+        while page <= total_pages:
+            handler: JsonResponse = await self._request(
+                method=METHOD.GET,
+                path='client',
+                query={"type": "admin-all", "per_page": "100", "page": str(page)})
+            servers += [PterodactylServer(**item.get("attributes", {})) for item in handler.json.get("data", [])]
+            pagination = handler.json.get("meta", {}).get("pagination", {})
+            total_pages = int(pagination.get("total_pages", 1) or 1)
+            page += 1
+        return servers
     
     @backoff_on_rate_limit
     @backoff.on_exception(backoff.expo, Exception, max_tries=2, giveup=not_retryable)

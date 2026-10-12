@@ -4,7 +4,7 @@ Los servicios se sustituyen con dobles en el contenedor, como en `tests/test_web
 doble anota qué recibió: toda mutación lleva el `actor` de la sesión, y una confirmación que no
 coincide no llega nunca al servicio.
 """
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import re
@@ -21,13 +21,14 @@ from src.library.scan import Comparison, ExpectedEntry, ScanFile
 from src.model.jobs import Job, RollbackState
 from src.model.modpack import ModpackBuild, ModpackBundle, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject
-from src.model.pterodactyl import BundleForServer, ImportCandidate, ImportResult, ProjectCandidate, PterodactylServer, ServerScan
+from src.model.pterodactyl import BundleForServer, PanelServers, ImportCandidate, ImportResult, ProjectCandidate, PterodactylServer, ServerScan
 from src.model.users import Actor
 from src.model.users.actor import ActorRef
 from src.model.utils import MinecraftLoaders
 from tests._actors import EDITOR, OPERATOR, session_for
 from tests._session import session_cookie
 from tests.conftest import MongoRunner
+from tests.test_web_modpacks import visible
 
 T0 = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 SERVER_ID = PydanticObjectId()
@@ -106,6 +107,10 @@ class FakePterodactyl:
         self.for_server: BundleForServer = BundleForServer(bundle=new_bundle(), imported=None, import_error=None)
         # What the last import job left (T1, S3); None if never imported by a job.
         self.pending: Optional[ImportResult] = None
+        # The panel's list (U6): when it was asked; what is kept, and since when, if the panel fails.
+        self.panel_at: Optional[datetime] = datetime.now(timezone.utc) - timedelta(minutes=12)
+        self.panel_kept: list[PterodactylServer] = []
+        self.panel_kept_at: Optional[datetime] = None
         self.calls: list[tuple[Any, ...]] = []
         self.error: Optional[Exception] = None
 
@@ -116,6 +121,16 @@ class FakePterodactyl:
 
     async def server_external(self) -> list[PterodactylServer]:
         return self.external
+
+    async def panel_servers(self, force: bool = False) -> PanelServers:
+        try:
+            return PanelServers(servers=await self.server_external(), fetched_at=self.panel_at)
+        except Exception:
+            return PanelServers(servers=self.panel_kept, fetched_at=self.panel_kept_at, failed=True)
+
+    async def panel_refresh(self, actor: Actor) -> PanelServers:
+        self._record("panel_refresh", actor)
+        return await self.panel_servers(force=True)
 
     async def server_find(self) -> list[PterodactylServer]:
         return [self.server]
@@ -338,6 +353,36 @@ def test_list_survives_an_unreachable_panel() -> None:
     response = client.get("/servers")
     assert response.status_code == 200 and "Survival" in response.text
     assert "No se pudo consultar el panel" in response.text
+
+
+def test_the_panel_list_says_its_age_and_offers_the_refresh() -> None:
+    # U6 (owner, 2026-10-12): the list is kept 5 minutes; the page says how old it is.
+    client, _ = setup()
+    text = client.get("/servers").text
+    section = " ".join(visible(text[text.index('id="altas"'):]).split())
+    assert "Lista del panel de hace 12 min" in section and "Actualizar lista" in section
+    assert 'hx-post="/servers/lista"' in text
+
+
+def test_a_panel_that_does_not_answer_shows_the_kept_list_and_its_age() -> None:
+    client, fakes = setup()
+
+    async def down() -> list[PterodactylServer]:
+        raise RuntimeError("panel down")
+
+    fakes.ptero.server_external = down  # type: ignore[method-assign]
+    fakes.ptero.panel_kept = [fakes.ptero.external[-1]]
+    fakes.ptero.panel_kept_at = datetime.now(timezone.utc) - timedelta(hours=2)
+    text = client.get("/servers").text
+    section = " ".join(visible(text[text.index('id="altas"'):]).split())
+    assert "El panel no respondió; lista de hace 2 h" in section and 'value="uuid-2"' in text
+
+
+def test_the_refresh_asks_the_panel_and_goes_back_to_the_list() -> None:
+    client, fakes = setup()
+    response = client.post("/servers/lista", headers=HTMX)
+    assert response.status_code == 200 and response.headers["HX-Redirect"] == "/servers"
+    assert only(fakes.ptero.calls, "panel_refresh")[1:] == (EDITOR,)
 
 
 def test_create_registers_the_server_with_the_actor() -> None:

@@ -213,3 +213,25 @@ def test_a_v1_route_of_a_user_counts_against_their_modrinth_quota() -> None:
         return CURRENT_USER.get()
 
     assert asyncio.run(scenario()) == f"{EDITOR.iss}|{EDITOR.sub}"
+
+
+def test_v1_refresh_from_modrinth_answers_202_with_the_catalog_job() -> None:
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.dependences import get_current_actor
+    from src.routers.v1 import include_routers_v1
+
+    _, modpack, _ = setup()
+    queued = job(status="queued")
+
+    async def refresh(bundle_id: str, actor: Actor) -> Job:
+        modpack.calls.append(("catalog_refresh", bundle_id, actor))
+        return queued
+
+    modpack.catalog_refresh = refresh
+    app = FastAPI()
+    include_routers_v1(app)
+    app.dependency_overrides[get_current_actor] = lambda: EDITOR
+    response = TestClient(app, base_url="https://testserver").post(f"/v1/modpack/{BUNDLE_ID}/catalog")
+    assert response.status_code == 202 and response.json()["_id"] == str(queued.id)
+    assert modpack.calls[-1] == ("catalog_refresh", str(BUNDLE_ID), EDITOR)
