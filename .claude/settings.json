@@ -21,5 +21,16 @@
       "Edit(./.agents/agents/**)",
       "Edit(./.agents/incoming/**)"
     ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "filesystem": {
+      "denyRead": ["./.env.yaml"]
+    },
+    "network": {
+      "allowLocalBinding": true
+    },
+    "allowUnsandboxedCommands": false,
+    "excludedCommands": ["docker *", "podman *", "./scripts/test-mongo.sh", "./scripts/visual-sweep.sh"]
   }
 }

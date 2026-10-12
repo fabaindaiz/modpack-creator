@@ -52,6 +52,9 @@ dependencies = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+# El sandbox de Claude Code (.claude/settings.json) niega incluso el `stat` de `.env.yaml`, y pytest
+# recorre la raíz al recolectar: ignorarlo por nombre lo salta antes de mirarlo.
+addopts = "--ignore=.env.yaml"
 # tests/conftest.py rechaza toda conexión salvo en los tests con este marcador.
 markers = ["network: usa a propósito un servidor en localhost (MongoDB, un servidor aiohttp)"]
 strict_markers = true

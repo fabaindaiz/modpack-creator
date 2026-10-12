@@ -87,9 +87,7 @@ Decididas, no preferencias. `docs/decisions.md` indexa cada una con lo que la ha
   esquema llega mal y el chequeo rechaza al propio panel. `tests/test_web_security.py`
   (d-7985ee-491c83).
 - **Un permiso denegado no se esquiva**: ni redirección de shell, ni `sed`, ni otra herramienta. Se
-  avisa y se sigue con lo demás. Es disciplina (peldaño 1): nada la hace cumplir, y el bloqueo de
-  `.env.default` viene de los permisos de usuario del dueño, no de `.claude/settings.json`. Un
-  hook queda como decisión pendiente suya (d-7985ee-794d11).
+  avisa y se sigue con lo demás. Es disciplina (peldaño 1): nada la hace cumplir (d-7985ee-794d11).
 - **Un comando nunca espera stdin**: sin heredocs canalizados a `cat` ni lecturas interactivas; un
   comando así colgó a un subagente dos veces. **Una sesión detiene todo proceso y contenedor que
   arrancó**: dos veces quedaron procesos sobrantes que ocupaban puertos y falseaban resultados.
@@ -99,7 +97,10 @@ Decididas, no preferencias. `docs/decisions.md` indexa cada una con lo que la ha
 
 ## Archivos que no se editan a mano
 
-- `.env.yaml`: secretos; ni se lee ni se edita (`.claude/settings.json`, d-7985ee-57db37).
+- `.env.yaml`: secretos; ni se lee ni se edita. Lo hacen cumplir los permisos de
+  `.claude/settings.json` (lo que nombra el archivo) y su sandbox de Bash, que niega leerlo también a
+  un `grep -r` o a un script: probado con un canario (d-7985ee-57db37, d-7985ee-9b97fa). Docker, podman
+  y los dos scripts que los usan corren fuera del sandbox (`excludedCommands`).
 - `.agents/` salvo `carrier.toml`, `proposals/`, `incoming/` y `evaluation-*.md`: lo genera el repositorio home.
   Una mejora es una propuesta (`bundle.py propose`).
 

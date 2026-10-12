@@ -1030,7 +1030,11 @@ sesión. Cualquier cuenta del proveedor opera los servidores de Pterodactyl.
 
 Fricción vista al menos dos veces, con su costo.
 
-### Un deny global sobre la plantilla de configuración deja el gate en rojo — Planeada · i-7985ee-a900ec
+### Un deny global sobre la plantilla de configuración deja el gate en rojo — Hecha (2026-10-12) · i-7985ee-a900ec
+- **En qué quedó (d-7985ee-9b97fa):** el dueño angostó su deny de usuario a los archivos con secretos;
+  `.env.default` vuelve a leerse. Para que `.env.yaml` no se filtre por un `grep -r`, el repo activa el
+  sandbox de Bash con `denyRead` (probado con un canario). El bundle 0.0.31 (en `.agents/incoming/`)
+  avisa de este caso con `verify`.
 - **Qué pasa:** el deny de `~/.claude/settings.json` sobre `./.env.*` (pensado para `.env.yaml`)
   también tapa `.env.default`, y el audit `env_template` exige que toda variable obligatoria esté
   en esa plantilla. Cada cambio que suma una variable obligatoria deja el gate (y CI) en rojo
