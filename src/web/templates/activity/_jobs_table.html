@@ -1,10 +1,11 @@
 {#
-  The jobs as an aligned table, one `_job_tr.html` per job. Needs `jobs` and `server_names`
-  (server id to name).
+  The jobs as a list of expandable cards, one `_job_card.html` per job, aligned in columns from
+  `sm:` on. Needs `jobs` and `server_names` (server id to name).
 #}
 {% import "_macros.html" as ui %}
-{% call ui.table(["Tipo", "Servidor", "Estado", "Paso", "Pedido por", "Creado"], empty="Todavía no hay trabajos.", caption="Trabajos") %}
+{% from "activity/_job_parts.html" import COLS, HEADERS %}
+{% call ui.card_list("Todavía no hay trabajos.", "Trabajos", headers=HEADERS, cols=COLS) %}
 {% for job in jobs %}
-{% include "activity/_job_tr.html" %}
+{% include "activity/_job_card.html" %}
 {% endfor %}
 {% endcall %}

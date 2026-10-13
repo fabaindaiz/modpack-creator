@@ -1,4 +1,5 @@
 """Jobs and audit pages of the panel (stage 4): reads only, with doubles for the services."""
+import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -8,7 +9,7 @@ from dependency_injector import providers
 from fastapi.testclient import TestClient
 
 from src.exceptions import HTTP_404_NOT_FOUND
-from src.model.audit import AuditEvent, AuditTarget
+from src.model.audit import AuditEvent, AuditPage, AuditTarget, Facet
 from src.model.jobs import Job, RollbackState
 from src.model.users import Actor
 from src.model.users.actor import ActorRef
@@ -28,10 +29,11 @@ def finished_dry_run() -> Job:
                     requested_by=ActorRef(iss="i", sub="s", name="Ana"))
 
 
-def event(name: str = "Ana", action: str = "server.scan", details: Optional[dict[str, Any]] = None) -> AuditEvent:
+def event(name: str = "Ana", action: str = "server.scan", details: Optional[dict[str, Any]] = None,
+          target: Optional[AuditTarget] = None) -> AuditEvent:
     return AuditEvent.model_construct(
         id=PydanticObjectId(), at=T0, actor=ActorRef(iss="i", sub="s", name=name), action=action,
-        target=AuditTarget(kind="server", id="t1"), details=details or {}, request_id="r1")
+        target=target or AuditTarget(kind="server", id="t1"), details=details or {}, request_id="r1")
 
 
 class FakeJobs:
@@ -60,12 +62,20 @@ class FakeAudit:
         self.events: list[AuditEvent] = []
         self.calls: list[dict[str, Any]] = []
         self.error: Optional[Exception] = None
+        self.names: dict[str, str] = {}
+        self.actors: list[Facet] = []
+        self.actions: list[Facet] = []
+        self.targets: list[Facet] = []
 
-    async def find(self, **kwargs: Any) -> list[AuditEvent]:
+    async def page(self, **kwargs: Any) -> AuditPage:
         self.calls.append(kwargs)
         if self.error:
             raise self.error
-        return self.events
+        return AuditPage(events=self.events[:kwargs["limit"]], actors=self.actors, actions=self.actions,
+                         targets=self.targets)
+
+    async def names_for(self, events: list[AuditEvent]) -> dict[str, str]:
+        return self.names
 
 
 @pytest.fixture(autouse=True)
@@ -187,15 +197,58 @@ def test_jobs_table_links_each_row_to_its_page_and_names_the_server() -> None:
         assert header in text
 
 
-def test_jobs_table_refreshes_only_the_active_rows() -> None:
+def _summary_of(text: str, job_id: Any) -> str:
+    """The `<summary>` of the card of job `job_id` in `text`."""
+    start = text.index(f'data-job="{job_id}"')
+    begin = text.index("<summary", start)
+    return text[begin:text.index("</summary>", begin) + len("</summary>")]
+
+
+def test_jobs_are_cards_whose_summary_is_the_old_row() -> None:
+    client, jobs, _, ptero = setup()
+    jobs.jobs = [make_job(status="running", active=True, requested_by=ActorRef(iss="i", sub="s", name="Ana"))]
+    text = client.get("/jobs").text
+    assert f'<details data-job="{jobs.jobs[0].id}"' in text and "<table" not in text
+    summary = " ".join(visible(_summary_of(text, jobs.jobs[0].id)).split())
+    for part in ("Escaneo", ptero.server.name, "En curso", "Revisando", "Ana"):
+        assert part in summary
+
+
+def test_opening_a_job_card_loads_its_fragment_once() -> None:
+    client, jobs, *_ = setup()
+    jobs.jobs = [make_job(status="done", active=False)]
+    job_id = jobs.jobs[0].id
+    text = client.get("/jobs").text
+    details = text[text.index(f'<details data-job="{job_id}"'):]
+    details = details[:details.index(">")]
+    assert f'hx-get="/jobs/{job_id}/row"' in details and 'hx-trigger="toggle once"' in details
+    body = text[text.index("</summary>", text.index(f'data-job="{job_id}"')):text.index("</details>")]
+    assert f'href="/jobs/{job_id}"' in body and "Abrir página" in body and str(job_id) in body
+
+
+def test_an_active_job_polls_only_its_summary() -> None:
     client, jobs, *_ = setup()
     jobs.jobs = [make_job(status="running", active=True)]
+    job_id = jobs.jobs[0].id
     text = client.get("/jobs").text
-    assert f'hx-get="/jobs/{jobs.jobs[0].id}/tr"' in text and 'hx-trigger="every 2s"' in text
-    assert 'hx-swap="outerHTML"' in text
+    summary = _summary_of(text, job_id)
+    assert f'hx-get="/jobs/{job_id}/summary"' in summary and 'hx-trigger="every 2s"' in summary
+    assert 'hx-swap="outerHTML"' in summary and 'hx-target="this"' in summary
+    assert text.count("every 2s") == 1  # the card itself does not poll, so an open one stays open
     jobs.jobs = [make_job(status="done", active=False)]
     text = client.get("/jobs").text
-    assert "every 2s" not in text and '/tr"' not in text
+    assert "every 2s" not in text and "/summary\"" not in text
+
+
+def test_job_summary_route_answers_the_summary_alone() -> None:
+    client, jobs, *_ = setup()
+    jobs.jobs = [make_job(status="running", active=True)]
+    response = client.get(f"/jobs/{jobs.jobs[0].id}/summary")
+    assert response.status_code == 200 and response.text.lstrip().startswith("<summary")
+    assert "<details" not in response.text and "every 2s" in response.text
+    jobs.jobs = [make_job(status="done", active=False)]
+    assert "every 2s" not in client.get(f"/jobs/{jobs.jobs[0].id}/summary").text
+    assert client.get(f"/jobs/{jobs.jobs[0].id}/tr").status_code == 404
 
 
 def test_jobs_filters_pass_through_as_exact_values() -> None:
@@ -235,15 +288,6 @@ def test_jobs_unknown_before_is_a_not_found_notice() -> None:
     assert client.get("/jobs", params={"before": "zzz"}).status_code == 404
 
 
-def test_job_tr_fragment_polls_while_active_and_stops_when_done() -> None:
-    client, jobs, *_ = setup()
-    jobs.jobs = [make_job(status="running", active=True)]
-    response = client.get(f"/jobs/{jobs.jobs[0].id}/tr")
-    assert response.status_code == 200 and "every 2s" in response.text and response.text.lstrip().startswith("<tr")
-    jobs.jobs = [make_job(status="done", active=False)]
-    assert "every 2s" not in client.get(f"/jobs/{jobs.jobs[0].id}/tr").text
-
-
 def test_job_page_shows_the_detail_with_the_plan_and_the_real_run_for_an_operator() -> None:
     client, jobs, _, ptero = setup(OPERATOR)
     jobs.jobs = [finished_dry_run()]
@@ -273,10 +317,11 @@ def test_unknown_job_page_is_a_not_found_notice() -> None:
 def test_audit_filters_pass_through_as_exact_values() -> None:
     client, _, audit, _ = setup()
     audit.events = [event()]
-    response = client.get("/audit", params={"actor": ".*", "action": "server.*", "target": "t1"})
+    response = client.get("/audit", params={"actor": ".*", "action": "server.scan", "target": "server:t1"})
     assert response.status_code == 200
     [call] = audit.calls
-    assert call["actor_sub"] == ".*" and call["action"] == "server.*" and call["target_id"] == "t1"
+    assert call["actor_sub"] == ".*" and call["action"] == "server.scan"
+    assert call["target"] == ("server", "t1") and call["target_name"] is None
     assert call["before_id"] is None and call["limit"] == 51
 
 
@@ -308,7 +353,7 @@ def test_audit_details_are_escaped() -> None:
 def test_pages_redirect_to_the_login_without_a_session() -> None:
     client, *_ = setup(None)
     for path in ("/jobs", f"/jobs/{PydanticObjectId()}", f"/jobs/{PydanticObjectId()}/row",
-                 f"/jobs/{PydanticObjectId()}/tr", "/audit"):
+                 f"/jobs/{PydanticObjectId()}/summary", "/audit"):
         assert client.get(path).status_code == 303
 
 
@@ -443,7 +488,7 @@ def test_job_steps_read_in_spanish() -> None:
     jobs.jobs[0].step = "drift"
     text = client.get(f"/jobs/{jobs.jobs[0].id}/row").text
     assert "Comparando" in text and ">drift<" not in text
-    tr = client.get(f"/jobs/{jobs.jobs[0].id}/tr").text
+    tr = client.get(f"/jobs/{jobs.jobs[0].id}/summary").text
     assert "Comparando" in tr and ">drift<" not in tr
     jobs.jobs[0].step = "paso-raro"
     assert "paso-raro" in client.get(f"/jobs/{jobs.jobs[0].id}/row").text
@@ -475,3 +520,121 @@ def test_a_finished_import_row_carries_its_full_report() -> None:
     assert "Sodium" in shown and "Lithium" in shown
     # B5: «Marcados «En el servidor»: N · Aceptan beta: N», there too.
     assert "Marcados «En el servidor»: 1 · Aceptan beta: 0" in shown
+
+
+# The audit log as cards, in Spanish (A9).
+
+def _audit_card(text: str) -> tuple[str, str]:
+    """The first audit card of the page: its <summary> and its body."""
+    begin = text.index("<summary", text.index("data-audit="))
+    middle = text.index("</summary>", begin)
+    return text[begin:middle], text[middle:text.index("</details>", middle)]
+
+
+def test_an_audit_card_shows_when_who_what_and_the_target_by_name() -> None:
+    client, _, audit, _ = setup()
+    audit.events = [event(name="Olga", action="bundle.pin", target=AuditTarget(kind="bundle", id="b1", name="Survival"))]
+    text = client.get("/audit").text
+    assert "<table" not in text
+    summary = " ".join(visible(_audit_card(text)[0]).split())
+    assert "Olga" in summary and "Fijó una versión" in summary and "Pack «Survival»" in summary
+    assert "2026-10-01 12:00" in summary and "bundle.pin" not in summary
+
+
+def test_an_open_audit_card_translates_the_details_and_ends_with_the_ids() -> None:
+    client, _, audit, _ = setup()
+    audit.names = {"J": "JEI", "V": "19.51"}
+    audit.events = [event(action="bundle.pin", target=AuditTarget(kind="bundle", id="b1", name="Survival"),
+                          details={"project_id": "J", "version_id": "V", "downgrade": {"from": "19.57", "to": "19.51"}})]
+    body = " ".join(visible(_audit_card(client.get("/audit").text)[1]).split())
+    assert "Mod JEI (J)" in body and "Versión 19.51 (V)" in body and "Baja 19.57 → 19.51, confirmada" in body
+    ids = "bundle.pin · objetivo bundle:b1 · persona s · petición r1"
+    assert ids in body and body.index(ids) > body.index("Baja")
+
+
+def test_an_unknown_key_or_id_is_shown_raw() -> None:
+    client, _, audit, _ = setup()
+    audit.events = [event(action="bundle.pin", details={"foo": 1, "project_id": "ZZZ"})]
+    response = client.get("/audit")
+    assert response.status_code == 200
+    body = " ".join(visible(_audit_card(response.text)[1]).split())
+    assert "foo 1" in body and "Mod ZZZ" in body
+
+
+def test_an_unknown_action_is_shown_raw() -> None:
+    client, _, audit, _ = setup()
+    audit.events = [event(action="server.power")]
+    assert "server.power" in visible(_audit_card(client.get("/audit").text)[0])
+
+
+def test_an_event_without_a_target_name_shows_its_kind_and_id() -> None:
+    client, _, audit, _ = setup()
+    audit.events = [event(target=AuditTarget(kind="server", id="t1")),
+                    event(target=AuditTarget(kind="job", id="j9", name=""))]
+    text = " ".join(visible(client.get("/audit").text).split())
+    assert "Servidor t1" in text and "job j9" in text
+
+
+# The audit filters, with counts (A11, A12).
+
+def _select(text: str, name: str) -> str:
+    begin = text.index(f'name="{name}"')
+    return text[text.rindex("<select", 0, begin):text.index("</select>", begin)]
+
+
+def test_person_and_action_are_selects_with_counts() -> None:
+    client, _, audit, _ = setup()
+    audit.events = [event(name="Olga", action="bundle.pin")]
+    audit.actors = [Facet(value="olga", label="Olga", count=3), Facet(value="pedro", label="Pedro", count=1)]
+    audit.actions = [Facet(value="bundle.pin", label="bundle.pin", count=2)]
+    text = client.get("/audit", params={"actor": "olga"}).text
+    person = _select(text, "actor")
+    assert '<option value="olga" selected' in person and "Olga (3)" in person and "Pedro (1)" in person
+    action = _select(text, "action")
+    for area in ("Packs", "Builds", "Servidores", "Reemplazos"):
+        assert f'<optgroup label="{area}">' in action
+    assert "Fijó una versión (2)" in action
+    zero = action[action.rindex("<option", 0, action.index("Creó un pack (0)")):action.index("Creó un pack (0)")]
+    assert 'value="bundle.create"' in zero and "text-zinc-400" in zero and "disabled" not in zero
+
+
+def test_target_is_an_input_with_a_datalist_of_names_kinds_and_counts() -> None:
+    client, _, audit, _ = setup()
+    bundle = str(PydanticObjectId())
+    audit.targets = [Facet(value=f"bundle:{bundle}", label="Survival", count=31),
+                     Facet(value="server:s1", label="server:s1", count=2)]
+    text = client.get("/audit").text
+    assert re.search(r'<input[^>]*name="target"[^>]*list="audit-targets"', text)
+    datalist = text[text.index('<datalist id="audit-targets"'):text.index("</datalist>")]
+    assert f'<option value="bundle:{bundle}">Survival · pack (31)</option>' in datalist
+    assert '<option value="server:s1">s1 · servidor (2)</option>' in datalist
+
+
+def test_an_unknown_action_or_a_plain_target_name_does_not_422() -> None:
+    client, _, audit, _ = setup()
+    response = client.get("/audit", params={"action": "foo", "target": "Survival"})
+    assert response.status_code == 200
+    call = audit.calls[-1]
+    assert call["action"] is None and call["target"] is None and call["target_name"] == "Survival"
+
+
+def test_the_older_link_keeps_every_filter() -> None:
+    client, _, audit, _ = setup()
+    audit.events = [event() for _ in range(51)]
+    text = client.get("/audit", params={"actor": "olga", "action": "bundle.pin", "target": "bundle:b1"}).text
+    link = text[text.index("/audit?before="):]
+    link = link[:link.index('"')]
+    assert "actor=olga" in link and "action=bundle.pin" in link and "target=bundle%3Ab1" in link
+
+
+def test_the_filters_ask_htmx_for_the_list_and_keep_a_submit_button() -> None:
+    client, _, audit, _ = setup()
+    audit.events = [event()]
+    text = client.get("/audit").text
+    form = text[text.index('<form method="get" action="/audit"'):]
+    form = form[:form.index(">")]
+    for attribute in ('hx-get="/audit"', 'hx-trigger="change"', 'hx-select="#audit-list"', 'hx-target="#audit-list"',
+                      'hx-swap="outerHTML"', 'hx-push-url="true"'):
+        assert attribute in form
+    region = text[text.index('id="audit-list"'):]
+    assert region.index('name="actor"') < region.index("data-audit=") and "Filtrar" in region

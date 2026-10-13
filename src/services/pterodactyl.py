@@ -590,7 +590,7 @@ class PterodactylService():
         if server.bundle_id is not None:
             raise HTTP_409_CONFLICT("Este servidor ya tiene modpack: vuelve a cargar la página")
         bundle = await self.modpackDB.bundle_insert(ModpackBundle(name=name, description="", version=version, loader=loader))
-        bundle_target = AuditTarget(kind="bundle", id=str(bundle.id))
+        bundle_target = AuditTarget(kind="bundle", id=str(bundle.id), name=bundle.name)  # it may be deleted below
         await self.audit.record(actor, "bundle.create", bundle_target)
         if not await self.pterodactylDB.server_link_if_unlinked(server_id, str(bundle.id)):
             try:

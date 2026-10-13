@@ -1,25 +1,39 @@
 """The audit log: who did what, to what, and when; stored in MongoDB, read back newest first."""
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Optional
 
 import pytest
+from beanie import PydanticObjectId
 from fastapi import HTTPException
 
 from src.database.audit import AuditDatabase
+from src.database.modpack import ModpackDatabase
+from src.database.modrinth import ModrinthDatabase
+from src.database.pterodactyl import PterodactylDatabase
 from src.library.logging import _request_id
-from src.model.audit import AuditEvent, AuditTarget
-from src.services.audit import AuditService
+from src.model.audit import AuditEvent, AuditPage, AuditTarget, Facet
+from src.model.modpack import ModpackBundle, ModpackBundlePatch
+from src.model.pterodactyl import PterodactylServer
+from src.model.users.actor import ActorRef
+from src.model.utils import MinecraftLoaders
+from src.services.audit import AuditService, TargetNames
 from tests._actors import EDITOR, OPERATOR
 from tests.conftest import MongoRunner
+from tests.test_mod_list import project, version
 
 pytestmark = pytest.mark.network
 
 T0 = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 
 
+async def _events(service: AuditService, **filters: Any) -> list[AuditEvent]:
+    """The events of a page, without its counts."""
+    return (await service.page(**filters)).events
+
+
 def _service(times: list[datetime]) -> AuditService:
     clock = iter(times)
-    return AuditService(AuditDatabase(), lambda: next(clock))
+    return AuditService(AuditDatabase(), clock=lambda: next(clock))
 
 
 def test_record_stores_actor_action_target_and_time(mongo: MongoRunner) -> None:
@@ -44,14 +58,14 @@ def test_record_stores_actor_action_target_and_time(mongo: MongoRunner) -> None:
     assert event.id == got.id
 
 
-def test_find_newest_first_and_paginates_with_before(mongo: MongoRunner) -> None:
+def test_page_newest_first_and_paginates_with_before(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[list[str], list[str], list[str]]:
         service = _service([T0 + timedelta(minutes=i) for i in range(5)])
         for i in range(5):
             await service.record(EDITOR, f"a{i}", AuditTarget(kind="bundle", id="b1"))
-        first = await service.find(limit=2)
-        second = await service.find(before_id=str(first[-1].id), limit=2)
-        rest = await service.find(before_id=str(second[-1].id), limit=10)
+        first = await _events(service, limit=2)
+        second = await _events(service, before_id=str(first[-1].id), limit=2)
+        rest = await _events(service, before_id=str(second[-1].id), limit=10)
         return [e.action for e in first], [e.action for e in second], [e.action for e in rest]
 
     first, second, rest = mongo(scenario)
@@ -60,7 +74,7 @@ def test_find_newest_first_and_paginates_with_before(mongo: MongoRunner) -> None
     assert rest == ["a0"]
 
 
-def test_find_pages_through_events_sharing_a_millisecond(mongo: MongoRunner) -> None:
+def test_page_pages_through_events_sharing_a_millisecond(mongo: MongoRunner) -> None:
     async def scenario() -> list[str]:
         service = _service([T0] * 5)
         for i in range(5):
@@ -68,7 +82,7 @@ def test_find_pages_through_events_sharing_a_millisecond(mongo: MongoRunner) -> 
         seen: list[str] = []
         cursor = None
         while True:
-            page = await service.find(before_id=cursor, limit=2)
+            page = await _events(service, before_id=cursor, limit=2)
             if not page:
                 return seen
             seen += [str(e.id) for e in page]
@@ -79,13 +93,13 @@ def test_find_pages_through_events_sharing_a_millisecond(mongo: MongoRunner) -> 
     assert seen == sorted(seen, reverse=True)
 
 
-def test_find_unknown_before_id_is_404(mongo: MongoRunner) -> None:
+def test_page_unknown_before_id_is_404(mongo: MongoRunner) -> None:
     async def scenario() -> list[int]:
         service = _service([])
         codes = []
         for bad in ("not-an-id", "0" * 24):
             try:
-                await service.find(before_id=bad)
+                await _events(service, before_id=bad)
             except HTTPException as error:
                 codes.append(error.status_code)
         return codes
@@ -98,7 +112,7 @@ def test_limit_is_clamped_to_200(mongo: MongoRunner) -> None:
         events = [AuditEvent(at=T0 + timedelta(seconds=i), actor=OPERATOR.ref(), action="x",
                              target=AuditTarget(kind="k", id="1")) for i in range(201)]
         await AuditEvent.insert_many(events)
-        return len(await AuditService(AuditDatabase()).find(limit=1000))
+        return len(await _events(AuditService(AuditDatabase()), limit=1000))
 
     assert mongo(scenario) == 200
 
@@ -121,18 +135,18 @@ def test_nested_secret_keys_are_rejected(mongo: MongoRunner) -> None:
     assert mongo(scenario)
 
 
-def test_find_filters_by_exact_values(mongo: MongoRunner) -> None:
+def test_page_filters_by_exact_values(mongo: MongoRunner) -> None:
     async def scenario() -> dict[str, list[str]]:
         service = _service([T0, T0 + timedelta(minutes=1)])
         await service.record(OPERATOR, "server.power", AuditTarget(kind="server", id="s1"))
         await service.record(EDITOR, "bundle.edit", AuditTarget(kind="bundle", id="b1"))
         return {
-            "actor": [e.action for e in await service.find(actor_sub=EDITOR.sub)],
-            "action": [e.action for e in await service.find(action="server.power")],
-            "target": [e.action for e in await service.find(target_id="b1")],
-            "regex": [e.action for e in await service.find(actor_sub=".*")],
-            "where": [e.action for e in await service.find(action="$where")],
-            "clamped": [e.action for e in await service.find(limit=0)],
+            "actor": [e.action for e in await _events(service, actor_sub=EDITOR.sub)],
+            "action": [e.action for e in await _events(service, action="server.power")],
+            "target": [e.action for e in await _events(service, target=("bundle", "b1"))],
+            "regex": [e.action for e in await _events(service, actor_sub=".*")],
+            "where": [e.action for e in await _events(service, action="$where")],
+            "clamped": [e.action for e in await _events(service, limit=0)],
         }
 
     got = mongo(scenario)
@@ -159,7 +173,7 @@ def test_details_never_hold_unknown_secrets_keys(mongo: MongoRunner, key: str) -
     assert message and count == 0
 
 
-def test_find_filters_by_date_range_inclusive_since_exclusive_until(mongo: MongoRunner) -> None:
+def test_page_filters_by_date_range_inclusive_since_exclusive_until(mongo: MongoRunner) -> None:
     async def scenario() -> dict[str, list[str]]:
         day = datetime(2026, 10, 2, tzinfo=timezone.utc)
         times = [day - timedelta(milliseconds=1), day, day + timedelta(hours=23, minutes=59),
@@ -169,11 +183,11 @@ def test_find_filters_by_date_range_inclusive_since_exclusive_until(mongo: Mongo
             await service.record(OPERATOR, f"a{i}", AuditTarget(kind="server", id="s1"))
         next_day = day + timedelta(days=1)
         return {
-            "day": [e.action for e in await service.find(since=day, until=next_day)],
-            "since": [e.action for e in await service.find(since=day)],
-            "until": [e.action for e in await service.find(until=day)],
-            "and": [e.action for e in await service.find(since=day, until=next_day, action="a2")],
-            "and_none": [e.action for e in await service.find(since=day, until=next_day, action="a0")],
+            "day": [e.action for e in await _events(service, since=day, until=next_day)],
+            "since": [e.action for e in await _events(service, since=day)],
+            "until": [e.action for e in await _events(service, until=day)],
+            "and": [e.action for e in await _events(service, since=day, until=next_day, action="a2")],
+            "and_none": [e.action for e in await _events(service, since=day, until=next_day, action="a0")],
         }
 
     got = mongo(scenario)
@@ -184,16 +198,211 @@ def test_find_filters_by_date_range_inclusive_since_exclusive_until(mongo: Mongo
     assert got["and_none"] == []
 
 
-def test_find_pages_within_a_date_range(mongo: MongoRunner) -> None:
+def test_page_pages_within_a_date_range(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[list[str], list[str]]:
         service = _service([T0 + timedelta(minutes=i) for i in range(5)])
         for i in range(5):
             await service.record(OPERATOR, f"a{i}", AuditTarget(kind="server", id="s1"))
         since, until = T0 + timedelta(minutes=1), T0 + timedelta(minutes=4)
-        first = await service.find(since=since, until=until, limit=2)
-        second = await service.find(since=since, until=until, limit=2, before_id=str(first[-1].id))
+        first = await _events(service, since=since, until=until, limit=2)
+        second = await _events(service, since=since, until=until, limit=2, before_id=str(first[-1].id))
         return [e.action for e in first], [e.action for e in second]
 
     first, second = mongo(scenario)
     assert first == ["a3", "a2"]
     assert second == ["a1"]
+
+
+# The target's name (A10): written with the event, so a renamed or deleted target still reads.
+
+def _named_service(times: list[datetime]) -> AuditService:
+    clock = iter(times)
+    names = TargetNames(ModpackDatabase(), PterodactylDatabase(), ModrinthDatabase())
+    return AuditService(AuditDatabase(), names, clock=lambda: next(clock))
+
+
+def test_an_event_keeps_the_target_name_it_had(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Optional[str], Optional[str]]:
+        db = ModpackDatabase()
+        bundle = await db.bundle_insert(ModpackBundle(name="Survival", description="", version="1.21.1",
+                                                      loader=MinecraftLoaders.fabric))
+        service = _named_service([T0])
+        event = await service.record(EDITOR, "bundle.pin", AuditTarget(kind="bundle", id=str(bundle.id)))
+        await db.bundle_update(str(bundle.id), ModpackBundlePatch(name="Creativo"))
+        stored = await AuditEvent.get(event.id)
+        assert stored is not None
+        return event.target.name, stored.target.name
+
+    assert mongo(scenario) == ("Survival", "Survival")
+
+
+def test_servers_and_replacements_are_named_from_the_catalog(mongo: MongoRunner) -> None:
+    async def scenario() -> list[Optional[str]]:
+        server = await PterodactylDatabase().server_insert(PterodactylServer(
+            identifier="1a1a", internal_id=1, uuid="1a1a-0", name="Lobby", node="n1", description="",
+            status=None, is_suspended=False, is_installing=False, is_transferring=False))
+        await ModrinthDatabase().project_upsert_many([project("JJJJ", "JEI")])
+        service = _named_service([T0, T0])
+        on_server = await service.record(OPERATOR, "server.scan", AuditTarget(kind="server", id=str(server.id)))
+        on_rule = await service.record(EDITOR, "replacement.set", AuditTarget(kind="replacement", id="JJJJ"))
+        return [on_server.target.name, on_rule.target.name]
+
+    assert mongo(scenario) == ["Lobby", "JEI"]
+
+
+def test_a_name_given_by_the_caller_is_kept(mongo: MongoRunner) -> None:
+    async def scenario() -> Optional[str]:
+        gone = str(PydanticObjectId())  # the pack is already deleted: nothing to look up
+        event = await _named_service([T0]).record(
+            EDITOR, "bundle.delete", AuditTarget(kind="bundle", id=gone, name="Test"))
+        stored = await AuditEvent.get(event.id)
+        assert stored is not None
+        return stored.target.name
+
+    assert mongo(scenario) == "Test"
+
+
+def test_an_unknown_target_records_without_a_name(mongo: MongoRunner) -> None:
+    async def scenario() -> list[Optional[str]]:
+        service = _named_service([T0] * 4)
+        targets = [AuditTarget(kind="bundle", id=str(PydanticObjectId())), AuditTarget(kind="bundle", id="nuevo"),
+                   AuditTarget(kind="server", id="not-an-id"), AuditTarget(kind="job", id=str(PydanticObjectId()))]
+        names = [(await service.record(EDITOR, "x", target)).target.name for target in targets]
+        assert await AuditEvent.find_all().count() == 4
+        return names
+
+    assert mongo(scenario) == [None, None, None, None]
+
+
+def test_a_page_s_mods_and_versions_are_named_from_the_catalog(mongo: MongoRunner) -> None:
+    async def scenario() -> dict[str, str]:
+        catalog = ModrinthDatabase()
+        await catalog.project_upsert_many([project("JJJJ", "JEI")])
+        await catalog.version_upsert_many([version("VVVV", "JJJJ", "19.60", 1)])
+        service = _named_service([T0, T0])
+        await service.record(EDITOR, "bundle.pin", AuditTarget(kind="bundle", id="b1"),
+                             {"project_id": "JJJJ", "version_id": "VVVV"})
+        await service.record(EDITOR, "bundle.project.add", AuditTarget(kind="bundle", id="b1"),
+                             {"refs": ["JJJJ", "ZZZZ"]})
+        return await service.names_for(await _events(service))
+
+    assert mongo(scenario) == {"JJJJ": "JEI", "VVVV": "19.60"}
+
+
+# Filters with counts (A11, A12): one aggregation gives the page and each filter's options.
+
+def _ev(sub: str, action: str, target_id: str = "b1", target_name: Optional[str] = "Survival",
+        minutes: int = 0, kind: str = "bundle") -> AuditEvent:
+    return AuditEvent(at=T0 + timedelta(minutes=minutes), actor=ActorRef(iss="i", sub=sub, name=sub.title()),
+                      action=action, target=AuditTarget(kind=kind, id=target_id, name=target_name))
+
+
+def _olga_and_pedro() -> list[AuditEvent]:
+    return [_ev("olga", "bundle.pin", minutes=0), _ev("olga", "bundle.pin", minutes=1),
+            _ev("olga", "bundle.create", "b2", "Creativo", minutes=2), _ev("pedro", "bundle.pin", minutes=3)]
+
+
+def test_each_facet_counts_with_the_other_filters_but_not_its_own(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[AuditPage, AuditPage]:
+        await AuditEvent.insert_many(_olga_and_pedro())
+        service = AuditService(AuditDatabase())
+        return await service.page(actor_sub="olga"), await service.page(actor_sub="olga", action="bundle.pin")
+
+    by_olga, olga_pins = mongo(scenario)
+    assert [e.action for e in by_olga.events] == ["bundle.create", "bundle.pin", "bundle.pin"]
+    assert by_olga.actions == [Facet(value="bundle.pin", label="bundle.pin", count=2),
+                               Facet(value="bundle.create", label="bundle.create", count=1)]
+    assert by_olga.actors == [Facet(value="olga", label="Olga", count=3), Facet(value="pedro", label="Pedro", count=1)]
+    assert by_olga.targets == [Facet(value="bundle:b1", label="Survival", count=2),
+                               Facet(value="bundle:b2", label="Creativo", count=1)]
+    assert len(olga_pins.events) == 2
+    assert olga_pins.actors == [Facet(value="olga", label="Olga", count=2), Facet(value="pedro", label="Pedro", count=1)]
+    assert olga_pins.actions == by_olga.actions
+    assert olga_pins.targets == [Facet(value="bundle:b1", label="Survival", count=2)]
+
+
+class _CountingCollection:
+    """The audit collection, counting the calls that reach it."""
+    def __init__(self, inner: Any) -> None:
+        self.inner = inner
+        self.calls: list[str] = []
+
+    def __getattr__(self, name: str) -> Any:
+        attribute = getattr(self.inner, name)
+        if not callable(attribute):
+            return attribute
+
+        def counted(*args: Any, **kwargs: Any) -> Any:
+            self.calls.append(name)
+            return attribute(*args, **kwargs)
+        return counted
+
+
+def test_the_page_and_its_facets_come_from_one_query(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[list[str], int]:
+        await AuditEvent.insert_many(_olga_and_pedro())
+        counting = _CountingCollection(AuditEvent.get_pymongo_collection())
+        AuditEvent.get_pymongo_collection = staticmethod(lambda: counting)  # type: ignore[method-assign, assignment]
+        try:
+            page = await AuditService(AuditDatabase()).page(actor_sub="olga", action="bundle.pin")
+        finally:
+            del AuditEvent.get_pymongo_collection
+        return counting.calls, len(page.events)
+
+    calls, shown = mongo(scenario)
+    assert calls == ["aggregate"] and shown == 2
+
+
+def test_paging_with_before_keeps_the_filters(mongo: MongoRunner) -> None:
+    async def scenario() -> list[tuple[list[int], list[Facet]]]:
+        await AuditEvent.insert_many([_ev("olga", "bundle.pin", minutes=i) for i in range(5)]
+                                     + [_ev("pedro", "bundle.pin", minutes=10 + i) for i in range(2)])
+        service = AuditService(AuditDatabase())
+        pages: list[tuple[list[int], list[Facet]]] = []
+        cursor: Optional[str] = None
+        while True:
+            page = await service.page(actor_sub="olga", before_id=cursor, limit=2)
+            if not page.events:
+                return pages
+            pages.append(([int((e.at.replace(tzinfo=timezone.utc) - T0).total_seconds() // 60) for e in page.events],
+                          page.actors))
+            cursor = str(page.events[-1].id)
+
+    pages = mongo(scenario)
+    assert [minutes for minutes, _ in pages] == [[4, 3], [2, 1], [0]]
+    # The cursor pages the events, not the counts.
+    for _, actors in pages:
+        assert actors == [Facet(value="olga", label="Olga", count=5), Facet(value="pedro", label="Pedro", count=2)]
+
+
+def test_a_target_filters_by_kind_and_id_or_by_its_name(mongo: MongoRunner) -> None:
+    async def scenario() -> dict[str, list[str]]:
+        await AuditEvent.insert_many(_olga_and_pedro() + [_ev("olga", "server.scan", "b1", "Lobby", 5, kind="server")])
+        service = AuditService(AuditDatabase())
+
+        async def actions(**filters: Any) -> list[str]:
+            return [e.action for e in (await service.page(**filters)).events]
+        return {
+            "id": await actions(target=("bundle", "b2")),
+            "kind": await actions(target=("server", "b1")),
+            "name": await actions(target_name="Survival"),
+            "unknown": await actions(target_name="Nadie"),
+            "regex": await actions(target_name=".*"),
+        }
+
+    got = mongo(scenario)
+    assert got["id"] == ["bundle.create"]
+    assert got["kind"] == ["server.scan"]
+    assert got["name"] == ["bundle.pin", "bundle.pin", "bundle.pin"]
+    assert got["unknown"] == [] and got["regex"] == []
+
+
+def test_the_date_window_bounds_the_counts_too(mongo: MongoRunner) -> None:
+    async def scenario() -> AuditPage:
+        await AuditEvent.insert_many(_olga_and_pedro())
+        return await AuditService(AuditDatabase()).page(since=T0 + timedelta(minutes=2))
+
+    page = mongo(scenario)
+    assert len(page.events) == 2
+    assert page.actors == [Facet(value="olga", label="Olga", count=1), Facet(value="pedro", label="Pedro", count=1)]
+    assert sum(f.count for f in page.targets) == 2

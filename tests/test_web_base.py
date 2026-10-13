@@ -157,7 +157,7 @@ def test_home_shows_bundle_drift_builds_and_jobs() -> None:
     assert "Sin escaneo" in text  # the server without a scan
     assert "Escaneo" in text and "En curso" in text
     assert f'href="/jobs/{fakes[2].jobs[0].id}"' in text and 'href="/jobs"' in text
-    assert f'hx-get="/jobs/{fakes[2].jobs[0].id}/tr"' in text
+    assert f'hx-get="/jobs/{fakes[2].jobs[0].id}/summary"' in text
     assert fakes[2].limits == [10]
 
 

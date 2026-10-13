@@ -27,6 +27,7 @@ from src.library.auth.roles import actor_from_session
 from src.library.logging import request_id as current_request_id
 from src.model.users import Actor
 from src.services.users import OIDC_OPERATOR_GROUPS
+from src.web import audit_labels
 
 WEB_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = WEB_DIR / "templates"
@@ -143,6 +144,12 @@ def linkify(text: str) -> Markup:
 
 
 templates.env.filters["ago"] = ago
+templates.env.globals["AUDIT_ACTIONS"] = audit_labels.ACTIONS
+templates.env.globals["AUDIT_AREAS"] = audit_labels.AREAS
+templates.env.globals["AUDIT_DETAILS"] = audit_labels.DETAILS
+templates.env.globals["audit_detail"] = audit_labels.detail_text
+templates.env.globals["audit_target"] = audit_labels.target_label
+templates.env.globals["audit_target_option"] = audit_labels.target_option
 templates.env.filters["seconds_until"] = seconds_until
 templates.env.filters["linkify"] = linkify
 
