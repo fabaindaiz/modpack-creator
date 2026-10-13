@@ -1,7 +1,7 @@
 {# The latest saved resolution above the mods: when it ran and whether the pack changed since, how
-   many mods are left to decide and how many problems it has (each a link to its tab, where they are
-   listed), and its suggestions, each only when there are some. Part of _mods.html; `titles` names
-   every project it mentions, and each opens its card from this pack. Resolving keeps the view. #}
+   many mods are left to decide, how many problems and how many suggestions it has (each a link to
+   its tab, where they are listed), each only when there are some. Part of _mods.html. Resolving
+   keeps the view. #}
 {% import "_macros.html" as ui %}
 {% set resolution = mods.resolution %}
 <div class="space-y-3">
@@ -37,35 +37,14 @@
 
   {# What is pending, counted, with links to its tab: the tabs list it (spec §3). Only from the
      current resolution: a stale one says so above. #}
-  {% if not mods.stale and (saved.undecided or saved.problems) %}
+  {% set pending = [] %}
+  {% if saved.undecided %}{% set _ = pending.append(("decidir", saved.undecided | length ~ " por decidir", "text-amber-800 underline-offset-2 hover:underline dark:text-amber-300")) %}{% endif %}
+  {% if saved.problems %}{% set _ = pending.append(("problemas", saved.problems | length ~ " con problemas", "text-red-700 underline-offset-2 hover:underline dark:text-red-300")) %}{% endif %}
+  {% if saved.suggestions %}{% set _ = pending.append(("sugerencias", saved.suggestions | length ~ (" sugerencia" if saved.suggestions | length == 1 else " sugerencias"), "text-sky-800 underline-offset-2 hover:underline dark:text-sky-300")) %}{% endif %}
+  {% if not mods.stale and pending %}
   <p data-pending-summary class="text-sm font-medium">
-    {%- if saved.undecided %}{% call ui.mods_view_link(bundle_id, "decidir", "text-amber-800 underline-offset-2 hover:underline dark:text-amber-300") %}{{ saved.undecided | length }} por decidir{% endcall %}{% endif %}
-    {%- if saved.undecided and saved.problems %} · {% endif %}
-    {%- if saved.problems %}{% call ui.mods_view_link(bundle_id, "problemas", "text-red-700 underline-offset-2 hover:underline dark:text-red-300") %}{{ saved.problems | length }} con problemas{% endcall %}{% endif -%}
+    {%- for name, label, classes in pending %}{% if not loop.first %} · {% endif %}{% call ui.mods_view_link(bundle_id, name, classes) %}{{ label }}{% endcall %}{% endfor -%}
   </p>
-  {% endif %}
-
-  {% if saved.suggestions %}
-  {# Iris is suggested for the shaders without it, not as an optional dependency (resolution.py). #}
-  {% set shaders = saved.entries | selectattr("project_type", "equalto", "shader") | map(attribute="project_id") | list %}
-  <div class="space-y-2 rounded-lg border border-sky-300 bg-sky-50 p-3 text-sm text-sky-900 dark:border-sky-500/40 dark:bg-sky-950/60 dark:text-sky-200">
-    <h3 class="font-semibold">Sugerencias</h3>
-    <p class="text-xs">Mods que otros del pack declaran como dependencia opcional en Modrinth, e Iris si el pack tiene shaders sin él. No se agregan solos.</p>
-    <ul class="space-y-1">
-      {% for suggestion in saved.suggestions %}
-      <li class="flex flex-wrap items-center gap-2">
-        <div class="min-w-0 flex-1 break-words">
-          <span class="font-medium">{{ ui.mod_link(suggestion.project_id, titles.get(suggestion.project_id, suggestion.project_id), pack=bundle_id) }}</span>
-          {% if suggestion.requested_by %}<span class="text-xs">— {{ "necesario para" if suggestion.requested_by | reject("in", shaders) | list | length == 0 else "opcional para" }} {% for requester in suggestion.requested_by %}{{ ui.mod_link(requester, titles.get(requester, requester), pack=bundle_id) }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
-        </div>
-        <form hx-post="/modpacks/{{ bundle_id }}/projects" hx-target="#mods" hx-swap="outerHTML">
-          <input type="hidden" name="ref" value="{{ suggestion.project_id }}">
-          {{ ui.button("Agregar", type="submit", kind="secondary", small=True) }}
-        </form>
-      </li>
-      {% endfor %}
-    </ul>
-  </div>
   {% endif %}
   {% endif %}
 </div>

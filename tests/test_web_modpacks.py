@@ -1664,18 +1664,51 @@ def test_suggestions_have_titles_and_an_add_button() -> None:
     modpack.titles.update(P7="Mod Menu", P6="Roto")
     modpack.saved = resolution(lock(entry("P1"), suggestions=[Suggestion(project_id="P7", requested_by=["P1"])],
                                     problems=[Problem(kind="unresolvable", project_id="P6", detail="sin versión")]))
-    text = client.get(f"/modpacks/{BUNDLE_ID}").text
-    suggestions = text[text.index("Sugerencias"):]
+    text = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "sugerencias"}).text
+    suggestions = view(text, "sugerencias")
     # Tester feedback (2026-10-08): it was not clear what the suggestions are based on.
     shown = " ".join(visible(suggestions).split())
     assert "Mods que otros del pack declaran como dependencia opcional en Modrinth, e Iris si el pack tiene shaders sin él." in shown
     assert "Mod Menu — opcional para Sodium" in shown and "sugerida por" not in shown
     assert f'hx-post="/modpacks/{BUNDLE_ID}/projects"' in suggestions and 'name="ref" value="P7"' in suggestions
     assert "P7" not in visible(text)
+    # A4 (owner, 2026-10-13): the suggestions are a tab of their own, no longer in every view.
     text = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "problemas"}).text
-    assert "Roto" in text and "sin versión" in text and "Mod Menu" in text  # suggestions in every view
+    assert "Roto" in text and "sin versión" in text and 'name="ref" value="P7"' not in text
     assert "P7" not in visible(text) and "P6" not in visible(text)
     assert modrinth.filled == []
+
+
+def test_suggestions_are_a_fourth_tab_with_their_count() -> None:
+    client, modpack, _ = setup()
+    modpack.saved = resolution(lock(entry("P1"), suggestions=[
+        Suggestion(project_id="P7", requested_by=["P1"]), Suggestion(project_id="P8", requested_by=["P1"])]))
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    link, url = tab(text, "sugerencias"), f"/modpacks/{BUNDLE_ID}?vista=sugerencias"
+    assert f'hx-get="{url}"' in link and said(link) == "Sugerencias 2" and "bg-sky-" in link
+    assert text.index('data-tab="problemas"') < text.index('data-tab="sugerencias"')
+    modpack.saved = resolution(lock(entry("P1")))
+    link = tab(client.get(f"/modpacks/{BUNDLE_ID}").text, "sugerencias")
+    assert said(link) == "Sugerencias 0" and "bg-sky-" not in link
+
+
+def test_the_blue_box_is_gone_and_the_summary_links_the_suggestions() -> None:
+    client, modpack, _ = setup()
+    modpack.titles.update(P7="Mod Menu")
+    modpack.saved = resolution(lock(entry("P1"), entry("P2", "admin"),
+                                    suggestions=[Suggestion(project_id="P7", requested_by=["P1"])]))
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert "border-sky-300" not in text and 'name="ref" value="P7"' not in text
+    summary = text[text.index("data-pending-summary"):]
+    summary = summary[:summary.index("</p>")]
+    assert said(summary[summary.index(">") + 1:]) == "1 por decidir · 1 sugerencia"
+    assert f'href="/modpacks/{BUNDLE_ID}?vista=sugerencias"' in summary
+
+
+def test_without_a_current_resolution_the_suggestions_tab_asks_to_resolve() -> None:
+    client, modpack, _ = setup()
+    text = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "sugerencias"}).text
+    assert "Resuelve para ver lo pendiente" in visible(view(text, "sugerencias"))
 
 
 def test_add_from_search_marks_the_hit_out_of_band() -> None:
@@ -1755,8 +1788,8 @@ def test_problems_suggestions_and_undecided_mods_open_their_cards() -> None:
                                     suggestions=[Suggestion(project_id="P7", requested_by=["P1"])],
                                     problems=[Problem(kind="unresolvable", project_id="P6", detail="sin versión")]))
     text = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "problemas"}).text
-    suggestions = text[text.index("Sugerencias"):text.index('data-tab="todos"')]
     assert mod_link("P6") in view(text, "problemas")
+    suggestions = view(client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "sugerencias"}).text, "sugerencias")
     assert mod_link("P7") in suggestions and mod_link("P1") in suggestions  # sugerida por Sodium
     text = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "decidir"}).text
     assert mod_link("P2") in view(text, "decidir")
@@ -1845,7 +1878,7 @@ def test_tabs_link_to_each_view_with_their_counts_and_colors() -> None:
     modpack.saved = resolution(lock(entry("P1"), entry("P2", "admin"), problems=[
         Problem(kind="no_file", project_id="P1", detail="x"), Problem(kind="no_file", project_id="P2", detail="y")]))
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
-    for name in ("todos", "decidir", "problemas"):
+    for name in ("todos", "decidir", "problemas", "sugerencias"):
         link, url = tab(text, name), f"/modpacks/{BUNDLE_ID}?vista={name}"
         assert f'href="{url}"' in link and f'hx-get="{url}"' in link and 'hx-push-url="true"' in link
         assert 'hx-select="#mods"' in link and 'hx-target="#mods"' in link and 'hx-swap="outerHTML"' in link
@@ -2311,8 +2344,8 @@ def test_iris_suggested_for_a_shader_says_it_is_needed_not_optional() -> None:
     modpack.titles.update(YL57xq9U="Iris", S1="Complementary")
     modpack.saved = resolution(lock(entry("P1"), entry("S1", project_type="shader"),
                                     suggestions=[Suggestion(project_id="YL57xq9U", requested_by=["S1"])]))
-    text = client.get(f"/modpacks/{BUNDLE_ID}").text
-    shown = " ".join(visible(text[text.index("Sugerencias"):]).split())
+    text = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "sugerencias"}).text
+    shown = " ".join(visible(view(text, "sugerencias")).split())
     assert "Iris — necesario para Complementary" in shown and "opcional para Complementary" not in shown
 
 

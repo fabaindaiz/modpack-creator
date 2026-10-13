@@ -45,7 +45,7 @@ ICON_HOST = "cdn.modrinth.com"
 MRPACK_TYPE = "application/x-modrinth-modpack+zip"
 # The views of a pack's Mods (spec §3): every mod, the ones to decide, the problems. Any other value
 # is "todos": a stale or hand-written link still shows the pack.
-VISTAS = ("todos", "decidir", "problemas")
+VISTAS = ("todos", "decidir", "problemas", "sugerencias")
 # Where a problem's action was clicked: the route applies it, resolves again and answers there (spec
 # §1): "problemas" the Mods tab, "dialogo" the build dialog. Without it, the route answers as it
 # always did.
