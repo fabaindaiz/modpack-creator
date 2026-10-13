@@ -1,0 +1,8 @@
+{#
+  The line of a job's card alone: what an active card's line polls (/jobs/{id}/summary). It
+  replaces only the <summary>, so an open card stays open. Needs `job` and `server_names`.
+#}
+{% import "_macros.html" as ui %}
+{% from "activity/_job_parts.html" import COLS, summary_parts %}
+{% set poll = {"hx-get": "/jobs/" ~ job.id ~ "/summary", "hx-trigger": "every 2s", "hx-target": "this", "hx-swap": "outerHTML"} if job.active else {} %}
+{% call ui.card_summary(COLS, poll) %}{{ summary_parts(job, server_names) }}{% endcall %}

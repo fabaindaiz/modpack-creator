@@ -187,15 +187,58 @@ def test_jobs_table_links_each_row_to_its_page_and_names_the_server() -> None:
         assert header in text
 
 
-def test_jobs_table_refreshes_only_the_active_rows() -> None:
+def _summary_of(text: str, job_id: Any) -> str:
+    """The `<summary>` of the card of job `job_id` in `text`."""
+    start = text.index(f'data-job="{job_id}"')
+    begin = text.index("<summary", start)
+    return text[begin:text.index("</summary>", begin) + len("</summary>")]
+
+
+def test_jobs_are_cards_whose_summary_is_the_old_row() -> None:
+    client, jobs, _, ptero = setup()
+    jobs.jobs = [make_job(status="running", active=True, requested_by=ActorRef(iss="i", sub="s", name="Ana"))]
+    text = client.get("/jobs").text
+    assert f'<details data-job="{jobs.jobs[0].id}"' in text and "<table" not in text
+    summary = " ".join(visible(_summary_of(text, jobs.jobs[0].id)).split())
+    for part in ("Escaneo", ptero.server.name, "En curso", "Revisando", "Ana"):
+        assert part in summary
+
+
+def test_opening_a_job_card_loads_its_fragment_once() -> None:
+    client, jobs, *_ = setup()
+    jobs.jobs = [make_job(status="done", active=False)]
+    job_id = jobs.jobs[0].id
+    text = client.get("/jobs").text
+    details = text[text.index(f'<details data-job="{job_id}"'):]
+    details = details[:details.index(">")]
+    assert f'hx-get="/jobs/{job_id}/row"' in details and 'hx-trigger="toggle once"' in details
+    body = text[text.index("</summary>", text.index(f'data-job="{job_id}"')):text.index("</details>")]
+    assert f'href="/jobs/{job_id}"' in body and "Abrir página" in body and str(job_id) in body
+
+
+def test_an_active_job_polls_only_its_summary() -> None:
     client, jobs, *_ = setup()
     jobs.jobs = [make_job(status="running", active=True)]
+    job_id = jobs.jobs[0].id
     text = client.get("/jobs").text
-    assert f'hx-get="/jobs/{jobs.jobs[0].id}/tr"' in text and 'hx-trigger="every 2s"' in text
-    assert 'hx-swap="outerHTML"' in text
+    summary = _summary_of(text, job_id)
+    assert f'hx-get="/jobs/{job_id}/summary"' in summary and 'hx-trigger="every 2s"' in summary
+    assert 'hx-swap="outerHTML"' in summary and 'hx-target="this"' in summary
+    assert text.count("every 2s") == 1  # the card itself does not poll, so an open one stays open
     jobs.jobs = [make_job(status="done", active=False)]
     text = client.get("/jobs").text
-    assert "every 2s" not in text and '/tr"' not in text
+    assert "every 2s" not in text and "/summary\"" not in text
+
+
+def test_job_summary_route_answers_the_summary_alone() -> None:
+    client, jobs, *_ = setup()
+    jobs.jobs = [make_job(status="running", active=True)]
+    response = client.get(f"/jobs/{jobs.jobs[0].id}/summary")
+    assert response.status_code == 200 and response.text.lstrip().startswith("<summary")
+    assert "<details" not in response.text and "every 2s" in response.text
+    jobs.jobs = [make_job(status="done", active=False)]
+    assert "every 2s" not in client.get(f"/jobs/{jobs.jobs[0].id}/summary").text
+    assert client.get(f"/jobs/{jobs.jobs[0].id}/tr").status_code == 404
 
 
 def test_jobs_filters_pass_through_as_exact_values() -> None:
@@ -233,15 +276,6 @@ def test_jobs_unknown_before_is_a_not_found_notice() -> None:
 
     jobs.find = bad  # type: ignore[method-assign]
     assert client.get("/jobs", params={"before": "zzz"}).status_code == 404
-
-
-def test_job_tr_fragment_polls_while_active_and_stops_when_done() -> None:
-    client, jobs, *_ = setup()
-    jobs.jobs = [make_job(status="running", active=True)]
-    response = client.get(f"/jobs/{jobs.jobs[0].id}/tr")
-    assert response.status_code == 200 and "every 2s" in response.text and response.text.lstrip().startswith("<tr")
-    jobs.jobs = [make_job(status="done", active=False)]
-    assert "every 2s" not in client.get(f"/jobs/{jobs.jobs[0].id}/tr").text
 
 
 def test_job_page_shows_the_detail_with_the_plan_and_the_real_run_for_an_operator() -> None:
@@ -308,7 +342,7 @@ def test_audit_details_are_escaped() -> None:
 def test_pages_redirect_to_the_login_without_a_session() -> None:
     client, *_ = setup(None)
     for path in ("/jobs", f"/jobs/{PydanticObjectId()}", f"/jobs/{PydanticObjectId()}/row",
-                 f"/jobs/{PydanticObjectId()}/tr", "/audit"):
+                 f"/jobs/{PydanticObjectId()}/summary", "/audit"):
         assert client.get(path).status_code == 303
 
 
@@ -443,7 +477,7 @@ def test_job_steps_read_in_spanish() -> None:
     jobs.jobs[0].step = "drift"
     text = client.get(f"/jobs/{jobs.jobs[0].id}/row").text
     assert "Comparando" in text and ">drift<" not in text
-    tr = client.get(f"/jobs/{jobs.jobs[0].id}/tr").text
+    tr = client.get(f"/jobs/{jobs.jobs[0].id}/summary").text
     assert "Comparando" in tr and ">drift<" not in tr
     jobs.jobs[0].step = "paso-raro"
     assert "paso-raro" in client.get(f"/jobs/{jobs.jobs[0].id}/row").text

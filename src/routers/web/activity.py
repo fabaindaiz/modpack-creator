@@ -171,20 +171,21 @@ async def job_preview(
     return render(request, "servers/_preview_body.html", actor,
                   **await preview_context(modpackService, modrinthService, server_id, build))
 
-@router.get("/jobs/{job_id}/tr")
+@router.get("/jobs/{job_id}/summary")
 @inject
-async def job_tr(
+async def job_summary(
         job_id: str,
         request: Request,
         actor: Actor = Depends(get_web_actor),
         jobService: JobService = Depends(Provide[Dependences.jobService]),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
         ):
-    """One job's table row: what an active row of the table polls."""
+    """The line of one job's card (its `<summary>`): what an active card polls. Only the line, so
+    an open card stays open while it polls."""
     job = await jobService.get(job_id)
     context = await _server_context(job, pterodactylService)
     names = {job.payload["server_id"]: context["server_name"]} if "server_name" in context else {}
-    return render(request, "activity/_job_tr.html", actor, job=job, server_names=names)
+    return render(request, "activity/_job_summary.html", actor, job=job, server_names=names)
 
 @router.get("/audit")
 @inject

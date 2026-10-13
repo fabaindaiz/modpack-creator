@@ -232,3 +232,59 @@
 {%- set alphas = exceptions.values() | select("equalto", "alpha") | list | length -%}
 <p>Marcados «En el servidor»: {{ on_server }} · Aceptan beta: {{ exceptions | length - alphas }}{% if alphas %} · Aceptan alpha: {{ alphas }}{% endif %}</p>
 {%- endmacro %}
+
+{#
+  A list of expandable cards (A8): what the audit log and the jobs show instead of a table.
+    {% call ui.card_list("Nada.", "Trabajos", headers=[...], cols="sm:grid-cols-[...]") %}...{% endcall %}
+  The cards come from the call block; `empty` is shown when it renders none. `headers` and `cols`
+  (the same class the cards get) add a heading line that aligns with the columns from `sm:` on.
+#}
+{% macro card_list(empty="Nada que mostrar.", caption=None, headers=None, cols="") %}
+{% set items = caller() %}
+<ul class="divide-y divide-zinc-100 rounded-lg border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900"
+  {%- if caption %} aria-label="{{ caption }}"{% endif %}>
+  {% if items | trim %}
+  {% if headers %}
+  <li aria-hidden="true" class="hidden gap-2 bg-zinc-50 px-3 py-2 sm:flex dark:bg-zinc-900/60">
+    <span class="invisible text-xs">▸</span>
+    <div class="grid min-w-0 flex-1 gap-x-3 text-xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400 {{ cols }}">
+      {% for header in headers %}<span class="truncate">{{ header }}</span>{% endfor %}
+    </div>
+  </li>
+  {% endif %}
+  {{ items }}
+  {% else %}
+  <li class="px-3 py-2 text-center text-sm text-zinc-500 dark:text-zinc-400">{{ empty }}</li>
+  {% endif %}
+</ul>
+{% endmacro %}
+
+{#
+  The line of a card: the call block's parts, wrapped in two or so lines under `sm:` and in the
+  columns of `cols` (a Tailwind class written whole by the caller, e.g.
+  "sm:grid-cols-[8rem_10rem_1fr]") from `sm:` on. `attrs` go on the <summary> (a poll). A route can
+  answer it alone, to replace the line of an open card without closing it.
+#}
+{% macro card_summary(cols="", attrs={}) %}
+<summary class="flex cursor-pointer list-none items-start gap-2 px-3 py-2 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/40 [&::-webkit-details-marker]:hidden"
+  {{- attrs | xmlattr }}>
+  <span aria-hidden="true" class="mt-0.5 text-xs text-zinc-400 transition-transform group-open:rotate-90 dark:text-zinc-500">▸</span>
+  <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 break-words sm:grid sm:items-start {{ cols }}">{{ caller() }}</div>
+</summary>
+{% endmacro %}
+
+{#
+  One expandable card (<li><details>): `{% call(part) ui.card(id, cols) %}` renders the line when
+  `part == "summary"` and the body when `part == "body"`. `attrs` go on the <details> (an htmx
+  load on opening), `summary_attrs` on the <summary>. The body is indented under the line and
+  breaks long words: nothing in it widens the page.
+#}
+{% macro card(id, cols="", attrs={}, summary_attrs={}) %}
+{% set part_of = caller %}
+<li>
+  <details{{ attrs | xmlattr }} id="{{ id }}" class="group">
+    {% call card_summary(cols, summary_attrs) %}{{ part_of("summary") }}{% endcall %}
+    <div class="min-w-0 space-y-2 border-t border-zinc-100 py-2 pr-3 pl-8 text-sm break-words dark:border-zinc-800">{{ part_of("body") }}</div>
+  </details>
+</li>
+{% endmacro %}
