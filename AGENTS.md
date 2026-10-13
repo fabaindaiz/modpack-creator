@@ -52,6 +52,10 @@ Decididas, no preferencias. `docs/decisions.md` indexa cada una con lo que la ha
   Pterodactyl pasa por `PterodactylAPI._write`, y sin `PTERODACTYL_WRITES: "enabled"` se rechaza
   antes de enviar nada. Leer y escanear servidores nunca lo necesita. *Audit* `ungated_writes`,
   `tests/test_write_gate.py` (d-7985ee-5739fc).
+- **Una acción peligrosa se sugiere, nunca es automática**: cambiar de loader un mod, agregar o quitar
+  un puente, bajar una versión. Solo una actualización segura (más nueva, por la misma vía, en los
+  canales del pack, sobre el piso) ocurre sola. Lo hacen cumplir los tests de cada acción
+  (d-7985ee-56a529).
 - **Un mod nunca retrocede de versión** salvo por un pin: bajar un mod rompe mundos y configs. El
   resolvedor toma como piso la versión del build vigente y la del último escaneo de cada servidor
   vinculado (la más nueva que sirve para el target), y el chequeo diario no anuncia nada anterior.
