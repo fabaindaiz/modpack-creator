@@ -27,6 +27,7 @@ from src.services.modpack import ModList, ModpackService, ModRow, PinDowngrade, 
 from src.services.modrinth import ModrinthService
 from tests._actors import EDITOR, OPERATOR, session_for
 from tests._session import session_cookie
+from tests._tables import assert_cells_labelled
 from tests.conftest import MongoRunner
 
 T0 = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
@@ -2606,3 +2607,10 @@ def test_v1_build_queues_the_build_job_and_answers_202_with_it() -> None:
     response = TestClient(app, base_url="https://testserver").post(f"/v1/modpack/{BUNDLE_ID}/build")
     assert response.status_code == 202 and response.json()["kind"] == "build_create"
     assert response.json()["_id"] == str(modpack.queued.id)  # as /v1 update, rollback, scan
+
+
+@pytest.mark.parametrize("path, cells", [("/modpacks", 5), (f"/modpacks/{BUNDLE_ID}", 4 + 3), ("/replacements", 3)])
+def test_every_table_cell_carries_its_header_for_the_phone(path: str, cells: int) -> None:
+    # B4 (d-7985ee-937ca8): below sm: each row is a card, its cells labelled by their header.
+    client, _, _ = setup()
+    assert assert_cells_labelled(client.get(path).text) >= cells

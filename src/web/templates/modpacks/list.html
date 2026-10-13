@@ -16,14 +16,14 @@
     {% call ui.table(["Modpack", "Versión", "Loader", "Último build", "Recomendado"], empty="Todavía no hay modpacks.", caption="Modpacks") %}
     {% for bundle in bundles %}
     <tr>
-      <td class="max-w-[18rem] break-words">
+      <td data-label="Modpack" class="max-w-[18rem] break-words">
         <a href="/modpacks/{{ bundle.id }}" class="font-medium hover:text-emerald-700 hover:underline dark:hover:text-emerald-300">{{ bundle.name }}</a>
         {% if bundle.description %}<div class="line-clamp-2 text-xs text-zinc-500 dark:text-zinc-400">{{ bundle.description }}</div>{% endif %}
       </td>
-      <td class="whitespace-nowrap">{{ bundle.version }}</td>
-      <td>{{ ui.badge(bundle.loader.value) }}</td>
-      <td class="tabular-nums">{% if bundle.latest_build is not none %}#{{ bundle.latest_build }}{% else %}<span class="text-zinc-400 dark:text-zinc-500">—</span>{% endif %}</td>
-      <td>{% if bundle.recommended_build is not none %}{{ ui.badge("#" ~ bundle.recommended_build, "accent") }}{% else %}<span class="text-zinc-400 dark:text-zinc-500">—</span>{% endif %}</td>
+      <td data-label="Versión" class="whitespace-nowrap">{{ bundle.version }}</td>
+      <td data-label="Loader">{{ ui.badge(bundle.loader.value) }}</td>
+      <td data-label="Último build" class="tabular-nums">{% if bundle.latest_build is not none %}#{{ bundle.latest_build }}{% else %}<span class="text-zinc-400 dark:text-zinc-500">—</span>{% endif %}</td>
+      <td data-label="Recomendado">{% if bundle.recommended_build is not none %}{{ ui.badge("#" ~ bundle.recommended_build, "accent") }}{% else %}<span class="text-zinc-400 dark:text-zinc-500">—</span>{% endif %}</td>
     </tr>
     {% endfor %}
     {% endcall %}

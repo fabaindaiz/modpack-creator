@@ -23,11 +23,11 @@
                    caption="Versiones del mod") %}
   {% for version in versions %}
   <tr>
-    <td class="font-mono text-xs break-all">{{ version.version_number }}</td>
-    <td>{{ version.channel }}</td>
-    <td class="text-xs">{{ ui.when(version.published) }}</td>
-    <td class="text-xs break-words">{{ version.game_versions | join(", ") }}</td>
-    <td class="text-xs break-words">{{ version.loaders | join(", ") }}</td>
+    <td data-label="Versión" class="font-mono text-xs break-all">{{ version.version_number }}</td>
+    <td data-label="Canal">{{ version.channel }}</td>
+    <td data-label="Publicada" class="text-xs">{{ ui.when(version.published) }}</td>
+    <td data-label="Minecraft" class="text-xs break-words">{{ version.game_versions | join(", ") }}</td>
+    <td data-label="Loaders" class="text-xs break-words">{{ version.loaders | join(", ") }}</td>
   </tr>
   {% endfor %}
   {% endcall %}

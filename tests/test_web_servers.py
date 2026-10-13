@@ -27,6 +27,7 @@ from src.model.users.actor import ActorRef
 from src.model.utils import MinecraftLoaders
 from tests._actors import EDITOR, OPERATOR, session_for
 from tests._session import session_cookie
+from tests._tables import assert_cells_labelled
 from tests.conftest import MongoRunner
 from tests.test_web_modpacks import visible
 
@@ -1533,3 +1534,10 @@ def test_a_long_server_name_prefills_the_new_modpack_within_its_limit() -> None:
     text = client.get(f"/servers/{SERVER_ID}").text
     value = re.search(r'id="new-modpack-name"[^>]*value="([^"]*)"', text)
     assert value is not None and len(value.group(1)) == 120
+
+
+def test_every_table_cell_carries_its_header_for_the_phone() -> None:
+    # B4 (d-7985ee-937ca8): the servers, the panel's missing ones and the comparison.
+    client, _ = setup()
+    assert assert_cells_labelled(client.get("/servers").text) >= 3 + 3
+    assert assert_cells_labelled(client.get(f"/servers/{SERVER_ID}").text) >= 4

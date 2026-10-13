@@ -19,11 +19,11 @@
   {% call ui.table(["Proyecto", "Se reemplaza por", ""], empty="No hay reglas globales.", caption="Reemplazos globales") %}
   {% for rule in rules %}
   <tr data-rule="{{ rule.project_id }}">
-    <td class="max-w-[16rem] break-words">
+    <td data-label="Proyecto" class="max-w-[16rem] break-words">
       <span class="font-medium">{{ ui.mod_link(rule.project_id, titles.get(rule.project_id, rule.project_id)) }}</span>
       <div class="font-mono text-xs text-zinc-500 dark:text-zinc-400">{{ rule.project_id }}</div>
     </td>
-    <td class="max-w-[16rem] break-words">
+    <td data-label="Se reemplaza por" class="max-w-[16rem] break-words">
       {% if rule.replacement %}
       <span class="font-medium">{{ ui.mod_link(rule.replacement, titles.get(rule.replacement, rule.replacement)) }}</span>
       <div class="font-mono text-xs text-zinc-500 dark:text-zinc-400">{{ rule.replacement }}</div>
@@ -31,7 +31,7 @@
       {{ ui.badge("Se quita", "warning") }}
       {% endif %}
     </td>
-    <td class="text-right whitespace-nowrap">
+    <td data-label="" class="text-right whitespace-nowrap">
       {{ ui.button("Borrar", kind="ghost", small=True, attrs={
         "hx-delete": "/replacements/" ~ rule.project_id, "hx-target": "#replacements", "hx-swap": "outerHTML",
         "hx-confirm": "¿Borrar la regla de " ~ rule.project_id ~ "?"}) }}

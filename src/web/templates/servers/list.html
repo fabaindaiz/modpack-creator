@@ -9,9 +9,9 @@
 {% call ui.table(["Servidor", "Nodo", "Modpack"], empty="Todavía no hay servidores.", caption="Servidores") %}
 {% for server in servers %}
 <tr>
-  <td class="max-w-[18rem] break-words"><a href="/servers/{{ server.id }}" class="font-medium hover:text-emerald-700 hover:underline dark:hover:text-emerald-300">{{ server.name }}</a></td>
-  <td class="whitespace-nowrap">{{ server.node }}</td>
-  <td class="break-words">
+  <td data-label="Servidor" class="max-w-[18rem] break-words"><a href="/servers/{{ server.id }}" class="font-medium hover:text-emerald-700 hover:underline dark:hover:text-emerald-300">{{ server.name }}</a></td>
+  <td data-label="Nodo" class="whitespace-nowrap">{{ server.node }}</td>
+  <td data-label="Modpack" class="break-words">
     {% if server.bundle_id and bundle_names.get(server.bundle_id) %}<a href="/modpacks/{{ server.bundle_id }}" class="hover:underline">{{ bundle_names[server.bundle_id] }}</a>
     {% elif server.bundle_id %}<span class="text-zinc-500 dark:text-zinc-400">Modpack desconocido</span>
     {% else %}<span class="text-zinc-400 dark:text-zinc-500">Sin modpack</span>{% endif %}
@@ -38,9 +38,9 @@
 {% call ui.table(["Servidor", "Nodo", ""], empty="Todos los servidores del panel ya están aquí.", caption="Servidores del panel que faltan") %}
 {% for server in additions %}
 <tr>
-  <td class="max-w-[18rem] break-words font-medium">{{ server.name }}</td>
-  <td class="whitespace-nowrap">{{ server.node }}</td>
-  <td class="text-right">
+  <td data-label="Servidor" class="max-w-[18rem] break-words font-medium">{{ server.name }}</td>
+  <td data-label="Nodo" class="whitespace-nowrap">{{ server.node }}</td>
+  <td data-label="" class="text-right">
     <form method="post" action="/servers">
       <input type="hidden" name="uuid" value="{{ server.uuid }}">
       {{ ui.button("Agregar", type="submit", small=True) }}
