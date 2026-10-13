@@ -1,5 +1,6 @@
 """Jobs and audit pages of the panel (stage 4): reads only, with doubles for the services."""
 import re
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -662,3 +663,12 @@ def test_the_filters_ask_htmx_for_the_list_and_keep_a_submit_button() -> None:
         assert attribute in form
     region = text[text.index('id="audit-list"'):]
     assert region.index('name="actor"') < region.index("data-audit=") and "Filtrar" in region
+
+
+def test_the_server_column_of_a_job_card_is_the_widest() -> None:
+    """The owner, 2026-10-13, using the demo: a long server name wrapped over many lines in Trabajos."""
+    parts = Path("src/web/templates/activity/_job_parts.html").read_text()
+    cols = re.search(r"sm:grid-cols-\[([^\]]+)\]", parts)
+    assert cols is not None
+    shares = [float(f) for f in re.findall(r"minmax\(0,([0-9.]+)fr\)", cols.group(1))]
+    assert shares[1] == max(shares) and shares[1] >= 2 * min(shares)  # Tipo, Servidor, Estado, Paso, Pedido por
