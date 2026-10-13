@@ -10,6 +10,17 @@ y tokens, con en qué se apoya (bundle 0.0.30); `close` la compara después con 
 
 ## Dónde estamos
 
+**2026-10-13, tanda A del panel en `main`, sin desplegar** (i-7985ee-44060c; `d2f253f`, fast-forward
+a pedido del dueño; las ramas `feat/panel-tanda-a` y `docs/observaciones-0.3.1` están en `origin`, y
+el push de `main` lo corre el dueño). La versión sigue en 0.3.1: desplegarla pide subirla a 0.3.2
+(`pyproject.toml`, la guía y la sección del runbook, que ya tiene sus notas). Revisión final en
+contexto limpio hecha; 8 menores diferidos en i-7985ee-44060c. **Para seguir, en otra máquina:** lo de
+siempre (Docker o podman con su VM, hatch y Python 3.12, `npm install`, Chromium de Playwright, el
+`.env.yaml` propio). **Primer paso:** el que elija el dueño entre 0.3.2 y su deploy, la tanda B
+(i-7985ee-44060c: flujo de alta, tablero, móvil, F09 y el estilo) o los menores de la tanda A.
+Pendientes de decisión: el hook contra heredocs (Fricciones: ya van más incidentes), los tags
+`v0.2.0` y `v0.3.0` (opcionales), y probar en un teléfono real el selector nativo y el `<datalist>`.
+
 **2026-10-13, 0.3.1 desplegada** (tag `v0.3.1`, imagen `0235cea`) en el servidor del dueño, en solo
 lectura, sobre la 0.1.0 (`1ab1b50`, la imagen para volver atrás). **La base se reseteó a pedido del
 dueño** (se borraron los volúmenes `docker_mongodb-data` y `docker_mongodb-config`, sin respaldo: el
@@ -23,8 +34,8 @@ servidor con modpack y build). Pasos: `docs/runbooks/desplegar-panel.md` §4. Ta
 Tropiezo del deploy, para la guía: un `MONGODB_PASSWORD` exportado vacío en la shell le gana a
 `docker/.env` y compose dice que falta.
 
-**2026-10-12, releases 0.3.0 y 0.3.1 en `main` (sin etiquetar todavía; tampoco hay tag
-`v0.2.0`):** T1, T4 con la regla de no retroceder (d-7985ee-6dc34c), T3, T7, T6 (Prism) con el tope
+**2026-10-12, releases 0.3.0 y 0.3.1 en `main` (0.3.1 con tag `v0.3.1` desde el 2026-10-13; sin
+tag `v0.3.0` ni `v0.2.0`):** T1, T4 con la regla de no retroceder (d-7985ee-6dc34c), T3, T7, T6 (Prism) con el tope
 de disco temporal, T5 (CurseForge con clave), la restauración vista por la actividad del servidor
 (d-7985ee-894b2c) y el sandbox de Bash (d-7985ee-9b97fa). Después, en ramas sin mergear: el bundle
 de agentes 0.0.31 (`chore/agents-0.0.31`) y los arreglos menores del roadmap
@@ -40,9 +51,8 @@ visual), hatch y Python 3.12, `npm install` para el barrido, Chromium de Playwri
 (`hatch run visual:playwright install chromium`), y el `.env.yaml` propio, que nunca está en el
 repositorio. La tanda 1 pasó la revisión en contexto limpio (0 críticos; los 2 importantes y 1 menor
 arreglados, 2 menores en i-7985ee-89ea1c) y la versión ya es 0.3.1, con su sección en el runbook.
-**Primer paso:** los tags (`v0.3.1`; tampoco existen `v0.2.0` ni `v0.3.0`), si el dueño los pide,
-y el deploy en solo lectura, con la lista «Lo siguiente, todo del dueño».
-Pendientes de decisión: la tanda 2 (tablero, móvil, F09) y el hook contra heredocs (Fricciones).
+Ese primer paso ya se dio (el tag `v0.3.1` y el deploy, 2026-10-13); la tanda 2 quedó absorbida por
+las tandas A y B de i-7985ee-44060c.
 
 Al cierre de la sesión de usabilidad del panel (2026-10-04 y 2026-10-05; detalle en
 `.claude/logs/agent-changelog.md`, s-7985ee-aaa17f, y las entradas de abajo). **Todo está en
@@ -1194,7 +1204,9 @@ Fricción vista al menos dos veces, con su costo.
   Cuesta una sesión de subagente detenida a mano. Ya es regla en `AGENTS.md`.
   **La regla no basta (cierre del 2026-10-12, contado con `bundle.py count` en el registro):** después
   de escrita hubo heredocs en 2026-10-05 (el revisor hacia `cat`, el barrido hacia `python3`) y dos
-  veces en 2026-10-12 (propuestas hacia `cat`; en la tanda 1, tres comandos y un heredoc vacío). Ninguno
+  veces en 2026-10-12 (propuestas hacia `cat`; en la tanda 1, tres comandos y un heredoc vacío), y otra
+  vez en 2026-10-13 (tanda A: dos heredocs vacíos, contados en s-7985ee-1602e4): tres sesiones seguidas
+  con al menos un incidente, siempre del agente principal, que conoce la regla. Ninguno
   colgó, pero es disciplina sin nada que la haga cumplir (peldaño 1). **Propuesta, decisión del dueño:**
   un hook `PreToolUse` sobre Bash en `.claude/settings.json` que rechace un comando con `<<` y diga
   «escribe el script a un archivo». Costo: un script de ~15 líneas, su test y una fila de decisión;

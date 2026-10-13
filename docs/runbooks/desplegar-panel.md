@@ -12,6 +12,21 @@ Antes de empezar, si el servidor aún corre la versión anterior a la fase 0, se
 `MONGO_VERSION` y las contraseñas, y el volumen `mongodb-data` ya en uso. Nunca
 `docker compose … down -v` (d-7985ee-398653).
 
+## De 0.3.1 a la próxima versión: la tanda A (2026-10-13, en `main`, sin versión todavía)
+
+Los selects en la fila de cada mod, los filtros, la pestaña Sugerencias y auditoría y trabajos como
+tarjetas (i-7985ee-44060c). Sigue de solo lectura. **Ninguna variable nueva, nada se migra**; «Volver
+atrás» a 0.3.1 sigue valiendo. Lo que se nota:
+- **`audit` tiene índices nuevos.** Beanie crea al arrancar `(at, _id)`, `(actor.sub, at)`,
+  `(action, at)` y `(target.kind, target.id, at)`, y no borra los viejos (`at`, `target.kind+id`,
+  `actor.sub`), que quedan sin uso. Con pocos eventos no importa; borrarlos a mano es opcional.
+- **Los eventos guardan el nombre de su objetivo** desde esta versión; los anteriores se ven con su
+  tipo e id.
+- **Una página del panel abierta durante el deploy** sondea `/jobs/{id}/tr`, que ya no existe: avisa
+  un error cada 2 s hasta recargarla. Recargar las pestañas abiertas después del deploy.
+- **Los filtros de la lista de mods y de la auditoría viven en la URL**: un enlace guardado los
+  conserva.
+
 ## De 0.3.0 a 0.3.1 (2026-10-12)
 
 La ronda 2 del panel, tanda 1: avisos de bajas de versión y la confirmación «Fijar igual», el aviso de

@@ -15,7 +15,12 @@ conteos que respetan los demás filtros; las sugerencias son una pestaña; se qu
 mod»; auditoría y trabajos son tarjetas expandibles; el evento de auditoría guarda el nombre de su
 objetivo; las acciones y sus detalles se leen en español; los filtros de auditoría son listas con
 conteo de una sola agregación. Además, la investigación del estilo de Modrinth
-(`docs/research/2026-10-13-estilo-modrinth.md`), que el dueño asignó a la tanda B.
+(`docs/research/2026-10-13-estilo-modrinth.md`), que el dueño asignó a la tanda B. Antes, en la misma
+sesión (desde `0235cea`, el cierre de s-7985ee-6f74e1): el tag `v0.3.1`, el deploy guiado de la 0.3.1
+con la base reseteada a pedido del dueño (`03c48e5`; las comprobaciones que dejó para después están
+en «Dónde estamos»), sus diez observaciones en tres tandas (i-7985ee-44060c) y la investigación de
+loaders secundarios (`docs/research/2026-10-13-loaders-secundarios.md`, leída por resúmenes). Al
+final, `main` avanzó por fast-forward a `d2f253f` a pedido del dueño; las ramas están en `origin`.
 
 **Áreas.** `src/routers/web/{modpacks,activity}.py`, `src/services/{modpack,audit}.py`,
 `src/database/audit.py`, `src/model/audit.py`, `src/library/mod_filters.py`, `src/web/audit_labels.py`,
@@ -35,7 +40,13 @@ de AGENTS.md, sin efecto pero repetidos; el merge de la rama del agente se hizo 
 escribió después del código; `task-start`/`task-done` buscan «Task N» y el plan dice «Tarea N»: el
 ledger se escribió a mano.
 
-**Qué quedó sin hacer.** No se corrió `explain` sobre la consulta de auditoría (paso 4 de la tarea 4).
+**Qué quedó sin hacer.** No se corrió `explain` sobre la consulta de auditoría (paso 4 de la tarea 4;
+la revisión confirmó con la documentación de MongoDB que `$facet` no usa índices: menor diferido 1).
+La versión no se subió (sigue 0.3.1). `usage add frictions` lo niega el sandbox (escribe en
+`~/Library/Application Support/agent-guides`): no se registró, como en el cierre anterior.
+
+**Decisiones en nombre del dueño.** Las 16, con su costo, en el registro de ejecución del plan
+(`docs/superpowers/plans/2026-10-13-panel-tanda-a.md`, «Registro de ejecución»).
 
 **Desvío del plan.** El nombre del objetivo lo pone `AuditService.record` en un solo lugar, no cada
 llamada; los selects van después del `<details>` del mod, no dentro del `<summary>`; elegir «sin
