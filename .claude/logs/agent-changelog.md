@@ -45,14 +45,18 @@ en el ledger del plan con su costo.
 **No verificado.** El selector nativo y el `<datalist>` en un teléfono real (el barrido es Chromium
 a 360 px); los índices nuevos de `audit` frente a `$facet`; Modrinth y Pterodactyl reales.
 
-**Medido.** Gate con MongoDB: 1360 tests. Barrido: 194 capturas, 0 con problemas, y la revisión a mano
+**Medido.** Gate con MongoDB: 1362 tests tras la revisión. Barrido: 194 capturas, 0 con problemas, y la revisión a mano
 de las capturas nuevas (de ahí el ajuste de sangría de los selects a 360 px).
 
 **Tarjetas y chequeos.** Ninguna tarjeta nueva consultada (cambio de panel, sin datos guardados que se
 reescriban: el campo `target.name` es opcional). Chequeos: `scripts/check.sh`, `scripts/test-mongo.sh`
 (los tests de base de las tareas 2 y 4 vistos fallar en sus commits de solo tests), `scripts/visual-sweep.sh`.
 
-**Revisión.** Pendiente: la revisión final de la rama en contexto limpio.
+**Revisión.** Revisión final de toda la rama en contexto limpio (un agente en Opus, sin escribir):
+0 críticos, 2 importantes y 8 menores. Los importantes, arreglados con test visto fallar
+(`16e0c70`): el filtro reemplazaba el campo de nombre mientras se escribía, y `mod_list` leía enteros
+los documentos de versión de todas las listas. Los 8 menores quedaron diferidos en el roadmap
+(i-7985ee-44060c), entre ellos los tres índices de `audit` que `$facet` no usa.
 
 **Aprendido.** Local: un `<select>` dentro de `<summary>` abre la ficha; va fuera del `<details>`.
 FastAPI lee un campo de formulario vacío como ausente: un `Literal["", …]` obligatorio da 422 (quedó

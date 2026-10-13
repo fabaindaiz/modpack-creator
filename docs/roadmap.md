@@ -806,8 +806,23 @@ JSON con `request_id` y `job_id`.
   en la revisión los filtros de la lista de mods (A6) y el aviso con Deshacer al fijar desde la fila
   (A14), y pidió Tailwind para la estructura. Auditoría y trabajos ya no desbordan a 360 px (el
   móvil compacto del resto de las páginas sigue en la tanda B). Chequeo: el gate con MongoDB y el
-  barrido visual. **Sin verificar:** el selector nativo y el `<datalist>` en un teléfono real; y si
-  los índices nuevos de `audit` sirven a la consulta con `$facet` (no se corrió `explain`).
+  barrido visual, y una revisión final en contexto limpio (sus 2 importantes, arreglados). **Sin
+  verificar:** el selector nativo y el `<datalist>` en un teléfono real.
+- **Menores de la revisión de la tanda A (diferidos, 2026-10-13), cada uno barato:**
+  1. la consulta de auditoría con `$facet` lee toda la ventana de fechas en cada página, y
+     `(actor.sub, at)`, `(action, at)` y `(target.kind, target.id, at)` no le sirven (`$facet` no usa
+     índices): borrarlos, paginar los eventos con un `find()` aparte o poner una ventana por defecto;
+  2. si la escritura de un select se guarda y luego falla `resolve()`, el select vuelve al valor viejo
+     aunque el cambio quedó guardado;
+  3. «Deshacer» que abre el diálogo de baja quita el aviso: al cancelar, se pierde el deshacer;
+  4. el refresco de `#pack-main` al empezar o terminar un trabajo pierde los filtros de la lista;
+  5. id `job-<id>` duplicado (la tarjeta y la fila que carga); una tarjeta abierta de un trabajo
+     activo sondea dos veces, y la fila interna sigue sondeando al cerrarla;
+  6. una página abierta durante el deploy sondea `/jobs/{id}/tr` (ahora 404) cada 2 s hasta recargar;
+  7. el campo Objetivo muestra `kind:id` al elegir una sugerencia, y un nombre con «:» no se puede
+     filtrar por nombre;
+  8. las versiones de la fila muestran el número sin el canal (spec §1: «número y canal»); la fila
+     suma los canales de la excepción y el selector de la ficha no.
 - **Tanda B suma el estilo (dueño, 2026-10-13):** un aspecto inspirado en Modrinth, escrito desde
   cero (acento verde propio, sin su nombre, logo ni mascota; nota de «no afiliado»), con Lucide e
   Inter tomados de sus propias fuentes si el dueño acepta esos terceros en su revisión. Investigación:

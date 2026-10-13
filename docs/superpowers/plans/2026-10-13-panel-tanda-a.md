@@ -16,7 +16,7 @@ consulta `$facet` y los de mods se cuentan en memoria.
 **Spec:** `docs/superpowers/specs/2026-10-13-panel-tanda-a-design.md` (A1–A14; filas
 d-7985ee-b21228 … d-7985ee-e8c5fb en `docs/decisions.md`). Se lee junto a este plan.
 
-**Estado (2026-10-13):** escrito; ninguna tarea empezada.
+**Estado (2026-10-13):** las 9 tareas hechas, en `feat/panel-tanda-a`; revisión final hecha, sus 2 importantes arreglados (`16e0c70`) y 8 menores en el roadmap. El registro de ejecución está al final.
 
 ## Restricciones globales
 
@@ -350,3 +350,52 @@ como el POST, sin `HX-Redirect`), `src/web/static/app.js`; tests en `tests/test_
 El gate no ve cómo se ve (barrido manual) ni el selector nativo de un móvil real: el barrido usa
 Chromium a 360 px, no un teléfono. El comportamiento de `<datalist>` varía por navegador (en Safari
 de iOS se muestra distinto): sin probar en un dispositivo real.
+
+## Registro de ejecución
+
+Copiado del ledger de la ejecución (en inglés, como se escribió): cada tarea, sus commits y pruebas, y cada decisión tomada con su costo.
+
+```text
+
+Spec: docs/superpowers/specs/2026-10-13-panel-tanda-a-design.md. Branch feat/panel-tanda-a from f598533.
+Execution: native (owner, 2026-10-13), with an agent in parallel for the tasks that share no files.
+
+Pre-flight:
+- Task 1 → Task 3, 4: `ui.card_list`/`ui.card(cols)` produced by 1, consumed by 3 (audit cards) — same chain, same agent.
+- Task 2 → Task 3, 4: `AuditTarget.name` produced by 2, consumed by 3 (summary) and 4 (target facet label) — same chain.
+- Task 3 → Task 4: `ACTIONS` (text, area) produced by 3, consumed by 4 (optgroups, unknown action ignored) — same chain.
+- Task 5 → 6 → 7 → 8: all edit `modpacks/_mods.html`; 6 and 7 both edit `app.js` and `test_web_base.py` — serial, by the controller.
+- Chains 1–4 and 5–8 share no file except possibly `_macros.html` (1 adds macros; 5–8 should not need new ones). Merge by the controller.
+
+Ruling: tasks 1–4 run in a parallel agent in a git worktree outside the repo (scratchpad/wt-audit, branch feat/panel-tanda-a-audit), with a gate script equal to `hatch run gate` using the main env's python — the owner asked to speed up with agents; two chains share no files — cost if wrong: a merge conflict resolved by hand.
+Ruling: the agent does not run `scripts/test-mongo.sh` (one disposable MongoDB at a time); the controller runs it after merging the audit branch, and the MongoDB tests of tasks 2 and 4 are seen failing there first by checking out their test commit — cost if wrong: a DB test seen failing later than its code.
+Task 5: complete (commits f598533..b230fd5, tests: hatch run tests tests/test_web_modpacks.py → 213 passed; gate 865 passed). Ruling: task-start/task-done expect 'Task N' headings and the plan says 'Tarea N' — the brief is read from the plan directly and ledger lines are written by hand — cost if wrong: none.
+Task 6: complete (commits b230fd5..b647fca, tests: hatch run tests tests/test_web_modpacks.py tests/test_web_base.py → 262 passed; gate green). Ruling: the selects sit after the mod's <details> (under the title while closed, under the card body while open), not inside the <summary> — a form control in a <summary> toggles the card and is nested interactive content — cost if wrong: moving one include. Ruling: an empty form value reaches FastAPI as missing, so POST channel-exceptions takes channel as optional and a missing one removes the exception (beta/alpha still validated, anything else 422) — cost if wrong: a malformed request removes an exception, recorded in the audit. Ruling: from a row (no contexto) setting or removing an exception resolves again, like the side select, so its 'en uso' line is current — cost if wrong: one resolve per change.
+Task 7: complete (commits b647fca..ddfb90b, tests: scripts/test-mongo.sh → 1296 passed; RED seen: 2 base tests + 5 web + 1 app.js). Ruling: 'sin fijar' arrives as a missing version_id (FastAPI), so POST /pins takes it optional and unpins only with from=fila; without from it stays a 422 — cost if wrong: none for other callers. Ruling: the undo notice is built in _mods.html (not ui.notice: it has no slot for a form, and _macros.html is the parallel agent's) and stays until closed or used; app.js removes it after a successful Deshacer — cost if wrong: a notice left open. Ruling: the 'fijado' and 'baja (piso X)' badges left the summary for the pin select line — cost if wrong: one template move. Note: test_without_the_catalog_s_list_the_row_has_no_options passed before the code (None is the field's default): it guards the behaviour, it did not drive it.
+Task 8: complete (commits ddfb90b..7194dc5, tests: hatch run tests tests/test_mod_filters.py tests/test_web_modpacks.py → 244 passed; gate green). Ruling: the name filter keeps at most 100 characters — cost if wrong: none. Ruling: 'Filtrar' only without JS (<noscript>), 'Limpiar' only with a filter on — cost if wrong: one template line. Ruling: actions other than GET keep the filters from HX-Current-URL, as the tab does — cost if wrong: a filtered list shows unfiltered after an action.
+Task 1: complete (agent, commit d3f5ade; tests seen failing: 4 in test_web_activity.py; merged in e974bd7, scripts/test-mongo.sh → 1360 passed).
+Task 2: complete (agent, commits 554993f tests+stub, 3b8bf12; RED seen by the controller at 554993f with MongoDB: test_an_event_keeps_the_target_name_it_had, test_servers_and_replacements_are_named_from_the_catalog, test_a_lost_race_deletes_the_new_pack_and_keeps_the_other_link; green after merge).
+Task 3: complete (agent, commit fc72a3c; RED seen by the agent: test_audit_labels.py import error, 5 web tests).
+Task 4: complete (agent, commits 57a7bed tests+stub, 44824f6; RED seen by the controller at 57a7bed with MongoDB: 5 tests in test_audit_log.py; green after merge).
+Task 1-4: Ruling (agent): test-only commits carry interface stubs so they pass the gate — cost if wrong: a little non-test code in two commits.
+Task 1: Ruling (agent): the /row tests stay (/row still serves the card body and the job page); the /tr tests moved to /summary, which, like /tr, sends no HX-Trigger job-finished — cost if wrong: nothing listens for it on /jobs or home.
+Task 2: Ruling (agent): its tests live in tests/test_audit_log.py and tests/test_audit_names.py (tests/test_audit.py tests scripts/audit.py); TargetNames is its own provider in dependences.py; AuditService's clock moved to third position — cost if wrong: none.
+Task 2: note (agent): test_a_failing_lookup_is_no_name was written after the code, never seen failing.
+Task 3: Ruling (agent): a map in a detail reads as 'name: value' pairs, a bool 'sí'/'no', None '—'; the closed card shows the absolute UTC time (ui.when), not 'hace 5 min' (no days unit in ago) — cost if wrong: a template change.
+Task 4: Ruling (agent): the first index is (at, _id) to back the sort; old indexes stay in production as orphans (Beanie does not drop them); a facet's label is the newest event's name; actions not in ACTIONS are not offered — cost if wrong: an index to drop by hand.
+Task 4: Ruling (controller): the explain step was not run. MongoDB documents (ASSUMPTION, from memory) that a $facet sub-pipeline cannot use indexes: only the first $match on 'at' can, so the three filter indexes may serve nothing — sent to the final review — cost if wrong: unused indexes cost a little on each write.
+Ruling (controller): the merge commit of the audit branch was made before the gate ran; scripts/test-mongo.sh ran right after on that commit, 1360 passed — cost if wrong: none, it is green.
+Task 9: complete (commit 666fbc3; visual sweep 194 shots, 0 problems, twice; the second after the 360 px indent fix of the row selects). Ruling: below sm the row selects lose the 4.75rem indent (two per line instead of one) — seen in the sweep — cost if wrong: one class.
+Final review: opus reviewer, fresh context, package review-f598533..666fbc3.diff: 0 critical, 2 important, 8 minor.
+Final: fixed the name filter swapped with #mods (typed text lost while a request was in flight) — test_filtering_never_replaces_the_name_being_typed RED→GREEN, suite 1362/1362 (scripts/test-mongo.sh).
+Final: fixed mod_list read every list's whole version documents — test_the_row_loads_only_its_target_s_versions_and_only_what_the_select_needs RED→GREEN, suite 1362/1362.
+Final: minor (deferred): the audit $facet reads the whole date window per page; (actor.sub, at), (action, at), (target.kind, target.id, at) serve nothing (MongoDB docs: $facet does not use indexes) — drop them, page events with a find(), or a default window.
+Final: minor (deferred): a write that succeeds before resolve() fails leaves the select restored to the old value although the change is saved.
+Final: minor (deferred): 'Deshacer' that opens the downgrade dialog removes the undo notice; cancelling loses the undo.
+Final: minor (deferred): the job-started/job-finished refresh of #pack-main drops the mod filters.
+Final: minor (deferred): duplicate id job-<id> (card and loaded row); an open active card polls twice, and the inner row keeps polling after closing.
+Final: minor (deferred): pages open across the deploy poll /jobs/{id}/tr, now 404, every 2 s until reloaded.
+Final: minor (deferred): the Objetivo field shows kind:id once a suggestion is chosen; a name with ':' cannot be filtered by name.
+Final: minor (deferred): the row's versions show the number without the channel (spec §1: número y canal); the row adds the exception's channels and the card's picker does not; DELETE channel-exceptions has no panel caller.
+Final: Ruling: 'a side back to automatic' (remove a decision) and 'the name filter matches the slug' were set aside by the reviewer — the spec offers only yes/no and 'contiene' on the name; a person gets what they decided — cost if wrong: a new option later.
+```
