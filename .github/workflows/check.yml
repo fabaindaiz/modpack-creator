@@ -52,7 +52,7 @@ jobs:
       - name: The panel assets are in the image
         run: >
           docker run --rm --entrypoint sh modpack-creator-api:ci
-          -c 'test -s /app/src/web/static/dist/app.css && test -s /app/src/web/static/dist/htmx.min.js'
+          -c 'test -s /app/src/web/static/dist/app.css && test -s /app/src/web/static/dist/htmx.min.js && test -s /app/src/web/static/dist/icons.svg && test -s /app/src/web/static/dist/LICENSE-lucide.txt && test -s /app/src/web/static/dist/LICENSE-htmx.txt && test -s /app/src/web/static/fonts/InterVariable.woff2'
       - name: The compose file is valid
         env:
           MONGO_VERSION: "8.0"

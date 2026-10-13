@@ -91,5 +91,7 @@ docker-compose.yml
 docker/
 docs/
 scripts/
+# The icon sprite is built in the image (d-7985ee-01ad81): the one script the assets stage needs.
+!scripts/build-icons.mjs
 LICENSE
 README.md
