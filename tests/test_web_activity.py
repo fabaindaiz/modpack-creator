@@ -248,7 +248,15 @@ def test_job_summary_route_answers_the_summary_alone() -> None:
     assert "<details" not in response.text and "every 2s" in response.text
     jobs.jobs = [make_job(status="done", active=False)]
     assert "every 2s" not in client.get(f"/jobs/{jobs.jobs[0].id}/summary").text
-    assert client.get(f"/jobs/{jobs.jobs[0].id}/tr").status_code == 404
+
+
+def test_the_old_row_route_tells_a_page_from_before_to_stop_polling() -> None:
+    """Final review of batch A (minor 6): a page left open across the deploy polls /jobs/{id}/tr,
+    gone since. htmx stops polling on 286; a 404 would put an error notice up every 2 s."""
+    client, jobs, *_ = setup()
+    jobs.jobs = [make_job(status="running", active=True)]
+    response = client.get(f"/jobs/{jobs.jobs[0].id}/tr")
+    assert response.status_code == 286 and response.text == ""
 
 
 def test_jobs_filters_pass_through_as_exact_values() -> None:

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any, Optional
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from src.exceptions import HTTP_404_NOT_FOUND, HTTP_422_UNPROCESSABLE_ENTITY
 from src.dependences import AuditService, Dependences, JobService, ModpackService, ModrinthService, PterodactylService
 from src.model.jobs import Job, is_real_update
@@ -187,6 +187,12 @@ async def job_summary(
     context = await _server_context(job, pterodactylService)
     names = {job.payload["server_id"]: context["server_name"]} if "server_name" in context else {}
     return render(request, "activity/_job_summary.html", actor, job=job, server_names=names)
+
+@router.get("/jobs/{job_id}/tr")
+async def job_tr_gone(job_id: str, actor: Actor = Depends(get_web_actor)) -> Response:
+    """The old table row's poll, gone with the cards (A13): a page left open across the deploy
+    still asks for it every 2 s. 286 tells htmx to stop polling; a 404 would show an error each time."""
+    return Response(status_code=286)
 
 @router.get("/audit")
 @inject
