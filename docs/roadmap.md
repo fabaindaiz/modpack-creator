@@ -15,8 +15,10 @@ y tokens, con en qué se apoya (bundle 0.0.30); `close` la compara después con 
 major solo con su autorización), con su sección del runbook; el tag va después de sus observaciones
 sobre la demo local (`scripts/demo.sh`). **Para seguir, en otra máquina:** lo de siempre (Docker o podman con
 su VM, hatch y Python 3.12, `npm ci` —ahora también arma el sprite de íconos—, Chromium de Playwright,
-el `.env.yaml` propio). **Primer paso:** las observaciones del dueño sobre la demo; después el merge a
-`main`, el tag `v0.3.2` y el deploy con el runbook; luego la tanda C (loaders secundarios).
+el `.env.yaml` propio). El dueño probó la demo (2026-10-13): la columna del servidor en Trabajos, más ancha
+(hecho), y un user-walk más (hecho: `docs/research/2026-10-13-user-walk-panel-0.3.2.md`, 3 casos
+arreglados). **Primer paso:** el merge a `main`, el tag `v0.3.2` y el deploy con el runbook (lo pide el
+dueño); luego la tanda C (loaders secundarios).
 Pendientes de decisión: el hook contra heredocs (Fricciones: ya van más incidentes), los tags
 `v0.2.0` y `v0.3.0` (opcionales), y probar en un teléfono real el selector nativo y el `<datalist>`.
 
@@ -1221,6 +1223,13 @@ Fricción vista al menos dos veces, con su costo.
 - Propuesto al bundle, en general, como `a-deny-for-secrets-catches-their-template`.
 
 ### Fricciones de la sesión del panel — Planeada
+- **El código de base antes que su test visto fallar** (contado con `bundle.py count` al cerrar el
+  2026-10-13: 4 incidentes en s-7985ee-fa3813 y s-7985ee-0fa504). Causa: `test-mongo.sh` tarda de 2 a 6
+  minutos y mypy corta antes de pytest si falta la firma, así que el método se escribe antes. Se
+  corrigió cada vez con el mismo paso a mano: la firma sola (un stub), `test-mongo.sh` en rojo por la
+  aserción, y recién después el cuerpo. **Propuesta, decisión del dueño:** escribir ese paso en
+  `AGENTS.md` («Verificación») como el procedimiento para un test de base. Costo: una línea; nada lo
+  hace cumplir (peldaño 1).
 - **Comandos que esperan stdin:** un heredoc canalizado a `cat` colgó a un subagente dos veces.
   Cuesta una sesión de subagente detenida a mano. Ya es regla en `AGENTS.md`.
   **La regla no basta (cierre del 2026-10-12, contado con `bundle.py count` en el registro):** después

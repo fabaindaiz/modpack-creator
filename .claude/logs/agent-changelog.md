@@ -53,6 +53,17 @@ cada test de base); `scripts/visual-sweep.sh`.
 **Revisión.** Revisión final de toda la rama en contexto limpio (Opus, sin escribir): 1 crítico y 5
 importantes, arreglados con test visto fallar (`514f2d3`, `2a03a93`, `2d78548`); 8 menores diferidos.
 
+**Después.** El dueño fijó que la versión queda en 0.3.2 y que minor y major los autoriza él
+(d-7985ee-a95f45, en `AGENTS.md`). Una demo local nueva (`scripts/demo.sh`: el barrido con la app
+corriendo y un Chromium con sesión de operador); el dueño la corrió con `!` desde la sesión. Su
+observación (la columna del servidor en Trabajos, más ancha) se arregló con test (`0aef465`). Un
+user-walk más (`docs/research/2026-10-13-user-walk-panel-0.3.2.md`) encontró 3 cortes del recorrido,
+arreglados con test (`cc2f0d8`): «Resolver» del pack sin ancla, «Escanear» del tablero sin ancla, y
+acciones de operador ofrecidas a un editor. En el log de la demo, `/` terminó en `/v1/login` con 500
+(el OIDC de la demo es falso) cuando se pidió sin la cookie: la demo se usa desde la ventana que
+abre. La demo se detuvo desde la sesión al cerrar (TaskStop); su contenedor no se pudo verificar
+desde el sandbox.
+
 **Aprendido.** Local: `.dockerignore` puede dejar fuera lo que el Dockerfile copia y el gate no lo ve
 (quedó en un test); una lista de Modrinth leída al pintar una página necesita tope de tiempo, un solo
 pedido a la vez y memoria del fallo (en el código). General: en un `python3 -c "…"` entre comillas
