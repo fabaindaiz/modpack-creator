@@ -18,7 +18,7 @@ from src.model.utils import MinecraftLoaders
 from src.services.audit import AuditService, TargetNames
 from tests._actors import EDITOR, OPERATOR
 from tests.conftest import MongoRunner
-from tests.test_mod_list import project
+from tests.test_mod_list import project, version
 
 pytestmark = pytest.mark.network
 
@@ -266,3 +266,18 @@ def test_an_unknown_target_records_without_a_name(mongo: MongoRunner) -> None:
         return names
 
     assert mongo(scenario) == [None, None, None, None]
+
+
+def test_a_page_s_mods_and_versions_are_named_from_the_catalog(mongo: MongoRunner) -> None:
+    async def scenario() -> dict[str, str]:
+        catalog = ModrinthDatabase()
+        await catalog.project_upsert_many([project("JJJJ", "JEI")])
+        await catalog.version_upsert_many([version("VVVV", "JJJJ", "19.60", 1)])
+        service = _named_service([T0, T0])
+        await service.record(EDITOR, "bundle.pin", AuditTarget(kind="bundle", id="b1"),
+                             {"project_id": "JJJJ", "version_id": "VVVV"})
+        await service.record(EDITOR, "bundle.project.add", AuditTarget(kind="bundle", id="b1"),
+                             {"refs": ["JJJJ", "ZZZZ"]})
+        return await service.names_for(await service.find())
+
+    assert mongo(scenario) == {"JJJJ": "JEI", "VVVV": "19.60"}

@@ -218,4 +218,4 @@ async def audit_log(
     filters = {"actor": actor_filter or "", "action": action or "", "target": target or "",
                "desde": desde or "", "hasta": hasta or ""}
     return render(request, "activity/audit.html", actor, events=events, filters=filters, older=older,
-                  nav_active="audit")
+                  names=await auditService.names_for(events), nav_active="audit")

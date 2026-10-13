@@ -26,23 +26,29 @@
   </div>
 </form>
 
-{% call ui.table(["Cuándo", "Quién", "Acción", "Objetivo", "Detalles"], empty="No hay eventos con ese filtro.", caption="Eventos de auditoría") %}
+{% set AUDIT_COLS = "sm:grid-cols-[8rem_minmax(0,10rem)_minmax(0,1fr)_minmax(0,1fr)]" %}
+{% call ui.card_list("No hay eventos con ese filtro.", "Eventos de auditoría", headers=["Cuándo", "Quién", "Acción", "Objetivo"], cols=AUDIT_COLS) %}
 {% for event in events %}
-<tr>
-  <td>{{ ui.when(event.at) }}</td>
-  <td class="break-words">{{ event.actor.name }}</td>
-  <td class="font-mono text-xs break-all">{{ event.action }}</td>
-  <td class="font-mono text-xs break-all">{{ event.target.kind }}:{{ event.target.id }}</td>
-  <td class="text-xs break-words">
-    {% if event.details %}
-    <dl class="space-y-0.5">
-      {% for key, value in event.details.items() %}
-      <div><dt class="inline font-medium text-zinc-500 dark:text-zinc-400">{{ key }}:</dt> <dd class="inline">{{ value }}</dd></div>
-      {% endfor %}
-    </dl>
-    {% else %}<span class="text-zinc-400 dark:text-zinc-500">—</span>{% endif %}
-  </td>
-</tr>
+{% call(part) ui.card("event-" ~ event.id, AUDIT_COLS, attrs={"data-audit": event.id | string}) %}
+{% if part == "summary" %}
+<span class="text-xs text-zinc-600 dark:text-zinc-400">{{ ui.when(event.at) }}</span>
+<span class="min-w-0 font-medium">{{ event.actor.name }}</span>
+<span class="min-w-0">{{ AUDIT_ACTIONS[event.action][0] if event.action in AUDIT_ACTIONS else event.action }}</span>
+<span class="min-w-0 text-zinc-700 dark:text-zinc-300">{{ audit_target(event.target.kind, event.target.id, event.target.name) }}</span>
+{% else %}
+{% if event.details %}
+<dl class="grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]">
+  {% for key, value in event.details.items() %}
+  <dt class="font-medium text-zinc-500 dark:text-zinc-400">{{ AUDIT_DETAILS.get(key, key) }}</dt>
+  <dd class="min-w-0 break-words">{{ audit_detail(key, value, names) }}</dd>
+  {% endfor %}
+</dl>
+{% else %}
+<p class="text-zinc-500 dark:text-zinc-400">Sin detalles.</p>
+{% endif %}
+<p class="font-mono text-xs break-all text-zinc-400 dark:text-zinc-500">{{ event.action }} · objetivo {{ event.target.kind }}:{{ event.target.id }} · persona {{ event.actor.sub }}{% if event.request_id %} · petición {{ event.request_id }}{% endif %}</p>
+{% endif %}
+{% endcall %}
 {% endfor %}
 {% endcall %}
 

@@ -28,10 +28,11 @@ def finished_dry_run() -> Job:
                     requested_by=ActorRef(iss="i", sub="s", name="Ana"))
 
 
-def event(name: str = "Ana", action: str = "server.scan", details: Optional[dict[str, Any]] = None) -> AuditEvent:
+def event(name: str = "Ana", action: str = "server.scan", details: Optional[dict[str, Any]] = None,
+          target: Optional[AuditTarget] = None) -> AuditEvent:
     return AuditEvent.model_construct(
         id=PydanticObjectId(), at=T0, actor=ActorRef(iss="i", sub="s", name=name), action=action,
-        target=AuditTarget(kind="server", id="t1"), details=details or {}, request_id="r1")
+        target=target or AuditTarget(kind="server", id="t1"), details=details or {}, request_id="r1")
 
 
 class FakeJobs:
@@ -60,12 +61,16 @@ class FakeAudit:
         self.events: list[AuditEvent] = []
         self.calls: list[dict[str, Any]] = []
         self.error: Optional[Exception] = None
+        self.names: dict[str, str] = {}
 
     async def find(self, **kwargs: Any) -> list[AuditEvent]:
         self.calls.append(kwargs)
         if self.error:
             raise self.error
         return self.events
+
+    async def names_for(self, events: list[AuditEvent]) -> dict[str, str]:
+        return self.names
 
 
 @pytest.fixture(autouse=True)
@@ -509,3 +514,56 @@ def test_a_finished_import_row_carries_its_full_report() -> None:
     assert "Sodium" in shown and "Lithium" in shown
     # B5: «Marcados «En el servidor»: N · Aceptan beta: N», there too.
     assert "Marcados «En el servidor»: 1 · Aceptan beta: 0" in shown
+
+
+# The audit log as cards, in Spanish (A9).
+
+def _audit_card(text: str) -> tuple[str, str]:
+    """The first audit card of the page: its <summary> and its body."""
+    begin = text.index("<summary", text.index("data-audit="))
+    middle = text.index("</summary>", begin)
+    return text[begin:middle], text[middle:text.index("</details>", middle)]
+
+
+def test_an_audit_card_shows_when_who_what_and_the_target_by_name() -> None:
+    client, _, audit, _ = setup()
+    audit.events = [event(name="Olga", action="bundle.pin", target=AuditTarget(kind="bundle", id="b1", name="Survival"))]
+    text = client.get("/audit").text
+    assert "<table" not in text
+    summary = " ".join(visible(_audit_card(text)[0]).split())
+    assert "Olga" in summary and "Fijó una versión" in summary and "Pack «Survival»" in summary
+    assert "2026-10-01 12:00" in summary and "bundle.pin" not in summary
+
+
+def test_an_open_audit_card_translates_the_details_and_ends_with_the_ids() -> None:
+    client, _, audit, _ = setup()
+    audit.names = {"J": "JEI", "V": "19.51"}
+    audit.events = [event(action="bundle.pin", target=AuditTarget(kind="bundle", id="b1", name="Survival"),
+                          details={"project_id": "J", "version_id": "V", "downgrade": {"from": "19.57", "to": "19.51"}})]
+    body = " ".join(visible(_audit_card(client.get("/audit").text)[1]).split())
+    assert "Mod JEI (J)" in body and "Versión 19.51 (V)" in body and "Baja 19.57 → 19.51, confirmada" in body
+    ids = "bundle.pin · objetivo bundle:b1 · persona s · petición r1"
+    assert ids in body and body.index(ids) > body.index("Baja")
+
+
+def test_an_unknown_key_or_id_is_shown_raw() -> None:
+    client, _, audit, _ = setup()
+    audit.events = [event(action="bundle.pin", details={"foo": 1, "project_id": "ZZZ"})]
+    response = client.get("/audit")
+    assert response.status_code == 200
+    body = " ".join(visible(_audit_card(response.text)[1]).split())
+    assert "foo 1" in body and "Mod ZZZ" in body
+
+
+def test_an_unknown_action_is_shown_raw() -> None:
+    client, _, audit, _ = setup()
+    audit.events = [event(action="server.power")]
+    assert "server.power" in visible(_audit_card(client.get("/audit").text)[0])
+
+
+def test_an_event_without_a_target_name_shows_its_kind_and_id() -> None:
+    client, _, audit, _ = setup()
+    audit.events = [event(target=AuditTarget(kind="server", id="t1")),
+                    event(target=AuditTarget(kind="job", id="j9", name=""))]
+    text = " ".join(visible(client.get("/audit").text).split())
+    assert "Servidor t1" in text and "job j9" in text
