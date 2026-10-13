@@ -56,12 +56,16 @@
     {% endif %}
   </div>
   {% else %}
-  <div data-vista="todos" class="space-y-1">
+  <div data-vista="todos" class="space-y-2">
     {% if not mods.rows %}
     <p class="text-sm text-zinc-500 dark:text-zinc-400">El modpack todavía no tiene mods: búscalos arriba o agrégalos por slug.</p>
     {% else %}
+    {% include "modpacks/_mod_filters.html" %}
+    {% if not shown %}
+    <p class="text-sm text-zinc-500 dark:text-zinc-400">Ningún mod coincide con los filtros.</p>
+    {% else %}
     <ul class="divide-y divide-zinc-100 rounded-lg border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-      {% for row in mods.rows %}
+      {% for row in shown %}
       {% set image = icon(row.icon_url) %}
       {% set side = SIDE.get(row.side) %}
       {% set version = (row.build_version ~ (" → " ~ row.newer_version if row.newer_version else "")) if row.build_version else "" %}
@@ -153,6 +157,7 @@
       </li>
       {% endfor %}
     </ul>
+    {% endif %}
     {% endif %}
     {# A pin on a mod that left the pack has no card: listed here, so it can still be removed. #}
     {% if mods.orphan_pins %}

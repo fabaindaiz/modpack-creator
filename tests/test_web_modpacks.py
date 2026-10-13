@@ -1886,6 +1886,59 @@ def test_a_downgrade_from_the_row_opens_the_pin_dialog_that_keeps_the_row() -> N
     assert 'name="from" value="fila"' in response.text and 'name="previous" value="l-1"' in response.text
 
 
+def filter_rows(modpack: FakeModpack) -> None:
+    modpack.bundle.channel_exceptions = {"P1": "beta", "P3": "alpha"}
+    modpack.rows = [row("P1", "Sodium", "admin", side="include"), row("P2", "Lithium", "admin", side="exclude"),
+                    row("P3", "Iris", "pack", side="include")]
+
+
+def bar(text: str) -> str:
+    start = text.index("data-mod-filters")
+    start = text.rindex("<form", 0, start)
+    return text[start:text.index("</form>", start)]
+
+
+def test_the_filter_bar_shows_each_option_with_its_count() -> None:
+    client, modpack, _ = setup()
+    filter_rows(modpack)
+    form = bar(client.get(f"/modpacks/{BUNDLE_ID}").text)
+    assert f'hx-get="/modpacks/{BUNDLE_ID}"' in form and 'hx-select="#mods"' in form and 'hx-push-url="true"' in form
+    assert 'name="vista" value="todos"' in form and 'name="nombre"' in form
+    assert ">con excepción (2)</option>" in form and ">acepta alpha (1)</option>" in form
+    assert ">Desactivado (1)</option>" in form and ">del .mrpack (1)</option>" in form
+    assert re.search(r'<option value="decidir"[^>]*text-zinc-400[^>]*>Por decidir \(0\)</option>', form)
+
+
+def test_filtering_answers_mods_and_keeps_the_tab_counts() -> None:
+    client, modpack, _ = setup()
+    filter_rows(modpack)
+    text = client.get(f"/modpacks/{BUNDLE_ID}", params={"canal": "excepcion", "lado": "servidor"}).text
+    shown = view(text, "todos")
+    assert 'data-project="P1"' in shown and 'data-project="P3"' in shown and 'data-project="P2"' not in shown
+    assert said(tab(text, "todos")) == "Todos 3"
+    assert selected(bar(text)[bar(text).index('name="canal"'):]) == "con excepción (2)"
+    # The other lists count with the channel filter: Lithium has no exception.
+    assert ">Desactivado (0)</option>" in bar(text)
+    text = client.get(f"/modpacks/{BUNDLE_ID}", params={"nombre": "iris"}).text
+    assert 'data-project="P3"' in view(text, "todos") and 'data-project="P1"' not in view(text, "todos")
+
+
+def test_an_action_from_a_filtered_list_keeps_its_filters() -> None:
+    client, modpack, _ = setup()
+    filter_rows(modpack)
+    headers = {**HTMX, "HX-Current-URL": f"http://testserver/modpacks/{BUNDLE_ID}?vista=todos&lado=desactivado"}
+    response = client.post(f"/modpacks/{BUNDLE_ID}/decisions", headers=headers, data={"project_id": "P2", "server": "yes"})
+    assert 'data-project="P2"' in response.text and 'data-project="P1"' not in response.text
+
+
+def test_the_filter_bar_is_only_on_todos_and_says_when_nothing_matches() -> None:
+    client, modpack, _ = setup()
+    filter_rows(modpack)
+    assert "data-mod-filters" not in client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "problemas"}).text
+    text = client.get(f"/modpacks/{BUNDLE_ID}", params={"nombre": "zzz"}).text
+    assert "Ningún mod coincide con los filtros." in visible(text)
+
+
 def test_the_channels_section_has_no_exception_list() -> None:
     client, modpack, _ = setup()
     modpack.bundle.channel_exceptions = {"P1": "beta"}

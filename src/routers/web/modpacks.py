@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Form, Query, Request
 from starlette.datastructures import FormData, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from src.exceptions import BuildBlocked, DowngradeRefused, HTTP_404_NOT_FOUND, HTTP_413_CONTENT_TOO_LARGE, HTTP_422_UNPROCESSABLE_ENTITY, QuotaExceeded, UpstreamError
+from src.library.mod_filters import ModFilters, apply as filter_rows, counts as filter_counts
 from src.library.resolution import ADMIN, Lock
 from src.dependences import Dependences, ModpackImportService, ModpackService, ModrinthService, PterodactylService, UpdateCheckService
 from src.model.modpack import ModpackBundle, ModpackBundleCreate, ModpackBundlePatch, ProjectOrigin
@@ -156,15 +157,27 @@ async def _titles(modrinthService: ModrinthService, project_ids: list[str]) -> d
     found = await modrinthService.projects_filled(sorted(set(project_ids))) if project_ids else {}
     return {project_id: found[project_id].title if project_id in found else project_id for project_id in project_ids}
 
+def _filters_from(request: Request) -> ModFilters:
+    """The mod list's filters (A6): a page or tab read (GET) carries them in its own query; any
+    other action, in the page's URL, which htmx names in HX-Current-URL."""
+    if request.method == "GET":
+        return ModFilters.parse(request.query_params)
+    query = parse_qs(urlsplit(request.headers.get("HX-Current-URL", "")).query)
+    return ModFilters.parse({name: values[0] for name, values in query.items()})
+
 async def _mods_context(modpackService: ModpackService, updateCheckService: UpdateCheckService,
-                        bundle_id: str, vista: str = "todos") -> dict[str, Any]:
+                        bundle_id: str, vista: str = "todos", filters: ModFilters = ModFilters()) -> dict[str, Any]:
     """What _mods.html needs: the bundle and its mod list, with the latest update check (for the
     newer versions) and the titles of what the saved resolution names, in one of its views. Modrinth
     is asked at most once, inside mod_list, within one deadline. `cards` has a card for every row
-    and every problem's mod; `origins` is the pack's project ids → origin."""
+    and every problem's mod; `origins` is the pack's project ids → origin. `shown` are the rows the
+    filters keep, and `filter_counts` what each filter option would show (A6, A12)."""
     bundle = await modpackService.bundle_get(bundle_id)
     mods = await modpackService.mod_list(bundle_id, await updateCheckService.latest(bundle_id))
-    return {"bundle": bundle, "bundle_id": bundle_id, "mods": mods, "titles": mods.titles, "icon": _icon,
+    exceptions = bundle.channel_exceptions
+    return {"filters": filters, "shown": filter_rows(mods.rows, filters, exceptions),
+            "filter_counts": filter_counts(mods.rows, filters, exceptions),
+            "bundle": bundle, "bundle_id": bundle_id, "mods": mods, "titles": mods.titles, "icon": _icon,
             "https_url": _https_url, "downloads": abbreviate_downloads, "vista": _vista(vista),
             "cards": {r.project_id: r for r in mods.rows} | mods.problem_cards,
             "origins": {p.project_id: p.origin.value for p in bundle.projects},
@@ -177,7 +190,7 @@ async def _mods(request: Request, actor: Actor, modpackService: ModpackService, 
                 hit: Optional[str] = None, vista: str = "todos") -> Response:
     """The #mods fragment; `success` or `info` and `hit` go after it, out of band (a notice, a search
     hit marked "Ya está")."""
-    context = await _mods_context(modpackService, updateCheckService, bundle_id, vista)
+    context = await _mods_context(modpackService, updateCheckService, bundle_id, vista, _filters_from(request))
     return render(request, "modpacks/_mods.html", actor, success=success, info=info, hit=hit, **context)
 
 def human_size(size: int) -> str:
@@ -201,7 +214,7 @@ async def _resolved(request: Request, actor: Actor, modpackService: ModpackServi
     redrawn out of band: its button says whether something is still pending, and "Crear build" is
     the highlighted next step when the current resolution has nothing left to decide and no
     problems (spec §2). Nothing here creates a build."""
-    context = await _mods_context(modpackService, updateCheckService, bundle_id, vista)
+    context = await _mods_context(modpackService, updateCheckService, bundle_id, vista, _filters_from(request))
     mods = context["mods"]
     saved = (mods.resolution, mods.stale) if mods.resolution else None
     pending = _has_pending(saved)
@@ -229,7 +242,7 @@ async def _acted(request: Request, actor: Actor, modpackService: ModpackService,
     if contexto == "dialogo":
         # mod_list (inside) fills the catalog once for every mod the page and the dialog name: the
         # resolution it reads is the one just saved, this lock.
-        context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request))
+        context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request), _filters_from(request))
         mods = context["mods"]
         return _dialog(request, actor, lock, done=success, mods_oob=True, builds_oob=True,
                        builds=await modpackService.build_find(bundle_id),
@@ -442,7 +455,7 @@ async def modpack_detail(
     ones to decide, the problems; spec §3), the search to add more, and on the side its builds, the
     servers linked to it, its channels and its local files. A tab asks for this page and keeps only
     #mods."""
-    context = await _mods_context(modpackService, updateCheckService, bundle_id, vista)
+    context = await _mods_context(modpackService, updateCheckService, bundle_id, vista, _filters_from(request))
     builds = await modpackService.build_find(bundle_id)
     linked = str(context["bundle"].id)
     servers = [s for s in await pterodactylService.server_find() if s.bundle_id == linked]
@@ -502,7 +515,7 @@ async def project_add(
     projects = await modpackService.project_add(bundle_id, [ref], ProjectOrigin.admin, actor)
     added = [p.project_id for p in projects if p.project_id not in before]
     from_hit = request.headers.get("HX-Trigger") == f"hit-add-{ref}" and any(p.project_id == ref for p in projects)
-    context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request))
+    context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request), _filters_from(request))
     names = ", ".join(context["titles"].get(i, i) for i in added)
     return render(request, "modpacks/_mods.html", actor, success=f"Agregado: {names}" if names else None,
                   info=None if names else "Ese mod ya estaba en el modpack", hit=ref if from_hit else None, **context)
@@ -614,7 +627,7 @@ async def pin_add(
             response.headers["HX-Reswap"] = "innerHTML"
             return response
     if fila is not None:
-        context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request))
+        context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request), _filters_from(request))
         return render(request, "modpacks/_mods.html", actor, success=None, info=None, hit=None,
                       undo={"project_id": project_id, "version_id": version_id or "", "previous": previous or ""},
                       **context)
