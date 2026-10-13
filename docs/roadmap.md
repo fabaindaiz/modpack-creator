@@ -756,6 +756,37 @@ JSON con `request_id` y `job_id`.
 - **Lo que choca:** la revisión depende de que Modrinth responda; un día sin respuesta deja un
   `UpdateCheck` con `error`, sin aviso. Un job viejo sin `dry_run` se ve como simulación.
 
+### Panel: observaciones del dueño al usar la 0.3.1 desplegada — Planeada (2026-10-13) · i-7985ee-44060c
+- **Origen:** el dueño, usando el panel 0.3.1 recién desplegado (base vacía), 2026-10-13. Sus
+  palabras, una por línea; ninguna decidida todavía (van a brainstorming y revisión de decisiones):
+  1. las sugerencias deberían ser una pestaña más del modpack;
+  2. la excepción de canal se muestra en el mismo mod, con etiquetas extra que son listas para
+     cambiar su estado;
+  3. idealmente lo mismo para el resto de etiquetas, como «en servidor»;
+  4. el registro de auditoría: el detalle resumido u oculto, que se muestre al abrir la tarjeta y se
+     lea bien;
+  5. auditoría con filtros en listas: personas, acción y objetivos (por nombre; el id en el detalle),
+     con un número que indique la cantidad en cada filtro;
+  6. las fichas de trabajos iguales, pero la tarjeta expandible hacia abajo con los detalles, como en
+     auditoría;
+  7. loaders secundarios en un modpack, para permitir mods de otros loaders mediante mods de
+     compatibilidad: los sugeridos del loader principal, el resto visible y permitido, marcado como no
+     preferible frente a un mod nativo;
+  8. el tablero, con mejoras como todo lo conversado (la tanda 2 de i-7985ee-1bb2ea), los anchos de
+     los campos calculados por el largo de los textos, y la información mejor presentada;
+  9. agregar un servidor y crear su modpack y su build es confuso y poco intuitivo: hay que saber de
+     antemano qué hacer;
+  10. integrar al flujo lo aprendido al investigar cómo se construye y se prueba un modpack
+      (`docs/research/2026-10-12-construccion-de-modpacks.md`).
+- **Choca con:** la tanda 2 de i-7985ee-1bb2ea (tablero, móvil, F09), que estas observaciones
+  absorben; el 7 toca el resolvedor y el modelo (stack: investigar antes los mods de compatibilidad).
+- **Decidido por el dueño (2026-10-13), antes de diseñar:** el 10 se integra al flujo entero (de
+  agregar el servidor al build probado); tres tandas, cada una con su revisión de decisiones:
+  **A** (1-6: un patrón común de tarjeta expandible y etiqueta-lista; ~1-2 sesiones), **B** (8-10:
+  el flujo de alta y el tablero, con móvil y F09; ~2 sesiones), **C** (7: loaders secundarios;
+  investigación y ~2 sesiones). La investigación del 7: `docs/research/2026-10-13-loaders-secundarios.md`
+  (leída por resúmenes; verificar contra la fuente lo que sostenga una decisión).
+
 ### Panel, usabilidad: la ronda 1 hecha en código, la ronda 2 planeada (2026-10-04), sin desplegar · i-7985ee-1bb2ea
 - **En qué quedó la ronda 1** (diseño `docs/superpowers/specs/2026-10-04-panel-usabilidad-design.md`, recorrido
   en `docs/research/2026-10-04-usabilidad-panel.md`): la lista única de mods con ficha, el modpack
