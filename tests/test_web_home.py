@@ -151,3 +151,18 @@ def test_bundle_rows_keep_name_and_version() -> None:
     text = client(EDITOR, (FakePterodactyl([], {}), FakeModpack([(bundle, build)]), FakeJobs([]))).get("/").text
     assert "Pack &lt;b&gt;" in text and "Pack <b>" not in text
     assert "1.21.1 · fabric" in text
+
+
+def test_a_failure_a_later_success_fixed_is_not_in_the_strip() -> None:
+    """Final review of batch B: the dashboard reads the recent successes too."""
+    pterodactyl, _, jobs = default_fakes()
+    linked = pterodactyl.servers[0]
+    now = datetime.now(timezone.utc)
+    failed = Job.model_construct(id=PydanticObjectId(), kind="server_scan", key=f"server:{linked.id}",
+                                 payload={"server_id": str(linked.id)}, status="failed",
+                                 created_at=now - timedelta(hours=2), finished_at=now - timedelta(hours=2))
+    fixed = Job.model_construct(id=PydanticObjectId(), kind="server_scan", key=f"server:{linked.id}",
+                                payload={"server_id": str(linked.id)}, status="done",
+                                created_at=now - timedelta(hours=1), finished_at=now - timedelta(hours=1))
+    text = client(EDITOR, (pterodactyl, default_fakes()[1], FakeJobs(jobs.jobs, [failed], [fixed]))).get("/").text
+    assert f'href="/jobs/{failed.id}"' not in strip(text)

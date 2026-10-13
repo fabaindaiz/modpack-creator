@@ -117,7 +117,8 @@ class UpdateService():
         await self.audit.record(actor, "server.update", AuditTarget(kind="server", id=server_id),
                                 {"build": number, "dry_run": dry_run})
         return await self.jobDB.enqueue("server_update", key=f"server:{server_id}",
-                                        payload={"server_id": server_id, "build": number, "dry_run": dry_run},
+                                        payload={"server_id": server_id, "bundle_id": str(bundle.id), "build": number,
+                                                 "dry_run": dry_run},
                                         requested_by=actor.ref())
 
     @operator_only

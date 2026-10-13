@@ -75,9 +75,10 @@ class FakeChecks:
 
 
 class FakeJobs:
-    def __init__(self, jobs: list[Job], failed: Optional[list[Job]] = None) -> None:
+    def __init__(self, jobs: list[Job], failed: Optional[list[Job]] = None, done: Optional[list[Job]] = None) -> None:
         self.jobs = jobs
         self.failed = failed or []
+        self.done = done or []
         self.limits: list[int] = []
 
     async def recent(self, limit: int = 10) -> list[Job]:
@@ -86,8 +87,8 @@ class FakeJobs:
 
     async def find(self, *, server_id: Optional[str], kind: Optional[str], status: Optional[str],
                    before_id: Optional[str], limit: int) -> list[Job]:
-        assert status == "failed" and server_id is None and kind is None and before_id is None
-        return self.failed[:limit]
+        assert status in ("failed", "done") and server_id is None and kind is None and before_id is None
+        return (self.failed if status == "failed" else self.done)[:limit]
 
 
 def default_fakes(server_name: str = "Survival") -> tuple[FakePterodactyl, FakeModpack, FakeJobs]:

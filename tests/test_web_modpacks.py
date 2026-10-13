@@ -321,7 +321,7 @@ class FakeJobs:
     def __init__(self) -> None:
         self.simulated: dict[str, int] = {}
 
-    async def simulated_build(self, server_id: str) -> Optional[int]:
+    async def simulated_build(self, server_id: str, bundle_id: str) -> Optional[int]:
         return self.simulated.get(server_id)
 
 

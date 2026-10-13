@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from src.dependences import Dependences, JobService, ModpackService, ModrinthService, PterodactylService, UpdateService
 from src.exceptions import HTTP_403_FORBIDDEN, HTTP_409_CONFLICT, HTTP_422_UNPROCESSABLE_ENTITY
-from src.library.onboarding import ServerFacts, pending_count, server_steps
+from src.library.onboarding import ServerFacts, fact, pending_count, server_steps
 from src.library.scan import Comparison, unexplained_for
 from src.model.jobs import Job
 from src.model.modpack import ModpackBundle
@@ -173,13 +173,13 @@ async def server_detail(
         if bundle is not None else []
     deduction = await pterodactylService.deduction(server_id) if server.bundle_id is None else None
     link_notice = next((text for flag, text in LINK_NOTICES.items() if request.query_params.get(flag) == "1"), None)
-    saved = await modpackService.resolution(str(bundle.id)) if bundle is not None else None
+    saved = await fact(modpackService.resolution(str(bundle.id)), None) if bundle is not None else None
     onboarding = server_steps(server_id, ServerFacts(
         scanned=scan is not None, identified=sum(1 for f in scan.files if f.status == "identified") if scan else 0,
         bundle_id=str(bundle.id) if bundle is not None else None, bundle_name=bundle.name if bundle is not None else None,
         resolved=saved is not None and not saved[1], pending=pending_count(saved),
         latest_build=bundle.latest_build if bundle is not None else None,
-        simulated_build=await jobService.simulated_build(server_id)))
+        simulated_build=await fact(jobService.simulated_build(server_id, str(bundle.id)), None) if bundle is not None else None))
     game_versions = await modrinthService.game_versions_release() if server.bundle_id is None else None
     return render(request, "servers/detail.html", actor, onboarding=onboarding, game_versions=game_versions, server=server, server_id=server_id, bundles=bundles,
                   bundle=bundle, scan=scan, comparison=comparison, compare_note=compare_note, titles=titles,

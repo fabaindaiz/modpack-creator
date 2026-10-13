@@ -86,6 +86,15 @@ def failed_job_fact(job: Job, server_names: Mapping[str, str], pack_names: Mappi
     return FailedJob(id=str(job.id), kind=job.kind, about=about, at=job.finished_at or job.created_at)
 
 
+def unresolved(failed: Sequence[Job], done: Sequence[Job]) -> list[Job]:
+    """The failures no later success fixed: a job of the same kind and key (the same server) that
+    ended done after it (final review of batch B; the research's "superseded" rule)."""
+    def at(job: Job) -> datetime:
+        return as_utc(job.finished_at or job.created_at)
+    return [f for f in failed
+            if not any(d.kind == f.kind and d.key is not None and d.key == f.key and at(d) > at(f) for d in done)]
+
+
 def _plural(n: int, one: str, many: str) -> str:
     return f"{n} {one if n == 1 else many}"
 

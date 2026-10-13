@@ -4,8 +4,24 @@ steps to a tested build. Each is done, offers its action, or (when the step befo
 says what it waits for. Each says in one line why it matters, from what pack authors repeat
 (docs/research/2026-10-12-construccion-de-modpacks.md). Pure: the facts come from the services.
 """
+import logging
+from collections.abc import Awaitable
 from dataclasses import dataclass
-from typing import Any, NamedTuple, Optional
+from typing import Any, NamedTuple, Optional, TypeVar
+
+logger = logging.getLogger("panel.onboarding")
+T = TypeVar("T")
+
+
+async def fact(read: Awaitable[T], default: T) -> T:
+    """One fact of the set-up, or the default when reading it fails (spec, Errores): the step stays
+    undone and the page still shows, never a 500."""
+    try:
+        return await read
+    except Exception:
+        logger.warning("a set-up fact could not be read", exc_info=True)
+        return default
+
 
 WHY = {
     "scan": "El escaneo dice qué corre hoy: es el punto de partida, y ningún mod baja de lo que ya corre.",

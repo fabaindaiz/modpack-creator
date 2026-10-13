@@ -5,7 +5,7 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from src.dependences import Dependences, JobService, ModpackService, PterodactylService, UpdateCheckService
-from src.library.attention import VISIBLE, PackFact, ServerFact, attention, failed_job_fact
+from src.library.attention import VISIBLE, PackFact, ServerFact, attention, failed_job_fact, unresolved
 from src.library.utils import as_utc, utcnow
 from src.model.pterodactyl import PterodactylServer
 from src.model.users import Actor
@@ -14,6 +14,8 @@ from src.web import WebRoute, get_web_actor, render
 router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
 
 RECENT_JOBS = 10
+# The successes read to drop the failures they fixed.
+DONE_LOOKUP = 100
 # The failed jobs read for the strip: the newest, of which only the last day's are shown.
 FAILED_LOOKUP = 20
 
@@ -64,6 +66,9 @@ async def home(
     update_counts = {str(bundle_id): sum(1 for u in check.updates if not u.pinned) for bundle_id, check in checks.items()}
     resolutions = await modpackService.resolution_many(bundle_ids)
     failed = await jobService.find(server_id=None, kind=None, status="failed", before_id=None, limit=FAILED_LOOKUP)
+    # A failure a later success of the same job fixed is no longer news (final review of batch B).
+    done = await jobService.find(server_id=None, kind=None, status="done", before_id=None, limit=DONE_LOOKUP)
+    failed = unresolved(failed, done)
     server_names = {str(row.server.id): row.server.name for row in servers}
     checked_at = {str(bundle_id): check.checked_at for bundle_id, check in checks.items()}
     items = attention(

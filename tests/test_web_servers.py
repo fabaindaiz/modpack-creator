@@ -15,7 +15,7 @@ from beanie import PydanticObjectId
 from dependency_injector import providers
 from fastapi.testclient import TestClient
 
-from src.exceptions import HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
+from src.exceptions import HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND, HTTP_409_CONFLICT, UpstreamError
 from src.library.deduce import Deduction
 from src.library.jarmeta import ModMetadata
 from src.library.scan import Comparison, ExpectedEntry, ScanFile
@@ -202,7 +202,7 @@ class FakeJobs:
     async def installed_build(self, server_id: str) -> Optional[int]:
         return self.installed
 
-    async def simulated_build(self, server_id: str) -> Optional[int]:
+    async def simulated_build(self, server_id: str, bundle_id: str) -> Optional[int]:
         return self.simulated
 
     async def enqueue_scan(self, server_id: str, actor: Actor, full: bool = False) -> Job:
@@ -262,6 +262,7 @@ class FakeModpack:
         self.recommended: Optional[int] = 2
         # The pack's saved resolution and whether it is stale (B1's facts); None: never resolved.
         self.saved: Optional[tuple[Any, bool]] = None
+        self.resolution_error: Optional[Exception] = None
         self.preview: Any = change_preview()
         self.preview_error: Optional[Exception] = None
         self.calls: list[tuple[Any, ...]] = []
@@ -276,6 +277,8 @@ class FakeModpack:
         return [bundle(5, self.recommended) if self.builds else bundle(None, None)]
 
     async def resolution(self, bundle_id: str) -> Optional[tuple[Any, bool]]:
+        if self.resolution_error is not None:
+            raise self.resolution_error
         return self.saved
 
     async def bundle_get(self, bundle_id: str) -> ModpackBundle:
@@ -1607,3 +1610,13 @@ def test_every_table_cell_carries_its_header_for_the_phone() -> None:
     client, _ = setup()
     assert assert_cells_labelled(client.get("/servers").text) >= 3 + 3
     assert assert_cells_labelled(client.get(f"/servers/{SERVER_ID}").text) >= 4
+
+
+def test_a_set_up_fact_that_fails_to_read_leaves_its_step_undone_never_a_500() -> None:
+    """Spec (Errores) and the final review of batch B: reading the pack's resolution can fail (Modrinth
+    behind the floors, a missing build); the page shows, with that step not done."""
+    client, fakes = setup()
+    fakes.modpack.resolution_error = UpstreamError("modrinth", 502)
+    response = client.get(f"/servers/{SERVER_ID}")
+    assert response.status_code == 200
+    assert "Pack resuelto" in visible(onboarding(response.text))

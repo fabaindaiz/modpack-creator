@@ -12,7 +12,7 @@ from starlette.datastructures import FormData, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from src.exceptions import BuildBlocked, DowngradeRefused, HTTP_404_NOT_FOUND, HTTP_413_CONTENT_TOO_LARGE, HTTP_422_UNPROCESSABLE_ENTITY, QuotaExceeded, UpstreamError
 from src.library.mod_filters import ModFilters, apply as filter_rows, counts as filter_counts
-from src.library.onboarding import PackFacts, pack_steps, pending_count
+from src.library.onboarding import PackFacts, fact, pack_steps, pending_count
 from src.library.resolution import ADMIN, Lock
 from src.dependences import Dependences, JobService, ModpackImportService, ModpackService, ModrinthService, PterodactylService, UpdateCheckService
 from src.model.modpack import ModpackBundle, ModpackBundleCreate, ModpackBundlePatch, ProjectOrigin
@@ -467,7 +467,7 @@ async def modpack_detail(
     # A build made a moment ago (by its job, E9) offers to simulate it on the linked servers.
     fresh = bool(builds) and as_utc(builds[0].created_at) > datetime.now(timezone.utc) - FRESH_BUILD
     bundle = context["bundle"]
-    simulated = [await jobService.simulated_build(str(s.id)) for s in servers]
+    simulated = [await fact(jobService.simulated_build(str(s.id), bundle_id), None) for s in servers]
     onboarding = pack_steps(bundle_id, PackFacts(
         projects=len(bundle.projects), resolved=saved is not None and not context["mods"].stale,
         pending=pending_count((saved, context["mods"].stale) if saved else None), latest_build=bundle.latest_build,

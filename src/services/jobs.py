@@ -21,6 +21,8 @@ from src.services.pterodactyl import PterodactylService
 # the server's activity sees a restored backup, but not a move between nodes, a reinstall from the
 # admin panel or activity pruned early; a weekly full scan bounds those.
 FULL_SCAN_DEFAULT_DAYS = 7
+# How many of a server's finished updates are read to find the newest of its pack (B1).
+SIMULATED_LOOKUP = 20
 
 Clock = Callable[[], datetime]
 Handler = Callable[[Job, "JobContext"], Awaitable[None]]
@@ -239,11 +241,14 @@ class JobService():
         build = last.payload.get("build")
         return build if isinstance(build, int) else None
 
-    async def simulated_build(self, server_id: str) -> Optional[int]:
-        """The build of the server's newest finished update, a simulation or a real one: the
-        set-up's last step (B1, d-7985ee-20935c). None when it never finished one."""
-        done = await self.jobDB.find(server_id=server_id, kind="server_update", status="done", before_id=None, limit=1)
-        build = done[0].payload.get("build") if done else None
+    async def simulated_build(self, server_id: str, bundle_id: str) -> Optional[int]:
+        """The build of the server's newest finished update of this pack, a simulation or a real
+        one: the set-up's last step (B1, d-7985ee-20935c). Only the pack's own: a server that
+        changed pack does not count the other pack's build of the same number (final review of
+        batch B). None when it never finished one."""
+        done = await self.jobDB.find(server_id=server_id, kind="server_update", status="done", before_id=None,
+                                     limit=SIMULATED_LOOKUP)
+        build = next((j.payload.get("build") for j in done if j.payload.get("bundle_id") == bundle_id), None)
         return build if isinstance(build, int) else None
 
     async def rollback_state(self, server_id: str) -> Optional[RollbackState]:

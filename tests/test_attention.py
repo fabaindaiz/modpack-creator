@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from beanie import PydanticObjectId
 
-from src.library.attention import VISIBLE, Attention, FailedJob, PackFact, ServerFact, attention, failed_job_fact
+from src.library.attention import VISIBLE, Attention, FailedJob, PackFact, ServerFact, attention, failed_job_fact, unresolved
 from src.model.jobs import Job
 
 NOW = datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc)
@@ -123,3 +123,19 @@ def test_failed_job_fact_names_its_server_or_its_pack() -> None:
     assert fact == FailedJob(id=str(on_server.id), kind="server_scan", about="Survival", at=NOW)
     assert failed_job_fact(on_pack, {}, {bundle_id: "Pack Uno"}).about == "Pack Uno"
     assert failed_job_fact(on_pack, {}, {}).about is None
+
+
+def made(kind: str, status: str, key: str, minutes: int) -> Job:
+    at = NOW - timedelta(minutes=minutes)
+    return Job.model_construct(id=PydanticObjectId(), kind=kind, key=key, payload={}, status=status, created_at=at,
+                               finished_at=at)
+
+
+def test_a_failure_a_later_success_of_the_same_job_fixed_is_not_shown() -> None:
+    """Final review of batch B (and the research's rule): a scan that failed on a blip and worked next
+    time is no longer news. Another server's success or an older one fixes nothing."""
+    failed = made("server_scan", "failed", "server:s1", 30)
+    assert unresolved([failed], [made("server_scan", "done", "server:s1", 10)]) == []
+    assert unresolved([failed], [made("server_scan", "done", "server:s2", 10)]) == [failed]
+    assert unresolved([failed], [made("server_scan", "done", "server:s1", 40)]) == [failed]
+    assert unresolved([failed], [made("server_update", "done", "server:s1", 10)]) == [failed]
