@@ -287,6 +287,38 @@ def test_app_js_loads_a_job_card_s_detail_on_open_and_drops_it_on_close() -> Non
     assert "addEventListener('toggle'" in text
 
 
+def test_app_js_keeps_the_undo_notice_while_its_undo_asks_to_confirm() -> None:
+    """Final review of batch A (minor 3): "Deshacer" back to a version before the floor answers the
+    downgrade dialog; the notice must stay, or cancelling the dialog loses the undo."""
+    text = client(None).get("/static/app.js").text
+    handler = text[text.index("The notice that undoes a row's pin"):]
+    handler = handler[:handler.index("});")]
+    assert "HX-Retarget" in handler and "notice.remove()" in handler
+    assert handler.index("HX-Retarget") < handler.index("notice.remove()")
+
+
+def test_app_js_keeps_the_mod_filters_when_the_pack_reloads_for_a_job() -> None:
+    """Final review of batch A (minor 4): #pack-main reloads itself when a job starts or ends, with a
+    bare GET of the pack: the mod list came back unfiltered under a URL that still had the filters."""
+    text = client(None).get("/static/app.js").text
+    handler = text[text.index("htmx:configRequest"):]
+    handler = handler[:handler.index("});")]
+    assert "pack-main" in handler and "location.search" in handler and "parameters" in handler
+
+
+def test_app_js_redraws_the_mods_when_a_row_change_fails_after_writing() -> None:
+    """Final review of batch A (minor 2): a row change can be saved and then fail (the resolution
+    after it); putting the select back would show what is no longer saved. On an answered error,
+    #mods is asked again; on a network error (nothing answered) the select goes back."""
+    text = client(None).get("/static/app.js").text
+    handler = text[text.index("'htmx:responseError'"):]
+    handler = handler[:handler.index("});")]
+    assert "redrawMods(" in handler
+    redraw = text[text.index("function redrawMods"):]
+    redraw = redraw[:redraw.index("\n  }\n")]
+    assert "htmx.ajax('GET'" in redraw and "#mods" in redraw
+
+
 class FailingPterodactyl(FakePterodactyl):
     def __init__(self, error: Exception) -> None:
         super().__init__([], {})

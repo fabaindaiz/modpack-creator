@@ -97,8 +97,26 @@
     }
   }, true);
 
+  // A row change can be saved and still fail after (the resolution that follows it): the select put
+  // back would then show what is no longer saved. Asking #mods again shows what is.
+  function redrawMods() {
+    if (!document.getElementById('mods')) return;
+    htmx.ajax('GET', location.pathname + location.search, {target: '#mods', select: '#mods', swap: 'outerHTML'});
+  }
+
   document.addEventListener('htmx:responseError', function (evt) {
-    restoreSaved(evt.detail.elt);
+    var elt = evt.detail.elt;
+    restoreSaved(elt);
+    if (elt instanceof Element && elt.closest('#mods') && elt.querySelector('select[data-saved]')) redrawMods();
+  });
+
+  // #pack-main reloads itself when a job starts or ends (detail.html) with a bare GET of the pack:
+  // the page's own query (the mod list's filters, the tab) goes with it.
+  document.addEventListener('htmx:configRequest', function (evt) {
+    if (evt.detail.verb !== 'get' || !(evt.detail.elt instanceof Element) || evt.detail.elt.id !== 'pack-main') return;
+    new URLSearchParams(location.search).forEach(function (value, name) {
+      evt.detail.parameters[name] = value;
+    });
   });
 
   // A pin that goes back opens #pin-dialog (F27): cancelling it leaves the row's select on what is
@@ -304,11 +322,13 @@
     dialog.close();
   });
 
-  // The notice that undoes a row's pin (A14) goes once its "Deshacer" is answered.
+  // The notice that undoes a row's pin (A14) goes once its "Deshacer" is answered; not while the
+  // answer is the downgrade dialog (HX-Retarget #pin-dialog), since cancelling it would lose the undo.
   document.addEventListener('htmx:afterRequest', function (evt) {
     var elt = evt.detail.requestConfig ? evt.detail.requestConfig.elt : evt.detail.elt;
     var notice = elt instanceof Element ? elt.closest('[data-notice]') : null;
-    if (notice && evt.detail.successful) notice.remove();
+    var asks = evt.detail.xhr && evt.detail.xhr.getResponseHeader('HX-Retarget') === '#pin-dialog';
+    if (notice && evt.detail.successful && !asks) notice.remove();
   });
 
   // "Fijar otra" (a problem's card) lands on the mod in the list, #mod-row-<id>: its card opens,
