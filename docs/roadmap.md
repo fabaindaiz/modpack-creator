@@ -10,6 +10,19 @@ y tokens, con en qué se apoya (bundle 0.0.30); `close` la compara después con 
 
 ## Dónde estamos
 
+**2026-10-13, 0.3.1 desplegada** (tag `v0.3.1`, imagen `0235cea`) en el servidor del dueño, en solo
+lectura, sobre la 0.1.0 (`1ab1b50`, la imagen para volver atrás). **La base se reseteó a pedido del
+dueño** (se borraron los volúmenes `docker_mongodb-data` y `docker_mongodb-config`, sin respaldo: el
+panel casi no tenía datos y la contraseña con que se creó la base ya no era la de `docker/.env`).
+Verificado: `/health/ready` da 200 por el dominio y la versión es `0.3.1+0235cea`. **Comprobaciones
+pendientes, dejadas aquí por el dueño (2026-10-13):** los logs sin errores; un POST de otro origen da
+403; la API no responde desde la LAN salvo al proxy (regla `DOCKER-USER`); la CSP en el navegador; los
+tres logins (fuera del grupo, editor, operador con una simulación; la simulación pide antes un
+servidor con modpack y build). Pasos: `docs/runbooks/desplegar-panel.md` §4. También: `docker/.env` y
+`.env.yaml` están con permisos 644 (legibles por cualquier usuario del servidor; la guía pide 600).
+Tropiezo del deploy, para la guía: un `MONGODB_PASSWORD` exportado vacío en la shell le gana a
+`docker/.env` y compose dice que falta.
+
 **2026-10-12, releases 0.3.0 y 0.3.1 en `main` (sin etiquetar todavía; tampoco hay tag
 `v0.2.0`):** T1, T4 con la regla de no retroceder (d-7985ee-6dc34c), T3, T7, T6 (Prism) con el tope
 de disco temporal, T5 (CurseForge con clave), la restauración vista por la actividad del servidor
