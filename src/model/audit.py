@@ -1,7 +1,7 @@
 from beanie import Document
 from datetime import datetime
 from pydantic import BaseModel, Field
-from pymongo import ASCENDING, DESCENDING, IndexModel
+from pymongo import DESCENDING, IndexModel
 from typing import Any, Optional
 from src.model.users import ActorRef
 
@@ -22,13 +22,11 @@ class AuditEvent(Document):
     request_id: Optional[str] = None
 
     class Settings:
-        # What the page's query sorts and filters by (A11): newest first, then by person, by action
-        # or by target, each within its dates.
+        # The page's leading match and sort (A11): newest first, within its dates. Its filters live
+        # inside `$facet`, which uses no index, so an index on a filter field would only cost on
+        # every write (final review of batch A, 2026-10-13).
         indexes = [
             IndexModel([("at", DESCENDING), ("_id", DESCENDING)]),
-            IndexModel([("actor.sub", ASCENDING), ("at", DESCENDING)]),
-            IndexModel([("action", ASCENDING), ("at", DESCENDING)]),
-            IndexModel([("target.kind", ASCENDING), ("target.id", ASCENDING), ("at", DESCENDING)]),
         ]
 
 class Facet(BaseModel):

@@ -73,3 +73,11 @@ def test_a_page_without_ids_or_with_a_failing_catalog_has_no_names() -> None:
     failing = AuditService(AuditDatabase(), TargetNames(cast(ModpackDatabase, None), cast(PterodactylDatabase, None), broken))
     assert asyncio.run(failing.names_for([_event({"project_id": "jei"})])) == {}
     assert asyncio.run(AuditService(AuditDatabase()).names_for([_event({"project_id": "jei"})])) == {}
+
+
+def test_audit_has_only_the_index_its_page_can_use() -> None:
+    """Final review of batch A (minor 1): the page is one aggregation whose filters live inside
+    `$facet`, and a `$facet` sub-pipeline uses no index; only the leading match and sort on `at` do.
+    An index on a filter field would only cost on every write."""
+    keys = [index.document["key"] for index in AuditEvent.Settings.indexes]
+    assert [list(key.items()) for key in keys] == [[("at", -1), ("_id", -1)]]

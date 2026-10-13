@@ -17,9 +17,9 @@ Antes de empezar, si el servidor aún corre la versión anterior a la fase 0, se
 Los selects en la fila de cada mod, los filtros, la pestaña Sugerencias y auditoría y trabajos como
 tarjetas (i-7985ee-44060c). Sigue de solo lectura. **Ninguna variable nueva, nada se migra**; «Volver
 atrás» a 0.3.1 sigue valiendo. Lo que se nota:
-- **`audit` tiene índices nuevos.** Beanie crea al arrancar `(at, _id)`, `(actor.sub, at)`,
-  `(action, at)` y `(target.kind, target.id, at)`, y no borra los viejos (`at`, `target.kind+id`,
-  `actor.sub`), que quedan sin uso. Con pocos eventos no importa; borrarlos a mano es opcional.
+- **`audit` tiene un índice nuevo.** Beanie crea al arrancar `(at, _id)` y no borra los viejos
+  (`at`, `target.kind+id`, `actor.sub`), que quedan sin uso: la página filtra dentro de `$facet`, que
+  no usa índices. Con pocos eventos no importa; borrarlos a mano es opcional.
 - **Los eventos guardan el nombre de su objetivo** desde esta versión; los anteriores se ven con su
   tipo e id.
 - **Una página del panel abierta durante el deploy** sondea `/jobs/{id}/tr`, que ya no existe: avisa
