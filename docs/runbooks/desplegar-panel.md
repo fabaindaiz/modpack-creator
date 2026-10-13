@@ -27,6 +27,15 @@ atrás» a 0.3.1 sigue valiendo. Lo que se nota:
 - **Los filtros de la lista de mods y de la auditoría viven en la URL**: un enlace guardado los
   conserva.
 
+**Si sale con la tanda B** (estilo, alta guiada, tablero y móvil; la versión se decide antes del tag):
+- La imagen arma un sprite de íconos (`scripts/build-icons.mjs`, Lucide) y sirve Inter desde
+  `src/web/static/fonts/`; los avisos de licencia están en `/static/LICENSES.html`. Nada cambia en
+  `docker/.env` ni en `.env.yaml`.
+- Las actualizaciones nuevas guardan su pack (`bundle_id`): el último paso del alta («Simulado») de un
+  servidor queda sin hacer hasta su primera simulación después del deploy.
+- Crear un pack pide a Modrinth la lista de versiones de Minecraft (una vez al día; si no responde en
+  3 s, el campo de texto de siempre).
+
 ## De 0.3.0 a 0.3.1 (2026-10-12)
 
 La ronda 2 del panel, tanda 1: avisos de bajas de versión y la confirmación «Fijar igual», el aviso de

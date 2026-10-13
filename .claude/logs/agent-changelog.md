@@ -5,6 +5,60 @@ introducción. Los commits de este repositorio fueron `wip` sin cuerpo: el *por 
 no quedaba en ninguna parte, y una sesión no ve lo que otra aprendió. La referencia del formato
 está al final del archivo, para que nada entre este párrafo y la primera entrada capture texto.
 
+## 2026-10-13 · s-7985ee-0fa504 — Tanda B del panel: estilo propio, alta guiada, tablero y móvil
+
+**Qué.** La tanda B de i-7985ee-44060c en la rama `feat/panel-tanda-b`: el aspecto propio de la familia
+Modrinth (paleta del dueño en el `@theme` de Tailwind, Inter servida por el panel, íconos de Lucide en
+un sprite, radios, pie de «no afiliado» y página de licencias); la lista «Para terminar el alta» en el
+servidor y en el pack, y F09 (versión de Minecraft elegida de las releases de Modrinth); el tablero con
+«Necesita atención»; y las tablas que se apilan como tarjetas en el móvil.
+
+**Áreas.** `src/web/assets/app.css`, `src/web/static/{fonts,LICENSES.html}`, `scripts/build-icons.mjs`,
+`package.json`, `docker/Dockerfile`, `.dockerignore`, `.github/workflows/check.yml`,
+`src/library/{onboarding,attention,mod_filters}.py`, `src/services/{jobs,modrinth,update,modpack}.py`,
+`src/routers/web/{servers,modpacks,home}.py`, plantillas, `scripts/visual_sweep.py`, `docs/`.
+
+**Por qué.** Las observaciones 8 a 10 del dueño y lo pendiente de la ronda 2; el dueño respondió cuatro
+preguntas (paleta, terceros, forma del alta, forma del tablero) y pidió «continúa el plan hasta
+terminar todo».
+
+**Arquitectura.** ✅ Cumple: los routers solo inyectan servicios (los hechos del alta y del tablero
+salen de métodos de lectura); nada inline; Tailwind para el layout; los terceros con sus avisos.
+
+**Qué salió mal en el camino.** La imagen Docker dejó de construirse (`.dockerignore` excluye
+`scripts/`) y el gate no lo vio: lo encontró la revisión final; ahora lo atrapa
+`tests/test_docker_context.py`. El primer barrido de B falló en tres capturas: el doble de Modrinth no
+tenía `/tag/game_version` y un fallo no se recordaba, así que cada carga reintentaba. Dos veces el
+código de base se escribió antes de ver fallar su test (se apartó con un stub y se vio fallar antes de
+reponerlo). Un `python3 -c` entre comillas dobles con backticks perdió una palabra de un docstring
+(la shell los ejecutó); se corrigió al verlo. Un `python3 -` sin stdin, y un heredoc del agente, sin
+efecto.
+
+**Qué quedó sin hacer.** Los 8 menores de la revisión (roadmap, i-7985ee-44060c); decidir si sale como
+0.3.2 o 0.4.0 antes del tag; la tanda C.
+
+**Desvío del plan.** Ninguno de fondo; las decisiones de la ejecución están en el registro del plan
+(`docs/superpowers/plans/2026-10-13-panel-tanda-b.md`).
+
+**No verificado.** La imagen Docker construida (el gate no la arma: `! ./scripts/build.sh` o el job
+`image` de CI); el parecido con Modrinth y el contraste a ojo del dueño; un teléfono real; Modrinth real
+para `/tag/game_version`.
+
+**Medido.** Gate con MongoDB: 1454 tests. Barrido: 194 capturas, 0 con problemas, con la comprobación
+nueva de tablas que desbordan su caja a 360 px.
+
+**Tarjetas y chequeos.** `scripts/check.sh` en cada commit; `scripts/test-mongo.sh` (rojo y verde de
+cada test de base); `scripts/visual-sweep.sh`.
+
+**Revisión.** Revisión final de toda la rama en contexto limpio (Opus, sin escribir): 1 crítico y 5
+importantes, arreglados con test visto fallar (`514f2d3`, `2a03a93`, `2d78548`); 8 menores diferidos.
+
+**Aprendido.** Local: `.dockerignore` puede dejar fuera lo que el Dockerfile copia y el gate no lo ve
+(quedó en un test); una lista de Modrinth leída al pintar una página necesita tope de tiempo, un solo
+pedido a la vez y memoria del fallo (en el código). General: en un `python3 -c "…"` entre comillas
+dobles, los backticks de un texto son sustitución de comandos de la shell; los scripts van a un
+archivo. Captured: en el código y en este registro.
+
 ## 2026-10-13 · s-7985ee-fa3813 — Los 8 menores de la tanda A y la versión 0.3.2
 
 **Qué.** Los 8 menores de la revisión final de la tanda A, cada uno con su test visto fallar, en la

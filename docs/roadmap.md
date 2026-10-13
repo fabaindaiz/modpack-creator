@@ -10,13 +10,13 @@ y tokens, con en qué se apoya (bundle 0.0.30); `close` la compara después con 
 
 ## Dónde estamos
 
-**2026-10-13, 0.3.2 lista para desplegar, en la rama `fix/tanda-a-menores`** (sin merge ni push):
-la tanda A del panel (en `main` y `origin` desde `89c36db`) más los 8 menores de su revisión final,
-y la versión subida a 0.3.2 (`pyproject.toml`, la guía y la sección «De 0.3.1 a 0.3.2» del runbook).
-Falta el tag `v0.3.2`, que la guía ya nombra. **Para seguir, en otra máquina:** lo de siempre (Docker o
-podman con su VM, hatch y Python 3.12, `npm install`, Chromium de Playwright, el `.env.yaml` propio).
-**Primer paso:** con el visto bueno del dueño, merge a `main`, el tag y el deploy de la 0.3.2 con el
-runbook; o la tanda B (i-7985ee-44060c: flujo de alta, tablero, móvil, F09 y el estilo).
+**2026-10-13, tandas A (con sus menores) y B hechas, en la rama `feat/panel-tanda-b`** (sobre
+`fix/tanda-a-menores`; sin merge ni push): la versión dice 0.3.2, y el dueño pidió taggear después de
+la tanda B, así que antes del tag hay que decidir si la tanda B sale como 0.3.2 o como 0.4.0 (y
+sumarla a la sección del runbook). **Para seguir, en otra máquina:** lo de siempre (Docker o podman con
+su VM, hatch y Python 3.12, `npm ci` —ahora también arma el sprite de íconos—, Chromium de Playwright,
+el `.env.yaml` propio). **Primer paso:** la versión, el merge a `main`, el tag y el deploy con el
+runbook; después, la tanda C (loaders secundarios).
 Pendientes de decisión: el hook contra heredocs (Fricciones: ya van más incidentes), los tags
 `v0.2.0` y `v0.3.0` (opcionales), y probar en un teléfono real el selector nativo y el `<datalist>`.
 
@@ -838,6 +838,26 @@ JSON con `request_id` y `job_id`.
   cero (acento verde propio, sin su nombre, logo ni mascota; nota de «no afiliado»), con Lucide e
   Inter tomados de sus propias fuentes si el dueño acepta esos terceros en su revisión. Investigación:
   `docs/research/2026-10-13-estilo-modrinth.md` (leída por resúmenes, SIN VERIFICAR).
+- **Tanda B, hecha en código, sin desplegar (2026-10-13, rama `feat/panel-tanda-b`):** el dueño respondió
+  cuatro preguntas (paleta, Lucide e Inter, alta como lista de pasos, tablero con franja de atención) y
+  pidió «continúa el plan hasta terminar todo». Spec `docs/superpowers/specs/2026-10-13-panel-tanda-b-design.md`,
+  plan `docs/superpowers/plans/2026-10-13-panel-tanda-b.md`, decisiones d-7985ee-61a9b0 …
+  d-7985ee-a44a91. Hecho: el estilo propio (B3), el alta guiada en el servidor y el pack con F09 (B1),
+  el tablero con «Necesita atención» (B2) y las tablas apiladas en el móvil (B4). **Sin verificar:** el
+  parecido con Modrinth y el contraste, a ojo del dueño; el móvil real; la imagen Docker (el gate no la
+  construye: correr `! ./scripts/build.sh` o esperar el job `image` de CI). Revisión final en contexto
+  limpio: 1 crítico (la imagen no se construía) y 5 importantes, arreglados con test visto fallar.
+  Queda la tanda C (loaders secundarios).
+- **Menores de la revisión de la tanda B (diferidos, 2026-10-13):**
+  1. `LICENSES.html` dice Lucide «ISC», pero 8 de los íconos usados vienen de Feather (MIT, en el
+     mismo archivo servido); falta nombrar Tailwind (MIT);
+  2. el tablero dice «no tiene un modpack vinculado» para un servidor cuyo pack se borró;
+  3. una simulación fallida se lee «Falló la actualización…»;
+  4. el tablero cuenta pendientes de resoluciones viejas (el alta no), y lee una resolución por pack;
+  5. cada carga del servidor y del pack suma consultas (resolución, simulaciones por servidor);
+  6. `ui.notice` y una alerta siguen con `rounded-md`; el texto usa zinc-900/100 y no `#16181c`/`#e6e8eb`;
+  7. `@font-face` sin versión en la URL; `[&_td]` también tomaría celdas de una tabla anidada;
+  8. los tokens semánticos existen pero ninguna plantilla los usa todavía (la migración es gradual).
 
 ### Panel, usabilidad: la ronda 1 hecha en código, la ronda 2 planeada (2026-10-04), sin desplegar · i-7985ee-1bb2ea
 - **En qué quedó la ronda 1** (diseño `docs/superpowers/specs/2026-10-04-panel-usabilidad-design.md`, recorrido
