@@ -149,6 +149,7 @@ templates.env.globals["AUDIT_AREAS"] = audit_labels.AREAS
 templates.env.globals["AUDIT_DETAILS"] = audit_labels.DETAILS
 templates.env.globals["audit_detail"] = audit_labels.detail_text
 templates.env.globals["audit_target"] = audit_labels.target_label
+templates.env.globals["audit_target_option"] = audit_labels.target_option
 templates.env.filters["seconds_until"] = seconds_until
 templates.env.filters["linkify"] = linkify
 

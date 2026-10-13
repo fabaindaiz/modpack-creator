@@ -1,4 +1,5 @@
 """Jobs and audit pages of the panel (stage 4): reads only, with doubles for the services."""
+import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -8,7 +9,7 @@ from dependency_injector import providers
 from fastapi.testclient import TestClient
 
 from src.exceptions import HTTP_404_NOT_FOUND
-from src.model.audit import AuditEvent, AuditTarget
+from src.model.audit import AuditEvent, AuditPage, AuditTarget, Facet
 from src.model.jobs import Job, RollbackState
 from src.model.users import Actor
 from src.model.users.actor import ActorRef
@@ -62,12 +63,16 @@ class FakeAudit:
         self.calls: list[dict[str, Any]] = []
         self.error: Optional[Exception] = None
         self.names: dict[str, str] = {}
+        self.actors: list[Facet] = []
+        self.actions: list[Facet] = []
+        self.targets: list[Facet] = []
 
-    async def find(self, **kwargs: Any) -> list[AuditEvent]:
+    async def page(self, **kwargs: Any) -> AuditPage:
         self.calls.append(kwargs)
         if self.error:
             raise self.error
-        return self.events
+        return AuditPage(events=self.events[:kwargs["limit"]], actors=self.actors, actions=self.actions,
+                         targets=self.targets)
 
     async def names_for(self, events: list[AuditEvent]) -> dict[str, str]:
         return self.names
@@ -312,10 +317,11 @@ def test_unknown_job_page_is_a_not_found_notice() -> None:
 def test_audit_filters_pass_through_as_exact_values() -> None:
     client, _, audit, _ = setup()
     audit.events = [event()]
-    response = client.get("/audit", params={"actor": ".*", "action": "server.*", "target": "t1"})
+    response = client.get("/audit", params={"actor": ".*", "action": "server.scan", "target": "server:t1"})
     assert response.status_code == 200
     [call] = audit.calls
-    assert call["actor_sub"] == ".*" and call["action"] == "server.*" and call["target_id"] == "t1"
+    assert call["actor_sub"] == ".*" and call["action"] == "server.scan"
+    assert call["target"] == ("server", "t1") and call["target_name"] is None
     assert call["before_id"] is None and call["limit"] == 51
 
 
@@ -567,3 +573,68 @@ def test_an_event_without_a_target_name_shows_its_kind_and_id() -> None:
                     event(target=AuditTarget(kind="job", id="j9", name=""))]
     text = " ".join(visible(client.get("/audit").text).split())
     assert "Servidor t1" in text and "job j9" in text
+
+
+# The audit filters, with counts (A11, A12).
+
+def _select(text: str, name: str) -> str:
+    begin = text.index(f'name="{name}"')
+    return text[text.rindex("<select", 0, begin):text.index("</select>", begin)]
+
+
+def test_person_and_action_are_selects_with_counts() -> None:
+    client, _, audit, _ = setup()
+    audit.events = [event(name="Olga", action="bundle.pin")]
+    audit.actors = [Facet(value="olga", label="Olga", count=3), Facet(value="pedro", label="Pedro", count=1)]
+    audit.actions = [Facet(value="bundle.pin", label="bundle.pin", count=2)]
+    text = client.get("/audit", params={"actor": "olga"}).text
+    person = _select(text, "actor")
+    assert '<option value="olga" selected' in person and "Olga (3)" in person and "Pedro (1)" in person
+    action = _select(text, "action")
+    for area in ("Packs", "Builds", "Servidores", "Reemplazos"):
+        assert f'<optgroup label="{area}">' in action
+    assert "Fijó una versión (2)" in action
+    zero = action[action.rindex("<option", 0, action.index("Creó un pack (0)")):action.index("Creó un pack (0)")]
+    assert 'value="bundle.create"' in zero and "text-zinc-400" in zero and "disabled" not in zero
+
+
+def test_target_is_an_input_with_a_datalist_of_names_kinds_and_counts() -> None:
+    client, _, audit, _ = setup()
+    bundle = str(PydanticObjectId())
+    audit.targets = [Facet(value=f"bundle:{bundle}", label="Survival", count=31),
+                     Facet(value="server:s1", label="server:s1", count=2)]
+    text = client.get("/audit").text
+    assert re.search(r'<input[^>]*name="target"[^>]*list="audit-targets"', text)
+    datalist = text[text.index('<datalist id="audit-targets"'):text.index("</datalist>")]
+    assert f'<option value="bundle:{bundle}">Survival · pack (31)</option>' in datalist
+    assert '<option value="server:s1">s1 · servidor (2)</option>' in datalist
+
+
+def test_an_unknown_action_or_a_plain_target_name_does_not_422() -> None:
+    client, _, audit, _ = setup()
+    response = client.get("/audit", params={"action": "foo", "target": "Survival"})
+    assert response.status_code == 200
+    call = audit.calls[-1]
+    assert call["action"] is None and call["target"] is None and call["target_name"] == "Survival"
+
+
+def test_the_older_link_keeps_every_filter() -> None:
+    client, _, audit, _ = setup()
+    audit.events = [event() for _ in range(51)]
+    text = client.get("/audit", params={"actor": "olga", "action": "bundle.pin", "target": "bundle:b1"}).text
+    link = text[text.index("/audit?before="):]
+    link = link[:link.index('"')]
+    assert "actor=olga" in link and "action=bundle.pin" in link and "target=bundle%3Ab1" in link
+
+
+def test_the_filters_ask_htmx_for_the_list_and_keep_a_submit_button() -> None:
+    client, _, audit, _ = setup()
+    audit.events = [event()]
+    text = client.get("/audit").text
+    form = text[text.index('<form method="get" action="/audit"'):]
+    form = form[:form.index(">")]
+    for attribute in ('hx-get="/audit"', 'hx-trigger="change"', 'hx-select="#audit-list"', 'hx-target="#audit-list"',
+                      'hx-swap="outerHTML"', 'hx-push-url="true"'):
+        assert attribute in form
+    region = text[text.index('id="audit-list"'):]
+    assert region.index('name="actor"') < region.index("data-audit=") and "Filtrar" in region

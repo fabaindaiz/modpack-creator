@@ -114,3 +114,11 @@ def target_label(kind: str, target_id: str, name: str | None) -> str:
     if name:
         return f"{KINDS.get(kind, kind)} «{name}»"
     return f"{KINDS.get(kind, kind)} {target_id}"
+
+
+def target_option(value: str, label: str) -> str:
+    """A target as the filter's list offers it: «Survival · pack», or its id without a name
+    (`value` is `kind:id`)."""
+    kind, _, target_id = value.partition(":")
+    name = target_id if label == value else label
+    return f"{name} · {KINDS.get(kind, kind).lower()}"

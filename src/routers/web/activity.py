@@ -11,6 +11,7 @@ from src.model.pterodactyl import ImportResult
 from src.model.users import Actor
 from src.routers.web.servers import preview_context
 from src.web import WebRoute, get_web_actor, render
+from src.web.audit_labels import ACTIONS as AUDIT_ACTIONS
 
 logger = logging.getLogger("modpack.web")
 router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
@@ -200,7 +201,10 @@ async def audit_log(
         actor: Actor = Depends(get_web_actor),
         auditService: AuditService = Depends(Provide[Dependences.auditService]),
         ):
-    """Who did what, newest first, 50 per page; `before` is the id of the last event shown."""
+    """Who did what, newest first, 50 per page; `before` is the id of the last event shown. Person
+    and action are exact values, an action the panel does not know is ignored; `target` is
+    `kind:id` (what the list offers) or, without a colon, the exact name an event kept. Each
+    filter's options come with their counts (A11, A12)."""
     since = _day(desde, "Desde")
     last_day = _day(hasta, "Hasta")
     if since is not None and last_day is not None and last_day < since:
@@ -209,13 +213,17 @@ async def audit_log(
         until = last_day + timedelta(days=1) if last_day is not None else None  # the whole day is included
     except OverflowError:
         raise HTTP_422_UNPROCESSABLE_ENTITY("'Hasta' no es una fecha válida (AAAA-MM-DD)")
-    events = await auditService.find(
-        actor_sub=actor_filter or None, action=action or None, target_id=target or None,
+    action = action if action in AUDIT_ACTIONS else None
+    kind, colon, target_id = (target or "").partition(":")
+    page = await auditService.page(
+        actor_sub=actor_filter or None, action=action,
+        target=(kind, target_id) if colon else None, target_name=None if colon else (target or None),
         before_id=before or None, limit=AUDIT_PAGE + 1, since=since, until=until)
-    has_older = len(events) > AUDIT_PAGE
-    events = events[:AUDIT_PAGE]
+    has_older = len(page.events) > AUDIT_PAGE
+    events = page.events[:AUDIT_PAGE]
     older = f"before={events[-1].id}" if has_older else None
     filters = {"actor": actor_filter or "", "action": action or "", "target": target or "",
                "desde": desde or "", "hasta": hasta or ""}
-    return render(request, "activity/audit.html", actor, events=events, filters=filters, older=older,
+    return render(request, "activity/audit.html", actor, events=events, filters=filters, older=older, page=page,
+                  action_counts={facet.value: facet.count for facet in page.actions},
                   names=await auditService.names_for(events), nav_active="audit")

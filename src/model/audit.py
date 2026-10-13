@@ -22,10 +22,13 @@ class AuditEvent(Document):
     request_id: Optional[str] = None
 
     class Settings:
+        # What the page's query sorts and filters by (A11): newest first, then by person, by action
+        # or by target, each within its dates.
         indexes = [
-            IndexModel([("at", DESCENDING)]),
-            IndexModel([("target.kind", ASCENDING), ("target.id", ASCENDING)]),
-            IndexModel([("actor.sub", ASCENDING)]),
+            IndexModel([("at", DESCENDING), ("_id", DESCENDING)]),
+            IndexModel([("actor.sub", ASCENDING), ("at", DESCENDING)]),
+            IndexModel([("action", ASCENDING), ("at", DESCENDING)]),
+            IndexModel([("target.kind", ASCENDING), ("target.id", ASCENDING), ("at", DESCENDING)]),
         ]
 
 class Facet(BaseModel):

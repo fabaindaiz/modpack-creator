@@ -138,22 +138,10 @@ class AuditService():
             since: Optional[datetime] = None,
             until: Optional[datetime] = None,
             ) -> AuditPage:
-        """Interface only (the facets come with the implementation)."""
-        events = await self.find(actor_sub=actor_sub, action=action, target_id=target[1] if target else None,
-                                 before_id=before_id, limit=limit, since=since, until=until)
-        return AuditPage(events=events)
-
-    async def find(self, *,
-            actor_sub: Optional[str] = None,
-            action: Optional[str] = None,
-            target_id: Optional[str] = None,
-            before_id: Optional[str] = None,
-            limit: int = 50,
-            since: Optional[datetime] = None,
-            until: Optional[datetime] = None,
-            ) -> list[AuditEvent]:
-        """Events newest first; `before_id` is the id of the last event of the previous page; `limit` is held to 1..200;
-        `since` (inclusive) and `until` (exclusive) are aware UTC datetimes."""
-        return await self.auditDB.find(
-            actor_sub=actor_sub, action=action, target_id=target_id, before_id=before_id,
+        """A page of events newest first and each filter's options with their counts (A11, A12).
+        `before_id` is the id of the last event of the previous page; `limit` is held to 1..200;
+        `since` (inclusive) and `until` (exclusive) are aware UTC datetimes; `target` is
+        (kind, id) and `target_name` the name an event kept (used when there is no `target`)."""
+        return await self.auditDB.page(
+            actor_sub=actor_sub, action=action, target=target, target_name=target_name, before_id=before_id,
             limit=max(1, min(limit, MAX_LIMIT)), since=since, until=until)

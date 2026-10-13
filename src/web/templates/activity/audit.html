@@ -3,24 +3,59 @@
 {% block title %}Auditoría{% endblock %}
 
 {% block content %}
-{{ ui.page_header("Auditoría", "Quién hizo qué, lo más reciente primero. Los filtros buscan el valor exacto.") }}
+{{ ui.page_header("Auditoría", "Quién hizo qué, lo más reciente primero. Cada opción dice cuántos eventos tiene con los demás filtros.") }}
 
-<form method="get" action="/audit" class="grid grid-cols-1 gap-3 sm:grid-cols-5 sm:items-end">
-  {% for name, label in [("actor", "Persona (sub)"), ("action", "Acción"), ("target", "Id del objetivo")] %}
-  <div>
-    <label for="f-{{ name }}" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">{{ label }}</label>
-    <input id="f-{{ name }}" name="{{ name }}" type="text" value="{{ filters[name] }}" maxlength="200" autocomplete="off"
-      class="mt-1 block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 focus-visible:outline-2 focus-visible:outline-emerald-600 dark:bg-zinc-900 dark:ring-zinc-700">
+{# The filters, the list and «Ver anteriores» are one region: a filter that changes asks for the
+   page and keeps only this, so the counts follow (A12). Without JS, «Filtrar» submits it. #}
+<div id="audit-list" class="space-y-4">
+{% set FIELD_CLASS = "mt-1 block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 focus-visible:outline-2 focus-visible:outline-emerald-600 dark:bg-zinc-900 dark:ring-zinc-700" %}
+{% set LABEL_CLASS = "block text-xs font-medium text-zinc-600 dark:text-zinc-400" %}
+<form method="get" action="/audit" hx-get="/audit" hx-trigger="change" hx-select="#audit-list" hx-target="#audit-list" hx-swap="outerHTML" hx-push-url="true"
+  class="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-end lg:grid-cols-5">
+  <div class="min-w-0">
+    <label for="f-actor" class="{{ LABEL_CLASS }}">Persona</label>
+    <select id="f-actor" name="actor" class="{{ FIELD_CLASS }}">
+      <option value="">Todas</option>
+      {% set listed = page.actors | map(attribute="value") | list %}
+      {% if filters.actor and filters.actor not in listed %}
+      <option value="{{ filters.actor }}" selected class="text-zinc-400">{{ filters.actor }} (0)</option>
+      {% endif %}
+      {% for facet in page.actors %}
+      <option value="{{ facet.value }}"{% if filters.actor == facet.value %} selected{% endif %}>{{ facet.label }} ({{ facet.count }})</option>
+      {% endfor %}
+    </select>
   </div>
-  {% endfor %}
+  <div class="min-w-0">
+    <label for="f-action" class="{{ LABEL_CLASS }}">Acción</label>
+    <select id="f-action" name="action" class="{{ FIELD_CLASS }}">
+      <option value="">Todas</option>
+      {% for area in AUDIT_AREAS %}
+      <optgroup label="{{ area }}">
+        {% for value, (text, in_area) in AUDIT_ACTIONS.items() if in_area == area %}
+        {% set count = action_counts.get(value, 0) %}
+        <option value="{{ value }}"{% if filters.action == value %} selected{% endif %}{% if not count %} class="text-zinc-400"{% endif %}>{{ text }} ({{ count }})</option>
+        {% endfor %}
+      </optgroup>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="min-w-0">
+    <label for="f-target" class="{{ LABEL_CLASS }}">Objetivo</label>
+    <input id="f-target" name="target" type="text" list="audit-targets" value="{{ filters.target }}" maxlength="200" autocomplete="off"
+      placeholder="Nombre de un pack, servidor…" class="{{ FIELD_CLASS }}">
+    <datalist id="audit-targets">
+      {% for facet in page.targets %}
+      <option value="{{ facet.value }}">{{ audit_target_option(facet.value, facet.label) }} ({{ facet.count }})</option>
+      {% endfor %}
+    </datalist>
+  </div>
   {% for name, label in [("desde", "Desde (UTC)"), ("hasta", "Hasta (UTC)")] %}
-  <div>
-    <label for="f-{{ name }}" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">{{ label }}</label>
-    <input id="f-{{ name }}" name="{{ name }}" type="date" value="{{ filters[name] }}"
-      class="mt-1 block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 focus-visible:outline-2 focus-visible:outline-emerald-600 dark:bg-zinc-900 dark:ring-zinc-700">
+  <div class="min-w-0">
+    <label for="f-{{ name }}" class="{{ LABEL_CLASS }}">{{ label }}</label>
+    <input id="f-{{ name }}" name="{{ name }}" type="date" value="{{ filters[name] }}" class="{{ FIELD_CLASS }}">
   </div>
   {% endfor %}
-  <div class="flex gap-2 sm:col-span-5">
+  <div class="flex gap-2 sm:col-span-2 lg:col-span-5">
     {{ ui.button("Filtrar", type="submit") }}
     {{ ui.link_button("Limpiar", "/audit") }}
   </div>
@@ -58,4 +93,5 @@
     class="text-sm font-medium text-emerald-700 hover:underline dark:text-emerald-300">Ver anteriores</a>
 </p>
 {% endif %}
+</div>
 {% endblock %}

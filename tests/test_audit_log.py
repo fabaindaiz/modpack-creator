@@ -26,6 +26,11 @@ pytestmark = pytest.mark.network
 T0 = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 
 
+async def _events(service: AuditService, **filters: Any) -> list[AuditEvent]:
+    """The events of a page, without its counts."""
+    return (await service.page(**filters)).events
+
+
 def _service(times: list[datetime]) -> AuditService:
     clock = iter(times)
     return AuditService(AuditDatabase(), clock=lambda: next(clock))
@@ -53,14 +58,14 @@ def test_record_stores_actor_action_target_and_time(mongo: MongoRunner) -> None:
     assert event.id == got.id
 
 
-def test_find_newest_first_and_paginates_with_before(mongo: MongoRunner) -> None:
+def test_page_newest_first_and_paginates_with_before(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[list[str], list[str], list[str]]:
         service = _service([T0 + timedelta(minutes=i) for i in range(5)])
         for i in range(5):
             await service.record(EDITOR, f"a{i}", AuditTarget(kind="bundle", id="b1"))
-        first = await service.find(limit=2)
-        second = await service.find(before_id=str(first[-1].id), limit=2)
-        rest = await service.find(before_id=str(second[-1].id), limit=10)
+        first = await _events(service, limit=2)
+        second = await _events(service, before_id=str(first[-1].id), limit=2)
+        rest = await _events(service, before_id=str(second[-1].id), limit=10)
         return [e.action for e in first], [e.action for e in second], [e.action for e in rest]
 
     first, second, rest = mongo(scenario)
@@ -69,7 +74,7 @@ def test_find_newest_first_and_paginates_with_before(mongo: MongoRunner) -> None
     assert rest == ["a0"]
 
 
-def test_find_pages_through_events_sharing_a_millisecond(mongo: MongoRunner) -> None:
+def test_page_pages_through_events_sharing_a_millisecond(mongo: MongoRunner) -> None:
     async def scenario() -> list[str]:
         service = _service([T0] * 5)
         for i in range(5):
@@ -77,7 +82,7 @@ def test_find_pages_through_events_sharing_a_millisecond(mongo: MongoRunner) -> 
         seen: list[str] = []
         cursor = None
         while True:
-            page = await service.find(before_id=cursor, limit=2)
+            page = await _events(service, before_id=cursor, limit=2)
             if not page:
                 return seen
             seen += [str(e.id) for e in page]
@@ -88,13 +93,13 @@ def test_find_pages_through_events_sharing_a_millisecond(mongo: MongoRunner) -> 
     assert seen == sorted(seen, reverse=True)
 
 
-def test_find_unknown_before_id_is_404(mongo: MongoRunner) -> None:
+def test_page_unknown_before_id_is_404(mongo: MongoRunner) -> None:
     async def scenario() -> list[int]:
         service = _service([])
         codes = []
         for bad in ("not-an-id", "0" * 24):
             try:
-                await service.find(before_id=bad)
+                await _events(service, before_id=bad)
             except HTTPException as error:
                 codes.append(error.status_code)
         return codes
@@ -107,7 +112,7 @@ def test_limit_is_clamped_to_200(mongo: MongoRunner) -> None:
         events = [AuditEvent(at=T0 + timedelta(seconds=i), actor=OPERATOR.ref(), action="x",
                              target=AuditTarget(kind="k", id="1")) for i in range(201)]
         await AuditEvent.insert_many(events)
-        return len(await AuditService(AuditDatabase()).find(limit=1000))
+        return len(await _events(AuditService(AuditDatabase()), limit=1000))
 
     assert mongo(scenario) == 200
 
@@ -130,18 +135,18 @@ def test_nested_secret_keys_are_rejected(mongo: MongoRunner) -> None:
     assert mongo(scenario)
 
 
-def test_find_filters_by_exact_values(mongo: MongoRunner) -> None:
+def test_page_filters_by_exact_values(mongo: MongoRunner) -> None:
     async def scenario() -> dict[str, list[str]]:
         service = _service([T0, T0 + timedelta(minutes=1)])
         await service.record(OPERATOR, "server.power", AuditTarget(kind="server", id="s1"))
         await service.record(EDITOR, "bundle.edit", AuditTarget(kind="bundle", id="b1"))
         return {
-            "actor": [e.action for e in await service.find(actor_sub=EDITOR.sub)],
-            "action": [e.action for e in await service.find(action="server.power")],
-            "target": [e.action for e in await service.find(target_id="b1")],
-            "regex": [e.action for e in await service.find(actor_sub=".*")],
-            "where": [e.action for e in await service.find(action="$where")],
-            "clamped": [e.action for e in await service.find(limit=0)],
+            "actor": [e.action for e in await _events(service, actor_sub=EDITOR.sub)],
+            "action": [e.action for e in await _events(service, action="server.power")],
+            "target": [e.action for e in await _events(service, target=("bundle", "b1"))],
+            "regex": [e.action for e in await _events(service, actor_sub=".*")],
+            "where": [e.action for e in await _events(service, action="$where")],
+            "clamped": [e.action for e in await _events(service, limit=0)],
         }
 
     got = mongo(scenario)
@@ -168,7 +173,7 @@ def test_details_never_hold_unknown_secrets_keys(mongo: MongoRunner, key: str) -
     assert message and count == 0
 
 
-def test_find_filters_by_date_range_inclusive_since_exclusive_until(mongo: MongoRunner) -> None:
+def test_page_filters_by_date_range_inclusive_since_exclusive_until(mongo: MongoRunner) -> None:
     async def scenario() -> dict[str, list[str]]:
         day = datetime(2026, 10, 2, tzinfo=timezone.utc)
         times = [day - timedelta(milliseconds=1), day, day + timedelta(hours=23, minutes=59),
@@ -178,11 +183,11 @@ def test_find_filters_by_date_range_inclusive_since_exclusive_until(mongo: Mongo
             await service.record(OPERATOR, f"a{i}", AuditTarget(kind="server", id="s1"))
         next_day = day + timedelta(days=1)
         return {
-            "day": [e.action for e in await service.find(since=day, until=next_day)],
-            "since": [e.action for e in await service.find(since=day)],
-            "until": [e.action for e in await service.find(until=day)],
-            "and": [e.action for e in await service.find(since=day, until=next_day, action="a2")],
-            "and_none": [e.action for e in await service.find(since=day, until=next_day, action="a0")],
+            "day": [e.action for e in await _events(service, since=day, until=next_day)],
+            "since": [e.action for e in await _events(service, since=day)],
+            "until": [e.action for e in await _events(service, until=day)],
+            "and": [e.action for e in await _events(service, since=day, until=next_day, action="a2")],
+            "and_none": [e.action for e in await _events(service, since=day, until=next_day, action="a0")],
         }
 
     got = mongo(scenario)
@@ -193,14 +198,14 @@ def test_find_filters_by_date_range_inclusive_since_exclusive_until(mongo: Mongo
     assert got["and_none"] == []
 
 
-def test_find_pages_within_a_date_range(mongo: MongoRunner) -> None:
+def test_page_pages_within_a_date_range(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[list[str], list[str]]:
         service = _service([T0 + timedelta(minutes=i) for i in range(5)])
         for i in range(5):
             await service.record(OPERATOR, f"a{i}", AuditTarget(kind="server", id="s1"))
         since, until = T0 + timedelta(minutes=1), T0 + timedelta(minutes=4)
-        first = await service.find(since=since, until=until, limit=2)
-        second = await service.find(since=since, until=until, limit=2, before_id=str(first[-1].id))
+        first = await _events(service, since=since, until=until, limit=2)
+        second = await _events(service, since=since, until=until, limit=2, before_id=str(first[-1].id))
         return [e.action for e in first], [e.action for e in second]
 
     first, second = mongo(scenario)
@@ -279,7 +284,7 @@ def test_a_page_s_mods_and_versions_are_named_from_the_catalog(mongo: MongoRunne
                              {"project_id": "JJJJ", "version_id": "VVVV"})
         await service.record(EDITOR, "bundle.project.add", AuditTarget(kind="bundle", id="b1"),
                              {"refs": ["JJJJ", "ZZZZ"]})
-        return await service.names_for(await service.find())
+        return await service.names_for(await _events(service))
 
     assert mongo(scenario) == {"JJJJ": "JEI", "VVVV": "19.60"}
 
