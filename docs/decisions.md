@@ -195,6 +195,7 @@ los dos, o una fila mal formada, hace fallar el test. El nombre del método no s
 
 | Id | Status | Decisión | Por qué | Se cumple en |
 | --- | --- | --- | --- | --- |
+| d-7985ee-a95f45 | accepted 2026-10-13 · h1 | Una tanda no sube la versión por sí sola: subir el minor o el major lo autoriza el dueño; sin eso, el trabajo sale en la versión en curso (las tandas A y B salen en 0.3.2) | el dueño, 2026-10-13: «no quiero que aumente un minor por cada cambio, déjalo en 0.3.2 y yo autorizo mayor y minor» | disciplina (`AGENTS.md`, «Commits»): ningún chequeo lo hace cumplir |
 | d-7985ee-b4786f | accepted recorded 2026-10-01 | `AGENTS.md` es la única fuente de instrucciones; `CLAUDE.md` solo lo importa | dos archivos escritos a mano divergen | — |
 | d-7985ee-8b8db2 | accepted recorded 2026-10-01 | Commits con el usuario como único autor, sin trailers, en Conventional Commits | convención del dueño en todos sus repositorios | — |
 | d-7985ee-794d11 | accepted recorded 2026-10-03 | Un permiso denegado no se esquiva: ni redirección de shell, ni `sed`, ni otra herramienta; se avisa y se sigue con lo demás | decisión del dueño (2026-10-03): una denegación es una decisión de quien la puso, y rodearla con otra herramienta la anula sin que nadie lo sepa | disciplina (peldaño 1: ningún chequeo la hace cumplir); el bloqueo de `.env.default` viene de los permisos de usuario del dueño, no de `.claude/settings.json`. Un hook `PreToolUse` queda como decisión pendiente (roadmap) |

@@ -949,13 +949,56 @@ def check_problem_actions(page: Any, base: str, out: Path, ids: dict[str, str], 
     return {f"{prefix}-problem-actions": _report(response, errors, problems)}
 
 
+def demo(mongo_uri: str, port: int) -> int:
+    """The local demo (`scripts/demo.sh`): the same demo data, fake configuration and Modrinth stub
+    as the sweep, the app left running at 127.0.0.1:<port>, and a Chromium window already signed in
+    as the operator. Nothing writes to a game server (Pterodactyl writes stay off). Ends when the
+    window closes or on Ctrl+C."""
+    from playwright.sync_api import sync_playwright
+
+    ids = asyncio.run(seed(mongo_uri))
+    base = f"http://127.0.0.1:{port}"
+    stub = ModrinthStub()
+    stub.start()
+    app = subprocess.Popen([sys.executable, "-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", str(port),
+                            "--no-access-log"], env=app_env(mongo_uri, stub.url))
+    try:
+        wait_ready(base, app)
+        print(f"demo en {base} (operador; packs: /modpacks/{ids['bundle']}, servidor: /servers/{ids['server']})",
+              file=sys.stderr)
+        print("cierra la ventana o Ctrl+C para terminar", file=sys.stderr)
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=False, executable_path=os.environ.get("PLAYWRIGHT_CHROMIUM") or None)
+            context = browser.new_context(viewport=None)
+            context.add_cookies([{"name": "session", "url": base,
+                                  "value": session_cookie(session_for(OPERATOR), secret=SECRET)}])
+            context.route("https://cdn.modrinth.com/**",
+                          lambda route: route.fulfill(status=200, content_type="image/png", body=PNG))
+            page = context.new_page()
+            page.goto(base + "/")
+            while browser.is_connected() and context.pages:
+                time.sleep(0.5)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        stub.stop()
+        app.terminate()
+        try:
+            app.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            app.kill()
+    return 0
+
+
 def main() -> int:
     # The app runs from this directory and must never load the repository's `.env.yaml`.
     repo = Path(__file__).resolve().parent.parent
     if Path.cwd().resolve() == repo or Path(".env.yaml").exists():
-        print("visual_sweep.py: se corre con `scripts/visual-sweep.sh`, desde un directorio fuera del "
-              "repositorio y sin `.env.yaml`", file=sys.stderr)
+        print("visual_sweep.py: se corre con `scripts/visual-sweep.sh` o `scripts/demo.sh`, desde un directorio "
+              "fuera del repositorio y sin `.env.yaml`", file=sys.stderr)
         return 2
+    if sys.argv[1] == "--demo":
+        return demo(sys.argv[2], int(sys.argv[3]))
     mongo_uri, out_arg = sys.argv[1], sys.argv[2]
     out = Path(out_arg)
     out.mkdir(parents=True, exist_ok=True)

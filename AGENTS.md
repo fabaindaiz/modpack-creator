@@ -102,7 +102,7 @@ Decididas, no preferencias. `docs/decisions.md` indexa cada una con lo que la ha
   un `grep -r` o a un script: probado con un canario (d-7985ee-57db37, d-7985ee-9b97fa). Docker, podman,
   `scripts/test-mongo.sh` y `scripts/visual-sweep.sh` corren fuera del sandbox (`excludedCommands`),
   escritos tal cual, sin argumentos ni redirecciones; `build.sh`, `run.sh`, `stop.sh` y `update.sh`
-  también usan docker y se corren con `!`.
+  también usan docker y se corren con `!`; `demo.sh`, el dueño en una terminal propia (queda corriendo).
 - `.agents/` salvo `carrier.toml`, `proposals/`, `incoming/` y `evaluation-*.md`: lo genera el repositorio home.
   Una mejora es una propuesta (`bundle.py propose`).
 
@@ -116,6 +116,7 @@ hatch run tests -k x   # un test
 ./scripts/run.sh       # docker compose up -d
 ./scripts/stop.sh      # docker compose down
 ./scripts/update.sh    # git pull + build + run
+./scripts/demo.sh      # la demo local: datos de demo, MongoDB descartable, Chromium con sesión de operador
 ```
 
 El entorno es hatch con Python 3.12 (`pyproject.toml`); las dependencias salen de
@@ -141,6 +142,9 @@ revisa los assets y el compose); el despliegue real sigue sin verificarse. Skill
 El usuario es el único autor: sin `Co-Authored-By` ni otra línea de atribución. Conventional
 Commits (`feat:`, `fix:`, `docs:`, `test:`, `build:`, `ci:`, `chore:`). Solo cuando se pide
 (d-7985ee-8b8db2).
+
+**Versiones:** una tanda nueva no sube la versión por sí sola. Subir el minor o el major lo autoriza
+el dueño; sin su autorización, el trabajo sale en la versión en curso (d-7985ee-a95f45).
 
 ## Registro
 

@@ -27,7 +27,7 @@ atrás» a 0.3.1 sigue valiendo. Lo que se nota:
 - **Los filtros de la lista de mods y de la auditoría viven en la URL**: un enlace guardado los
   conserva.
 
-**Si sale con la tanda B** (estilo, alta guiada, tablero y móvil; la versión se decide antes del tag):
+**También la tanda B** (estilo, alta guiada, tablero y móvil; sale en 0.3.2, d-7985ee-a95f45):
 - La imagen arma un sprite de íconos (`scripts/build-icons.mjs`, Lucide) y sirve Inter desde
   `src/web/static/fonts/`; los avisos de licencia están en `/static/LICENSES.html`. Nada cambia en
   `docker/.env` ni en `.env.yaml`.

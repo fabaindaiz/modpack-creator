@@ -61,6 +61,14 @@ npm run dev      # lo mismo, y recompila app.css al cambiar las plantillas
 La imagen Docker lo construye ella misma en una etapa de Node: no hace falta correr nada antes de
 `./scripts/build.sh`.
 
+## Demo local
+
+`./scripts/demo.sh` levanta el panel con los datos de demo del barrido visual, sobre un MongoDB
+descartable y con configuración falsa (sin OIDC real, sin escribir en ningún servidor de juego), en
+`http://127.0.0.1:8765` (o `DEMO_PORT`), y abre una ventana de Chromium con la sesión de operador.
+Se corre en una terminal propia; cerrar la ventana o Ctrl+C apaga todo. Necesita lo mismo que la
+revisión visual.
+
 ## Revisión visual
 
 `./scripts/visual-sweep.sh [salida]` captura el panel a 360, 768 y 1280 px, en claro y oscuro, como

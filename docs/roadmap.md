@@ -11,12 +11,12 @@ y tokens, con en qué se apoya (bundle 0.0.30); `close` la compara después con 
 ## Dónde estamos
 
 **2026-10-13, tandas A (con sus menores) y B hechas, en la rama `feat/panel-tanda-b`** (sobre
-`fix/tanda-a-menores`; sin merge ni push): la versión dice 0.3.2, y el dueño pidió taggear después de
-la tanda B, así que antes del tag hay que decidir si la tanda B sale como 0.3.2 o como 0.4.0 (y
-sumarla a la sección del runbook). **Para seguir, en otra máquina:** lo de siempre (Docker o podman con
+`fix/tanda-a-menores`; sin merge ni push): sale todo en 0.3.2 (el dueño, d-7985ee-a95f45: minor y
+major solo con su autorización), con su sección del runbook; el tag va después de sus observaciones
+sobre la demo local (`scripts/demo.sh`). **Para seguir, en otra máquina:** lo de siempre (Docker o podman con
 su VM, hatch y Python 3.12, `npm ci` —ahora también arma el sprite de íconos—, Chromium de Playwright,
-el `.env.yaml` propio). **Primer paso:** la versión, el merge a `main`, el tag y el deploy con el
-runbook; después, la tanda C (loaders secundarios).
+el `.env.yaml` propio). **Primer paso:** las observaciones del dueño sobre la demo; después el merge a
+`main`, el tag `v0.3.2` y el deploy con el runbook; luego la tanda C (loaders secundarios).
 Pendientes de decisión: el hook contra heredocs (Fricciones: ya van más incidentes), los tags
 `v0.2.0` y `v0.3.0` (opcionales), y probar en un teléfono real el selector nativo y el `<datalist>`.
 
