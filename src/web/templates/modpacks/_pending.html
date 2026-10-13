@@ -19,7 +19,7 @@
       {{ ui.button("Desactivar todos", kind="secondary", small=True, attrs={"data-set-all": "no"}) }}
     </div>
   </div>
-  <ul class="divide-y divide-zinc-100 rounded-lg border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+  <ul class="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
     {% for entry in undecided %}
     {% set card = cards.get(entry.project_id) %}
     {% set image = icon(card.icon_url) if card else none %}

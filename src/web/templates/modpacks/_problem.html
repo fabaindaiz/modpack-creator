@@ -56,7 +56,7 @@
 {% set mrpack = namespace(ids=[]) %}
 {% for removal in removals if pack[removal] == "pack" %}{% set mrpack.ids = mrpack.ids + [removal] %}{% endfor %}
 {% macro names(ids) %}{% for i in ids %}{{ ui.mod_link(i, titles.get(i, i), pack=bundle_id) }}{% if not loop.last %}, {% endif %}{% endfor %}{% endmacro %}
-<article data-problem="{{ pid or '' }}" class="space-y-2 rounded-lg border border-red-200 bg-white p-3 text-sm dark:border-red-500/30 dark:bg-zinc-900">
+<article data-problem="{{ pid or '' }}" class="space-y-2 rounded-xl border border-red-200 bg-white p-3 text-sm dark:border-red-500/30 dark:bg-zinc-900">
   <div class="flex items-start gap-3">
     {% if image %}
     <img src="{{ image }}" alt="" width="40" height="40" loading="lazy" class="size-10 shrink-0 rounded-md bg-zinc-100 object-cover dark:bg-zinc-800">

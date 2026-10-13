@@ -10,7 +10,7 @@
 {# Iris is suggested for the shaders without it, not as an optional dependency (resolution.py). #}
 {% set shaders = saved.entries | selectattr("project_type", "equalto", "shader") | map(attribute="project_id") | list %}
 <p class="text-xs text-zinc-600 dark:text-zinc-400">Mods que otros del pack declaran como dependencia opcional en Modrinth, e Iris si el pack tiene shaders sin él. No se agregan solos.</p>
-<ul class="divide-y divide-zinc-100 rounded-lg border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+<ul class="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
   {% for suggestion in saved.suggestions %}
   <li class="flex flex-wrap items-center gap-2 px-3 py-2">
     <div class="min-w-0 flex-1 break-words">

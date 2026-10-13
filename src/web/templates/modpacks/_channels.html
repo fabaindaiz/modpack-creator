@@ -1,7 +1,7 @@
 {# The version channels the modpack allows; the fragment htmx swaps into #channels. #}
 {% import "_macros.html" as ui %}
 <form id="channels" hx-post="/modpacks/{{ bundle_id }}/channels" hx-target="#channels" hx-swap="outerHTML"
-  class="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+  class="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
   <fieldset class="flex flex-wrap gap-x-5 gap-y-2">
     <legend class="sr-only">Canales permitidos</legend>
     {% for channel in channel_names %}

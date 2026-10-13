@@ -32,7 +32,7 @@
 
   <div>
     {% call ui.section("Nuevo modpack", id="nuevo") %}
-    <form method="post" action="/modpacks" class="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+    <form method="post" action="/modpacks" class="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
       <div>
         <label for="new-name" class="text-sm font-medium">Nombre</label>
         <input id="new-name" name="name" type="text" required maxlength="120" class="{{ FIELD }}">

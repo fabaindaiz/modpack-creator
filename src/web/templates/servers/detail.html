@@ -26,7 +26,7 @@
 #}
 <div id="server-main" class="space-y-6" hx-get="/servers/{{ server_id }}" hx-select="#server-main" hx-trigger="job-finished from:body" hx-swap="outerHTML" hx-disinherit="*">
   {% set differences = (comparison.different_version | length) + (comparison.missing | length) + (comparison.extra | length) + (comparison.unknown | length) if comparison else 0 %}
-  <div id="server-summary" class="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+  <div id="server-summary" class="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
     {% if bundle %}
     <span>Modpack: <a href="/modpacks/{{ bundle.id }}" class="font-medium hover:underline">{{ bundle.name }}</a></span>
     <span>Instalado: {% if installed_build is not none %}<span class="tabular-nums">build {{ installed_build }}</span>{% else %}<span class="text-zinc-500 dark:text-zinc-400">sin actualización terminada desde el panel</span>{% endif %}</span>
@@ -48,7 +48,7 @@
       {% if comparison %}
       {% include "servers/_compare.html" %}
       {% else %}
-      <p class="rounded-lg border border-dashed border-zinc-300 p-4 text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">{{ compare_note }}</p>
+      <p class="rounded-xl border border-dashed border-zinc-300 p-4 text-sm text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">{{ compare_note }}</p>
       {% endif %}
       {% endcall %}
     </div>
@@ -59,7 +59,7 @@
     #}
     {% set modpack_section %}
       {% call ui.section("Modpack", id="modpack") %}
-      <div class="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <div class="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
         {% with linked=bundle, linked_id=server.bundle_id, oob=False %}{% include "servers/_link_bundle.html" %}{% endwith %}
         {% if not server.bundle_id %}{% include "servers/_new_modpack.html" %}{% endif %}
       </div>
@@ -75,7 +75,7 @@
       {% if server.bundle_id %}{{ modpack_section }}{% endif %}
 
       {% call ui.section("Último escaneo", id="escaneo") %}
-      <div class="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <div class="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
         {% if scan %}
         <p>{{ ui.when(scan.scanned_at) }} · {{ scan.files | length }} archivos{% if scan.full %} · completo{% endif %}</p>
         {% else %}
@@ -91,7 +91,7 @@
         large to read count as unexplained, but importing only lists them.
       #}
       {% call ui.section("Importar el servidor", id="importar") %}
-      <div class="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <div class="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
         {% set importable = (to_import.foreign | reject("in", to_import.too_large) | list) if to_import else [] %}
         {% if not server.bundle_id %}
         {% set import_reason = "el servidor está sin modpack" %}

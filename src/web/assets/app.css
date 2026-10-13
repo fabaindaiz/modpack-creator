@@ -1,6 +1,73 @@
 @import "tailwindcss";
 @source "../templates";
 
+/* Inter, served by the panel (OFL; its license at /static/fonts/LICENSE-Inter.txt). */
+@font-face {
+  font-family: "Inter";
+  src: url("/static/fonts/InterVariable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* The owner's palette (d-7985ee-8763b7), written from scratch: the `zinc` and `emerald` scales the
+   templates already use are redefined (d-7985ee-8762fc), so every page takes it unchanged. Dark
+   uses 950 (page), 900 (card), 800 (line), 400 (muted); light 50, white, 200, 500/600. */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --color-zinc-50: #f6f7f8;
+  --color-zinc-100: #eceef0;
+  --color-zinc-200: #e3e6ea;
+  --color-zinc-300: #c4c9ce;
+  --color-zinc-400: #9aa1a9;
+  --color-zinc-500: #737b83;
+  --color-zinc-600: #5b636b;
+  --color-zinc-700: #3a3f45;
+  --color-zinc-800: #2a2e33;
+  --color-zinc-900: #1a1d21;
+  --color-zinc-950: #111316;
+
+  --color-emerald-50: #ecfdf3;
+  --color-emerald-100: #d1fadf;
+  --color-emerald-200: #a6f4c5;
+  --color-emerald-300: #6ce9a6;
+  --color-emerald-400: #22c55e;
+  --color-emerald-500: #16a34a;
+  --color-emerald-600: #15803d;
+  --color-emerald-700: #166534;
+  --color-emerald-800: #14532d;
+  --color-emerald-900: #0f3d22;
+  --color-emerald-950: #082414;
+}
+
+/* Semantic tokens for what is new or touched again (d-7985ee-8762fc): one name, a value per scheme. */
+:root {
+  --surface: #f6f7f8;
+  --raised: #ffffff;
+  --line: #e3e6ea;
+  --muted: #5b636b;
+  --accent: #15803d;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #111316;
+    --raised: #1a1d21;
+    --line: #2a2e33;
+    --muted: #9aa1a9;
+    --accent: #22c55e;
+  }
+}
+
+@theme inline {
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-line: var(--line);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+}
+
 @layer components {
   button.htmx-request {
     opacity: .6;

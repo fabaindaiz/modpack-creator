@@ -22,7 +22,7 @@
 <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
   <div class="min-w-0 space-y-6 xl:col-span-2">
     {% call ui.section("Mods", id="mods-section") %}
-    <div class="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+    <div class="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
       <div>
         <label for="search-q" class="text-sm font-medium">Buscar en Modrinth</label>
         <input id="search-q" name="q" type="search" autocomplete="off" maxlength="100" placeholder="Nombre de un mod, shader o pack"
@@ -50,7 +50,7 @@
 
     {% if servers %}
     {% call ui.section("Servidores vinculados", id="servers-section") %}
-    <ul class="divide-y divide-zinc-100 rounded-lg border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+    <ul class="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
       {% for server in servers %}
       <li class="flex flex-wrap items-center gap-2 px-3 py-2">
         <a href="/servers/{{ server.id }}" class="min-w-0 flex-1 font-medium break-words hover:text-emerald-700 hover:underline dark:hover:text-emerald-300">{{ server.name }}</a>

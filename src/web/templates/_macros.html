@@ -70,30 +70,36 @@
 } %}
 
 {# A button. `disabled_reason` disables it and says why (e.g. "Requiere operador"). #}
-{% macro button(label, kind="primary", type="button", attrs={}, disabled_reason=None, small=False) %}
+{% macro button(label, kind="primary", type="button", attrs={}, disabled_reason=None, small=False, icon_name=None) %}
 <button type="{{ type }}"
-  class="inline-flex items-center justify-center gap-1.5 rounded-md font-medium shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 {{ 'px-2 py-1 text-xs' if small else 'px-3 py-1.5 text-sm' }} {{ BUTTON_KINDS[kind] }}"
+  class="inline-flex items-center justify-center gap-1.5 rounded-lg font-medium shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 {{ 'px-2 py-1 text-xs' if small else 'px-3 py-1.5 text-sm' }} {{ BUTTON_KINDS[kind] }}"
   {%- if disabled_reason %} disabled title="{{ disabled_reason }}" aria-disabled="true"{% endif %}
   {{- attrs | xmlattr }}
-  {%- if "hx-post" in attrs or "hx-put" in attrs or "hx-delete" in attrs %} hx-disabled-elt="this"{% endif %}>{{ label }}</button>
+  {%- if "hx-post" in attrs or "hx-put" in attrs or "hx-delete" in attrs %} hx-disabled-elt="this"{% endif %}>{% if icon_name %}{{ icon(icon_name) }}{% endif %}{{ label }}</button>
 {%- if disabled_reason %}<span class="sr-only"> ({{ disabled_reason }})</span>{% endif %}
 {% endmacro %}
 
 {# A link styled as a button. #}
 {% macro link_button(label, href, kind="secondary", small=False) %}
 <a href="{{ href }}"
-  class="inline-flex items-center justify-center gap-1.5 rounded-md font-medium shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 {{ 'px-2 py-1 text-xs' if small else 'px-3 py-1.5 text-sm' }} {{ BUTTON_KINDS[kind] }}">{{ label }}</a>
+  class="inline-flex items-center justify-center gap-1.5 rounded-lg font-medium shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 {{ 'px-2 py-1 text-xs' if small else 'px-3 py-1.5 text-sm' }} {{ BUTTON_KINDS[kind] }}">{{ label }}</a>
 {% endmacro %}
 
 {# The prominent next action after a result: a primary link with an arrow. #}
 {% macro next_step(label, href) %}
 <a href="{{ href }}"
-  class="inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 {{ BUTTON_KINDS['primary'] }}">{{ label }} <span aria-hidden="true">→</span></a>
+  class="inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 {{ BUTTON_KINDS['primary'] }}">{{ label }} <span aria-hidden="true">→</span></a>
 {% endmacro %}
+
+{# A Lucide icon from the panel's sprite (d-7985ee-01ad81): decorative, so hidden from readers; the
+   name must be in src/web/assets/icons.txt (tests/test_web_style.py). #}
+{% macro icon(name, classes="size-4") -%}
+<svg class="shrink-0 {{ classes }}" aria-hidden="true" focusable="false"><use href="{{ asset_url('icons.svg') }}#{{ name }}"></use></svg>
+{%- endmacro %}
 
 {# A small label: a role, a status, a state. #}
 {% macro badge(text, tone="neutral", title=None) %}
-<span class="inline-flex items-center rounded-md px-1.5 py-0.5 text-xs font-medium whitespace-nowrap ring-1 ring-inset {{ BADGE_TONES[tone] }}"
+<span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium whitespace-nowrap ring-1 ring-inset {{ BADGE_TONES[tone] }}"
   {%- if title %} title="{{ title }}"{% endif %}>{{ text }}</span>
 {% endmacro %}
 
@@ -104,7 +110,7 @@
 #}
 {% macro table(headers, empty="Nada que mostrar.", caption=None) %}
 {% set rows = caller() %}
-<div class="overflow-x-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+<div class="overflow-x-auto rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
   <table class="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
     {% if caption %}<caption class="sr-only">{{ caption }}</caption>{% endif %}
     <thead class="bg-zinc-50 dark:bg-zinc-900/60">
@@ -155,7 +161,7 @@
 #}
 {% macro confirm_dialog(id, title, confirm_label="Confirmar", kind="danger", form_attrs={}) %}
 <dialog id="{{ id }}" aria-labelledby="{{ id }}-title"
-  class="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-lg border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-zinc-950/50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+  class="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-zinc-950/50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
   <form class="space-y-4 p-5" {{- form_attrs | xmlattr }}>
     <h2 id="{{ id }}-title" class="text-base font-semibold">{{ title }}</h2>
     <div class="space-y-3 text-sm text-zinc-700 dark:text-zinc-300">{{ caller() }}</div>
@@ -241,7 +247,7 @@
 #}
 {% macro card_list(empty="Nada que mostrar.", caption=None, headers=None, cols="") %}
 {% set items = caller() %}
-<ul class="divide-y divide-zinc-100 rounded-lg border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900"
+<ul class="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900"
   {%- if caption %} aria-label="{{ caption }}"{% endif %}>
   {% if items | trim %}
   {% if headers %}

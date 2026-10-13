@@ -13,7 +13,7 @@
 
 <div id="updates-main" class="space-y-6" hx-get="/modpacks/{{ bundle_id }}/actualizaciones" hx-select="#updates-main" hx-trigger="job-finished from:body" hx-swap="outerHTML" hx-disinherit="*">
   {% call ui.section("Revisión", id="revision") %}
-  <div class="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+  <div class="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
     {% if (bundle.recommended_build or bundle.latest_build) is none %}
     <p class="text-zinc-600 dark:text-zinc-400">Este modpack todavía no tiene build: crea uno para poder buscar actualizaciones.</p>
     {% elif check is none %}
@@ -38,7 +38,7 @@
   {% call ui.section("Con versión nueva (" ~ (preview.changes.changed | length) ~ ")", id="actualizaciones") %}
   {% set updates_only = true %}
   {% include "modpacks/_changes.html" %}
-  <div class="space-y-2 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+  <div class="space-y-2 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
     <p class="text-zinc-600 dark:text-zinc-400">El build nuevo sale de la resolución, no de esta lista: puede diferir (pins, reemplazos y lo que decidas para el servidor). Revisa el lock antes de recomendarlo. Crear el build no lo recomienda ni lo despliega.</p>
     {{ ui.button("Crear build", attrs={"hx-post": "/modpacks/" ~ bundle_id ~ "/actualizaciones/build", "hx-confirm": "¿Crear un build nuevo con lo más reciente?"}) }}
   </div>
@@ -48,7 +48,7 @@
   {% if pinned %}
   {% call ui.section("Fijadas (" ~ (pinned | length) ~ ")", id="fijadas") %}
   <p class="text-xs text-zinc-500 dark:text-zinc-400">Estas versiones están fijadas: hay una más nueva, pero no se cuentan ni se avisan.</p>
-  <ul class="divide-y divide-zinc-100 rounded-lg border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+  <ul class="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
     {% for u in pinned %}
     <li class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-3 py-2">
       <span class="min-w-0 font-medium break-words">{{ ui.mod_link(u.project_id, u.title, pack=bundle_id) }} {{ ui.badge("fijado", "neutral") }}</span>

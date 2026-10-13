@@ -1,11 +1,11 @@
 {% import "_macros.html" as ui %}
 {% set nav_active = nav_active | default("") %}
 {% set NAV = [
-  ("home", "/", "Tablero"),
-  ("modpacks", "/modpacks", "Modpacks"),
-  ("servers", "/servers", "Servidores"),
-  ("jobs", "/jobs", "Trabajos"),
-  ("audit", "/audit", "Auditoría"),
+  ("home", "/", "Tablero", "layout-dashboard"),
+  ("modpacks", "/modpacks", "Modpacks", "package"),
+  ("servers", "/servers", "Servidores", "server"),
+  ("jobs", "/jobs", "Trabajos", "list-checks"),
+  ("audit", "/audit", "Auditoría", "scroll-text"),
 ] %}
 <!doctype html>
 <html lang="es" class="h-full">
@@ -29,11 +29,11 @@
       </a>
       <nav aria-label="Secciones" class="order-last -mx-1 w-full overflow-x-auto md:order-none md:mx-0 md:w-auto md:flex-1">
         <ul class="flex gap-1 text-sm whitespace-nowrap">
-          {% for key, href, label in NAV %}
+          {% for key, href, label, icon in NAV %}
           <li>
             <a href="{{ href }}"
               {%- if key == nav_active %} aria-current="page"{% endif %}
-              class="block rounded-md px-2.5 py-1.5 font-medium {{ 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-white' if key == nav_active else 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white' }}">{{ label }}</a>
+              class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-medium {{ 'bg-zinc-100 text-zinc-900 dark:bg-zinc-800 dark:text-white' if key == nav_active else 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white' }}">{{ ui.icon(icon) }}{{ label }}</a>
           </li>
           {% endfor %}
         </ul>
@@ -47,7 +47,7 @@
         {% else %}
         {{ ui.badge("Editor", "neutral", title="No escribe en los servidores: eso requiere operador") }}
         {% endif %}
-        <a href="/v1/logout" class="rounded-md px-2 py-1 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white">Salir</a>
+        <a href="/v1/logout" class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white">{{ ui.icon("log-out") }}Salir</a>
       </div>
     </div>
   </header>
@@ -57,6 +57,10 @@
   <main id="main" class="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6">
     {% block content %}{% endblock %}
   </main>
+
+  <footer class="mx-auto max-w-7xl px-4 pb-6 text-xs text-zinc-500 sm:px-6 dark:text-zinc-400">
+    Modpack Creator no está afiliado a Modrinth. <a href="/static/LICENSES.html" class="underline-offset-2 hover:underline">Licencias</a>
+  </footer>
 
   {# The side panel for a mod's card (ui.mod_link): app.js opens it when a swap fills the body, and
      returns focus to the link when it closes. Full screen on a phone, a column on the right above. #}

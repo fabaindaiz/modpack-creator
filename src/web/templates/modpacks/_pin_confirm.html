@@ -5,7 +5,7 @@
 {% import "_macros.html" as ui %}
 {% set target, swap = ("#build-dialog", "innerHTML") if contexto == "dialogo" else ("#mods", "outerHTML") %}
 <dialog data-autoopen aria-labelledby="pin-confirm-title"
-  class="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-lg border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-zinc-950/50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+  class="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-zinc-950/50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
   <form class="space-y-4 p-5" hx-post="/modpacks/{{ bundle_id }}/pins" hx-target="{{ target }}" hx-swap="{{ swap }}">
     <h2 id="pin-confirm-title" class="text-base font-semibold" autofocus tabindex="-1">Baja de versión</h2>
     <div class="space-y-2 text-sm text-zinc-700 dark:text-zinc-300">

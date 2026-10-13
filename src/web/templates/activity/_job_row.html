@@ -7,7 +7,7 @@
 {% set label, tone = ui.JOB_STATUS.get(job.status, (job.status, "neutral")) %}
 {% set dry_run = job.kind == "server_update" and job.payload.get("dry_run") is not sameas false %}
 <div id="job-{{ job.id }}" data-job="{{ job.id }}"
-  class="space-y-2 rounded-lg border border-zinc-200 bg-white p-3 text-sm dark:border-zinc-800 dark:bg-zinc-900"
+  class="space-y-2 rounded-xl border border-zinc-200 bg-white p-3 text-sm dark:border-zinc-800 dark:bg-zinc-900"
   {%- if job.active %} hx-get="/jobs/{{ job.id }}/row" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
   <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
     <span class="font-medium">{{ ui.JOB_KIND.get(job.kind, job.kind) }}{% if dry_run %} (simulación){% endif %}</span>

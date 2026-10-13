@@ -9,7 +9,7 @@
 #}
 {% import "_macros.html" as ui %}
 {% set reason = None if actor.is_operator else "requiere operador" %}
-<div class="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+<div class="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
   <p class="text-zinc-600 dark:text-zinc-400">Simular muestra qué jars cambiarían y qué escribiría en el servidor, sin tocarlo. Actualizar lo cambia de verdad, al build que elijas, sin simular antes.</p>
   <div class="flex flex-wrap gap-2">
     {% if actor.is_operator %}

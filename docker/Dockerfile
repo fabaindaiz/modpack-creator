@@ -7,6 +7,7 @@ WORKDIR /build
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY src/web ./src/web
+COPY scripts/build-icons.mjs ./scripts/build-icons.mjs
 RUN npm run build
 
 # The application:

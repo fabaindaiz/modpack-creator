@@ -46,7 +46,7 @@
 <section class="space-y-1" aria-label="{{ title }}">
   <h3 class="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{{ title }} ({{ items | length }})</h3>
   {% if items %}
-  <ul class="divide-y divide-zinc-100 rounded-lg border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+  <ul class="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
     {% for change in items %}{{ change_item(change, show_changelog) }}{% endfor %}
   </ul>
   {% else %}

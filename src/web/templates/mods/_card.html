@@ -75,7 +75,7 @@
   <section class="space-y-2" aria-labelledby="uses-{{ "panel-" if compact else "" }}{{ project.project_id }}">
     <h3 id="uses-{{ "panel-" if compact else "" }}{{ project.project_id }}" class="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Dónde se usa</h3>
     {% if page.uses %}
-    <ul class="divide-y divide-zinc-100 rounded-lg border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+    <ul class="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
       {% for use in page.uses %}
       <li class="space-y-1 px-3 py-2">
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -109,7 +109,7 @@
     {% endif %}
 
     {% if page.servers %}
-    <ul class="divide-y divide-zinc-100 rounded-lg border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+    <ul class="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
       {% for server in page.servers %}
       <li class="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2">
         <a href="/servers/{{ server.server_id }}" class="{{ LINK }} wrap-anywhere">{{ server.server_name }}</a>
