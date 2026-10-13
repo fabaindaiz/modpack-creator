@@ -1902,11 +1902,28 @@ def test_the_filter_bar_shows_each_option_with_its_count() -> None:
     client, modpack, _ = setup()
     filter_rows(modpack)
     form = bar(client.get(f"/modpacks/{BUNDLE_ID}").text)
-    assert f'hx-get="/modpacks/{BUNDLE_ID}"' in form and 'hx-select="#mods"' in form and 'hx-push-url="true"' in form
+    assert f'hx-get="/modpacks/{BUNDLE_ID}"' in form and 'hx-push-url="true"' in form
     assert 'name="vista" value="todos"' in form and 'name="nombre"' in form
     assert ">con excepción (2)</option>" in form and ">acepta alpha (1)</option>" in form
     assert ">Desactivado (1)</option>" in form and ">del .mrpack (1)</option>" in form
     assert re.search(r'<option value="decidir"[^>]*text-zinc-400[^>]*>Por decidir \(0\)</option>', form)
+
+
+def test_filtering_never_replaces_the_name_being_typed() -> None:
+    """Final review (2026-10-13): the bar swapped #mods, the name field with it, and what was typed
+    while a request was in flight was lost. A filter swaps the list and the four selects (their
+    counts), never the name field; a newer request replaces an older one in flight."""
+    client, modpack, _ = setup()
+    filter_rows(modpack)
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    form = bar(text)
+    assert 'hx-select="#mods-list"' in form and 'hx-target="#mods-list"' in form and 'hx-sync="this:replace"' in form
+    assert 'hx-select-oob="#f-lado,#f-canal,#f-fijacion,#f-origen,#mod-filters-clear"' in form
+    listed = text[text.index('id="mods-list"'):]
+    assert 'data-project="P1"' in listed and 'name="nombre"' not in listed
+    empty = client.get(f"/modpacks/{BUNDLE_ID}", params={"nombre": "zzz"}).text
+    assert "Ningún mod coincide" in empty[empty.index('id="mods-list"'):]
+    assert 'id="mod-filters-clear"' in text
 
 
 def test_filtering_answers_mods_and_keeps_the_tab_counts() -> None:

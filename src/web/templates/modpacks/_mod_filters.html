@@ -11,7 +11,7 @@
 ) %}
 {% set FIELD = "mt-1 block w-full rounded-md border-0 bg-white px-2 py-1 text-sm ring-1 ring-inset ring-zinc-300 focus-visible:outline-2 focus-visible:outline-emerald-600 dark:bg-zinc-900 dark:ring-zinc-700" %}
 <form data-mod-filters action="/modpacks/{{ bundle_id }}" method="get" hx-get="/modpacks/{{ bundle_id }}"
-  hx-trigger="change, input changed delay:300ms from:find input[name=nombre]" hx-select="#mods" hx-target="#mods" hx-swap="outerHTML" hx-push-url="true"
+  hx-trigger="change, input changed delay:300ms from:find input[name=nombre]" hx-select="#mods-list" hx-target="#mods-list" hx-swap="outerHTML" hx-select-oob="#f-lado,#f-canal,#f-fijacion,#f-origen,#mod-filters-clear" hx-sync="this:replace" hx-push-url="true"
   class="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1.5fr)_repeat(4,minmax(0,1fr))_auto] sm:items-end">
   <input type="hidden" name="vista" value="todos">
   <div class="col-span-2 sm:col-span-1">
@@ -31,6 +31,6 @@
   {% endfor %}
   <div class="col-span-2 flex gap-2 sm:col-span-1">
     <noscript>{{ ui.button("Filtrar", type="submit", small=True) }}</noscript>
-    {% if filters.active %}{% call ui.mods_view_link(bundle_id, "todos", "inline-flex items-center rounded-md px-2 py-1 text-sm font-medium text-emerald-700 hover:underline dark:text-emerald-300") %}Limpiar{% endcall %}{% endif %}
+    <span id="mod-filters-clear">{% if filters.active %}{% call ui.mods_view_link(bundle_id, "todos", "inline-flex items-center rounded-md px-2 py-1 text-sm font-medium text-emerald-700 hover:underline dark:text-emerald-300") %}Limpiar{% endcall %}{% endif %}</span>
   </div>
 </form>

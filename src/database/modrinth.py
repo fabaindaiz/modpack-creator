@@ -10,6 +10,7 @@ from src.model.modrinth import (
     ModrinthProject,
     ModrinthVersion,
     ModrinthVersionList,
+    VersionBrief,
     ModrinthUnknown,
     ModrinthGone,
     ModrinthSearch,
@@ -142,6 +143,12 @@ class ModrinthDatabase():
         if not version_ids:
             return []
         return await ModrinthVersion.find(In(ModrinthVersion.version_id, version_ids)).to_list()
+
+    async def version_briefs(self, version_ids: list[str]) -> list[VersionBrief]:
+        """The stored versions with these ids, only what a pin select needs (a projection)."""
+        if not version_ids:
+            return []
+        return await ModrinthVersion.find(In(ModrinthVersion.version_id, version_ids)).project(VersionBrief).to_list()
 
     async def version_find_by_sha512(self, hashes: list[str]) -> list[ModrinthVersion]:
         """The stored versions with a file of one of these sha512 (by the files.hashes.sha512 index)."""

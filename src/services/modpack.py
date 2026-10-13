@@ -18,7 +18,7 @@ from src.database.jobs import JobDatabase
 from src.model.jobs import Job
 from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, request_digest, resolve
 from src.model.modpack import BUNDLE_KEYED_FIELDS, AvailableUpdate, LoaderVersion, UpdateCheck, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, ProjectOrigin
-from src.model.modrinth import ModrinthProject, ModrinthVersion, ModrinthVersionList
+from src.model.modrinth import ModrinthProject, ModrinthVersion, ModrinthVersionList, VersionBrief
 from src.model.modrinth.version import ModrinthDependencyType
 from src.model.pterodactyl import PterodactylServer
 from src.model.audit import AuditTarget
@@ -203,7 +203,7 @@ PIN_OPTIONS = 15
 _UNKNOWN_DATE = datetime.fromtimestamp(0, timezone.utc)
 
 
-def pin_choices(versions: Iterable[ModrinthVersion], game_version: str, loaders: Collection[str],
+def pin_choices(versions: Iterable[ModrinthVersion | VersionBrief], game_version: str, loaders: Collection[str],
                 channels: Collection[str]) -> list[VersionOption]:
     """The versions a project can be pinned to: listed, for this Minecraft version and one of these
     loaders, in these channels, newest first."""
@@ -644,18 +644,24 @@ class ModpackService():
             for_version.setdefault(found_version.project_id, []).append(found_version)
         # A pin can go back after it was set, when the floor rises; the page never asks Modrinth.
         pins_back = await self.pin_downgrades(bundle, bundle.pins, fetch=False) if bundle.pins else {}
-        # What each row's pin select offers (A3): the catalog's lists and their versions, in two
-        # queries for the whole page, never Modrinth.
-        lists: dict[str, list[ModrinthVersionList]] = {}
-        for record in await self.modrinthDB.version_lists_find([*pack, *dependencies], bundle.version):
-            lists.setdefault(record.project_id, []).append(record)
-        wanted = {i for records in lists.values() for record in records for i in record.version_ids}
-        wanted |= {bundle.pins[i] for i in [*pack, *dependencies] if i in bundle.pins}
-        known = {v.version_id: v for v in await self.modrinthDB.version_find_by_version_ids(sorted(wanted))} if wanted else {}
+        # What each row's pin select offers (A3): the catalog's list for each row's target and its
+        # versions, as briefs, in two queries for the whole page, never Modrinth. Only the list of
+        # the row's own loaders (final review, 2026-10-13: every list was read whole).
+        def kind_of(project_id: str) -> str:
+            found, entry = catalog.get(project_id), entries.get(project_id)
+            return entry.project_type if entry else found.project_type.value if found else "mod"
 
-        def pin_options(project_id: str, kind: str) -> Optional[list[VersionOption]]:
-            loaders = sorted(target.loaders(kind))
-            record = next((r for r in lists.get(project_id, []) if r.loaders == loaders), None)
+        listed: dict[str, ModrinthVersionList] = {}
+        for record in await self.modrinthDB.version_lists_find([*pack, *dependencies], bundle.version):
+            if record.loaders == sorted(target.loaders(kind_of(record.project_id))):
+                listed[record.project_id] = record
+        wanted = {i for record in listed.values() for i in record.version_ids}
+        wanted |= {bundle.pins[i] for i in [*pack, *dependencies] if i in bundle.pins}
+        known = {v.version_id: v for v in await self.modrinthDB.version_briefs(sorted(wanted))} if wanted else {}
+
+        def pin_options(project_id: str) -> Optional[list[VersionOption]]:
+            loaders = sorted(target.loaders(kind_of(project_id)))
+            record = listed.get(project_id)
             if record is None:
                 return None
             channels = set(bundle.channels) | exception_channels(bundle.channel_exceptions.get(project_id))
@@ -691,7 +697,7 @@ class ModpackService():
                 source_url=found.source_url if found else None, issues_url=found.issues_url if found else None,
                 version_channel=version_channel,
                 pin_floor=pins_back[project_id].floor_number if pinned and project_id in pins_back else None,
-                pin_options=pin_options(project_id, entry.project_type if entry else found.project_type.value if found else "mod"),
+                pin_options=pin_options(project_id),
                 pinned_version=bundle.pins.get(project_id))
 
         rows = [row(i, origin) for i, origin in pack.items()]

@@ -499,6 +499,32 @@ def test_a_mod_with_a_beta_exception_also_offers_beta_versions(mongo: MongoRunne
     assert plain == ["j-2", "j-1"] and beta == ["j-3", "j-2", "j-1"]
 
 
+def test_the_row_loads_only_its_target_s_versions_and_only_what_the_select_needs(mongo: MongoRunner) -> None:
+    # Final review (2026-10-13): every #mods render loaded the whole documents of every list of the
+    # Minecraft version, for any loader. Only the list of the row's target, as briefs.
+    async def scenario() -> Any:
+        s = Scenario(FakeModrinth())
+        bundle_id = await jei_pack(s, jei_listed([1, 2]))
+        forge = [version("f-1", "J", "9.0", 5, loaders=("forge",))]
+        await s.modrinthDB.version_upsert_many(forge)
+        await s.modrinthDB.version_list_save(ModrinthVersionList(
+            project_id="J", game_version="1.21.1", loaders=["forge"], version_ids=["f-1"], fetched_at=NOW,
+            target="1.21.1|forge"))
+        asked: list[list[str]] = []
+        briefs = s.modrinthDB.version_briefs
+
+        async def spy(ids: list[str]) -> Any:
+            asked.append(list(ids))
+            return await briefs(ids)
+
+        s.service.modrinthDB.version_briefs = spy  # type: ignore[method-assign, assignment]
+        [row] = (await s.service.mod_list(bundle_id, check=None)).rows
+        return asked, [o.version_id for o in row.pin_options or []]
+
+    asked, options = mongo(scenario)
+    assert asked == [["j-1", "j-2"]] and options == ["j-2", "j-1"]
+
+
 def test_without_the_catalog_s_list_the_row_has_no_options(mongo: MongoRunner) -> None:
     async def scenario() -> Any:
         s = Scenario(FakeModrinth())

@@ -75,3 +75,14 @@ class ModrinthVersion(Document):
         """
         kwargs["version_id"] = kwargs.pop("id")
         return ModrinthVersion(**kwargs)
+
+class VersionBrief(BaseModel):
+    """What a pin select needs of a stored version (A3): read with a projection, not the whole
+    document (files and dependencies), since a page reads every version of its mods' lists."""
+    version_id: str
+    version_number: str
+    version_type: ModrinthVersionType
+    status: ModrinthVersionStatus
+    game_versions: list[str]
+    loaders: list[str]
+    date_published: datetime

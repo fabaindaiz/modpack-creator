@@ -61,6 +61,8 @@
     <p class="text-sm text-zinc-500 dark:text-zinc-400">El modpack todavía no tiene mods: búscalos arriba o agrégalos por slug.</p>
     {% else %}
     {% include "modpacks/_mod_filters.html" %}
+    {# What a filter swaps (with the four selects, out of band): never the name being typed. #}
+    <div id="mods-list">
     {% if not shown %}
     <p class="text-sm text-zinc-500 dark:text-zinc-400">Ningún mod coincide con los filtros.</p>
     {% else %}
@@ -158,6 +160,7 @@
       {% endfor %}
     </ul>
     {% endif %}
+    </div>
     {% endif %}
     {# A pin on a mod that left the pack has no card: listed here, so it can still be removed. #}
     {% if mods.orphan_pins %}
