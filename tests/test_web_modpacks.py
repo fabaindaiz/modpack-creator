@@ -27,6 +27,7 @@ from src.services.modpack import ModList, ModpackService, ModRow, PinDowngrade, 
 from src.services.modrinth import ModrinthService
 from tests._actors import EDITOR, OPERATOR, session_for
 from tests._session import session_cookie
+from tests._tables import assert_cells_labelled
 from tests.conftest import MongoRunner
 
 T0 = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
@@ -2656,3 +2657,10 @@ def test_without_modrinth_the_version_is_typed() -> None:
     client, _, modrinth = setup()
     text = client.get("/modpacks").text
     assert re.search(r'<input id="new-version" name="version" type="text"', text)
+
+
+@pytest.mark.parametrize("path, cells", [("/modpacks", 5), (f"/modpacks/{BUNDLE_ID}", 4 + 3), ("/replacements", 3)])
+def test_every_table_cell_carries_its_header_for_the_phone(path: str, cells: int) -> None:
+    # B4 (d-7985ee-937ca8): below sm: each row is a card, its cells labelled by their header.
+    client, _, _ = setup()
+    assert assert_cells_labelled(client.get(path).text) >= cells

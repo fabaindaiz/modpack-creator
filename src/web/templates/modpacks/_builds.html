@@ -25,13 +25,13 @@
   {% call ui.table(["Build", "Creado", "Archivos", ""], caption="Builds") %}
   {% for build in builds %}
   <tr data-build="{{ build.number }}">
-    <td class="whitespace-nowrap">
+    <td data-label="Build" class="whitespace-nowrap">
       <span class="font-medium tabular-nums">#{{ build.number }}</span>
       {% if bundle.recommended_build == build.number %}{{ ui.badge("Recomendado", "accent") }}{% endif %}
     </td>
-    <td>{{ ui.when(build.created_at) }}</td>
-    <td class="tabular-nums">{{ build.lock.entries | length }}</td>
-    <td class="text-right whitespace-nowrap">
+    <td data-label="Creado">{{ ui.when(build.created_at) }}</td>
+    <td data-label="Archivos" class="tabular-nums">{{ build.lock.entries | length }}</td>
+    <td data-label="" class="text-right whitespace-nowrap">
       <div class="flex justify-end gap-1">
         {% if bundle.recommended_build != build.number %}
         {{ ui.button("Recomendar", kind="ghost", small=True, attrs={

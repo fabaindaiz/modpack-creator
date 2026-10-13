@@ -6,6 +6,7 @@ import math
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
 from typing import Any, Optional, Sequence
+from beanie import PydanticObjectId
 from pydantic import BaseModel
 from src.database import ModpackDatabase, ModrinthDatabase, PterodactylDatabase
 from src.library.api.client.loaders import LoaderMetaAPI
@@ -1041,6 +1042,21 @@ class ModpackService():
         if saved is None:
             return None
         return saved, saved.request_digest != request_digest(await self._request(bundle))
+
+    async def resolution_many(self, bundle_ids: Sequence[str]) -> dict[str, ModpackResolution]:
+        """
+        The saved resolution of each bundle that has one, by bundle id, for the dashboard (B2): what
+        it leaves undecided or unresolved. Read only, never resolved again here, and without the
+        staleness of `resolution` (which would read every pack's request); an invalid id is skipped.
+        """
+        found: dict[str, ModpackResolution] = {}
+        for bundle_id in bundle_ids:
+            if not PydanticObjectId.is_valid(bundle_id):
+                continue
+            saved = await self.modpackDB.resolution_get(PydanticObjectId(bundle_id))
+            if saved is not None:
+                found[bundle_id] = saved
+        return found
 
     async def _resolution_save(self, bundle: ModpackBundle, request: ResolveRequest, lock: Lock) -> None:
         await self.modpackDB.resolution_save(ModpackResolution(

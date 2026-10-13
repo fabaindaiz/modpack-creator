@@ -28,6 +28,7 @@ from src.model.users.actor import ActorRef
 from src.model.utils import MinecraftLoaders
 from tests._actors import EDITOR, OPERATOR, session_for
 from tests._session import session_cookie
+from tests._tables import assert_cells_labelled
 from tests.conftest import MongoRunner
 from tests.test_web_modpacks import visible
 
@@ -1599,3 +1600,10 @@ def test_a_new_pack_from_a_server_suggests_its_version_among_modrinth_s() -> Non
     field = text[text.index('id="new-modpack-version"') - 200:]
     field = field[field.index("<select"):field.index("</select>")]
     assert '<option value="1.21.11" selected>1.21.11</option>' in field and 'value="26.3"' in field
+
+
+def test_every_table_cell_carries_its_header_for_the_phone() -> None:
+    # B4 (d-7985ee-937ca8): the servers, the panel's missing ones and the comparison.
+    client, _ = setup()
+    assert assert_cells_labelled(client.get("/servers").text) >= 3 + 3
+    assert assert_cells_labelled(client.get(f"/servers/{SERVER_ID}").text) >= 4

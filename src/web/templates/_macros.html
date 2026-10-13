@@ -105,22 +105,24 @@
 
 {#
   A table. The rows come from the call block:
-    {% call table(["Nombre", "Estado"]) %}<tr>...</tr>{% endcall %}
-  `empty` is shown when the block renders no row.
+    {% call table(["Nombre", "Estado"]) %}<tr><td data-label="Nombre">...</td>...</tr>{% endcall %}
+  `empty` is shown when the block renders no row. Every cell carries `data-label`, its column's
+  header (tests/test_web_tables.py): below `sm:` each row stacks as a card and the label goes
+  before the value (d-7985ee-937ca8); from `sm:` on, a plain table.
 #}
 {% macro table(headers, empty="Nada que mostrar.", caption=None) %}
 {% set rows = caller() %}
 <div class="overflow-x-auto rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-  <table class="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
+  <table class="min-w-full divide-y divide-zinc-200 text-sm max-sm:block dark:divide-zinc-800">
     {% if caption %}<caption class="sr-only">{{ caption }}</caption>{% endif %}
-    <thead class="bg-zinc-50 dark:bg-zinc-900/60">
+    <thead class="bg-zinc-50 max-sm:sr-only dark:bg-zinc-900/60">
       <tr>
         {% for header in headers %}
         <th scope="col" class="px-3 py-2 text-left text-xs font-semibold tracking-wide whitespace-nowrap text-zinc-500 uppercase dark:text-zinc-400">{{ header }}</th>
         {% endfor %}
       </tr>
     </thead>
-    <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800 [&_td]:px-3 [&_td]:py-2 [&_td]:align-top">
+    <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800 [&_td]:px-3 [&_td]:py-2 [&_td]:align-top max-sm:block max-sm:[&_tr]:block max-sm:[&_tr]:py-1.5 max-sm:[&_td]:flow-root max-sm:[&_td]:max-w-none max-sm:[&_td]:py-1 max-sm:[&_td]:text-left max-sm:[&_td]:whitespace-normal max-sm:[&_td]:before:float-left max-sm:[&_td]:before:w-28 max-sm:[&_td]:before:pr-2 max-sm:[&_td]:before:text-xs max-sm:[&_td]:before:font-semibold max-sm:[&_td]:before:text-zinc-500 max-sm:[&_td]:before:content-[attr(data-label)] dark:max-sm:[&_td]:before:text-zinc-400 max-sm:[&_td[data-label='']]:before:hidden max-sm:[&_td:not([data-label])]:before:hidden">
       {% if rows | trim %}
       {{ rows }}
       {% else %}

@@ -17,6 +17,7 @@ from src.model.users import Actor
 from src.services.modpack import ModPage, ModUse, PackMark, ServerUse, VersionRow
 from tests._actors import EDITOR, session_for
 from tests._session import session_cookie
+from tests._tables import assert_cells_labelled
 
 T0 = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 BUNDLE_A, BUNDLE_B, SERVER = PydanticObjectId(), PydanticObjectId(), PydanticObjectId()
@@ -321,3 +322,10 @@ def test_a_pack_where_the_mod_is_only_a_problem_says_so_and_opens_its_problems()
     # visible() turns the name's link into spaces around it.
     assert "dependencia de Iris , con problema" in shown and "Ningún modpack lo usa" not in shown
     assert f'href="/modpacks/{BUNDLE_B}?vista=problemas"' in text
+
+
+def test_every_version_cell_carries_its_header_for_the_phone() -> None:
+    # B4 (d-7985ee-937ca8): the versions of the card and of «todas».
+    client, _ = setup()
+    assert assert_cells_labelled(client.get("/mods/AANobbMI").text) >= 5
+    assert assert_cells_labelled(client.get("/mods/AANobbMI/versiones", headers=HTMX).text) >= 5

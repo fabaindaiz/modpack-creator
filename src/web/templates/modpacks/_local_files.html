@@ -4,9 +4,9 @@
   {% call ui.table(["Archivo", "Tamaño", "sha512"], empty="Sin archivos locales.", caption="Archivos locales") %}
   {% for file in bundle.local_files %}
   <tr>
-    <td class="max-w-[20rem] font-medium break-words">{{ file.filename }}</td>
-    <td class="whitespace-nowrap tabular-nums">{{ human_size(file.size) }}</td>
-    <td class="font-mono text-xs whitespace-nowrap text-zinc-500 dark:text-zinc-400">{{ file.sha512[:12] }}</td>
+    <td data-label="Archivo" class="max-w-[20rem] font-medium break-words">{{ file.filename }}</td>
+    <td data-label="Tamaño" class="whitespace-nowrap tabular-nums">{{ human_size(file.size) }}</td>
+    <td data-label="sha512" class="font-mono text-xs whitespace-nowrap text-zinc-500 dark:text-zinc-400">{{ file.sha512[:12] }}</td>
   </tr>
   {% endfor %}
   {% endcall %}
