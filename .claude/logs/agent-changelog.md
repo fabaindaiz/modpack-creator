@@ -5,6 +5,49 @@ introducción. Los commits de este repositorio fueron `wip` sin cuerpo: el *por 
 no quedaba en ninguna parte, y una sesión no ve lo que otra aprendió. La referencia del formato
 está al final del archivo, para que nada entre este párrafo y la primera entrada capture texto.
 
+## 2026-10-13 · s-7985ee-fa3813 — Los 8 menores de la tanda A y la versión 0.3.2
+
+**Qué.** Los 8 menores de la revisión final de la tanda A, cada uno con su test visto fallar, en la
+rama `fix/tanda-a-menores`: `/jobs/{id}/tr` responde 286 (una página de antes deja de sondear); la
+tarjeta de un trabajo tiene id propio y `app.js` carga su detalle al abrirla y lo suelta al cerrarla;
+un cambio de fila que falla redibuja `#mods`; «Deshacer» sobrevive al diálogo de baja; el refresco por
+un trabajo conserva los filtros; el campo Objetivo muestra «nombre · tipo» (decisión del dueño,
+d-7985ee-4f1caf); la fila muestra número y canal y la ficha ofrece los canales de la excepción, como la
+fila; `audit` queda con su único índice útil. Después, la versión 0.3.2 (`pyproject.toml`, la guía y
+la sección del runbook).
+
+**Áreas.** `src/routers/web/activity.py`, `src/web/static/app.js`, `src/web/templates/activity/`,
+`src/web/audit_labels.py`, `src/{services,database,model}/audit.py`, `src/services/modpack.py`,
+`modpacks/_row_selects.html`, `docs/`.
+
+**Por qué.** El dueño eligió seguir con los menores y luego la 0.3.2 («continua con las tareas
+siguientes»), y decidió el menor 7.
+
+**Arquitectura.** ✅ Cumple: nada inline; el JS nuevo va en `app.js`.
+
+**Qué salió mal en el camino.** Dos veces el cambio de base se escribió antes de ver fallar su test
+de MongoDB; se apartó el cambio (stash, y una versión con la firma sola, porque mypy corta antes de
+pytest) y se vio fallar antes de reponerlo. `bundle.py` y `sips` no recortan imágenes y Pillow no está
+en el entorno `visual`: para mirar una página alta se usó una captura de solo la pantalla.
+
+**Qué quedó sin hacer.** El tag `v0.3.2`, que la guía ya nombra; el merge a `main` y el deploy.
+
+**Desvío del plan.** Ninguno.
+
+**No verificado.** El selector nativo y el `<datalist>` en un teléfono real; Modrinth y Pterodactyl
+reales.
+
+**Medido.** Gate con MongoDB: 1379 tests. Barrido: 194 capturas, 0 con problemas.
+
+**Tarjetas y chequeos.** `scripts/check.sh` en cada commit, `scripts/test-mongo.sh` (rojo y verde de
+cada test de base), `scripts/visual-sweep.sh`.
+
+**Revisión.** Sin revisión en contexto limpio: son los arreglos de los hallazgos de la revisión
+anterior, cada uno con su test.
+
+**Aprendido.** Local: htmx deja de sondear con un 286 (quedó en el docstring de la ruta). Captured:
+en el código.
+
 ## 2026-10-13 · s-7985ee-1602e4 — Panel 0.3.1, tanda A: el estado de un mod en su fila, filtros, y auditoría y trabajos como tarjetas
 
 **Qué.** La tanda A de i-7985ee-44060c, de la revisión de decisiones a la rama `feat/panel-tanda-a`:

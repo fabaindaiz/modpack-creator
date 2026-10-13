@@ -12,7 +12,7 @@ Antes de empezar, si el servidor aún corre la versión anterior a la fase 0, se
 `MONGO_VERSION` y las contraseñas, y el volumen `mongodb-data` ya en uso. Nunca
 `docker compose … down -v` (d-7985ee-398653).
 
-## De 0.3.1 a la próxima versión: la tanda A (2026-10-13, en `main`, sin versión todavía)
+## De 0.3.1 a 0.3.2 (2026-10-13)
 
 Los selects en la fila de cada mod, los filtros, la pestaña Sugerencias y auditoría y trabajos como
 tarjetas (i-7985ee-44060c). Sigue de solo lectura. **Ninguna variable nueva, nada se migra**; «Volver

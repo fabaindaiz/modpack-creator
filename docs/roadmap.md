@@ -10,14 +10,13 @@ y tokens, con en qué se apoya (bundle 0.0.30); `close` la compara después con 
 
 ## Dónde estamos
 
-**2026-10-13, tanda A del panel en `main`, sin desplegar** (i-7985ee-44060c; `d2f253f`, fast-forward
-a pedido del dueño; las ramas `feat/panel-tanda-a` y `docs/observaciones-0.3.1` están en `origin`, y
-el push de `main` lo corre el dueño). La versión sigue en 0.3.1: desplegarla pide subirla a 0.3.2
-(`pyproject.toml`, la guía y la sección del runbook, que ya tiene sus notas). Revisión final en
-contexto limpio hecha; 8 menores diferidos en i-7985ee-44060c. **Para seguir, en otra máquina:** lo de
-siempre (Docker o podman con su VM, hatch y Python 3.12, `npm install`, Chromium de Playwright, el
-`.env.yaml` propio). **Primer paso:** el que elija el dueño entre 0.3.2 y su deploy, la tanda B
-(i-7985ee-44060c: flujo de alta, tablero, móvil, F09 y el estilo) o los menores de la tanda A.
+**2026-10-13, 0.3.2 lista para desplegar, en la rama `fix/tanda-a-menores`** (sin merge ni push):
+la tanda A del panel (en `main` y `origin` desde `89c36db`) más los 8 menores de su revisión final,
+y la versión subida a 0.3.2 (`pyproject.toml`, la guía y la sección «De 0.3.1 a 0.3.2» del runbook).
+Falta el tag `v0.3.2`, que la guía ya nombra. **Para seguir, en otra máquina:** lo de siempre (Docker o
+podman con su VM, hatch y Python 3.12, `npm install`, Chromium de Playwright, el `.env.yaml` propio).
+**Primer paso:** con el visto bueno del dueño, merge a `main`, el tag y el deploy de la 0.3.2 con el
+runbook; o la tanda B (i-7985ee-44060c: flujo de alta, tablero, móvil, F09 y el estilo).
 Pendientes de decisión: el hook contra heredocs (Fricciones: ya van más incidentes), los tags
 `v0.2.0` y `v0.3.0` (opcionales), y probar en un teléfono real el selector nativo y el `<datalist>`.
 
@@ -818,7 +817,9 @@ JSON con `request_id` y `job_id`.
   móvil compacto del resto de las páginas sigue en la tanda B). Chequeo: el gate con MongoDB y el
   barrido visual, y una revisión final en contexto limpio (sus 2 importantes, arreglados). **Sin
   verificar:** el selector nativo y el `<datalist>` en un teléfono real.
-- **Menores de la revisión de la tanda A (diferidos, 2026-10-13), cada uno barato:**
+- **Menores de la revisión de la tanda A (diferidos y hechos el 2026-10-13, rama `fix/tanda-a-menores`;
+  el 7 como decidió el dueño, d-7985ee-4f1caf; el 1, borrando los tres índices; `DELETE
+  /channel-exceptions` queda sin llamador en el panel, como lo dejó el plan):**
   1. la consulta de auditoría con `$facet` lee toda la ventana de fechas en cada página, y
      `(actor.sub, at)`, `(action, at)` y `(target.kind, target.id, at)` no le sirven (`$facet` no usa
      índices): borrarlos, paginar los eventos con un `find()` aparte o poner una ventana por defecto;
