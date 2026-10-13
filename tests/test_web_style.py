@@ -103,3 +103,28 @@ def test_controls_take_the_owner_s_radii() -> None:
     assert "rounded-lg" in button and "rounded-md" not in button  # 8px
     assert "rounded-full" in badge  # a pill
     assert "rounded-xl" in macros[macros.index("{% macro card_list("):]  # 12px cards
+
+
+def contrast(a: str, b: str) -> float:
+    """WCAG 2.x contrast ratio of two #rrggbb colours."""
+    def luminance(hex_colour: str) -> float:
+        channels = [int(hex_colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        r, g, bl = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+        return 0.2126 * r + 0.7152 * g + 0.0722 * bl
+    high, low = sorted((luminance(a), luminance(b)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def colour(token: str) -> str:
+    found = re.search(rf"{re.escape(token)}:\s*(#[0-9a-f]{{6}});", css())
+    assert found is not None, token
+    return found.group(1)
+
+
+@pytest.mark.parametrize("background", ["--color-zinc-50", "--color-zinc-100"])
+def test_light_muted_text_reads_on_the_light_surfaces(background: str) -> None:
+    """Final review of batch B: zinc-500 (dates, headers, step notes in light mode) was 4.0:1 on the
+    page; WCAG AA asks 4.5:1 for small text, also on white cards."""
+    for muted in ("--color-zinc-500", "--color-zinc-600"):
+        assert contrast(colour(muted), colour(background)) >= 4.5, (muted, background)
+    assert contrast(colour("--color-zinc-500"), "#ffffff") >= 4.5
