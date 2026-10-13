@@ -75,7 +75,20 @@
     }
   });
 
+  // A mod's row selects apply on change (A1): htmx swaps nothing for an error, so the select would
+  // show a value that was not saved. It goes back to the one it was drawn with.
+  function restoreSaved(elt) {
+    if (!elt || !elt.querySelectorAll) return;
+    var selects = elt.matches && elt.matches('select[data-saved]') ? [elt] : elt.querySelectorAll('select[data-saved]');
+    Array.prototype.forEach.call(selects, function (select) { select.value = select.dataset.saved; });
+  }
+
+  document.addEventListener('htmx:responseError', function (evt) {
+    restoreSaved(evt.detail.elt);
+  });
+
   document.addEventListener('htmx:sendError', function (evt) {
+    restoreSaved(evt.detail.elt);
     showTemplate('notice-network-error', null, evt.detail.elt);
   });
 

@@ -1561,9 +1561,8 @@ def test_mods_list_shows_card_data_not_ids() -> None:
     assert "del .mrpack" in card(text, "P8") and "Por decidir" in card(text, "P8")
     # Tester feedback (2026-10-08): "Solo cliente" read as a property of the mod, not a decision.
     assert "Solo cliente" not in text and "Sin decidir" not in text
-    decide = card(text, "P8")
-    button = decide[decide.rindex("<button", 0, decide.index('value="no"')):]
-    assert "Desactivado" in button[:button.index("</button>")]
+    decide = row_select(text, "P8", "server")
+    assert selected(decide) == "Por decidir" and '<option value="no">Desactivado</option>' in decide
     assert "AANobbMI" not in visible(text)
 
 
@@ -1723,18 +1722,99 @@ def test_add_from_search_marks_the_hit_out_of_band() -> None:
     assert re.match(r'<div id="hit-P3" hx-swap-oob="true"', oob) and "Ya está" in oob
 
 
-def test_undecided_card_decides_inline() -> None:
+def row_select(text: str, project_id: str, name: str) -> str:
+    """The form of one of a row's selects (A1, owner 2026-10-13), up to its closing tag: outside the
+    <summary>, after the mod's <details>."""
+    item = text[text.index(f'id="mod-row-{project_id}"'):]
+    item = item[:item.index("</li>")]
+    assert item.index(f'name="{name}"') > item.index("</summary>"), "a select inside the summary opens the card"
+    start = item.rindex("<form", 0, item.index(f'<select name="{name}"'))
+    return item[start:item.index("</form>", start)]
+
+
+def selected(select: str) -> str:
+    """The visible text of the selected option."""
+    found = re.search(r"<option[^>]*\bselected\b[^>]*>([^<]*)</option>", select)
+    assert found is not None, select
+    return found.group(1).strip()
+
+
+def test_each_row_has_a_side_select_with_its_value_selected() -> None:
+    client, modpack, _ = setup()
+    modpack.saved = resolution(lock(entry("P1"), entry("P2", "admin"), entry("P3", "exclude")))
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    for project_id, shown in (("P1", "En el servidor"), ("P2", "Por decidir"), ("P3", "Desactivado")):
+        form = row_select(text, project_id, "server")
+        assert f'hx-post="/modpacks/{BUNDLE_ID}/decisions"' in form and 'hx-trigger="change"' in form
+        assert 'hx-target="#mods"' in form and f'name="project_id" value="{project_id}"' in form
+        assert selected(form) == shown
+    assert "Por decidir" not in row_select(text, "P1", "server")  # only while undecided
+    assert 'data-saved="yes"' in row_select(text, "P1", "server") and 'data-saved=""' in row_select(text, "P2", "server")
+
+
+def test_choosing_a_side_decides_and_answers_mods() -> None:
     client, modpack, _ = setup()
     modpack.saved = resolution(lock(entry("P1"), entry("P2", "admin")))
-    text = client.get(f"/modpacks/{BUNDLE_ID}").text
-    lithium = card(text, "P2")
-    assert f'hx-post="/modpacks/{BUNDLE_ID}/decisions"' in lithium and 'hx-target="#mods"' in lithium
-    assert '<input type="hidden" name="project_id" value="P2">' in lithium
-    assert 'name="server" value="yes"' in lithium and 'name="server" value="no"' in lithium
-    assert f'hx-post="/modpacks/{BUNDLE_ID}/decisions"' not in card(text, "P1")
     response = client.post(f"/modpacks/{BUNDLE_ID}/decisions", headers=HTMX, data={"project_id": "P2", "server": "yes"})
     assert response.status_code == 200 and response.text.lstrip().startswith('<div id="mods"')
     assert call(modpack, "decision_set")[1:] == (str(BUNDLE_ID), "P2", True, EDITOR)
+
+
+def test_the_side_buttons_left_the_card() -> None:
+    client, modpack, _ = setup()
+    modpack.saved = resolution(lock(entry("P1"), entry("P2", "admin")))
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert "¿Va en el servidor?" not in text and 'name="server" value="yes"' not in card(text, "P2")
+
+
+def test_each_row_has_a_channel_select_grey_without_an_exception() -> None:
+    client, modpack, _ = setup()
+    modpack.bundle.channel_exceptions = {"P2": "beta"}
+    modpack.saved = resolution(lock(entry("P1"), entry("P2")))
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    plain, beta = row_select(text, "P1", "channel"), row_select(text, "P2", "channel")
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/channel-exceptions"' in plain and 'hx-trigger="change"' in plain
+    assert selected(plain) == "canal del pack" and "text-zinc-500" in plain and 'data-saved=""' in plain
+    assert selected(beta) == "acepta beta" and "text-zinc-500" not in beta and 'data-saved="beta"' in beta
+    assert [o for o in re.findall(r'<option value="([a-z]*)"', plain)] == ["", "beta", "alpha"]
+
+
+def test_choosing_beta_sets_the_exception_and_the_pack_channel_removes_it() -> None:
+    client, modpack, _ = setup()
+    response = client.post(f"/modpacks/{BUNDLE_ID}/channel-exceptions", headers=HTMX,
+                           data={"project_id": "P2", "channel": "beta"})
+    assert response.status_code == 200 and response.text.lstrip().startswith('<div id="mods"')
+    assert [c[0] for c in modpack.calls] == ["channel_exception_set", "resolve"]
+    modpack.calls.clear()
+    response = client.post(f"/modpacks/{BUNDLE_ID}/channel-exceptions", headers=HTMX,
+                           data={"project_id": "P2", "channel": ""})
+    assert response.status_code == 200 and response.text.lstrip().startswith('<div id="mods"')
+    assert [c[0] for c in modpack.calls] == ["channel_exception_unset", "resolve"]
+    assert call(modpack, "channel_exception_unset")[1:] == (str(BUNDLE_ID), "P2", EDITOR)
+
+
+def test_the_exception_state_is_written_under_its_select() -> None:
+    client, modpack, _ = setup()
+    modpack.bundle.channel_exceptions = {"P1": "beta", "P2": "alpha"}
+    used = lock(entry("P1"), entry("P2"))
+    used.excepted = ["P1"]
+    modpack.saved = resolution(used)
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    first = text[text.index('id="mod-row-P1"'):text.index('id="mod-row-P2"')]
+    second = text[text.index('id="mod-row-P2"'):]
+    assert "en uso: no hay una estable más nueva que la instalada" in said(first)
+    assert "sin efecto: ya hay versión en los canales del pack" in said(second[:second.index("</li>")])
+    modpack.stale = True
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert "en uso" not in visible(text) and "sin efecto" not in visible(text)
+
+
+def test_the_channels_section_has_no_exception_list() -> None:
+    client, modpack, _ = setup()
+    modpack.bundle.channel_exceptions = {"P1": "beta"}
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    section = text[text.index('id="channels-section"'):text.index('id="local-files-section"')]
+    assert "Excepciones por mod" not in section and "channel-exceptions" not in section
 
 
 def test_detail_layout_has_linked_servers_and_renamed_updates_link() -> None:
@@ -2298,44 +2378,12 @@ def test_a_bad_channel_exception_is_refused_before_the_service(data: dict[str, s
     assert response.status_code == 422 and modpack.calls == []
 
 
-def test_the_channels_section_lists_each_exception_with_whether_it_is_used() -> None:
-    client, modpack, _ = setup()
-    modpack.bundle.channel_exceptions = {"P1": "beta", "P2": "alpha"}
-    used = lock(entry("P1"), entry("P2"))
-    used.excepted = ["P1"]
-    modpack.saved = resolution(used)
-    text = client.get(f"/modpacks/{BUNDLE_ID}").text
-    section = text[text.index('id="channels-section"'):]
-    section = section[:section.index('id="local-files-section"')]
-    shown = " ".join(visible(section).split())
-    assert "Sodium acepta beta" in shown and "en uso: no hay una estable más nueva que la instalada" in shown
-    assert "Lithium acepta alpha" in shown and "sin efecto: ya hay versión en los canales del pack" in shown
-    assert f'hx-delete="/modpacks/{BUNDLE_ID}/channel-exceptions/P1"' in section
-
-
-def test_a_stale_resolution_does_not_say_whether_an_exception_is_used() -> None:
-    client, modpack, _ = setup()
-    modpack.bundle.channel_exceptions = {"P1": "beta"}
-    modpack.saved = resolution(lock(entry("P1")))
-    modpack.stale = True
-    text = client.get(f"/modpacks/{BUNDLE_ID}").text
-    section = text[text.index('id="channels-section"'):text.index('id="local-files-section"')]
-    shown = " ".join(visible(section).split())
-    assert "Sodium acepta beta" in shown and "en uso" not in shown and "sin efecto" not in shown
-
-
-def test_without_exceptions_the_channels_section_says_nothing_about_them() -> None:
-    client, _, _ = setup()
-    text = client.get(f"/modpacks/{BUNDLE_ID}").text
-    section = text[text.index('id="channels-section"'):text.index('id="local-files-section"')]
-    assert "acepta" not in section and "channel-exceptions" not in section
-
-
-def test_removing_an_exception_reloads_the_pack_page() -> None:
+def test_removing_an_exception_answers_mods() -> None:
     client, modpack, _ = setup()
     modpack.bundle.channel_exceptions = {"P1": "beta"}
     response = client.delete(f"/modpacks/{BUNDLE_ID}/channel-exceptions/P1", headers=HTMX)
-    assert response.status_code == 200 and response.headers["HX-Redirect"] == f"/modpacks/{BUNDLE_ID}#channels-section"
+    assert response.status_code == 200 and "HX-Redirect" not in response.headers
+    assert response.text.lstrip().startswith('<div id="mods"')
     assert call(modpack, "channel_exception_unset")[1:] == (str(BUNDLE_ID), "P1", EDITOR)
 
 

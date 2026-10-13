@@ -256,6 +256,18 @@ def test_app_js_closes_a_dialog_only_for_its_own_form() -> None:
     assert handler.index("HTMLFormElement") < handler.index("dialog.close()")
 
 
+def test_app_js_puts_a_row_select_back_when_its_change_fails() -> None:
+    """A1 (owner, 2026-10-13): a mod's row selects apply on change. htmx swaps nothing for an
+    error, so the select would show a value that was not saved: it goes back to `data-saved`."""
+    text = client(None).get("/static/app.js").text
+    restore = text[text.index("function restoreSaved"):]
+    restore = restore[:restore.index("\n  }\n")]
+    assert "select[data-saved]" in restore and "dataset.saved" in restore
+    for event in ("htmx:responseError", "htmx:sendError"):
+        handler = text[text.index(f"'{event}'"):]
+        assert "restoreSaved(" in handler[:handler.index("});")], event
+
+
 class FailingPterodactyl(FakePterodactyl):
     def __init__(self, error: Exception) -> None:
         super().__init__([], {})

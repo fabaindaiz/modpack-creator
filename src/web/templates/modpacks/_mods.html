@@ -122,15 +122,6 @@
               {% if https_url(row.issues_url) %}<a href="{{ https_url(row.issues_url) }}" target="_blank" rel="noopener noreferrer" class="{{ LINK }}">Issues</a>{% endif %}
             </p>
 
-            {% if row.side == "admin" %}
-            <form hx-post="/modpacks/{{ bundle_id }}/decisions" hx-target="#mods" hx-swap="outerHTML" class="flex flex-wrap items-center gap-2">
-              <input type="hidden" name="project_id" value="{{ row.project_id }}">
-              <span class="text-xs font-medium">¿Va en el servidor?</span>
-              {{ ui.button("En el servidor", type="submit", kind="secondary", small=True, attrs={"name": "server", "value": "yes"}) }}
-              {{ ui.button("Desactivado", type="submit", kind="secondary", small=True, attrs={"name": "server", "value": "no"}) }}
-            </form>
-            {% endif %}
-
             {% if in_pack or row.pinned %}
             <div class="space-y-2">
               {% if row.pinned %}
@@ -160,6 +151,7 @@
             {% endif %}
           </div>
         </details>
+        {% include "modpacks/_row_selects.html" %}
       </li>
       {% endfor %}
     </ul>
