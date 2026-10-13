@@ -2,14 +2,14 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable, Optional, Sequence
+from typing import Any, Callable, Iterable, Optional, Sequence
 from src.library.resolution import LOADER_ACCEPTS, TYPE_LOADERS
 from src.library.api.client.modrinth import ModrinthAPI
 from src.database.modrinth import ModrinthDatabase
 from src.model.modrinth import ModrinthProject, ModrinthVersion
 from src.model.modrinth.version import ModrinthVersionDependency
 from src.exceptions import *
-from src.library.utils import as_utc
+from src.library.utils import as_utc, utcnow
 
 # The project types a pack takes (resolution's SUPPORTED_TYPES), as Modrinth's search names them.
 SEARCH_TYPES = ("mod", "shader", "resourcepack", "datapack")
@@ -58,13 +58,35 @@ def _older(fetched_at: Optional[datetime], now: datetime) -> bool:
     return now - as_utc(fetched_at) >= RECHECK_AFTER
 
 
+# How long the Minecraft versions Modrinth lists are kept before asking again (F09, d-7985ee-a44a91).
+GAME_VERSIONS_TTL = timedelta(days=1)
+
 class ModrinthService():
     def __init__(self,
             modrinthAPI: ModrinthAPI,
             modrinthDB: ModrinthDatabase,
+            clock: Callable[[], datetime] = utcnow,
             ) -> None:
         self.modrinthAPI = modrinthAPI
         self.modrinthDB = modrinthDB
+        self.clock = clock
+        self._game_versions: Optional[tuple[datetime, list[str]]] = None
+
+    async def game_versions_release(self) -> Optional[list[str]]:
+        """The Minecraft releases Modrinth lists, newest first, for the form that creates a pack
+        (F09, d-7985ee-a44a91): asked at most once a day and kept in memory. None when Modrinth
+        fails, never kept: the form falls back to its text field."""
+        now = self.clock()
+        if self._game_versions is not None and now - self._game_versions[0] < GAME_VERSIONS_TTL:
+            return self._game_versions[1]
+        try:
+            tags = await self.modrinthAPI.game_versions()
+        except Exception:
+            logger.warning("Modrinth game versions failed", exc_info=True)
+            return None
+        releases = [t.version for t in tags if t.version_type == "release"]
+        self._game_versions = (now, releases)
+        return releases
 
     async def project_find(self, game_version: Optional[str] = None, loader: Optional[str] = None) -> list[ModrinthProject]:
         return await self.modrinthDB.project_find(game_version=game_version, loader=loader).to_list()

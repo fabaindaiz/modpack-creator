@@ -288,6 +288,11 @@ class FakeModrinth:
         self.error: Optional[Exception] = None
         self.searches: list[tuple[Any, ...]] = []
         self.filled: list[list[str]] = []
+        # The Minecraft releases Modrinth lists (F09); None: Modrinth did not answer.
+        self.game_versions: Optional[list[str]] = None
+
+    async def game_versions_release(self) -> Optional[list[str]]:
+        return self.game_versions
 
     async def search(self, query: str, game_version: Optional[str], loader: Optional[str], limit: int = 10) -> list[dict[str, Any]]:
         self.searches.append((query, game_version, loader, limit))
@@ -2632,3 +2637,22 @@ def test_the_pack_page_lists_what_is_left_to_set_up() -> None:
     assert "Para terminar el alta" in shown and "Con mods" in shown and "1 por decidir o con problemas" in shown
     assert f'href="/modpacks/{BUNDLE_ID}?vista=decidir"' in part
     assert 'href="/servers"' in part  # no server linked: link one
+
+
+# F09 (d-7985ee-a44a91): the Minecraft version is chosen from Modrinth's releases.
+
+
+def test_creating_a_pack_offers_modrinth_s_releases_to_choose_from() -> None:
+    client, _, modrinth = setup()
+    modrinth.game_versions = ["26.3", "1.21.11"]
+    text = client.get("/modpacks").text
+    field = text[text.index('id="new-version"') - 200:]
+    field = field[field.index("<select"):field.index("</select>")]
+    assert 'name="version"' in field and '<option value="26.3" selected>26.3</option>' in field
+    assert '<option value="1.21.11">1.21.11</option>' in field
+
+
+def test_without_modrinth_the_version_is_typed() -> None:
+    client, _, modrinth = setup()
+    text = client.get("/modpacks").text
+    assert re.search(r'<input id="new-version" name="version" type="text"', text)

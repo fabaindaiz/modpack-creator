@@ -294,6 +294,11 @@ class FakeModpack:
 class FakeModrinth:
     def __init__(self) -> None:
         self.filled: list[list[str]] = []
+        # The Minecraft releases Modrinth lists (F09); None: Modrinth did not answer.
+        self.game_versions: Optional[list[str]] = None
+
+    async def game_versions_release(self) -> Optional[list[str]]:
+        return self.game_versions
 
     async def projects_filled(self, project_ids: list[str]) -> dict[str, ModrinthProject]:
         self.filled.append(list(project_ids))
@@ -1582,3 +1587,15 @@ def test_a_server_without_scan_or_pack_starts_the_list() -> None:
     assert "Para terminar el alta (0 de 5)" in " ".join(visible(part).split())
     assert f'href="/servers/{SERVER_ID}#escaneo"' in part and f'href="/servers/{SERVER_ID}#modpack"' in part
     assert "después de" in visible(part)
+
+
+def test_a_new_pack_from_a_server_suggests_its_version_among_modrinth_s() -> None:
+    client, fakes = setup()
+    fakes.ptero.server = server(bundle_id=None)
+    fakes.modrinth.game_versions = ["26.3", "1.21.11"]
+    fakes.ptero.deduced = Deduction(loader="fabric", game_version="1.21.11", identified=3, loader_votes={"fabric": 3},
+                                    version_votes={"1.21.11": 3})
+    text = client.get(f"/servers/{SERVER_ID}").text
+    field = text[text.index('id="new-modpack-version"') - 200:]
+    field = field[field.index("<select"):field.index("</select>")]
+    assert '<option value="1.21.11" selected>1.21.11</option>' in field and 'value="26.3"' in field

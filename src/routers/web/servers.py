@@ -180,7 +180,8 @@ async def server_detail(
         resolved=saved is not None and not saved[1], pending=pending_count(saved),
         latest_build=bundle.latest_build if bundle is not None else None,
         simulated_build=await jobService.simulated_build(server_id)))
-    return render(request, "servers/detail.html", actor, onboarding=onboarding, server=server, server_id=server_id, bundles=bundles,
+    game_versions = await modrinthService.game_versions_release() if server.bundle_id is None else None
+    return render(request, "servers/detail.html", actor, onboarding=onboarding, game_versions=game_versions, server=server, server_id=server_id, bundles=bundles,
                   bundle=bundle, scan=scan, comparison=comparison, compare_note=compare_note, titles=titles,
                   versions=versions, to_import=to_import, installed_build=installed_build, active_job=active,
                   rollback=rollback, build_number=build_number, builds=builds, deduction=deduction,

@@ -44,7 +44,7 @@
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label for="new-version" class="text-sm font-medium">Versión de Minecraft</label>
-          <input id="new-version" name="version" type="text" required maxlength="40" placeholder="1.21.1" class="{{ FIELD }}">
+          {% with field_id="new-version", suggested=None, field_class=FIELD %}{% include "_game_version_field.html" %}{% endwith %}
         </div>
         <div>
           <label for="new-loader" class="text-sm font-medium">Loader</label>

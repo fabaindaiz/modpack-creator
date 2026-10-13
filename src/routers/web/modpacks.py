@@ -334,10 +334,12 @@ async def modpack_list(
         request: Request,
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         ):
-    """Every bundle, and the form to create one."""
+    """Every bundle, and the form to create one (its Minecraft version from Modrinth's list, F09)."""
     bundles = await modpackService.bundle_find()
-    return render(request, "modpacks/list.html", actor, bundles=bundles, loaders=[l.value for l in MinecraftLoaders])
+    return render(request, "modpacks/list.html", actor, bundles=bundles, loaders=[l.value for l in MinecraftLoaders],
+                  game_versions=await modrinthService.game_versions_release())
 
 @router.post("/modpacks")
 @inject

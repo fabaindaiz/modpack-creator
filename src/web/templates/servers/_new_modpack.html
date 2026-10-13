@@ -29,7 +29,7 @@
     <div class="grid grid-cols-2 gap-2">
       <div>
         <label for="new-modpack-version" class="font-medium">Minecraft</label>
-        <input id="new-modpack-version" name="version" type="text" required maxlength="40" placeholder="1.21.1" value="{{ game_version or '' }}" class="{{ FIELD }}">
+        {% with field_id="new-modpack-version", suggested=game_version, field_class=FIELD %}{% include "_game_version_field.html" %}{% endwith %}
       </div>
       <div>
         <label for="new-modpack-loader" class="font-medium">Loader</label>

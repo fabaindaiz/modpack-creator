@@ -1,0 +1,15 @@
+{# The Minecraft version of a new pack (F09, d-7985ee-a44a91): a select of Modrinth's releases,
+   newest first, with `suggested` chosen (added first if Modrinth does not list it); without
+   Modrinth's list (`game_versions` None), the text field. Needs `field_id`, `game_versions`,
+   `suggested` and `field_class`. #}
+{% if game_versions %}
+{% set choices = ([suggested] if suggested and suggested not in game_versions else []) + game_versions %}
+{% set chosen = suggested or choices[0] %}
+<select id="{{ field_id }}" name="version" required class="{{ field_class }}">
+  {% for version in choices %}
+  <option value="{{ version }}"{% if version == chosen %} selected{% endif %}>{{ version }}</option>
+  {% endfor %}
+</select>
+{% else %}
+<input id="{{ field_id }}" name="version" type="text" required maxlength="40" placeholder="1.21.1" value="{{ suggested or '' }}" class="{{ field_class }}">
+{% endif %}
