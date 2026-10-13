@@ -120,3 +120,11 @@ estados y «Pasar a nativa»; filtro «Loader»; tablero; vista previa de la sim
 
 Detectar incompatibilidades de un mod con Connector (Modrinth no las publica); el parche de mixins de
 servidor (no está en Modrinth); un pack con dos puentes a la vez (ningún loader tiene dos).
+
+## Enmiendas de la revisión del plan (dueño, 2026-10-13)
+
+- `Target.loaders()` sigue nativo; `Target.loaders_with_bridges()` solo donde se elige (d-7985ee-6ebc03).
+- Las versiones del loader huésped se guardan como lista aparte y se piden solo para los mods sin nativa que sirva y para la búsqueda puenteada (d-7985ee-4fd88e).
+- Una dependencia de un mod nativo que solo existe por el puente es un problema con «Usar vía Connector» (d-7985ee-b921b2); las de un mod agregado por el puente entran solas (d-7985ee-b7bddf).
+- «Pasar a nativa» guarda `native_only` por mod, no una fijación (d-7985ee-8e5f9e).
+- **Todo cambio de vía de un mod instalado pide confirmación** con un diálogo que avisa que la config o el mundo pueden no pasar; la resolución nunca cambia sola la vía; `/v1` exige `confirm_via=true` (d-7985ee-7e602f). Esto reemplaza, en §3, «el pool se restringe a la vía del piso» por: la vía instalada es la única que la resolución usa para ese mod.

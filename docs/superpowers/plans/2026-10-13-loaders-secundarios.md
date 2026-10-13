@@ -7,9 +7,9 @@
 **Objetivo:** que un pack use mods de otro loader a través de Connector o Kilt, prefiriendo lo nativo
 y sin acciones peligrosas automáticas.
 
-**Arquitectura:** una tabla pura de puentes; `Target` aprende los puentes activos: `loaders()` suma el
-loader huésped (así el catálogo, las fijaciones y el chequeo de actualizaciones ven esas versiones sin
-tocar cada llamada), `native_loaders()` y `via()` distinguen; el resolvedor ordena nativo primero,
+**Arquitectura:** una tabla pura de puentes; `Target` aprende los puentes activos: `loaders()` sigue nativo
+y `loaders_with_bridges()` lo usan solo los usos que eligen (d-7985ee-6ebc03), `via()` distingue; las
+versiones huésped en listas aparte, pedidas solo cuando hacen falta (d-7985ee-4fd88e); el resolvedor ordena nativo primero,
 respeta la vía instalada y deja problemas en vez de agregar compañeros; el panel suma la opción,
 pestañas, un diálogo y la pestaña «Vía puente».
 
@@ -71,9 +71,13 @@ d-7985ee-45c2ba … d-7985ee-d7fcae). **Estado (2026-10-13):** escrito.
 
 ### Tarea 2
 
-- `Target.bridges: frozenset[str] = frozenset()`; `loaders(kind)` = nativos ∪ huéspedes de los puentes
-  activos que cubren `game_version` (solo `kind == "mod"`); `native_loaders(kind)` = lo de hoy;
-  `via(candidate, kind) -> Optional[str]` = `None` si toca un nativo, si no la clave del puente.
+- `Target.bridges: frozenset[str] = frozenset()`; `loaders(kind)` igual que hoy;
+  `loaders_with_bridges(kind)` = nativos ∪ huéspedes de los puentes activos que cubren `game_version`
+  (solo `kind == "mod"`); `via(candidate, kind) -> Optional[str]` = `None` si toca un nativo, si no la
+  clave del puente. Revisar los 8 usos de `loaders()` (`grep -n "\.loaders(" src`): resolución
+  (`fits`), catálogo y fijación de la fila usan `loaders_with_bridges`; cada uno con su test.
+- Catálogo (d-7985ee-4fd88e): la lista huésped se guarda con su propio `target` (`1.21.1|fabric`) y se
+  pide solo para los proyectos sin versión nativa que encaje (y para la búsqueda puenteada).
 - `_preference` pasa a `(via is not None, canal, -fecha)` para mods; `LockEntry.via: Optional[str] =
   None` en `_take`.
 - Una sugerencia solo se ofrece si el proyecto tiene una versión nativa que encaje.
@@ -83,9 +87,13 @@ d-7985ee-45c2ba … d-7985ee-d7fcae). **Estado (2026-10-13):** escrito.
 
 ### Tarea 3
 
-- En `_take_from_floor`: el pool se restringe a la vía del piso (nativa o la del puente); si el piso
-  es puenteado y hay una nativa con fecha ≥ la del piso, `Lock.native_available[project_id] =
-  version_id`; si es más vieja, `Lock.native_behind[project_id] = version_id`.
+- La vía instalada (la del piso) es la única que la resolución usa para ese mod (d-7985ee-7e602f): si
+  es puenteada y hay una nativa con fecha ≥ la del piso, `Lock.native_available[project_id] =
+  version_id`; si es más vieja, `Lock.native_behind[project_id] = version_id`. `native_only` del pack
+  (tarea 7) fuerza la vía nativa. Si en la vía instalada no queda versión, problema `via_change` con
+  la acción que abre la confirmación.
+- Dependencias: la de un mod nativo que solo existe por el puente es `bridge_dependency` con «Usar vía
+  Connector» (d-7985ee-b921b2); las de un mod puenteado entran por el puente (d-7985ee-b7bddf).
 - Dependencias: con Connector, `P7dR8mSH` se resuelve como `Aqlf1Shp`.
 - Problemas: `bridge_missing` (hay un mod con `via` y falta un compañero de `companions(...)`, acción
   «Agregar el puente» = el diálogo de la tarea 6), `bridge_conflict` (el pack tiene `P7dR8mSH` y
@@ -128,7 +136,11 @@ d-7985ee-45c2ba … d-7985ee-d7fcae). **Estado (2026-10-13):** escrito.
 - `ModRow.via: Optional[str]`, `ModRow.native: Optional[str]` («otro canal» | «alcanza» | «detrás»),
   `ModRow.server_risky: bool`.
 - Pestaña `vista=puente` (cuenta los `via`), con cada fila, su estado y, si «alcanza», «Pasar a
-  nativa» = fijar la nativa (ruta de pins, `from=fila`, con Deshacer).
+  nativa»: abre el diálogo de cambio de vía (d-7985ee-7e602f); «Pasar igual» llama a
+  `ModpackService.via_set(bundle_id, project_id, native=True, actor, confirm=True)`, que guarda
+  `ModpackBundle.native_only` (auditado, rol editor, fila de roles); sin `confirm` es un
+  `ViaChangeRefused` (409) que describe el cambio, como `DowngradeRefused`. `/v1`: `confirm_via=true`.
+  Quitar la marca (volver a Connector) pide la misma confirmación.
 - `ModFilters.loader`: `nativos` | `puente`.
 - Al quitar el último mod puenteado: aviso con «Quitar Connector y Forgified Fabric API» (no lo hace).
 - Tests de cada uno.
