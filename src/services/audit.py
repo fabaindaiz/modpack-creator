@@ -1,5 +1,7 @@
+import logging
 from datetime import datetime
 from typing import Any, Callable, Optional, Protocol, runtime_checkable
+from fastapi import HTTPException
 from src.database.audit import AuditDatabase
 from src.database.modpack import ModpackDatabase
 from src.database.modrinth import ModrinthDatabase
@@ -9,6 +11,7 @@ from src.model.audit import AuditEvent, AuditTarget
 from src.model.users import Actor
 from src.library.utils import utcnow
 
+logger = logging.getLogger("modpack.audit")
 SECRET_KEYS = ("token", "secret", "password", "authorization")
 MAX_LIMIT = 200
 
@@ -30,7 +33,9 @@ class AuditSink(Protocol):
                      details: Optional[dict[str, Any]] = None) -> Any: ...
 
 class TargetNames():
-    """The name of an event's target, looked up when the event is written (A10)."""
+    """The name of an event's target, looked up when the event is written (A10): a pack's name, a
+    server's, or the catalog's title of a replacement's mod. Any other kind, an id that is not there
+    or a failing read is no name: naming never stops an event from being written."""
     def __init__(self,
             modpackDB: ModpackDatabase,
             pterodactylDB: PterodactylDatabase,
@@ -41,6 +46,19 @@ class TargetNames():
         self.modrinthDB = modrinthDB
 
     async def name(self, target: AuditTarget) -> Optional[str]:
+        try:
+            if target.kind == "bundle":
+                return (await self.modpackDB.bundle_get(target.id)).name
+            if target.kind == "server":
+                return (await self.pterodactylDB.server_get(target.id)).name
+            if target.kind == "replacement":
+                found = await self.modrinthDB.project_find_by_modrinth_id([target.id])
+                return found[0].title if found else None
+        except HTTPException:
+            return None  # not there (or not an id): shown by its kind and id
+        except Exception:
+            logger.warning("naming an audit target failed", exc_info=True,
+                           extra={"kind": target.kind, "target_id": target.id})
         return None
 
 class AuditService():
@@ -57,6 +75,8 @@ class AuditService():
         """Write who did what to what. The request id comes from the log's context."""
         details = dict(details or {})
         _check_details(details)
+        if target.name is None and self.names is not None:
+            target = target.model_copy(update={"name": await self.names.name(target)})
         return await self.auditDB.insert(AuditEvent(
             at=self.clock(), actor=actor.ref(), action=action, target=target,
             details=details, request_id=request_id()))
