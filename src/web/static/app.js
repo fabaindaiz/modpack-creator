@@ -87,6 +87,14 @@
     restoreSaved(evt.detail.elt);
   });
 
+  // A pin that goes back opens #pin-dialog (F27): cancelling it leaves the row's select on what is
+  // saved; confirming redraws #mods anyway. `close` does not bubble: caught on the way down.
+  document.addEventListener('close', function (evt) {
+    if (evt.target instanceof Element && evt.target.closest('#pin-dialog')) {
+      restoreSaved(document.getElementById('mods'));
+    }
+  }, true);
+
   document.addEventListener('htmx:sendError', function (evt) {
     restoreSaved(evt.detail.elt);
     showTemplate('notice-network-error', null, evt.detail.elt);
@@ -280,6 +288,13 @@
       return;
     }
     dialog.close();
+  });
+
+  // The notice that undoes a row's pin (A14) goes once its "Deshacer" is answered.
+  document.addEventListener('htmx:afterRequest', function (evt) {
+    var elt = evt.detail.requestConfig ? evt.detail.requestConfig.elt : evt.detail.elt;
+    var notice = elt instanceof Element ? elt.closest('[data-notice]') : null;
+    if (notice && evt.detail.successful) notice.remove();
   });
 
   // "Fijar otra" (a problem's card) lands on the mod in the list, #mod-row-<id>: its card opens,

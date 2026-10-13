@@ -2,6 +2,7 @@
    outside the <summary> so touching one never opens the card. Each keeps its saved value in
    `data-saved`: app.js puts it back when the change fails. Without a state a select is grey. Part of
    _mods.html, inside one row (`row`, `saved`, `current`, `bundle`, `bundle_id`). #}
+{% import "_macros.html" as ui %}
 {% set SELECT = "rounded-md border-0 py-0.5 pr-7 pl-2 text-xs ring-1 ring-inset focus-visible:outline-2 focus-visible:outline-emerald-600 bg-white dark:bg-zinc-900 " %}
 {% set GREY = "text-zinc-500 ring-zinc-200 dark:text-zinc-400 dark:ring-zinc-700" %}
 {% set side_value = {"include": "yes", "exclude": "no"}.get(row.side, "") %}
@@ -29,6 +30,26 @@
       <option value="alpha"{% if exception == "alpha" %} selected{% endif %}>acepta alpha</option>
     </select>
   </form>
+  {% set pin = row.pinned_version or "" %}
+  {% set pin_number = (row.pin_options or []) | selectattr("version_id", "equalto", pin) | map(attribute="version_number") | first if pin else none %}
+  <form hx-post="/modpacks/{{ bundle_id }}/pins" hx-trigger="change" hx-target="#mods" hx-swap="outerHTML">
+    <input type="hidden" name="project_id" value="{{ row.project_id }}">
+    <input type="hidden" name="from" value="fila">
+    <input type="hidden" name="previous" value="{{ pin }}">
+    <select name="version_id" data-saved="{{ pin }}" aria-label="Versión fijada de {{ row.title }}" class="{{ SELECT ~ ('text-sky-800 ring-sky-300 dark:text-sky-200 dark:ring-sky-500/50' if pin else GREY) }}">
+      <option value=""{% if not pin %} selected{% endif %}>sin fijar</option>
+      {% if row.pin_options is none %}
+      {% if pin %}<option value="{{ pin }}" selected>fijado</option>{% endif %}
+      <option value="" disabled>ver versiones en la ficha</option>
+      {% else %}
+      {% for option in row.pin_options %}
+      {% if option.version_id == pin %}<option value="{{ option.version_id }}" selected>fijado {{ option.version_number }}</option>
+      {% else %}<option value="{{ option.version_id }}">{{ option.version_number }}</option>{% endif %}
+      {% endfor %}
+      {% endif %}
+    </select>
+  </form>
+  {% if row.pin_floor %}{{ ui.badge("baja (piso " ~ row.pin_floor ~ ")", "warning") }}{% endif %}
   {% if exception and current %}
   {% if row.project_id in saved.excepted %}<span class="text-xs text-amber-800 dark:text-amber-300">en uso: no hay una estable más nueva que la instalada</span>
   {% elif row.project_id in saved.entries | map(attribute="project_id") | list %}<span class="text-xs text-zinc-500 dark:text-zinc-400">sin efecto: ya hay versión en los canales del pack</span>{% endif %}

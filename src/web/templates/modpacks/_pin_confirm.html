@@ -18,6 +18,7 @@
     <input type="hidden" name="version_id" value="{{ version_id }}">
     <input type="hidden" name="confirm_downgrade" value="1">
     {% if contexto %}<input type="hidden" name="contexto" value="{{ contexto }}">{% endif %}
+    {% if fila is defined and fila %}<input type="hidden" name="from" value="fila"><input type="hidden" name="previous" value="{{ previous or '' }}">{% endif %}
     <div class="flex justify-end gap-2">
       {{ ui.button("Cancelar", kind="secondary", attrs={"data-dialog-close": ""}) }}
       {{ ui.button("Fijar igual", kind="danger", type="submit") }}

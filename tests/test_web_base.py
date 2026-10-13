@@ -268,6 +268,15 @@ def test_app_js_puts_a_row_select_back_when_its_change_fails() -> None:
         assert "restoreSaved(" in handler[:handler.index("});")], event
 
 
+def test_app_js_puts_the_row_selects_back_when_the_pin_dialog_closes() -> None:
+    """A pin that goes back opens #pin-dialog (F27); cancelling it leaves the row's select on what
+    is saved. Confirming redraws #mods anyway."""
+    text = client(None).get("/static/app.js").text
+    handler = text[text.index("'close'"):]
+    handler = handler[:handler.index("});")]
+    assert "pin-dialog" in handler and "restoreSaved(" in handler
+
+
 class FailingPterodactyl(FakePterodactyl):
     def __init__(self, error: Exception) -> None:
         super().__init__([], {})

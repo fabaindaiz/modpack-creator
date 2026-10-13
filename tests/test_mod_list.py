@@ -12,7 +12,7 @@ from src.database.modrinth import ModrinthDatabase
 from src.library.resolution import Lock, LockEntry, ResolveRequest, Target
 from src.model.modpack import (AvailableUpdate, ModpackBuild, ModpackBundle, ModpackResolution, PackProject,
                                ProjectOrigin, UpdateCheck)
-from src.model.modrinth import ModrinthProject, ModrinthVersion
+from src.model.modrinth import ModrinthProject, ModrinthVersion, ModrinthVersionList
 from src.model.utils import MinecraftLoaders
 from src.services.modpack import ModpackService
 from tests._actors import EDITOR, RecordingAudit
@@ -455,3 +455,56 @@ def test_a_page_does_not_ask_again_for_an_icon_modrinth_just_said_it_lacks_nor_f
 
     first, second = mongo(scenario)
     assert first == [("project_get_many", ["P1", "GONE1"])] and second == []
+
+
+# A3 (owner, 2026-10-13): the row's pin select offers the catalog's versions, never Modrinth's.
+
+def jei_listed(days: Sequence[int], kind: str = "release") -> list[ModrinthVersion]:
+    return [version(f"j-{d}", "J", f"1.{d}", d, kind=kind) for d in days]
+
+
+async def jei_pack(s: Scenario, versions: list[ModrinthVersion], pins: Optional[dict[str, str]] = None,
+                   listed: bool = True) -> str:
+    await s.modrinthDB.project_upsert_many([project("J", "JEI")])
+    await s.modrinthDB.version_upsert_many(versions)
+    if listed:
+        await s.modrinthDB.version_list_save(ModrinthVersionList(
+            project_id="J", game_version="1.21.1", loaders=["fabric"], version_ids=sorted(v.version_id for v in versions),
+            fetched_at=NOW, target="1.21.1|fabric"))
+    return await s.bundle([("J", ProjectOrigin.admin)], pins=pins)
+
+
+def test_the_row_offers_the_15_newest_versions_and_the_pinned_one_from_the_catalog(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        s = Scenario(FakeModrinth())
+        bundle_id = await jei_pack(s, jei_listed(range(1, 21)), pins={"J": "j-3"})
+        [row] = (await s.service.mod_list(bundle_id, check=None)).rows
+        return [o.version_id for o in row.pin_options or []], row.pinned_version, s.api.calls
+
+    options, pinned, calls = mongo(scenario)
+    assert options == [f"j-{d}" for d in range(20, 5, -1)] + ["j-3"]
+    assert pinned == "j-3" and calls == []
+
+
+def test_a_mod_with_a_beta_exception_also_offers_beta_versions(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        s = Scenario(FakeModrinth())
+        bundle_id = await jei_pack(s, jei_listed([1, 2]) + jei_listed([3], kind="beta"))
+        plain = [o.version_id for o in (await s.service.mod_list(bundle_id, check=None)).rows[0].pin_options or []]
+        await s.modpackDB.bundle_channel_exception_set(bundle_id, "J", "beta")
+        beta = [o.version_id for o in (await s.service.mod_list(bundle_id, check=None)).rows[0].pin_options or []]
+        return plain, beta
+
+    plain, beta = mongo(scenario)
+    assert plain == ["j-2", "j-1"] and beta == ["j-3", "j-2", "j-1"]
+
+
+def test_without_the_catalog_s_list_the_row_has_no_options(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        s = Scenario(FakeModrinth())
+        bundle_id = await jei_pack(s, jei_listed([1, 2]), listed=False)
+        [row] = (await s.service.mod_list(bundle_id, check=None)).rows
+        return row.pin_options, s.api.calls
+
+    options, calls = mongo(scenario)
+    assert options is None and calls == []

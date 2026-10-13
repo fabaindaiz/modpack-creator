@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import re
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Collection, Iterable, Mapping
 import math
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass, field
@@ -161,6 +161,12 @@ class ModRow:
     version_channel: Optional[str] = None
     # When its pin is before the mod's floor (F27, d-7985ee-f43772): the floor's version number.
     pin_floor: Optional[str] = None
+    # What the row's pin select offers (A3, owner 2026-10-13): the catalog's versions for the pack's
+    # target, newest first, at most PIN_OPTIONS and then the pinned one; None when the catalog has
+    # no list for the project (the select points to the card).
+    pin_options: Optional[list["VersionOption"]] = None
+    # The pinned version's id, or None.
+    pinned_version: Optional[str] = None
 
 
 @dataclass
@@ -191,6 +197,27 @@ class VersionOption:
 
 # How many of a project's catalog versions its page shows; "Cargar todas" asks Modrinth for the rest.
 MOD_PAGE_VERSIONS = 50
+# How many versions a mod's row offers to pin, besides the pinned one (A3, owner 2026-10-13).
+PIN_OPTIONS = 15
+# A pinned version the catalog does not have still gets an option, with no publication date.
+_UNKNOWN_DATE = datetime.fromtimestamp(0, timezone.utc)
+
+
+def pin_choices(versions: Iterable[ModrinthVersion], game_version: str, loaders: Collection[str],
+                channels: Collection[str]) -> list[VersionOption]:
+    """The versions a project can be pinned to: listed, for this Minecraft version and one of these
+    loaders, in these channels, newest first."""
+    allowed = [v for v in versions if game_version in v.game_versions and set(loaders) & set(v.loaders)
+               and v.version_type.value in channels and v.status.value == "listed"]
+    allowed.sort(key=lambda v: v.date_published, reverse=True)
+    return [VersionOption(version_id=v.version_id, version_number=v.version_number,
+                          channel=v.version_type.value, published=v.date_published) for v in allowed]
+
+
+def exception_channels(channel: Optional[str]) -> set[str]:
+    """The channels a project's exception adds: its own and the more stable ones (as the resolver)."""
+    limit = CHANNEL_RANK.get(channel or "", -1)
+    return {name for name, rank in CHANNEL_RANK.items() if rank <= limit}
 
 
 @dataclass(frozen=True)
@@ -617,6 +644,30 @@ class ModpackService():
             for_version.setdefault(found_version.project_id, []).append(found_version)
         # A pin can go back after it was set, when the floor rises; the page never asks Modrinth.
         pins_back = await self.pin_downgrades(bundle, bundle.pins, fetch=False) if bundle.pins else {}
+        # What each row's pin select offers (A3): the catalog's lists and their versions, in two
+        # queries for the whole page, never Modrinth.
+        lists: dict[str, list[ModrinthVersionList]] = {}
+        for record in await self.modrinthDB.version_lists_find([*pack, *dependencies], bundle.version):
+            lists.setdefault(record.project_id, []).append(record)
+        wanted = {i for records in lists.values() for record in records for i in record.version_ids}
+        wanted |= {bundle.pins[i] for i in [*pack, *dependencies] if i in bundle.pins}
+        known = {v.version_id: v for v in await self.modrinthDB.version_find_by_version_ids(sorted(wanted))} if wanted else {}
+
+        def pin_options(project_id: str, kind: str) -> Optional[list[VersionOption]]:
+            loaders = sorted(target.loaders(kind))
+            record = next((r for r in lists.get(project_id, []) if r.loaders == loaders), None)
+            if record is None:
+                return None
+            channels = set(bundle.channels) | exception_channels(bundle.channel_exceptions.get(project_id))
+            options = pin_choices((known[i] for i in record.version_ids if i in known), bundle.version, loaders,
+                                  channels)[:PIN_OPTIONS]
+            pinned = bundle.pins.get(project_id)
+            if pinned is not None and pinned not in {o.version_id for o in options}:
+                stored = known.get(pinned)
+                options.append(VersionOption(version_id=pinned, version_number=stored.version_number if stored else pinned,
+                                             channel=stored.version_type.value if stored else "",
+                                             published=stored.date_published if stored else _UNKNOWN_DATE))
+            return options
 
         def row(project_id: str, origin: Optional[str]) -> ModRow:
             found, entry = catalog.get(project_id), entries.get(project_id)
@@ -639,7 +690,9 @@ class ModpackService():
                 newer_version=None if pinned else newer.get(project_id), pinned=pinned,
                 source_url=found.source_url if found else None, issues_url=found.issues_url if found else None,
                 version_channel=version_channel,
-                pin_floor=pins_back[project_id].floor_number if pinned and project_id in pins_back else None)
+                pin_floor=pins_back[project_id].floor_number if pinned and project_id in pins_back else None,
+                pin_options=pin_options(project_id, entry.project_type if entry else found.project_type.value if found else "mod"),
+                pinned_version=bundle.pins.get(project_id))
 
         rows = [row(i, origin) for i, origin in pack.items()]
         rows += sorted((row(i, None) for i in dependencies), key=lambda r: r.title)
@@ -674,10 +727,7 @@ class ModpackService():
                      if bundle.version in v.game_versions and set(loaders) & set(v.loaders)]
         else:
             found = await self._versions_fetch(project_id, loaders, bundle.version)
-        allowed = [v for v in found if v.version_type.value in bundle.channels and v.status.value == "listed"]
-        allowed.sort(key=lambda v: v.date_published, reverse=True)
-        return [VersionOption(version_id=v.version_id, version_number=v.version_number,
-                              channel=v.version_type.value, published=v.date_published) for v in allowed]
+        return pin_choices(found, bundle.version, loaders, bundle.channels)
 
     # A mod's local page (spec §2, "Ficha local de cada mod").
 

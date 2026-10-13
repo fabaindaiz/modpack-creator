@@ -81,8 +81,6 @@
                 <span class="min-w-0 font-medium wrap-anywhere">{{ ui.mod_link(row.project_id, row.title, pack=bundle_id) }}</span>
                 {% if row.origin == "admin" %}{{ ui.badge("agregado") }}{% elif row.origin == "pack" %}{{ ui.badge("del .mrpack") }}{% endif %}
                 {% if side %}{{ ui.badge(side[0], side[1]) }}{% endif %}
-                {% if row.pinned %}{{ ui.badge("fijado", "info") }}{% endif %}
-                {% if row.pin_floor %}{{ ui.badge("baja (piso " ~ row.pin_floor ~ ")", "warning") }}{% endif %}
               </div>
               <p class="text-xs break-words text-zinc-500 dark:text-zinc-400">
                 {%- if not in_pack %}dependencia de
@@ -179,6 +177,26 @@
 <div id="notices" hx-swap-oob="beforeend">{{ ui.success(success) }}</div>
 {% elif info is defined and info %}
 <div id="notices" hx-swap-oob="beforeend">{{ ui.notice(info, "info") }}</div>
+{% endif %}
+{# A pin changed from a mod's row (A14, owner 2026-10-13): the notice says what changed and undoes
+   it, back to the previous pin (or none). It stays until closed: undoing is its point. #}
+{% if undo is defined and undo %}
+{% set undo_row = mods.rows | selectattr("project_id", "equalto", undo.project_id) | first %}
+{% set undo_title = undo_row.title if undo_row else mods.titles.get(undo.project_id, undo.project_id) %}
+{% set undo_number = (undo_row.pin_options or []) | selectattr("version_id", "equalto", undo.version_id) | map(attribute="version_number") | first if undo_row else none %}
+<div id="notices" hx-swap-oob="beforeend">
+<div data-notice data-notice-tone="success" role="status" class="flex items-start gap-3 rounded-md border px-3 py-2 text-sm shadow-sm {{ ui.NOTICE_TONES['success'] }}">
+  <p class="min-w-0 flex-1 break-words">{{ undo_title }} {{ ("fijado en " ~ (undo_number or undo.version_id)) if undo.version_id else "sin fijar" }}</p>
+  <form hx-post="/modpacks/{{ bundle_id }}/pins" hx-target="#mods" hx-swap="outerHTML" class="shrink-0">
+    <input type="hidden" name="project_id" value="{{ undo.project_id }}">
+    <input type="hidden" name="version_id" value="{{ undo.previous }}">
+    <input type="hidden" name="from" value="fila">
+    <input type="hidden" name="previous" value="{{ undo.version_id }}">
+    <button type="submit" class="rounded px-1 text-sm font-medium underline underline-offset-2">Deshacer</button>
+  </form>
+  <button type="button" data-notice-close class="-my-0.5 shrink-0 rounded px-1 text-base leading-none opacity-70 hover:opacity-100" aria-label="Cerrar aviso">&times;</button>
+</div>
+</div>
 {% endif %}
 {% if hit is defined and hit %}
 <div id="hit-{{ hit }}" hx-swap-oob="true" class="shrink-0">{{ ui.badge("Ya está", "accent") }}</div>

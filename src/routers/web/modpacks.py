@@ -583,9 +583,14 @@ async def pin_add(
         bundle_id: str,
         request: Request,
         project_id: Annotated[str, Form(min_length=1, max_length=200, pattern=MODRINTH_REF)],
-        version_id: Annotated[str, Form(min_length=1, max_length=200, pattern=MODRINTH_REF)],
+        # Empty arrives as missing (FastAPI reads an empty form value as absent): "sin fijar" in a
+        # row's select, which unpins. Elsewhere a version is required.
+        version_id: Annotated[Optional[str], Form(max_length=200, pattern=MODRINTH_REF)] = None,
         contexto: Annotated[Optional[Contexto], Form()] = None,
         confirm_downgrade: Annotated[bool, Form()] = False,
+        # From a mod's row (A1, A14): the answer offers to undo, back to `previous` (empty: unpinned).
+        fila: Annotated[Optional[Literal["fila"]], Form(alias="from")] = None,
+        previous: Annotated[Optional[str], Form(max_length=200, pattern=MODRINTH_REF)] = None,
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
@@ -593,15 +598,26 @@ async def pin_add(
     """Pin a mod to a version of that mod: one key, written atomically by the service. From a
     problem's card ("Usar la beta …", `contexto`), resolve again too. A version before the mod's
     floor is not saved: the answer is a dialog, into #pin-dialog, that describes the step back and
-    sends the same pin again with `confirm_downgrade` (F27, d-7985ee-c62c61)."""
-    try:
-        await modpackService.pin_set(bundle_id, project_id, version_id, actor, confirm_downgrade=confirm_downgrade)
-    except DowngradeRefused as refused:
-        response = render(request, "modpacks/_pin_confirm.html", actor, bundle_id=bundle_id, downgrade=refused.downgrade,
-                          version_id=version_id, contexto=contexto)
-        response.headers["HX-Retarget"] = "#pin-dialog"
-        response.headers["HX-Reswap"] = "innerHTML"
-        return response
+    sends the same pin again with `confirm_downgrade` (F27, d-7985ee-c62c61). From a row (`from`),
+    no version unpins, and #mods comes with a notice that undoes the change."""
+    if version_id is None:
+        if fila is None:
+            raise HTTP_422_UNPROCESSABLE_ENTITY("Falta la versión que se fija")
+        await modpackService.pin_unset(bundle_id, project_id, actor)
+    else:
+        try:
+            await modpackService.pin_set(bundle_id, project_id, version_id, actor, confirm_downgrade=confirm_downgrade)
+        except DowngradeRefused as refused:
+            response = render(request, "modpacks/_pin_confirm.html", actor, bundle_id=bundle_id, downgrade=refused.downgrade,
+                              version_id=version_id, contexto=contexto, fila=fila, previous=previous)
+            response.headers["HX-Retarget"] = "#pin-dialog"
+            response.headers["HX-Reswap"] = "innerHTML"
+            return response
+    if fila is not None:
+        context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request))
+        return render(request, "modpacks/_mods.html", actor, success=None, info=None, hit=None,
+                      undo={"project_id": project_id, "version_id": version_id or "", "previous": previous or ""},
+                      **context)
     return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto, "Versión fijada")
 
 @router.delete("/modpacks/{bundle_id}/pins/{project_id}")

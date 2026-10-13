@@ -210,8 +210,9 @@ class FakeModpack:
             entries = {e.project_id: e for e in self.saved.lock.entries} if self.saved else {}
             pack = {p.project_id: p.origin.value for p in self.bundle.projects}
             rows = [row(i, self.titles.get(i, i), origin, side=entries[i].server if i in entries else None,
-                        pinned=i in self.bundle.pins) for i, origin in pack.items()]
-            rows += [row(i, self.titles.get(i, i), None, side=e.server, pinned=i in self.bundle.pins)
+                        pinned=i in self.bundle.pins, pinned_version=self.bundle.pins.get(i)) for i, origin in pack.items()]
+            rows += [row(i, self.titles.get(i, i), None, side=e.server, pinned=i in self.bundle.pins,
+                         pinned_version=self.bundle.pins.get(i))
                      for i, e in entries.items() if i not in pack]
         # Like the service: a title for each row, for what the resolution's suggestions and problems
         # name, and for the pins no row shows.
@@ -1546,7 +1547,8 @@ def test_mods_list_shows_card_data_not_ids() -> None:
     modpack.bundle = bundle([PackProject(project_id="AANobbMI", origin=ProjectOrigin.admin)])
     modpack.rows = [
         row("AANobbMI", "Sodium", "admin", icon_url="https://cdn.modrinth.com/data/AANobbMI/icon.png",
-            downloads=1234567, side="exclude", build_version="0.8.13", newer_version="0.8.14", pinned=True),
+            downloads=1234567, side="exclude", build_version="0.8.13", newer_version="0.8.14", pinned=True,
+            pinned_version="ver-813"),
         row("P9", "Fabric API", None, required_by=["Sodium"], side="include", build_version="0.100.0"),
         row("P8", "Mod Menu", "pack", side="admin")]
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
@@ -1604,7 +1606,7 @@ def test_card_has_support_links_and_lazy_version_picker() -> None:
     assert re.search(rf'<details[^>]*hx-get="/modpacks/{BUNDLE_ID}/projects/P1/versions"[^>]*hx-trigger="toggle once"', sodium)
     assert "javascript:" not in text and "insecure.example" not in text
     # La fijación a mano por id de versión desapareció: solo el selector.
-    assert 'name="version_id"' not in text
+    assert not re.search(r'<input[^>]*name="version_id"', text)
 
 
 def test_card_removes_only_what_the_admin_added() -> None:
@@ -1807,6 +1809,81 @@ def test_the_exception_state_is_written_under_its_select() -> None:
     modpack.stale = True
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
     assert "en uso" not in visible(text) and "sin efecto" not in visible(text)
+
+
+def option(version_id: str, number: str) -> VersionOption:
+    return VersionOption(version_id, number, "release", datetime(2026, 10, 1, tzinfo=timezone.utc))
+
+
+def pin_rows(modpack: FakeModpack) -> None:
+    """Sodium pinned to 0.8.13 with two versions to offer; Lithium unpinned with one; Iris without a
+    list in the catalog."""
+    modpack.rows = [
+        row("P1", "Sodium", "admin", pinned=True, pinned_version="ver-p1",
+            pin_options=[option("ver-new", "0.8.14"), option("ver-p1", "0.8.13")]),
+        row("P2", "Lithium", "admin", pin_options=[option("l-1", "1.0")]),
+        row("P3", "Iris", "admin")]
+
+
+def test_the_pin_select_marks_the_pinned_version_and_greys_without_a_pin() -> None:
+    client, modpack, _ = setup()
+    pin_rows(modpack)
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    pinned, free = row_select(text, "P1", "version_id"), row_select(text, "P2", "version_id")
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/pins"' in pinned and 'hx-trigger="change"' in pinned
+    assert 'name="from" value="fila"' in pinned and 'name="previous" value="ver-p1"' in pinned
+    assert selected(pinned) == "fijado 0.8.13" and 'data-saved="ver-p1"' in pinned and "hx-confirm" not in pinned
+    assert '<option value="ver-new">0.8.14</option>' in pinned and '<option value="">sin fijar</option>' in pinned
+    assert selected(free) == "sin fijar" and "text-zinc-500" in free and 'data-saved=""' in free
+    assert "text-zinc-500" not in pinned[:pinned.index("<option")]
+
+
+def test_without_options_the_select_points_to_the_card() -> None:
+    client, modpack, _ = setup()
+    pin_rows(modpack)
+    form = row_select(client.get(f"/modpacks/{BUNDLE_ID}").text, "P3", "version_id")
+    assert selected(form) == "sin fijar" and '<option value="" disabled>ver versiones en la ficha</option>' in form
+
+
+def test_choosing_a_version_pins_it_and_offers_undo() -> None:
+    client, modpack, _ = setup()
+    pin_rows(modpack)
+    response = client.post(f"/modpacks/{BUNDLE_ID}/pins", headers=HTMX,
+                           data={"project_id": "P2", "version_id": "l-1", "from": "fila", "previous": ""})
+    assert response.status_code == 200 and response.text.lstrip().startswith('<div id="mods"')
+    assert call(modpack, "pin_set")[1:3] == (str(BUNDLE_ID), "P2")
+    notice = response.text[response.text.index('id="notices"'):]
+    assert "Lithium fijado en 1.0" in said(notice)
+    undo = notice[notice.index("<form"):notice.index("</form>")]
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/pins"' in undo and 'name="version_id" value=""' in undo
+    assert 'name="project_id" value="P2"' in undo and 'name="from" value="fila"' in undo and "Deshacer" in undo
+
+
+def test_choosing_sin_fijar_unpins_and_offers_undo_to_the_old_pin() -> None:
+    client, modpack, _ = setup()
+    pin_rows(modpack)
+    response = client.post(f"/modpacks/{BUNDLE_ID}/pins", headers=HTMX,
+                           data={"project_id": "P1", "version_id": "", "from": "fila", "previous": "ver-p1"})
+    assert response.status_code == 200 and call(modpack, "pin_unset")[1:] == (str(BUNDLE_ID), "P1", EDITOR)
+    notice = response.text[response.text.index('id="notices"'):]
+    assert "Sodium sin fijar" in said(notice) and 'name="version_id" value="ver-p1"' in notice
+
+
+def test_a_pin_from_elsewhere_has_no_undo() -> None:
+    client, modpack, _ = setup()
+    pin_rows(modpack)
+    response = client.post(f"/modpacks/{BUNDLE_ID}/pins", headers=HTMX, data={"project_id": "P2", "version_id": "l-1"})
+    assert response.status_code == 200 and "Deshacer" not in response.text
+
+
+def test_a_downgrade_from_the_row_opens_the_pin_dialog_that_keeps_the_row() -> None:
+    client, modpack, _ = setup()
+    pin_rows(modpack)
+    modpack.downgrade = JEI_DOWN
+    response = client.post(f"/modpacks/{BUNDLE_ID}/pins", headers=HTMX,
+                           data={"project_id": "P2", "version_id": "ver-51", "from": "fila", "previous": "l-1"})
+    assert response.headers["HX-Retarget"] == "#pin-dialog"
+    assert 'name="from" value="fila"' in response.text and 'name="previous" value="l-1"' in response.text
 
 
 def test_the_channels_section_has_no_exception_list() -> None:
