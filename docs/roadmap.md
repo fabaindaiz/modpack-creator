@@ -799,6 +799,14 @@ JSON con `request_id` y `job_id`.
   el flujo de alta y el tablero, con móvil y F09; ~2 sesiones), **C** (7: loaders secundarios;
   investigación y ~2 sesiones). La investigación del 7: `docs/research/2026-10-13-loaders-secundarios.md`
   (leída por resúmenes; verificar contra la fuente lo que sostenga una decisión).
+- **Tanda A, diseñada (2026-10-13):** revisión de decisiones con el dueño (A1–A14) y spec
+  `docs/superpowers/specs/2026-10-13-panel-tanda-a-design.md`, a la espera de que el dueño la revise;
+  después el plan. El dueño sumó en la revisión los filtros de la lista de mods (A6) y el aviso con
+  Deshacer al fijar desde la fila (A14), y pidió Tailwind para la estructura.
+- **Tanda B suma el estilo (dueño, 2026-10-13):** un aspecto inspirado en Modrinth, escrito desde
+  cero (acento verde propio, sin su nombre, logo ni mascota; nota de «no afiliado»), con Lucide e
+  Inter tomados de sus propias fuentes si el dueño acepta esos terceros en su revisión. Investigación:
+  `docs/research/2026-10-13-estilo-modrinth.md` (leída por resúmenes, SIN VERIFICAR).
 
 ### Panel, usabilidad: la ronda 1 hecha en código, la ronda 2 planeada (2026-10-04), sin desplegar · i-7985ee-1bb2ea
 - **En qué quedó la ronda 1** (diseño `docs/superpowers/specs/2026-10-04-panel-usabilidad-design.md`, recorrido
