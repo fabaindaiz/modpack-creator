@@ -1,5 +1,6 @@
 """F09 (d-7985ee-a44a91): the Minecraft versions offered when creating a pack are Modrinth's releases,
-newest first, asked at most once a day; when Modrinth fails, None, so the form keeps its text field."""
+newest first, asked at most once a day; when Modrinth fails, None for five minutes, so the form keeps its
+text field and the page does not wait on Modrinth each time."""
 import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
@@ -46,7 +47,9 @@ def test_only_releases_newest_first_asked_once_a_day() -> None:
     assert first == second == ["26.3", "1.21.11"] and calls == 2
 
 
-def test_a_failure_is_none_and_is_not_kept() -> None:
+def test_a_failure_is_none_and_is_remembered_for_five_minutes() -> None:
+    # Batch B sweep (2026-10-13): with Modrinth down, every load of a server's page asked again and
+    # waited for it. A failure is remembered briefly, then asked again.
     api, now = FakeAPI(), [T0]
     s = service(api, now)
     api.fail = True
@@ -54,7 +57,10 @@ def test_a_failure_is_none_and_is_not_kept() -> None:
     async def run() -> list[Any]:
         failed = await s.game_versions_release()
         api.fail = False
-        return [failed, await s.game_versions_release()]
+        now[0] = T0 + timedelta(minutes=4)
+        still = await s.game_versions_release()
+        now[0] = T0 + timedelta(minutes=6)
+        return [failed, still, await s.game_versions_release(), api.calls]
 
-    failed, then = asyncio.run(run())
-    assert failed is None and then == ["26.3", "1.21.11"]
+    failed, still, then, calls = asyncio.run(run())
+    assert failed is None and still is None and then == ["26.3", "1.21.11"] and calls == 2

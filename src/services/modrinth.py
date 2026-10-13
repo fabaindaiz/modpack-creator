@@ -60,6 +60,9 @@ def _older(fetched_at: Optional[datetime], now: datetime) -> bool:
 
 # How long the Minecraft versions Modrinth lists are kept before asking again (F09, d-7985ee-a44a91).
 GAME_VERSIONS_TTL = timedelta(days=1)
+# How long a failure to get them is remembered: the pages that show the form do not wait on a
+# Modrinth that is down at every load.
+GAME_VERSIONS_RETRY = timedelta(minutes=5)
 
 class ModrinthService():
     def __init__(self,
@@ -71,18 +74,22 @@ class ModrinthService():
         self.modrinthDB = modrinthDB
         self.clock = clock
         self._game_versions: Optional[tuple[datetime, list[str]]] = None
+        self._game_versions_failed: Optional[datetime] = None
 
     async def game_versions_release(self) -> Optional[list[str]]:
         """The Minecraft releases Modrinth lists, newest first, for the form that creates a pack
         (F09, d-7985ee-a44a91): asked at most once a day and kept in memory. None when Modrinth
-        fails, never kept: the form falls back to its text field."""
+        fails, and for five minutes after: the form falls back to its text field."""
         now = self.clock()
         if self._game_versions is not None and now - self._game_versions[0] < GAME_VERSIONS_TTL:
             return self._game_versions[1]
+        if self._game_versions_failed is not None and now - self._game_versions_failed < GAME_VERSIONS_RETRY:
+            return None
         try:
             tags = await self.modrinthAPI.game_versions()
         except Exception:
             logger.warning("Modrinth game versions failed", exc_info=True)
+            self._game_versions_failed = now
             return None
         releases = [t.version for t in tags if t.version_type == "release"]
         self._game_versions = (now, releases)

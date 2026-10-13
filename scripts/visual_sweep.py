@@ -149,6 +149,9 @@ class ModrinthStub:
                                      if "fabric" in v["loaders"] and "26.3" in v["game_versions"]][:5])
                 elif path.startswith("project/") and path.endswith("/version") and made_up:
                     self._send(200, made_up)
+                elif path == "tag/game_version":  # F09: the releases a new pack chooses from
+                    self._send(200, [{"version": v, "version_type": t, "date": "2026-01-01T00:00:00Z", "major": False}
+                                     for v, t in (("26.3", "release"), ("26.3-pre1", "snapshot"), ("26.2", "release"))])
                 else:
                     self._send(503, {"error": "stub: unavailable"})
 
