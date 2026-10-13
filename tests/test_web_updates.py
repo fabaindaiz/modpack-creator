@@ -56,6 +56,9 @@ class FakeModpack:
     async def build_find(self, bundle_id: str) -> list[ModpackBuild]:
         return []
 
+    async def resolution_many(self, bundle_ids: list[str]) -> dict[str, Any]:
+        return {}
+
     async def build_request(self, bundle_id: str, actor: Actor) -> Any:
         self.calls.append(("build_request", bundle_id, actor))
         return None
@@ -122,6 +125,9 @@ class FakeModrinth:
 
 class FakeJobs:
     async def recent(self, limit: int = 10) -> list[Job]:
+        return []
+
+    async def find(self, **filters: Any) -> list[Job]:
         return []
 
 

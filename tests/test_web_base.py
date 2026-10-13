@@ -54,26 +54,40 @@ class FakePterodactyl:
 
 
 class FakeModpack:
-    def __init__(self, rows: list[tuple[ModpackBundle, Optional[ModpackBuild]]]) -> None:
+    def __init__(self, rows: list[tuple[ModpackBundle, Optional[ModpackBuild]]],
+                 resolutions: Optional[dict[str, Any]] = None) -> None:
         self.rows = rows
+        self.resolutions = resolutions or {}
 
     async def latest_builds(self) -> list[tuple[ModpackBundle, Optional[ModpackBuild]]]:
         return self.rows
 
+    async def resolution_many(self, bundle_ids: list[str]) -> dict[str, Any]:
+        return {b: self.resolutions[b] for b in bundle_ids if b in self.resolutions}
+
 
 class FakeChecks:
+    def __init__(self, checks: Optional[dict[PydanticObjectId, Any]] = None) -> None:
+        self.checks = checks or {}
+
     async def latest_many(self, bundle_ids: list[str]) -> dict[PydanticObjectId, Any]:
-        return {}
+        return self.checks
 
 
 class FakeJobs:
-    def __init__(self, jobs: list[Job]) -> None:
+    def __init__(self, jobs: list[Job], failed: Optional[list[Job]] = None) -> None:
         self.jobs = jobs
+        self.failed = failed or []
         self.limits: list[int] = []
 
     async def recent(self, limit: int = 10) -> list[Job]:
         self.limits.append(limit)
         return self.jobs[:limit]
+
+    async def find(self, *, server_id: Optional[str], kind: Optional[str], status: Optional[str],
+                   before_id: Optional[str], limit: int) -> list[Job]:
+        assert status == "failed" and server_id is None and kind is None and before_id is None
+        return self.failed[:limit]
 
 
 def default_fakes(server_name: str = "Survival") -> tuple[FakePterodactyl, FakeModpack, FakeJobs]:
@@ -98,14 +112,15 @@ def reset_overrides() -> Any:
         provider.reset_override()
 
 
-def client(actor: Optional[Actor], fakes: Optional[tuple[FakePterodactyl, FakeModpack, FakeJobs]] = None) -> TestClient:
+def client(actor: Optional[Actor], fakes: Optional[tuple[FakePterodactyl, FakeModpack, FakeJobs]] = None,
+           checks: Optional[FakeChecks] = None) -> TestClient:
     import main
 
     pterodactyl, modpack, jobs = fakes or default_fakes()
     main.container.pterodactylService.override(providers.Object(pterodactyl))
     main.container.modpackService.override(providers.Object(modpack))
     main.container.jobService.override(providers.Object(jobs))
-    main.container.updateCheckService.override(providers.Object(FakeChecks()))
+    main.container.updateCheckService.override(providers.Object(checks or FakeChecks()))
     # Sin `with`: el lifespan abriría MongoDB y el proveedor OIDC.
     test_client = TestClient(main.app, base_url="https://testserver", follow_redirects=False)
     if actor is not None:

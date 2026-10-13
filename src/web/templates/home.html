@@ -8,41 +8,92 @@
   "unknown": ("Sin comparar", "neutral"),
   "none": ("Sin escaneo", "neutral"),
 } %}
-{% block content %}
-{{ ui.page_header("Tablero", "Servidores, builds y trabajos recientes.") }}
+{# How each severity of src/library/attention.py reads: its icon and colour (never colour alone:
+   the text says what happens). #}
+{% set SEVERITY = {
+  0: ("triangle-alert", "text-red-600 dark:text-red-400", "primary"),
+  1: ("triangle-alert", "text-amber-600 dark:text-amber-400", "primary"),
+  2: ("bell", "text-sky-600 dark:text-sky-400", "secondary"),
+  3: ("circle", "text-zinc-400 dark:text-zinc-500", "secondary"),
+} %}
+{# The columns of the dashboard's cards (written whole, so the build sees them): the long text takes
+   the rest, the short columns (a state, a date, a number) the width of what they hold. #}
+{% set SERVER_COLS = "sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6.5rem_7rem]" %}
+{% set BUILD_COLS = "sm:grid-cols-[minmax(0,1fr)_7rem_6rem]" %}
 
-<div class="grid grid-cols-1 gap-6 xl:grid-cols-5">
+{% macro attention_card(item) %}
+{% set icon_name, color, kind = SEVERITY.get(item.severity, SEVERITY[3]) %}
+<li class="flex items-start gap-3 rounded-xl border border-zinc-200 bg-white p-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+  {{ ui.icon(icon_name, "mt-0.5 size-4 " ~ color) }}
+  <div class="min-w-0 flex-1">
+    <p class="break-words">{{ item.text }}</p>
+    {% if item.at %}<p class="text-xs text-zinc-500 dark:text-zinc-400">{{ ui.when(item.at) }}</p>{% endif %}
+  </div>
+  <div class="shrink-0">{{ ui.link_button(item.action_label, item.href, kind=kind, small=True) }}</div>
+</li>
+{% endmacro %}
+
+{% block content %}
+{{ ui.page_header("Tablero", "Lo que necesita atención, servidores, builds y trabajos recientes.") }}
+
+{% call ui.section("Necesita atención", id="atencion") %}
+{% if attention %}
+<ul class="grid gap-2 lg:grid-cols-2" aria-label="Necesita atención">
+  {% for item in attention[:visible] %}{{ attention_card(item) }}{% endfor %}
+</ul>
+{% if attention | length > visible %}
+<details class="group">
+  <summary class="cursor-pointer text-sm font-medium text-emerald-700 hover:underline dark:text-emerald-300">Ver todas ({{ attention | length }})</summary>
+  <ul class="mt-2 grid gap-2 lg:grid-cols-2" aria-label="El resto de lo que necesita atención">
+    {% for item in attention[visible:] %}{{ attention_card(item) }}{% endfor %}
+  </ul>
+</details>
+{% endif %}
+{% else %}
+<div class="flex items-start gap-3 rounded-xl border border-zinc-200 bg-white p-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+  {{ ui.icon("circle-check", "mt-0.5 size-4 text-emerald-600 dark:text-emerald-400") }}
+  <div class="min-w-0">
+    <p class="font-medium">Todo en orden</p>
+    {% if last_check %}<p class="text-xs text-zinc-500 dark:text-zinc-400">Última revisión de Modrinth: {{ ui.when(last_check) }}</p>{% endif %}
+  </div>
+</div>
+{% endif %}
+{% endcall %}
+
+<div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-5">
   <div class="min-w-0 space-y-6 xl:col-span-3">
     {% call ui.section("Servidores", id="servidores") %}
-    {% call ui.table(["Servidor", "Modpack", "Estado", "Último escaneo"], empty="No hay servidores registrados.", caption="Servidores") %}
+    {% call ui.card_list("No hay servidores registrados.", "Servidores", headers=["Servidor", "Modpack", "Estado", "Último escaneo"], cols=SERVER_COLS) %}
     {% for row in servers %}
-    <tr>
-      <td class="max-w-[16rem]">
-        <a href="/servers/{{ row.server.id }}" class="font-medium break-words text-zinc-900 hover:text-emerald-700 hover:underline dark:text-zinc-100 dark:hover:text-emerald-300">{{ row.server.name }}</a>
-        <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ row.server.node }}</div>
-      </td>
-      <td class="break-words">
-        {% if row.bundle_name %}
-        <a href="/modpacks/{{ row.server.bundle_id }}" class="hover:underline">{{ row.bundle_name }}</a>
-        {% elif row.server.bundle_id %}
-        <span class="text-zinc-500 dark:text-zinc-400">Modpack desconocido</span>
-        {% else %}
-        <span class="text-zinc-400 dark:text-zinc-500">Sin modpack</span>
-        {% endif %}
-      </td>
-      <td>
-        {% set label, tone = DRIFT[row.state] %}
-        {% if row.drift and row.state == "drift" %}
-        <details class="group">
-          <summary class="cursor-pointer list-none">{{ ui.badge(label, tone) }} <span class="text-xs text-zinc-500 group-open:hidden dark:text-zinc-400">ver</span></summary>
-          <pre class="mt-2 max-w-md overflow-x-auto rounded bg-zinc-50 p-2 font-mono text-xs whitespace-pre-wrap text-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">{{ row.drift }}</pre>
-        </details>
-        {% else %}
-        {{ ui.badge(label, tone, title=row.drift) }}
-        {% endif %}
-      </td>
-      <td>{{ ui.when(row.scanned_at) }}</td>
-    </tr>
+    {% call(part) ui.card("server-card-" ~ row.server.id, SERVER_COLS) %}
+    {% if part == "summary" %}
+    <span class="min-w-0">
+      <a href="/servers/{{ row.server.id }}" class="font-medium break-words text-zinc-900 hover:text-emerald-700 hover:underline dark:text-zinc-100 dark:hover:text-emerald-300">{{ row.server.name }}</a>
+      <span class="block text-xs text-zinc-500 dark:text-zinc-400">{{ row.server.node }}</span>
+    </span>
+    <span class="min-w-0 break-words">
+      {% if row.bundle_name %}
+      <a href="/modpacks/{{ row.server.bundle_id }}" class="hover:underline">{{ row.bundle_name }}</a>
+      {% elif row.server.bundle_id %}
+      <span class="text-zinc-500 dark:text-zinc-400">Modpack desconocido</span>
+      {% else %}
+      <span class="text-zinc-400 dark:text-zinc-500">Sin modpack</span>
+      {% endif %}
+    </span>
+    {% set label, tone = DRIFT[row.state] %}
+    <span>{{ ui.badge(label, tone, title=row.drift) }}</span>
+    <span class="text-xs text-zinc-600 dark:text-zinc-400">{{ ui.when(row.scanned_at) }}</span>
+    {% else %}
+    {% if row.drift %}
+    <pre class="overflow-x-auto rounded-sm bg-zinc-50 p-2 font-mono text-xs whitespace-pre-wrap text-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">{{ row.drift }}</pre>
+    {% elif row.state == "none" %}
+    <p class="text-zinc-500 dark:text-zinc-400">Todavía no se ha escaneado.</p>
+    {% else %}
+    <p class="text-zinc-500 dark:text-zinc-400">Su último escaneo no se comparó con un build.</p>
+    {% endif %}
+    <div>{{ ui.link_button("Abrir servidor", "/servers/" ~ row.server.id, small=True) }}</div>
+    {% endif %}
+    {% endcall %}
     {% endfor %}
     {% endcall %}
     {% endcall %}
@@ -55,33 +106,37 @@
 
   <div class="min-w-0 xl:col-span-2">
     {% call ui.section("Últimos builds", id="builds") %}
-    {% call ui.table(["Modpack", "Último", "Recomendado"], empty="No hay modpacks.", caption="Últimos builds") %}
+    {% call ui.card_list("No hay modpacks.", "Últimos builds", headers=["Modpack", "Último", "Recomendado"], cols=BUILD_COLS) %}
     {% for bundle, build in builds %}
-    <tr>
-      <td class="break-words">
-        <a href="/modpacks/{{ bundle.id }}" class="font-medium hover:underline">{{ bundle.name }}</a>
-        <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ bundle.version }} · {{ bundle.loader.value }}</div>
-        {% set pending = update_counts.get(bundle.id | string, 0) %}
-        {% if pending %}
-        <a href="/modpacks/{{ bundle.id }}/actualizaciones" class="mt-1 inline-block">{{ ui.badge(pending ~ (" actualización" if pending == 1 else " actualizaciones"), "warning") }}</a>
-        {% endif %}
-      </td>
-      <td>
-        {% if build %}
-        <span class="font-medium tabular-nums">#{{ build.number }}</span>
-        <div class="text-xs text-zinc-500 dark:text-zinc-400">{{ ui.when(build.created_at) }}</div>
-        {% else %}
-        <span class="text-zinc-400 dark:text-zinc-500">Sin builds</span>
-        {% endif %}
-      </td>
-      <td>
-        {% if bundle.recommended_build is not none %}
-        {{ ui.badge("#" ~ bundle.recommended_build, "accent") }}
-        {% else %}
-        <span class="text-zinc-400 dark:text-zinc-500">—</span>
-        {% endif %}
-      </td>
-    </tr>
+    {% set pending = update_counts.get(bundle.id | string, 0) %}
+    {% call(part) ui.card("build-card-" ~ bundle.id, BUILD_COLS) %}
+    {% if part == "summary" %}
+    <span class="min-w-0 break-words">
+      <a href="/modpacks/{{ bundle.id }}" class="font-medium hover:underline">{{ bundle.name }}</a>
+      <span class="block text-xs text-zinc-500 dark:text-zinc-400">{{ bundle.version }} · {{ bundle.loader.value }}</span>
+    </span>
+    <span>
+      {% if build %}
+      <span class="font-medium tabular-nums">#{{ build.number }}</span>
+      <span class="block text-xs text-zinc-500 dark:text-zinc-400">{{ ui.when(build.created_at) }}</span>
+      {% else %}
+      <span class="text-zinc-400 dark:text-zinc-500">Sin builds</span>
+      {% endif %}
+    </span>
+    <span>
+      {% if bundle.recommended_build is not none %}
+      {{ ui.badge("#" ~ bundle.recommended_build, "accent") }}
+      {% else %}
+      <span class="text-zinc-400 dark:text-zinc-500">—</span>
+      {% endif %}
+    </span>
+    {% else %}
+    {% if pending %}
+    <p><a href="/modpacks/{{ bundle.id }}/actualizaciones" class="hover:underline">{{ ui.badge(pending ~ (" actualización disponible" if pending == 1 else " actualizaciones disponibles"), "warning") }}</a></p>
+    {% endif %}
+    <div>{{ ui.link_button("Abrir modpack", "/modpacks/" ~ bundle.id, small=True) }}</div>
+    {% endif %}
+    {% endcall %}
     {% endfor %}
     {% endcall %}
     {% endcall %}
