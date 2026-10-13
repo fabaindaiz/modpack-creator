@@ -1832,8 +1832,8 @@ def test_the_pin_select_marks_the_pinned_version_and_greys_without_a_pin() -> No
     pinned, free = row_select(text, "P1", "version_id"), row_select(text, "P2", "version_id")
     assert f'hx-post="/modpacks/{BUNDLE_ID}/pins"' in pinned and 'hx-trigger="change"' in pinned
     assert 'name="from" value="fila"' in pinned and 'name="previous" value="ver-p1"' in pinned
-    assert selected(pinned) == "fijado 0.8.13" and 'data-saved="ver-p1"' in pinned and "hx-confirm" not in pinned
-    assert '<option value="ver-new">0.8.14</option>' in pinned and '<option value="">sin fijar</option>' in pinned
+    assert selected(pinned) == "fijado 0.8.13 (release)" and 'data-saved="ver-p1"' in pinned and "hx-confirm" not in pinned
+    assert '<option value="ver-new">0.8.14 (release)</option>' in pinned and '<option value="">sin fijar</option>' in pinned
     assert selected(free) == "sin fijar" and "text-zinc-500" in free and 'data-saved=""' in free
     assert "text-zinc-500" not in pinned[:pinned.index("<option")]
 

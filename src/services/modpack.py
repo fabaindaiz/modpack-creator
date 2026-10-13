@@ -714,8 +714,8 @@ class ModpackService():
     async def project_versions(self, bundle_id: str, project_id: str) -> list[VersionOption]:
         """
         The versions of one project the admin can pin it to: those for the pack's Minecraft version
-        and the loaders its resolution accepts for the project's type, in the channels the pack
-        allows, newest first. From the catalog when it accounts for the project's versions (the
+        and the loaders its resolution accepts for the project's type, in the channels the pack (and its
+        exception's) allows, newest first. From the catalog when it accounts for the project's versions (the
         resolution's checks keep them current); else asked of Modrinth once and stored with its
         list (spec 2026-10-09-economia-de-requests, F6). 422 for an id that is not a Modrinth id.
         """
@@ -733,7 +733,8 @@ class ModpackService():
                      if bundle.version in v.game_versions and set(loaders) & set(v.loaders)]
         else:
             found = await self._versions_fetch(project_id, loaders, bundle.version)
-        return pin_choices(found, bundle.version, loaders, bundle.channels)
+        channels = set(bundle.channels) | exception_channels(bundle.channel_exceptions.get(project_id))
+        return pin_choices(found, bundle.version, loaders, channels)
 
     # A mod's local page (spec §2, "Ficha local de cada mod").
 

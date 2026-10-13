@@ -499,6 +499,20 @@ def test_a_mod_with_a_beta_exception_also_offers_beta_versions(mongo: MongoRunne
     assert plain == ["j-2", "j-1"] and beta == ["j-3", "j-2", "j-1"]
 
 
+def test_the_card_s_picker_offers_what_the_row_offers_with_an_exception(mongo: MongoRunner) -> None:
+    # Final review of batch A (minor 8): the row added the exception's channels, the card did not.
+    async def scenario() -> Any:
+        s = Scenario(FakeModrinth())
+        bundle_id = await jei_pack(s, jei_listed([1, 2]) + jei_listed([3], kind="beta"))
+        await s.modpackDB.bundle_channel_exception_set(bundle_id, "J", "beta")
+        card = [o.version_id for o in await s.service.project_versions(bundle_id, "J")]
+        row = [o.version_id for o in (await s.service.mod_list(bundle_id, check=None)).rows[0].pin_options or []]
+        return card, row
+
+    card, row = mongo(scenario)
+    assert card == row == ["j-3", "j-2", "j-1"]
+
+
 def test_the_row_loads_only_its_target_s_versions_and_only_what_the_select_needs(mongo: MongoRunner) -> None:
     # Final review (2026-10-13): every #mods render loaded the whole documents of every list of the
     # Minecraft version, for any loader. Only the list of the row's target, as briefs.

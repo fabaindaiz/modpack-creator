@@ -43,8 +43,8 @@
       <option value="" disabled>ver versiones en la ficha</option>
       {% else %}
       {% for option in row.pin_options %}
-      {% if option.version_id == pin %}<option value="{{ option.version_id }}" selected>fijado {{ option.version_number }}</option>
-      {% else %}<option value="{{ option.version_id }}">{{ option.version_number }}</option>{% endif %}
+      {% if option.version_id == pin %}<option value="{{ option.version_id }}" selected>fijado {{ option.version_number }}{% if option.channel %} ({{ option.channel }}){% endif %}</option>
+      {% else %}<option value="{{ option.version_id }}">{{ option.version_number }}{% if option.channel %} ({{ option.channel }}){% endif %}</option>{% endif %}
       {% endfor %}
       {% endif %}
     </select>
