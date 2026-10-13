@@ -13,6 +13,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from typing import Any, Literal, Optional
+from src.library.bridges import bridges_for
 from pydantic import BaseModel, field_validator
 
 ADMIN = "admin"
@@ -135,15 +136,36 @@ class Target(BaseModel):
     game_version: str
     loader: str
     channels: frozenset[str] = frozenset({"release"})
+    # The bridges the pack turned on (batch C, d-7985ee-a8d395): keys of src/library/bridges.py.
+    bridges: frozenset[str] = frozenset()
 
     def loaders(self, project_type: str) -> set[str]:
-        """The Modrinth loaders a project of this type may have to run in this pack."""
+        """The Modrinth loaders a project of this type runs on natively in this pack. Only the
+        native ones (d-7985ee-6ebc03): a use that must see bridged versions asks for
+        `loaders_with_bridges`."""
         return TYPE_LOADERS.get(project_type) or LOADER_ACCEPTS.get(self.loader, {self.loader})
+
+    def _active_bridges(self) -> list[Any]:
+        return [b for b in bridges_for(self.loader, self.game_version) if b.key in self.bridges]
+
+    def loaders_with_bridges(self, project_type: str) -> set[str]:
+        """The native loaders and, for a mod, those its active bridges run on this version."""
+        native = self.loaders(project_type)
+        if project_type in TYPE_LOADERS:
+            return native
+        return native | {b.guest for b in self._active_bridges()}
+
+    def via(self, candidate: "Candidate", project_type: str = "mod") -> Optional[str]:
+        """None when the version runs natively (a jar for both loaders is native); otherwise the key
+        of the active bridge it runs through, or None when none does."""
+        if self.loaders(project_type) & set(candidate.loaders) or project_type in TYPE_LOADERS:
+            return None
+        return next((b.key for b in self._active_bridges() if b.guest in candidate.loaders), None)
 
     def fits(self, candidate: Candidate, project_type: str = "mod") -> bool:
         """Runs on this game version and loader, and is listed. Channels aside: a mod that pins
         an exact version of another gets that version, whatever its channel."""
-        accepted = self.loaders(project_type)
+        accepted = self.loaders_with_bridges(project_type)
         return (self.game_version in candidate.game_versions
                 and bool(accepted & set(candidate.loaders))
                 and candidate.status == "listed")
@@ -162,6 +184,9 @@ class Catalog:
     by_id: dict[str, Candidate] = field(default_factory=dict)
     types: dict[str, str] = field(default_factory=dict)
     gone: set[str] = field(default_factory=set)
+    # The projects whose versions for the active bridges' loaders were fetched (d-7985ee-4fd88e):
+    # only those with no native version that fits.
+    bridged_loaded: set[str] = field(default_factory=set)
 
     @classmethod
     def of(cls, candidates: Iterable[Candidate], types: Optional[Mapping[str, str]] = None) -> "Catalog":
@@ -238,6 +263,8 @@ class LockEntry(BaseModel):
     server: Server
     reason: str
     requested_by: list[str]
+    # The bridge it runs through (batch C), None when native.
+    via: Optional[str] = None
 
 
 def _asked(requester: str) -> list[str]:
@@ -285,11 +312,14 @@ class Lock(BaseModel):
     needs_versions: set[str]
     # Projects resolved to a version outside the pack's channels through their channel exception.
     excepted: list[str] = []
+    # Projects with no native version that fits, whose versions for the active bridges' loaders
+    # are still to fetch (d-7985ee-4fd88e).
+    needs_bridged: set[str] = set()
 
     @property
     def complete(self) -> bool:
         """Nothing left to fetch: the lock says all there is to say about this catalog."""
-        return not self.needs_projects and not self.needs_types and not self.needs_versions
+        return not self.needs_projects and not self.needs_types and not self.needs_versions and not self.needs_bridged
 
     @property
     def undecided(self) -> list[LockEntry]:
@@ -332,6 +362,7 @@ class _Run:
         self.needs_projects: set[str] = set()
         self.needs_types: set[str] = set()
         self.needs_versions: set[str] = set()
+        self.needs_bridged: set[str] = set()
         self.excepted: set[str] = set()
 
     def run(self) -> Lock:
@@ -386,6 +417,13 @@ class _Run:
                 requested_by=_asked(requester), detail=(
                 f"un proyecto de tipo {project_type} no entra en un modpack; pedido por {requester}")))
             return None
+        target = self.request.target
+        if (target.loaders_with_bridges(project_type) != target.loaders(project_type)
+                and project_id not in self.catalog.bridged_loaded
+                and not any(target.fits(c, project_type) and target.via(c, project_type) is None
+                            for c in self.catalog.by_project[project_id])):
+            self.needs_bridged.add(project_id)
+            return None
         fitting_floors: list[Candidate] = []
         missing_floors = False
         for floor_id in self.request.floors.get(project_id, []):
@@ -408,7 +446,7 @@ class _Run:
         if not allowed:
             fitting = [c for c in self.catalog.by_project[project_id]
                        if self.request.target.fits(c, project_type)]
-            best_fit = min(fitting, key=_preference) if fitting else None
+            best_fit = min(fitting, key=lambda c: self._rank(c, project_type)) if fitting else None
             alternative = None if best_fit is None else Alternative(
                 version_id=best_fit.version_id, version_number=best_fit.version_number,
                 channel=best_fit.version_type, published=best_fit.date_published)
@@ -418,7 +456,7 @@ class _Run:
                     f"sin versión para {self.request.target.game_version} con {self.request.target.loader} "
                     f"en los canales {', '.join(sorted(self.request.target.channels))}; pedido por {requester}")))
             return None
-        best = min(allowed, key=_preference)
+        best = min(allowed, key=lambda c: self._rank(c, project_type))
         return self._take(best, reason, requester, exact=False)
 
     def _take_from_floor(self, project_id: str, project_type: str, floor: Candidate, allowed: list[Candidate],
@@ -431,7 +469,7 @@ class _Run:
         pool = newer(allowed)
         if not pool and project_id in self.request.channel_exceptions:
             pool = newer(self._excepted(project_id, project_type))
-        best = min(pool, key=_preference) if pool else floor
+        best = min(pool, key=lambda c: self._rank(c, project_type)) if pool else floor
         if not self.request.target.allows(best, project_type):
             self.excepted.add(project_id)
         else:
@@ -487,6 +525,10 @@ class _Run:
         self.exact[project_id] = _Exact(version_id, [requester])
         return self._take(candidate, reason, requester, exact=True)
 
+    def _rank(self, candidate: Candidate, project_type: str) -> tuple[bool, int, float]:
+        """Native first (d-7985ee-09c74f), then the most stable channel, then the newest."""
+        return (self.request.target.via(candidate, project_type) is not None, *_preference(candidate))
+
     def _take(self, candidate: Candidate, reason: str, requester: str, exact: bool) -> Candidate:
         self.chosen[candidate.project_id] = _Chosen(
             candidate, reason, [] if requester == ADMIN else [requester], exact)
@@ -495,6 +537,12 @@ class _Run:
                                          requested_by=_asked(requester),
                                          detail=f"{candidate.version_id} no tiene archivo"))
         return candidate
+
+    def _only_bridged(self, project_id: str) -> bool:
+        """Whether every known version of the project that fits runs only through a bridge."""
+        kind = self.catalog.types.get(project_id, "mod")
+        fitting = [c for c in self.catalog.by_project.get(project_id, []) if self.request.target.fits(c, kind)]
+        return bool(fitting) and all(self.request.target.via(c, kind) is not None for c in fitting)
 
     def _requested_by(self, project_id: str, requester: str) -> None:
         requested_by = self.chosen[project_id].requested_by
@@ -557,7 +605,8 @@ class _Run:
                 version_id=chosen.candidate.version_id, project_type=self.catalog.types.get(project_id, "mod"),
                 version_number=chosen.candidate.version_number, file=chosen.candidate.file,
                 environment=chosen.candidate.environment, server=server, reason=chosen.reason,
-                requested_by=chosen.requested_by))
+                requested_by=chosen.requested_by,
+                via=self.request.target.via(chosen.candidate, self.catalog.types.get(project_id, "mod"))))
         for project_id, chosen in self.chosen.items():
             if self.catalog.types.get(project_id) != "shader":
                 continue
@@ -565,10 +614,10 @@ class _Run:
             if loaders and not any(SHADER_LOADER_MODS[l] in self.chosen for l in loaders):
                 self.suggested.setdefault(SHADER_LOADER_MODS[loaders[0]], []).append(project_id)
         suggestions = [Suggestion(project_id=p, requested_by=r) for p, r in self.suggested.items()
-                       if p not in self.chosen]
+                       if p not in self.chosen and not self._only_bridged(p)]
         return Lock(entries=entries, problems=self.problems, suggestions=suggestions,
                     needs_projects=self.needs_projects, needs_types=self.needs_types,
-                    needs_versions=self.needs_versions,
+                    needs_versions=self.needs_versions, needs_bridged=self.needs_bridged,
                     excepted=[p for p in self.chosen if p in self.excepted])
 
 
