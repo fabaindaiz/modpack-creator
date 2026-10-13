@@ -72,7 +72,7 @@ def test_a_pack_with_updates_asks_to_see_them() -> None:
 
 def test_a_server_never_scanned_asks_to_scan() -> None:
     [item] = attention([srv(state="none", scanned_at=None)], [], [], NOW)
-    assert (item.action_label, item.href) == ("Escanear", "/servers/id-Survival")
+    assert (item.action_label, item.href) == ("Escanear", "/servers/id-Survival#escaneo")
     assert item.text == "Survival nunca se ha escaneado."
 
 
@@ -139,3 +139,16 @@ def test_a_failure_a_later_success_of_the_same_job_fixed_is_not_shown() -> None:
     assert unresolved([failed], [made("server_scan", "done", "server:s2", 10)]) == [failed]
     assert unresolved([failed], [made("server_scan", "done", "server:s1", 40)]) == [failed]
     assert unresolved([failed], [made("server_update", "done", "server:s1", 10)]) == [failed]
+
+
+def test_scanning_lands_on_the_scan_section() -> None:
+    """User walk 2026-10-13 (K3): the card led to the top of the server page, the scan button far below."""
+    [item] = attention([srv(state="none", scanned_at=None)], [], [], NOW)
+    assert item.href.endswith("#escaneo")
+
+
+def test_an_editor_sees_operator_cards_without_an_action_of_theirs() -> None:
+    """User walk 2026-10-13 (K2): simulating and linking are an operator's (d-7985ee-edef1e). An editor
+    sees the card, and opens the page to look, not to act."""
+    items = attention([srv(state="drift"), srv("Lobby", has_pack=False, state="unknown")], [], [], NOW, operator=False)
+    assert {(i.action_label, i.href) for i in items} == {("Ver", "/servers/id-Survival"), ("Ver", "/servers/id-Lobby")}

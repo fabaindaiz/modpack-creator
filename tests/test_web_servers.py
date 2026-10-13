@@ -1583,7 +1583,7 @@ def test_a_set_up_server_folds_its_list_into_one_line() -> None:
 
 
 def test_a_server_without_scan_or_pack_starts_the_list() -> None:
-    client, fakes = setup()
+    client, fakes = setup(OPERATOR)
     fakes.ptero.server = server(bundle_id=None)
     fakes.ptero.scan = None
     fakes.ptero.comparison = None

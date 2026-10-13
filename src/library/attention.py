@@ -109,8 +109,10 @@ def _pending(fact: PackFact) -> str:
 
 
 def attention(servers: Sequence[ServerFact], packs: Sequence[PackFact], failed: Sequence[FailedJob],
-              now: datetime) -> list[Attention]:
-    """Every item that needs attention, by severity and then newest first (undated last)."""
+              now: datetime, operator: bool = True) -> list[Attention]:
+    """Every item that needs attention, by severity and then newest first (undated last). Simulating
+    and linking are an operator's (d-7985ee-edef1e): an editor gets those cards to look, not to act
+    (user walk, 2026-10-13)."""
     items: list[Attention] = []
     for job in failed:
         if as_utc(job.at) < now - FAILED_WINDOW:
@@ -120,14 +122,14 @@ def attention(servers: Sequence[ServerFact], packs: Sequence[PackFact], failed: 
         items.append(Attention(FAILED, text, "Ver", f"/jobs/{job.id}", job.at))
     for server in servers:
         if server.state == "drift":
-            items.append(Attention(BLOCKING, f"{server.name} no coincide con su build.", "Simular",
-                                   f"/servers/{server.id}#actualizar", server.scanned_at))
+            label, href = ("Simular", f"/servers/{server.id}#actualizar") if operator else ("Ver", f"/servers/{server.id}")
+            items.append(Attention(BLOCKING, f"{server.name} no coincide con su build.", label, href, server.scanned_at))
         if server.state == "none":
             items.append(Attention(AVAILABLE, f"{server.name} nunca se ha escaneado.", "Escanear",
-                                   f"/servers/{server.id}", None))
+                                   f"/servers/{server.id}#escaneo", None))
         if not server.has_pack:
-            items.append(Attention(TIDY, f"{server.name} no tiene un modpack vinculado.", "Vincular",
-                                   f"/servers/{server.id}#modpack", None))
+            label, href = ("Vincular", f"/servers/{server.id}#modpack") if operator else ("Ver", f"/servers/{server.id}")
+            items.append(Attention(TIDY, f"{server.name} no tiene un modpack vinculado.", label, href, None))
     for pack in packs:
         if pack.problems or pack.undecided:
             vista = "problemas" if pack.problems else "decidir"

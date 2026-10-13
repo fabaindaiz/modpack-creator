@@ -179,7 +179,8 @@ async def server_detail(
         bundle_id=str(bundle.id) if bundle is not None else None, bundle_name=bundle.name if bundle is not None else None,
         resolved=saved is not None and not saved[1], pending=pending_count(saved),
         latest_build=bundle.latest_build if bundle is not None else None,
-        simulated_build=await fact(jobService.simulated_build(server_id, str(bundle.id)), None) if bundle is not None else None))
+        simulated_build=await fact(jobService.simulated_build(server_id, str(bundle.id)), None) if bundle is not None else None),
+        operator=actor.is_operator)
     game_versions = await modrinthService.game_versions_release() if server.bundle_id is None else None
     return render(request, "servers/detail.html", actor, onboarding=onboarding, game_versions=game_versions, server=server, server_id=server_id, bundles=bundles,
                   bundle=bundle, scan=scan, comparison=comparison, compare_note=compare_note, titles=titles,

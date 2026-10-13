@@ -80,7 +80,7 @@ async def home(
                   updates=update_counts.get(bundle_id, 0), checked_at=checked_at.get(bundle_id),
                   resolved_at=resolutions[bundle_id].resolved_at if bundle_id in resolutions else None)
          for bundle_id in bundle_ids],
-        [failed_job_fact(job, server_names, bundle_names) for job in failed], utcnow())
+        [failed_job_fact(job, server_names, bundle_names) for job in failed], utcnow(), operator=actor.is_operator)
     last_check = max((as_utc(check.checked_at) for check in checks.values()), default=None)
     return render(request, "home.html", actor, servers=servers, builds=builds, jobs=jobs, update_counts=update_counts,
                   server_names=server_names, attention=items, visible=VISIBLE, last_check=last_check)

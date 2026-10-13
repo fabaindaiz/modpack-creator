@@ -2629,7 +2629,7 @@ def test_v1_build_queues_the_build_job_and_answers_202_with_it() -> None:
 
 
 def test_the_pack_page_lists_what_is_left_to_set_up() -> None:
-    client, modpack, _ = setup()
+    client, modpack, _ = setup(OPERATOR)
     modpack.saved = resolution(lock(entry("P1"), entry("P2", "admin")))
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
     part = text[text.index("data-onboarding"):]

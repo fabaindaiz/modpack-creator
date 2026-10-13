@@ -472,7 +472,7 @@ async def modpack_detail(
         projects=len(bundle.projects), resolved=saved is not None and not context["mods"].stale,
         pending=pending_count((saved, context["mods"].stale) if saved else None), latest_build=bundle.latest_build,
         linked_servers=tuple((str(s.id), s.name) for s in servers),
-        simulated=bundle.latest_build is not None and bundle.latest_build in simulated))
+        simulated=bundle.latest_build is not None and bundle.latest_build in simulated), operator=actor.is_operator)
     return render(request, "modpacks/detail.html", actor, onboarding=onboarding, builds=builds, servers=servers, channel_names=CHANNELS,
                   pending=_has_pending((saved, context["mods"].stale) if saved else None),
                   next_servers=servers if fresh else None, human_size=human_size, nav_active="modpacks",

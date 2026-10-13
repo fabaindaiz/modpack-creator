@@ -14,7 +14,7 @@ from src.model.modpack.project import ModpackResolution
 from src.model.modpack.update_check import AvailableUpdate, UpdateCheck
 from src.model.utils import MinecraftLoaders
 from src.services.modpack import ModpackService
-from tests._actors import EDITOR
+from tests._actors import EDITOR, OPERATOR
 from tests.test_web_base import (BUNDLE_ID, T0, FakeChecks, FakeJobs, FakeModpack, FakePterodactyl, client,
                                  default_fakes, server)
 
@@ -44,11 +44,11 @@ def calm_fakes() -> tuple[FakePterodactyl, FakeModpack, FakeJobs]:
 def test_the_strip_lists_what_needs_attention_with_one_action_each() -> None:
     pterodactyl, modpack, jobs = default_fakes()
     linked, loose = pterodactyl.servers
-    section = strip(client(EDITOR, (pterodactyl, modpack, jobs)).get("/").text)
+    section = strip(client(OPERATOR, (pterodactyl, modpack, jobs)).get("/").text)
     assert "Necesita atención" in section
     assert "Survival no coincide con su build." in section
     assert f'href="/servers/{linked.id}#actualizar"' in section and "Simular" in section
-    assert "Creativo nunca se ha escaneado." in section and f'href="/servers/{loose.id}"' in section
+    assert "Creativo nunca se ha escaneado." in section and f'href="/servers/{loose.id}#escaneo"' in section
     assert "Creativo no tiene un modpack vinculado." in section and f'href="/servers/{loose.id}#modpack"' in section
     # By severity: the drift before the scan, the scan before the link.
     assert section.index("Simular") < section.index("Escanear") < section.index("Vincular")
@@ -65,7 +65,7 @@ def test_a_failed_job_of_the_last_day_and_a_pack_to_decide_are_in_the_strip() ->
     old = Job.model_construct(id=PydanticObjectId(), kind="server_scan", key=None, payload={}, status="failed",
                               created_at=now - timedelta(days=3), finished_at=now - timedelta(days=3))
     modpack = FakeModpack(default_fakes()[1].rows, {str(BUNDLE_ID): resolution(undecided=2)})
-    section = strip(client(EDITOR, (pterodactyl, modpack, FakeJobs(jobs.jobs, [failed, old]))).get("/").text)
+    section = strip(client(OPERATOR, (pterodactyl, modpack, FakeJobs(jobs.jobs, [failed, old]))).get("/").text)
     assert "Falló la actualización de Survival." in section and f'href="/jobs/{failed.id}"' in section
     assert f'href="/jobs/{old.id}"' not in section
     assert "Pack Uno tiene 2 mods por decidir." in section
@@ -84,7 +84,7 @@ def test_a_pack_with_updates_asks_to_see_them() -> None:
 
 def test_more_than_five_go_inside_see_all() -> None:
     servers = [server(f"Suelto {n}") for n in range(4)]  # each: never scanned and without a pack
-    section = strip(client(EDITOR, (FakePterodactyl(servers, {}), default_fakes()[1], FakeJobs([]))).get("/").text)
+    section = strip(client(OPERATOR, (FakePterodactyl(servers, {}), default_fakes()[1], FakeJobs([]))).get("/").text)
     shown, _, hidden = section.partition("<details")
     assert hidden, "no «Ver todas»"
     assert "Ver todas (8)" in hidden

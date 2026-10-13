@@ -45,6 +45,8 @@ class Step:
     action: Optional[tuple[str, str]]
     # The label of the earlier step it waits for, when that one is not done.
     waits_for: Optional[str]
+    # Said instead of an action the person cannot take (an editor, an operator's step).
+    note: Optional[str] = None
 
 
 class ServerFacts(NamedTuple):
@@ -79,27 +81,40 @@ NEEDS: dict[str, dict[str, tuple[str, ...]]] = {
 }
 
 
-def _chain(steps: list[tuple[str, str, bool, str, tuple[str, str]]], needs: dict[str, tuple[str, ...]]) -> list[Step]:
+# The steps only an operator takes (d-7985ee-edef1e): linking a pack to a server, and simulating.
+OPERATOR_STEPS: dict[str, frozenset[str]] = {
+    "server": frozenset({"pack", "simulate"}),
+    "pack": frozenset({"server", "simulate"}),
+}
+OPERATOR_NOTE = "Lo hace un operador."
+
+
+def _chain(steps: list[tuple[str, str, bool, str, tuple[str, str]]], needs: dict[str, tuple[str, ...]],
+           operator_only: frozenset[str] = frozenset(), operator: bool = True) -> list[Step]:
     """Steps in order: one whose needed step is not done waits for the first such, instead of
-    offering its action."""
+    offering its action; an operator's step, to anyone else, says so instead of offering it (user
+    walk, 2026-10-13: it led an editor to a disabled control)."""
     built: dict[str, Step] = {}
     for key, label, done, detail, action in steps:
         blocking = next((built[n] for n in needs.get(key, ()) if not built[n].done), None)
         waits = blocking is not None and not done
+        not_theirs = not done and not operator and key in operator_only
         built[key] = Step(key=key, label=label, done=done, detail=detail, why=WHY[key],
-                          action=None if done or waits else action,
-                          waits_for=blocking.label if waits and blocking is not None else None)
+                          action=None if done or waits or not_theirs else action,
+                          waits_for=blocking.label if waits and blocking is not None else None,
+                          note=OPERATOR_NOTE if not_theirs else None)
     return list(built.values())
 
 
 def _resolve_step(bundle_id: Optional[str], resolved: bool, pending: int) -> tuple[str, str, bool, str, tuple[str, str]]:
     done = resolved and pending == 0
     detail = f"{pending} por decidir o con problemas" if resolved and pending else ""
-    action = ("Decidir", f"/modpacks/{bundle_id}?vista=decidir") if resolved else ("Resolver", f"/modpacks/{bundle_id}")
+    # The resolve button heads the pack's mods (user walk, 2026-10-13: the bare page left it out of sight).
+    action = ("Decidir", f"/modpacks/{bundle_id}?vista=decidir") if resolved else ("Resolver", f"/modpacks/{bundle_id}#mods")
     return "resolve", "Pack resuelto", done, detail, action
 
 
-def server_steps(server_id: str, facts: ServerFacts) -> list[Step]:
+def server_steps(server_id: str, facts: ServerFacts, operator: bool = True) -> list[Step]:
     """A server's steps: scanned, a pack linked, the pack resolved with nothing pending, a build,
     and that build simulated on this server."""
     simulated = facts.latest_build is not None and facts.simulated_build == facts.latest_build
@@ -114,10 +129,10 @@ def server_steps(server_id: str, facts: ServerFacts) -> list[Step]:
          ("Crear build", f"/modpacks/{facts.bundle_id}#builds")),
         ("simulate", "Simulado en este servidor", simulated, "",
          ("Simular", f"/servers/{server_id}#actualizar")),
-    ], NEEDS["server"])
+    ], NEEDS["server"], OPERATOR_STEPS["server"], operator)
 
 
-def pack_steps(bundle_id: str, facts: PackFacts) -> list[Step]:
+def pack_steps(bundle_id: str, facts: PackFacts, operator: bool = True) -> list[Step]:
     """A pack's steps: mods, resolved with nothing pending, a build, a linked server, and the build
     simulated on one of them."""
     first = facts.linked_servers[0][0] if facts.linked_servers else None
@@ -132,7 +147,7 @@ def pack_steps(bundle_id: str, facts: PackFacts) -> list[Step]:
          ", ".join(name for _, name in facts.linked_servers), ("Vincular un servidor", "/servers")),
         ("simulate", "Simulado", facts.simulated, "",
          ("Simular", f"/servers/{first}#actualizar") if first else ("Vincular un servidor", "/servers")),
-    ], NEEDS["pack"])
+    ], NEEDS["pack"], OPERATOR_STEPS["pack"], operator)
 
 
 def pending_count(saved: Optional[tuple[Any, bool]]) -> int:
