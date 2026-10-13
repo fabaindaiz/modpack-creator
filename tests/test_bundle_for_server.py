@@ -177,13 +177,15 @@ def test_a_lost_race_deletes_the_new_pack_and_keeps_the_other_link(mongo: MongoR
             await service.bundle_for_server(server_id, "Creativo", "26.3", MinecraftLoaders.fabric, True, OPERATOR)
         server = await PterodactylDatabase().server_get(server_id)
         names = sorted(b.name for b in await ModpackBundle.find_all().to_list())
-        return caught.value, server.bundle_id == other, names, [e[0] for e in audit.events]
+        return caught.value, server.bundle_id == other, names, [e[0] for e in audit.events], audit.events[-1][1]
 
-    error, kept, names, events = mongo(scenario)
+    error, kept, names, events, deleted = mongo(scenario)
     assert error.status_code == 409
     assert "otro operador" in error.detail and "«Creativo»" in error.detail and "se borró" in error.detail
     assert kept and names == ["Del otro"]
     assert events == ["bundle.create", "bundle.delete"]
+    # The pack is gone by the time it is recorded: the event carries the name itself (A10).
+    assert deleted.name == "Creativo"
 
 
 @pytest.mark.network

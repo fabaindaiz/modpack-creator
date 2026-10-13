@@ -3,14 +3,22 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import pytest
+from beanie import PydanticObjectId
 from fastapi import HTTPException
 
 from src.database.audit import AuditDatabase
+from src.database.modpack import ModpackDatabase
+from src.database.modrinth import ModrinthDatabase
+from src.database.pterodactyl import PterodactylDatabase
 from src.library.logging import _request_id
 from src.model.audit import AuditEvent, AuditTarget
-from src.services.audit import AuditService
+from src.model.modpack import ModpackBundle, ModpackBundlePatch
+from src.model.pterodactyl import PterodactylServer
+from src.model.utils import MinecraftLoaders
+from src.services.audit import AuditService, TargetNames
 from tests._actors import EDITOR, OPERATOR
 from tests.conftest import MongoRunner
+from tests.test_mod_list import project
 
 pytestmark = pytest.mark.network
 
@@ -19,7 +27,7 @@ T0 = datetime(2026, 10, 1, 12, 0, tzinfo=timezone.utc)
 
 def _service(times: list[datetime]) -> AuditService:
     clock = iter(times)
-    return AuditService(AuditDatabase(), lambda: next(clock))
+    return AuditService(AuditDatabase(), clock=lambda: next(clock))
 
 
 def test_record_stores_actor_action_target_and_time(mongo: MongoRunner) -> None:
@@ -197,3 +205,64 @@ def test_find_pages_within_a_date_range(mongo: MongoRunner) -> None:
     first, second = mongo(scenario)
     assert first == ["a3", "a2"]
     assert second == ["a1"]
+
+
+# The target's name (A10): written with the event, so a renamed or deleted target still reads.
+
+def _named_service(times: list[datetime]) -> AuditService:
+    clock = iter(times)
+    names = TargetNames(ModpackDatabase(), PterodactylDatabase(), ModrinthDatabase())
+    return AuditService(AuditDatabase(), names, clock=lambda: next(clock))
+
+
+def test_an_event_keeps_the_target_name_it_had(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Optional[str], Optional[str]]:
+        db = ModpackDatabase()
+        bundle = await db.bundle_insert(ModpackBundle(name="Survival", description="", version="1.21.1",
+                                                      loader=MinecraftLoaders.fabric))
+        service = _named_service([T0])
+        event = await service.record(EDITOR, "bundle.pin", AuditTarget(kind="bundle", id=str(bundle.id)))
+        await db.bundle_update(str(bundle.id), ModpackBundlePatch(name="Creativo"))
+        stored = await AuditEvent.get(event.id)
+        assert stored is not None
+        return event.target.name, stored.target.name
+
+    assert mongo(scenario) == ("Survival", "Survival")
+
+
+def test_servers_and_replacements_are_named_from_the_catalog(mongo: MongoRunner) -> None:
+    async def scenario() -> list[Optional[str]]:
+        server = await PterodactylDatabase().server_insert(PterodactylServer(
+            identifier="1a1a", internal_id=1, uuid="1a1a-0", name="Lobby", node="n1", description="",
+            status=None, is_suspended=False, is_installing=False, is_transferring=False))
+        await ModrinthDatabase().project_upsert_many([project("JJJJ", "JEI")])
+        service = _named_service([T0, T0])
+        on_server = await service.record(OPERATOR, "server.scan", AuditTarget(kind="server", id=str(server.id)))
+        on_rule = await service.record(EDITOR, "replacement.set", AuditTarget(kind="replacement", id="JJJJ"))
+        return [on_server.target.name, on_rule.target.name]
+
+    assert mongo(scenario) == ["Lobby", "JEI"]
+
+
+def test_a_name_given_by_the_caller_is_kept(mongo: MongoRunner) -> None:
+    async def scenario() -> Optional[str]:
+        gone = str(PydanticObjectId())  # the pack is already deleted: nothing to look up
+        event = await _named_service([T0]).record(
+            EDITOR, "bundle.delete", AuditTarget(kind="bundle", id=gone, name="Test"))
+        stored = await AuditEvent.get(event.id)
+        assert stored is not None
+        return stored.target.name
+
+    assert mongo(scenario) == "Test"
+
+
+def test_an_unknown_target_records_without_a_name(mongo: MongoRunner) -> None:
+    async def scenario() -> list[Optional[str]]:
+        service = _named_service([T0] * 4)
+        targets = [AuditTarget(kind="bundle", id=str(PydanticObjectId())), AuditTarget(kind="bundle", id="nuevo"),
+                   AuditTarget(kind="server", id="not-an-id"), AuditTarget(kind="job", id=str(PydanticObjectId()))]
+        names = [(await service.record(EDITOR, "x", target)).target.name for target in targets]
+        assert await AuditEvent.find_all().count() == 4
+        return names
+
+    assert mongo(scenario) == [None, None, None, None]

@@ -1,6 +1,9 @@
 from datetime import datetime
 from typing import Any, Callable, Optional, Protocol, runtime_checkable
 from src.database.audit import AuditDatabase
+from src.database.modpack import ModpackDatabase
+from src.database.modrinth import ModrinthDatabase
+from src.database.pterodactyl import PterodactylDatabase
 from src.library.logging import request_id
 from src.model.audit import AuditEvent, AuditTarget
 from src.model.users import Actor
@@ -26,12 +29,28 @@ class AuditSink(Protocol):
     async def record(self, actor: Actor, action: str, target: AuditTarget,
                      details: Optional[dict[str, Any]] = None) -> Any: ...
 
+class TargetNames():
+    """The name of an event's target, looked up when the event is written (A10)."""
+    def __init__(self,
+            modpackDB: ModpackDatabase,
+            pterodactylDB: PterodactylDatabase,
+            modrinthDB: ModrinthDatabase,
+            ) -> None:
+        self.modpackDB = modpackDB
+        self.pterodactylDB = pterodactylDB
+        self.modrinthDB = modrinthDB
+
+    async def name(self, target: AuditTarget) -> Optional[str]:
+        return None
+
 class AuditService():
     def __init__(self,
             auditDB: AuditDatabase,
+            names: Optional[TargetNames] = None,
             clock: Callable[[], datetime] = utcnow,
             ) -> None:
         self.auditDB = auditDB
+        self.names = names
         self.clock = clock
 
     async def record(self, actor: Actor, action: str, target: AuditTarget, details: Optional[dict[str, Any]] = None) -> AuditEvent:
