@@ -799,10 +799,15 @@ JSON con `request_id` y `job_id`.
   el flujo de alta y el tablero, con móvil y F09; ~2 sesiones), **C** (7: loaders secundarios;
   investigación y ~2 sesiones). La investigación del 7: `docs/research/2026-10-13-loaders-secundarios.md`
   (leída por resúmenes; verificar contra la fuente lo que sostenga una decisión).
-- **Tanda A, diseñada (2026-10-13):** revisión de decisiones con el dueño (A1–A14) y spec
-  `docs/superpowers/specs/2026-10-13-panel-tanda-a-design.md`, a la espera de que el dueño la revise;
-  después el plan. El dueño sumó en la revisión los filtros de la lista de mods (A6) y el aviso con
-  Deshacer al fijar desde la fila (A14), y pidió Tailwind para la estructura.
+- **Tanda A, hecha en código, sin desplegar (2026-10-13):** revisión de decisiones con el dueño
+  (A1–A14, d-7985ee-b21228 … d-7985ee-e8c5fb), spec
+  `docs/superpowers/specs/2026-10-13-panel-tanda-a-design.md` y plan
+  `docs/superpowers/plans/2026-10-13-panel-tanda-a.md`, en la rama `feat/panel-tanda-a`. El dueño sumó
+  en la revisión los filtros de la lista de mods (A6) y el aviso con Deshacer al fijar desde la fila
+  (A14), y pidió Tailwind para la estructura. Auditoría y trabajos ya no desbordan a 360 px (el
+  móvil compacto del resto de las páginas sigue en la tanda B). Chequeo: el gate con MongoDB y el
+  barrido visual. **Sin verificar:** el selector nativo y el `<datalist>` en un teléfono real; y si
+  los índices nuevos de `audit` sirven a la consulta con `$facet` (no se corrió `explain`).
 - **Tanda B suma el estilo (dueño, 2026-10-13):** un aspecto inspirado en Modrinth, escrito desde
   cero (acento verde propio, sin su nombre, logo ni mascota; nota de «no afiliado»), con Lucide e
   Inter tomados de sus propias fuentes si el dueño acepta esos terceros en su revisión. Investigación:

@@ -12,7 +12,7 @@
   "admin": "text-amber-900 ring-amber-300 dark:text-amber-200 dark:ring-amber-500/50",
 }.get(row.side, GREY) %}
 {% set exception = bundle.channel_exceptions.get(row.project_id, "") %}
-<div class="flex flex-wrap items-center gap-2 px-3 pb-2 pl-[4.75rem]">
+<div class="flex flex-wrap items-center gap-2 px-3 pb-2 sm:pl-[4.75rem]">
   <form hx-post="/modpacks/{{ bundle_id }}/decisions" hx-trigger="change" hx-target="#mods" hx-swap="outerHTML">
     <input type="hidden" name="project_id" value="{{ row.project_id }}">
     <select name="server" data-saved="{{ side_value }}" aria-label="Lado de {{ row.title }}" class="{{ SELECT ~ side_tone }}">

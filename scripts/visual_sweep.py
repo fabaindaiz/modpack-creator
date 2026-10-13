@@ -411,6 +411,9 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
              "compare": f"/modpacks/{ids['bundle']}/builds/compare?de=1&a=2",
              "updates": f"/modpacks/{ids['bundle']}/actualizaciones",
              "modpack-pending": f"/modpacks/{ids['pending']}", "modpack-downgrade": f"/modpacks/{ids['downgrade']}",
+             # Batch A (2026-10-13): the filter bar with a filter on, and the suggestions tab.
+             "modpack-filtered": f"/modpacks/{ids['bundle']}?vista=todos&lado=servidor&nombre=s",
+             "modpack-suggestions": f"/modpacks/{ids['bundle']}?vista=sugerencias",
              "replacements": "/replacements", "servers": "/servers", "server": f"/servers/{ids['server']}",
              "server-new": f"/servers/{ids['server_new']}",
              "jobs": "/jobs", "job": f"/jobs/{ids['job']}", "dryrun": f"/jobs/{ids['dryrun']}", "audit": "/audit",
@@ -448,6 +451,7 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
                                            "console_errors": list(errors)}
                             errors.clear()
                         report.update(shoot_open_card(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
+                        report.update(shoot_open_cards(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                         report.update(check_live_refresh(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                         if who == "operator":
                             report.update(shoot_update_dialog(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
@@ -465,6 +469,7 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
                                 # These change data (a mod is added, a pin is set): once, not in every context.
                                 report.update(check_notices(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                                 report.update(check_problem_actions(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
+                                report.update(check_row_selects(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                         ctx.close()
         finally:
             browser.close()
@@ -495,6 +500,67 @@ def shoot_open_card(page: Any, base: str, out: Path, ids: dict[str, str], prefix
                                  ("la ficha no muestra la descripción", not first.locator("p.break-words").count()),
                                  ("la página desborda", overflow > 0)) if bad]
     return {key: _report(response, errors, problems)}
+
+
+def shoot_open_cards(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
+                     errors: list[str]) -> dict[str, dict[str, Any]]:
+    """Batch A (A8, A13): the first audit card and the first job card opened. The audit card's
+    details are in the page; the job card loads its fragment when it opens. Neither may widen the
+    page."""
+    found: dict[str, dict[str, Any]] = {}
+    for name, path in (("audit-card", "/audit"), ("job-card", "/jobs")):
+        response = page.goto(base + path)
+        page.wait_for_load_state("networkidle")
+        card = page.locator("main details").first
+        card.locator("summary").click()
+        page.wait_for_load_state("networkidle")
+        page.wait_for_timeout(300)
+        key = f"{prefix}-{name}"
+        page.screenshot(path=str(out / f"{key}.png"))
+        problems = [p for p, bad in (("la tarjeta no se abrió", not card.evaluate("d => d.open")),
+                                     ("la página desborda", _overflow(page) > 0)) if bad]
+        found[key] = _report(response, errors, problems)
+    return found
+
+
+def check_row_selects(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
+                      errors: list[str]) -> dict[str, dict[str, Any]]:
+    """Batch A (A1, A14): a row's select that fails goes back to its saved value; "sin fijar" from
+    the row unpins and offers "Deshacer"; undoing back to a version before the floor opens the
+    confirmation, and cancelling it leaves the row as saved. The pin is set again at the end, so
+    the pack is as seeded for the contexts after this one."""
+    problems: list[str] = []
+    pack = ids["downgrade"]
+    response = page.goto(base + f"/modpacks/{pack}")
+    page.wait_for_load_state("networkidle")
+    side = "#mod-row-jei select[name=server]"
+    before = page.eval_on_selector(side, "s => s.value")
+    page.route("**/decisions", lambda route: route.fulfill(status=500, body="no"))
+    page.select_option(side, "no")
+    page.wait_for_timeout(800)
+    page.unroute("**/decisions")
+    if page.eval_on_selector(side, "s => s.value") != before:
+        problems.append("el select de lado no volvió a su valor tras el error")
+    errors[:] = [e for e in errors if "500" not in e]  # the failure we asked for
+    page.goto(base + f"/modpacks/{pack}")
+    page.wait_for_load_state("networkidle")
+    page.select_option("#mod-row-jei select[name=version_id]", "")
+    page.wait_for_selector("#notices [data-notice] button:text('Deshacer')", timeout=10_000)
+    page.wait_for_timeout(300)
+    page.screenshot(path=str(out / f"{prefix}-row-undo.png"))
+    page.click("#notices [data-notice] button:text('Deshacer')")
+    page.wait_for_selector("#pin-dialog dialog[open]", timeout=10_000)
+    page.locator("#pin-dialog dialog button[data-dialog-close]").click()
+    page.wait_for_timeout(300)
+    if page.eval_on_selector("#mod-row-jei select[name=version_id]", "s => s.value") != "":
+        problems.append("al cancelar la baja, el select no quedó en lo guardado")
+    page.evaluate(f"htmx.ajax('POST', '/modpacks/{pack}/pins', {{target: '#mods', swap: 'outerHTML', "
+                  "values: {project_id: 'jei', version_id: 'jei-1951', confirm_downgrade: '1'}})")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(300)
+    if not page.locator("#mods :text('baja (piso 19.57.0.450)')").count():
+        problems.append("el pin no quedó como estaba sembrado")
+    return {f"{prefix}-row-selects": _report(response, errors, problems)}
 
 
 def shoot_build_dialog(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,

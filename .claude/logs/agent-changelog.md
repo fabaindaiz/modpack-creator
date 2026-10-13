@@ -5,6 +5,59 @@ introducción. Los commits de este repositorio fueron `wip` sin cuerpo: el *por 
 no quedaba en ninguna parte, y una sesión no ve lo que otra aprendió. La referencia del formato
 está al final del archivo, para que nada entre este párrafo y la primera entrada capture texto.
 
+## 2026-10-13 · s-7985ee-1602e4 — Panel 0.3.1, tanda A: el estado de un mod en su fila, filtros, y auditoría y trabajos como tarjetas
+
+**Qué.** La tanda A de i-7985ee-44060c, de la revisión de decisiones a la rama `feat/panel-tanda-a`:
+cada fila de mod cambia su lado, su canal y su fijación con selects nativos (las versiones salen del
+catálogo, las 15 más nuevas y la fijada; un error devuelve el select a lo guardado; fijar desde la
+fila ofrece «Deshacer»); la lista de mods se filtra por nombre, lado, canal, fijación y origen, con
+conteos que respetan los demás filtros; las sugerencias son una pestaña; se quitó «Excepciones por
+mod»; auditoría y trabajos son tarjetas expandibles; el evento de auditoría guarda el nombre de su
+objetivo; las acciones y sus detalles se leen en español; los filtros de auditoría son listas con
+conteo de una sola agregación. Además, la investigación del estilo de Modrinth
+(`docs/research/2026-10-13-estilo-modrinth.md`), que el dueño asignó a la tanda B.
+
+**Áreas.** `src/routers/web/{modpacks,activity}.py`, `src/services/{modpack,audit}.py`,
+`src/database/audit.py`, `src/model/audit.py`, `src/library/mod_filters.py`, `src/web/audit_labels.py`,
+`src/web/templates/{modpacks,activity}/`, `_macros.html`, `src/web/static/app.js`,
+`scripts/visual_sweep.py`, `docs/`.
+
+**Por qué.** Las observaciones 1 a 6 del dueño al usar la 0.3.1 desplegada (2026-10-13); decisiones
+A1–A14 en revisión interactiva, una por turno.
+
+**Arquitectura.** ✅ Cumple: los routers solo inyectan servicios; nada de JS inline (lo nuevo va en
+`app.js`); `TargetNames` es un proveedor propio, cubierto por `test_startup`. REVISAR: la consulta de
+auditoría con `$facet` recorre toda la ventana de fechas en cada página.
+
+**Qué salió mal en el camino.** Dos heredocs vacíos (`cat > … <<EOF`, `python3 - <<X`) contra la regla
+de AGENTS.md, sin efecto pero repetidos; el merge de la rama del agente se hizo antes de correr el gate
+(se corrió justo después: 1360 pasan); un test del agente (`test_a_failing_lookup_is_no_name`) se
+escribió después del código; `task-start`/`task-done` buscan «Task N» y el plan dice «Tarea N»: el
+ledger se escribió a mano.
+
+**Qué quedó sin hacer.** No se corrió `explain` sobre la consulta de auditoría (paso 4 de la tarea 4).
+
+**Desvío del plan.** El nombre del objetivo lo pone `AuditService.record` en un solo lugar, no cada
+llamada; los selects van después del `<details>` del mod, no dentro del `<summary>`; elegir «sin
+fijar» o «canal del pack» llega como campo ausente (FastAPI lee así un valor vacío). Cada desvío está
+en el ledger del plan con su costo.
+
+**No verificado.** El selector nativo y el `<datalist>` en un teléfono real (el barrido es Chromium
+a 360 px); los índices nuevos de `audit` frente a `$facet`; Modrinth y Pterodactyl reales.
+
+**Medido.** Gate con MongoDB: 1360 tests. Barrido: 194 capturas, 0 con problemas, y la revisión a mano
+de las capturas nuevas (de ahí el ajuste de sangría de los selects a 360 px).
+
+**Tarjetas y chequeos.** Ninguna tarjeta nueva consultada (cambio de panel, sin datos guardados que se
+reescriban: el campo `target.name` es opcional). Chequeos: `scripts/check.sh`, `scripts/test-mongo.sh`
+(los tests de base de las tareas 2 y 4 vistos fallar en sus commits de solo tests), `scripts/visual-sweep.sh`.
+
+**Revisión.** Pendiente: la revisión final de la rama en contexto limpio.
+
+**Aprendido.** Local: un `<select>` dentro de `<summary>` abre la ficha; va fuera del `<details>`.
+FastAPI lee un campo de formulario vacío como ausente: un `Literal["", …]` obligatorio da 422 (quedó
+en el docstring de las dos rutas). Captured: los dos en el código.
+
 ## 2026-10-12 · s-7985ee-6f74e1 — Pendientes del 2026-10-09: T1, T4, T3, T7, T6, T5 y la regla de no retroceder
 
 **Qué.** En la rama `feat/pendientes-t1`, desde `main` (0.2.0), sin mergear. Un commit por tema, todos
