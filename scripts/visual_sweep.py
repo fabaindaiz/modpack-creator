@@ -447,8 +447,14 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
                                 "document.documentElement.scrollWidth - document.documentElement.clientWidth")
                             key = f"{who}-{scheme}-{width}-{name}"
                             page.screenshot(path=str(out / f"{key}.png"), full_page=width != 1280 or name != "modpack")
+                            # B4 (d-7985ee-937ca8): at 360 px a table stacks its rows; one that still
+                            # scrolls sideways inside its box does not widen the page, so it is counted here.
+                            tables = page.evaluate(
+                                "[...document.querySelectorAll('main table')]"
+                                ".filter(t => t.parentElement.scrollWidth > t.parentElement.clientWidth + 1).length")
                             report[key] = {"status": response.status if response else None, "overflow_px": overflow,
-                                           "console_errors": list(errors)}
+                                           "console_errors": list(errors),
+                                           "problems": [f"{tables} tablas desbordan su caja"] if width == 360 and tables else []}
                             errors.clear()
                         report.update(shoot_open_card(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                         report.update(shoot_open_cards(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
