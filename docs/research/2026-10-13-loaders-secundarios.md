@@ -96,3 +96,32 @@ terceros dice que Prism usa un loader por instancia y Connector se instala como 
 - **Riesgos:** los dos puentes están en beta o son experimentales; los fallos aparecen al correr, no
   al resolver; Modrinth no muestra las incompatibilidades declaradas con el puente; la cobertura de
   versiones varía por mod; el esquema 26.x de versiones de Minecraft exige cuidado al comparar rangos.
+
+## Verificación (2026-10-13, segunda pasada)
+
+Un investigador releyó las afirmaciones contra la API de Modrinth (`/v2/project`, `/version`, `/tag/loader`)
+y los repositorios. Los valores de la API llegaron como campos JSON y son fiables; las listas largas de
+versiones llegaron resumidas. Lo que **cambia o se agrega**:
+
+- **Connector por versión, no por proyecto:** la lista `loaders` del proyecto es la unión. Por versión:
+  Forge solo en 1.20.1; NeoForge en 1.21 (una sola beta), 1.21.1 y 26.1.2. Todas sus versiones son
+  beta. https://api.modrinth.com/v2/project/connector/version
+- **Dependencias de Connector:** Forgified Fabric API (`Aqlf1Shp`) **requerida** en todas; **Launchpad**
+  (`voWgQoWV`, solo NeoForge) **requerida** en las de 26.1.2; Connector Extras (`FYpiwiBR`) opcional.
+- **El choque con el Fabric API normal** no está en Modrinth como dependencia `incompatible` (las 10
+  versiones más nuevas de Forgified Fabric API no tienen dependencias); lo dice el README de Connector
+  («not compatible with it»). El diseño no lo puede leer de Modrinth: lo tiene que saber.
+  https://raw.githubusercontent.com/Sinytra/Connector/refs/heads/master/README.md
+- **Kilt** (`t87XZEqv`, Fabric, 1.20.1 y 1.21.1, LGPL-2.1-only): sus versiones nuevas son `release` (las
+  1.20.1 viejas, alpha), aunque su texto sigue diciendo «muy inestable». Requiere Fabric API
+  (`P7dR8mSH`) y Fabric Language Kotlin (`Ha28R6CL`); se declara incompatible con Embeddium y Async.
+- **Etiquetas de loader de Modrinth:** ninguna nombra un puente; un mod de Fabric que corre por
+  Connector está etiquetado `fabric` (a veces el autor suma `forge`/`neoforge`).
+- **`.mrpack`:** claves `minecraft`, `forge`, `neoforge`, `fabric-loader`, `quilt-loader`; la
+  especificación no prohíbe dos loaders, el ejemplo trae uno y avisa que puede sumar claves. Si un
+  launcher acepta dos: SIN VERIFICAR.
+- **«Connector Server Mixin Fix»:** no aparece en Modrinth (sí otros parches de Connector:
+  `sinytra_crash_fix`, `connector-recipe-bridge`). Sigue SIN VERIFICAR.
+- **Quilt** carga mods de Fabric en la mayoría de los casos (una sola dirección); QFAPI no cubre los
+  detalles internos de Fabric API (página de Modrinth de `qsl`). Que QSL esté discontinuado: SIN VERIFICAR.
+- **Otros puentes modernos:** ninguno nuevo; Fabricated Legacy Forge es para versiones viejas.
