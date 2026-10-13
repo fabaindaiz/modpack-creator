@@ -277,6 +277,16 @@ def test_app_js_puts_the_row_selects_back_when_the_pin_dialog_closes() -> None:
     assert "pin-dialog" in handler and "restoreSaved(" in handler
 
 
+def test_app_js_loads_a_job_card_s_detail_on_open_and_drops_it_on_close() -> None:
+    """A13 and the final review (minor 5): an open card shows its job's detail, which polls while the
+    job runs; a closed card holds nothing, so nothing polls behind it."""
+    text = client(None).get("/static/app.js").text
+    handler = text[text.index("data-job-detail"):]
+    handler = handler[:handler.index("}, true);")]
+    assert "htmx.ajax('GET'" in handler and ".open" in handler and "innerHTML = ''" in handler
+    assert "addEventListener('toggle'" in text
+
+
 class FailingPterodactyl(FakePterodactyl):
     def __init__(self, error: Exception) -> None:
         super().__init__([], {})

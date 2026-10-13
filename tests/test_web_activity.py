@@ -214,14 +214,19 @@ def test_jobs_are_cards_whose_summary_is_the_old_row() -> None:
         assert part in summary
 
 
-def test_opening_a_job_card_loads_its_fragment_once() -> None:
+def test_opening_a_job_card_loads_its_detail_and_closing_it_lets_it_go() -> None:
+    """Final review of batch A (minor 5): the card had the id of the row it loads (job-<id>, twice
+    on the page), and the loaded row kept polling after the card was closed, beside the line's own
+    poll. The card is job-card-<id>; app.js loads the detail on open and empties it on close."""
     client, jobs, *_ = setup()
     jobs.jobs = [make_job(status="done", active=False)]
     job_id = jobs.jobs[0].id
     text = client.get("/jobs").text
     details = text[text.index(f'<details data-job="{job_id}"'):]
     details = details[:details.index(">")]
-    assert f'hx-get="/jobs/{job_id}/row"' in details and 'hx-trigger="toggle once"' in details
+    assert f'id="job-card-{job_id}"' in details and f'data-job-detail="/jobs/{job_id}/row"' in details
+    assert "hx-trigger" not in details and "hx-get" not in details
+    assert f'id="job-{job_id}"' not in text
     body = text[text.index("</summary>", text.index(f'data-job="{job_id}"')):text.index("</details>")]
     assert f'href="/jobs/{job_id}"' in body and "Abrir página" in body and str(job_id) in body
 

@@ -83,6 +83,20 @@
     Array.prototype.forEach.call(selects, function (select) { select.value = select.dataset.saved; });
   }
 
+  // A job card (A13, data-job-detail) loads its detail when it opens and lets it go when it closes: it polls
+  // while the job runs, and a closed card must not keep it polling. `toggle` does not bubble.
+  document.addEventListener('toggle', function (evt) {
+    var card = evt.target;
+    if (!(card instanceof HTMLDetailsElement) || !card.dataset.jobDetail) return;
+    var slot = document.getElementById('job-detail-' + card.dataset.job);
+    if (!slot) return;
+    if (card.open) {
+      htmx.ajax('GET', card.dataset.jobDetail, {target: slot, swap: 'innerHTML'});
+    } else {
+      slot.innerHTML = '';
+    }
+  }, true);
+
   document.addEventListener('htmx:responseError', function (evt) {
     restoreSaved(evt.detail.elt);
   });

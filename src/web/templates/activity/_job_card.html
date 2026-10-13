@@ -1,16 +1,16 @@
 {#
   One job as an expandable card (A13). Closed, the line of the old table row; while the job is
-  active only that line polls /jobs/{id}/summary, so an open card stays open. Opened, it loads its
-  detail (/jobs/{id}/row, `_job_row.html`) once, under its ids and «Abrir página». Needs `job` and
+  active only that line polls /jobs/{id}/summary, so an open card stays open. Opened, app.js loads its
+  detail (/jobs/{id}/row, `_job_row.html`), and empties it on close so nothing polls behind a closed
+  card; under it, its ids and «Abrir página». Needs `job` and
   `server_names` (server id to name).
 #}
 {% import "_macros.html" as ui %}
 {% from "activity/_job_parts.html" import COLS, HEADERS, summary_parts, server_of %}
 {% set server_id = server_of(job) | trim %}
 {% set poll = {"hx-get": "/jobs/" ~ job.id ~ "/summary", "hx-trigger": "every 2s", "hx-target": "this", "hx-swap": "outerHTML"} if job.active else {} %}
-{% set load = {"data-job": job.id | string, "hx-get": "/jobs/" ~ job.id ~ "/row", "hx-trigger": "toggle once",
-               "hx-target": "#job-detail-" ~ job.id, "hx-swap": "innerHTML", "hx-disinherit": "*"} %}
-{% call(part) ui.card("job-" ~ job.id, COLS, attrs=load, summary_attrs=poll) %}
+{% set load = {"data-job": job.id | string, "data-job-detail": "/jobs/" ~ job.id ~ "/row"} %}
+{% call(part) ui.card("job-card-" ~ job.id, COLS, attrs=load, summary_attrs=poll) %}
 {% if part == "summary" %}
 {{ summary_parts(job, server_names) }}
 {% else %}
