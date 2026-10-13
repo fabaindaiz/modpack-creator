@@ -399,6 +399,21 @@ def test_the_installed_build_is_the_last_real_update_that_finished(mongo: MongoR
     assert mongo(scenario) == [None, None, 1]
 
 
+def test_the_simulated_build_is_that_of_the_newest_finished_update_dry_or_real(mongo: MongoRunner) -> None:
+    """B1 (d-7985ee-20935c): the set-up's last step is done once the server simulated (or got) the
+    pack's latest build."""
+    async def scenario() -> list[int | None]:
+        s = await setup()
+        jobs = JobService(jobDB=JobDatabase(), pterodactylService=s.update.servers, pterodactylDB=PterodactylDatabase(),
+                          audit=RecordingAudit())
+        seen = [await jobs.simulated_build(s.server_id)]
+        await s.run()  # a dry run of build 1
+        seen.append(await jobs.simulated_build(s.server_id))
+        return seen
+
+    assert mongo(scenario) == [None, 1]
+
+
 # Lo que sale mal con el servidor.
 
 

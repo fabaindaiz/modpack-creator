@@ -310,6 +310,15 @@ class FakeChecks:
         return self.check
 
 
+class FakeJobs:
+    """What the pack page asks of the jobs (B1): the build each server last simulated."""
+    def __init__(self) -> None:
+        self.simulated: dict[str, int] = {}
+
+    async def simulated_build(self, server_id: str) -> Optional[int]:
+        return self.simulated.get(server_id)
+
+
 class FakePtero:
     def __init__(self) -> None:
         self.servers: list[PterodactylServer] = []
@@ -324,7 +333,8 @@ def reset_overrides() -> Any:
     import main
 
     for provider in (main.container.modpackService, main.container.modrinthService,
-                     main.container.updateCheckService, main.container.pterodactylService):
+                     main.container.updateCheckService, main.container.pterodactylService,
+                     main.container.jobService):
         provider.reset_override()
 
 
@@ -336,6 +346,7 @@ def setup_all(actor: Optional[Actor] = EDITOR) -> tuple[TestClient, FakeModpack,
     main.container.modrinthService.override(providers.Object(modrinth))
     main.container.updateCheckService.override(providers.Object(checks))
     main.container.pterodactylService.override(providers.Object(ptero))
+    main.container.jobService.override(providers.Object(FakeJobs()))
     # Sin `with`: el lifespan abriría MongoDB y el proveedor OIDC.
     client = TestClient(main.app, base_url="https://testserver", follow_redirects=False)
     if actor is not None:
@@ -2606,3 +2617,18 @@ def test_v1_build_queues_the_build_job_and_answers_202_with_it() -> None:
     response = TestClient(app, base_url="https://testserver").post(f"/v1/modpack/{BUNDLE_ID}/build")
     assert response.status_code == 202 and response.json()["kind"] == "build_create"
     assert response.json()["_id"] == str(modpack.queued.id)  # as /v1 update, rollback, scan
+
+
+# Alta guiada (B1, d-7985ee-20935c).
+
+
+def test_the_pack_page_lists_what_is_left_to_set_up() -> None:
+    client, modpack, _ = setup()
+    modpack.saved = resolution(lock(entry("P1"), entry("P2", "admin")))
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    part = text[text.index("data-onboarding"):]
+    part = part[:part.index("</section>")]
+    shown = said(part)
+    assert "Para terminar el alta" in shown and "Con mods" in shown and "1 por decidir o con problemas" in shown
+    assert f'href="/modpacks/{BUNDLE_ID}?vista=decidir"' in part
+    assert 'href="/servers"' in part  # no server linked: link one

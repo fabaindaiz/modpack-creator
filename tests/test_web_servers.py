@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import re
+from types import SimpleNamespace
 
 import pytest
 from beanie import PydanticObjectId
@@ -194,10 +195,14 @@ class FakeJobs:
         self.jobs: list[Job] = []
         self.state: Optional[RollbackState] = None
         self.installed: Optional[int] = None
+        self.simulated: Optional[int] = None
         self.calls: list[tuple[Any, ...]] = []
 
     async def installed_build(self, server_id: str) -> Optional[int]:
         return self.installed
+
+    async def simulated_build(self, server_id: str) -> Optional[int]:
+        return self.simulated
 
     async def enqueue_scan(self, server_id: str, actor: Actor, full: bool = False) -> Job:
         self.calls.append(("enqueue_scan", server_id, actor, full))
@@ -254,6 +259,8 @@ class FakeModpack:
     def __init__(self) -> None:
         self.builds = True
         self.recommended: Optional[int] = 2
+        # The pack's saved resolution and whether it is stale (B1's facts); None: never resolved.
+        self.saved: Optional[tuple[Any, bool]] = None
         self.preview: Any = change_preview()
         self.preview_error: Optional[Exception] = None
         self.calls: list[tuple[Any, ...]] = []
@@ -266,6 +273,9 @@ class FakeModpack:
 
     async def bundle_find(self) -> list[ModpackBundle]:
         return [bundle(5, self.recommended) if self.builds else bundle(None, None)]
+
+    async def resolution(self, bundle_id: str) -> Optional[tuple[Any, bool]]:
+        return self.saved
 
     async def bundle_get(self, bundle_id: str) -> ModpackBundle:
         return bundle()
@@ -1533,3 +1543,42 @@ def test_a_long_server_name_prefills_the_new_modpack_within_its_limit() -> None:
     text = client.get(f"/servers/{SERVER_ID}").text
     value = re.search(r'id="new-modpack-name"[^>]*value="([^"]*)"', text)
     assert value is not None and len(value.group(1)) == 120
+
+
+# Alta guiada (B1, d-7985ee-20935c).
+
+
+def onboarding(text: str) -> str:
+    start = text.index("data-onboarding")
+    return text[start:text.index("</section>", start)]
+
+
+def test_the_server_page_lists_what_is_left_to_set_up_with_each_action() -> None:
+    client, fakes = setup()
+    fakes.modpack.saved = (SimpleNamespace(lock=SimpleNamespace(undecided=["P2"], problems=[])), False)
+    part = onboarding(client.get(f"/servers/{SERVER_ID}").text)
+    shown = " ".join(visible(part).split())
+    assert "Para terminar el alta (3 de 5)" in shown
+    assert "Escaneado" in shown and "1 mods identificados" in shown and "Pack Uno" in shown
+    assert "1 por decidir o con problemas" in shown
+    assert f'href="/modpacks/{BUNDLE_ID}?vista=decidir"' in part
+    assert "Simular muestra qué cambia" in shown and "Un build congela" not in shown  # a done step says no why
+
+
+def test_a_set_up_server_folds_its_list_into_one_line() -> None:
+    client, fakes = setup()
+    fakes.modpack.saved = (SimpleNamespace(lock=SimpleNamespace(undecided=[], problems=[])), False)
+    fakes.jobs.simulated = 5
+    part = onboarding(client.get(f"/servers/{SERVER_ID}").text)
+    assert "Alta completa" in visible(part) and "<details" in part and " open" not in part[:part.index(">")]
+
+
+def test_a_server_without_scan_or_pack_starts_the_list() -> None:
+    client, fakes = setup()
+    fakes.ptero.server = server(bundle_id=None)
+    fakes.ptero.scan = None
+    fakes.ptero.comparison = None
+    part = onboarding(client.get(f"/servers/{SERVER_ID}").text)
+    assert "Para terminar el alta (0 de 5)" in " ".join(visible(part).split())
+    assert f'href="/servers/{SERVER_ID}#escaneo"' in part and f'href="/servers/{SERVER_ID}#modpack"' in part
+    assert "después de" in visible(part)

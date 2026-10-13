@@ -12,8 +12,9 @@ from starlette.datastructures import FormData, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from src.exceptions import BuildBlocked, DowngradeRefused, HTTP_404_NOT_FOUND, HTTP_413_CONTENT_TOO_LARGE, HTTP_422_UNPROCESSABLE_ENTITY, QuotaExceeded, UpstreamError
 from src.library.mod_filters import ModFilters, apply as filter_rows, counts as filter_counts
+from src.library.onboarding import PackFacts, pack_steps, pending_count
 from src.library.resolution import ADMIN, Lock
-from src.dependences import Dependences, ModpackImportService, ModpackService, ModrinthService, PterodactylService, UpdateCheckService
+from src.dependences import Dependences, JobService, ModpackImportService, ModpackService, ModrinthService, PterodactylService, UpdateCheckService
 from src.model.modpack import ModpackBundle, ModpackBundleCreate, ModpackBundlePatch, ProjectOrigin
 from src.model.modrinth.project import ModrinthEnvironment
 from src.model.users import Actor
@@ -450,6 +451,7 @@ async def modpack_detail(
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
         importService: ModpackImportService = Depends(Provide[Dependences.modpackImportService]),
+        jobService: JobService = Depends(Provide[Dependences.jobService]),
         ):
     """A bundle: its mods under the saved resolution, in one of their views (`vista`: every mod, the
     ones to decide, the problems; spec §3), the search to add more, and on the side its builds, the
@@ -462,7 +464,14 @@ async def modpack_detail(
     saved = context["mods"].resolution
     # A build made a moment ago (by its job, E9) offers to simulate it on the linked servers.
     fresh = bool(builds) and as_utc(builds[0].created_at) > datetime.now(timezone.utc) - FRESH_BUILD
-    return render(request, "modpacks/detail.html", actor, builds=builds, servers=servers, channel_names=CHANNELS,
+    bundle = context["bundle"]
+    simulated = [await jobService.simulated_build(str(s.id)) for s in servers]
+    onboarding = pack_steps(bundle_id, PackFacts(
+        projects=len(bundle.projects), resolved=saved is not None and not context["mods"].stale,
+        pending=pending_count((saved, context["mods"].stale) if saved else None), latest_build=bundle.latest_build,
+        linked_servers=tuple((str(s.id), s.name) for s in servers),
+        simulated=bundle.latest_build is not None and bundle.latest_build in simulated))
+    return render(request, "modpacks/detail.html", actor, onboarding=onboarding, builds=builds, servers=servers, channel_names=CHANNELS,
                   pending=_has_pending((saved, context["mods"].stale) if saved else None),
                   next_servers=servers if fresh else None, human_size=human_size, nav_active="modpacks",
                   curseforge=importService.curseforge_enabled, **context)

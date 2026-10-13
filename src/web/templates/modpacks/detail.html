@@ -17,6 +17,7 @@
 {# Where a pin that goes back asks to be confirmed (F27): the pin route answers a dialog into it. #}
 <div id="pin-dialog"></div>
 <div id="pack-main" hx-get="/modpacks/{{ bundle_id }}" hx-select="#pack-main" hx-trigger="job-finished from:body, job-started from:body" hx-swap="outerHTML" hx-disinherit="*">
+{% with steps=onboarding %}{% include "_onboarding.html" %}{% endwith %}
 
 {# Mods wide on the left and a side column (spec §5); below xl, one column in the same order. #}
 <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">

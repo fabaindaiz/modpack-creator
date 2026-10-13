@@ -239,6 +239,13 @@ class JobService():
         build = last.payload.get("build")
         return build if isinstance(build, int) else None
 
+    async def simulated_build(self, server_id: str) -> Optional[int]:
+        """The build of the server's newest finished update, a simulation or a real one: the
+        set-up's last step (B1, d-7985ee-20935c). None when it never finished one."""
+        done = await self.jobDB.find(server_id=server_id, kind="server_update", status="done", before_id=None, limit=1)
+        build = done[0].payload.get("build") if done else None
+        return build if isinstance(build, int) else None
+
     async def rollback_state(self, server_id: str) -> Optional[RollbackState]:
         """What the panel offers to undo the server's last real update, if it failed
         (d-7985ee-5445a0): None when there is nothing to offer. The newest rollback or real update

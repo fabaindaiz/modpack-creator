@@ -25,6 +25,7 @@
   pass its attributes on (hx-disinherit), so a form inside keeps its own target and swap.
 #}
 <div id="server-main" class="space-y-6" hx-get="/servers/{{ server_id }}" hx-select="#server-main" hx-trigger="job-finished from:body" hx-swap="outerHTML" hx-disinherit="*">
+  {% with steps=onboarding %}{% include "_onboarding.html" %}{% endwith %}
   {% set differences = (comparison.different_version | length) + (comparison.missing | length) + (comparison.extra | length) + (comparison.unknown | length) if comparison else 0 %}
   <div id="server-summary" class="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
     {% if bundle %}
