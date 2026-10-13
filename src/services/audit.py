@@ -133,6 +133,7 @@ class AuditService():
             action: Optional[str] = None,
             target: Optional[tuple[str, str]] = None,
             target_name: Optional[str] = None,
+            target_kind: Optional[str] = None,
             before_id: Optional[str] = None,
             limit: int = 50,
             since: Optional[datetime] = None,
@@ -143,5 +144,6 @@ class AuditService():
         `since` (inclusive) and `until` (exclusive) are aware UTC datetimes; `target` is
         (kind, id) and `target_name` the name an event kept (used when there is no `target`)."""
         return await self.auditDB.page(
-            actor_sub=actor_sub, action=action, target=target, target_name=target_name, before_id=before_id,
+            actor_sub=actor_sub, action=action, target=target, target_name=target_name, target_kind=target_kind,
+            before_id=before_id,
             limit=max(1, min(limit, MAX_LIMIT)), since=since, until=until)

@@ -116,6 +116,26 @@ def target_label(kind: str, target_id: str, name: str | None) -> str:
     return f"{KINDS.get(kind, kind)} {target_id}"
 
 
+_KIND_OF_LABEL = {label.lower(): kind for kind, label in KINDS.items()}
+_SEPARATOR = " · "
+
+
+def parse_target(text: str) -> tuple[tuple[str, str] | None, str | None, str | None]:
+    """The target filter as typed or chosen, as (kind and id, name, kind): «Survival · pack» (what
+    the list offers, the owner 2026-10-13) is a name and a kind; `kind:id` (older links), for a kind
+    the panel knows; anything else, a name."""
+    text = text.strip()
+    if not text:
+        return None, None, None
+    name, separator, kind_label = text.rpartition(_SEPARATOR)
+    if separator and name and kind_label in _KIND_OF_LABEL:
+        return None, name, _KIND_OF_LABEL[kind_label]
+    kind, colon, target_id = text.partition(":")
+    if colon and kind in KINDS and target_id:
+        return (kind, target_id), None, None
+    return None, text, None
+
+
 def target_option(value: str, label: str) -> str:
     """A target as the filter's list offers it: «Survival · pack», or its id without a name
     (`value` is `kind:id`)."""

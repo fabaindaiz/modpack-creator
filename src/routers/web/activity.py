@@ -11,7 +11,7 @@ from src.model.pterodactyl import ImportResult
 from src.model.users import Actor
 from src.routers.web.servers import preview_context
 from src.web import WebRoute, get_web_actor, render
-from src.web.audit_labels import ACTIONS as AUDIT_ACTIONS
+from src.web.audit_labels import ACTIONS as AUDIT_ACTIONS, parse_target
 
 logger = logging.getLogger("modpack.web")
 router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
@@ -208,8 +208,8 @@ async def audit_log(
         auditService: AuditService = Depends(Provide[Dependences.auditService]),
         ):
     """Who did what, newest first, 50 per page; `before` is the id of the last event shown. Person
-    and action are exact values, an action the panel does not know is ignored; `target` is
-    `kind:id` (what the list offers) or, without a colon, the exact name an event kept. Each
+    and action are exact values, an action the panel does not know is ignored; `target` is «name ·
+    kind» (what the list offers), `kind:id` (older links) or the exact name an event kept. Each
     filter's options come with their counts (A11, A12)."""
     since = _day(desde, "Desde")
     last_day = _day(hasta, "Hasta")
@@ -220,10 +220,10 @@ async def audit_log(
     except OverflowError:
         raise HTTP_422_UNPROCESSABLE_ENTITY("'Hasta' no es una fecha válida (AAAA-MM-DD)")
     action = action if action in AUDIT_ACTIONS else None
-    kind, colon, target_id = (target or "").partition(":")
+    by_id, target_name, target_kind = parse_target(target or "")
     page = await auditService.page(
         actor_sub=actor_filter or None, action=action,
-        target=(kind, target_id) if colon else None, target_name=None if colon else (target or None),
+        target=by_id, target_name=target_name, target_kind=target_kind,
         before_id=before or None, limit=AUDIT_PAGE + 1, since=since, until=until)
     has_older = len(page.events) > AUDIT_PAGE
     events = page.events[:AUDIT_PAGE]

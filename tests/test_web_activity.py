@@ -619,8 +619,18 @@ def test_target_is_an_input_with_a_datalist_of_names_kinds_and_counts() -> None:
     text = client.get("/audit").text
     assert re.search(r'<input[^>]*name="target"[^>]*list="audit-targets"', text)
     datalist = text[text.index('<datalist id="audit-targets"'):text.index("</datalist>")]
-    assert f'<option value="bundle:{bundle}">Survival · pack (31)</option>' in datalist
-    assert '<option value="server:s1">s1 · servidor (2)</option>' in datalist
+    # The owner, 2026-10-13 (minor 7 of the final review): the field shows what was chosen by name.
+    assert '<option value="Survival · pack">(31)</option>' in datalist
+    assert '<option value="s1 · servidor">(2)</option>' in datalist
+    assert f"bundle:{bundle}" not in datalist
+
+
+def test_a_chosen_target_filters_by_its_name_and_kind() -> None:
+    client, _, audit, _ = setup()
+    response = client.get("/audit", params={"target": "Survival · pack"})
+    assert response.status_code == 200 and 'value="Survival · pack"' in response.text
+    call = audit.calls[-1]
+    assert call["target"] is None and call["target_name"] == "Survival" and call["target_kind"] == "bundle"
 
 
 def test_an_unknown_action_or_a_plain_target_name_does_not_422() -> None:
@@ -629,6 +639,7 @@ def test_an_unknown_action_or_a_plain_target_name_does_not_422() -> None:
     assert response.status_code == 200
     call = audit.calls[-1]
     assert call["action"] is None and call["target"] is None and call["target_name"] == "Survival"
+    assert call["target_kind"] is None
 
 
 def test_the_older_link_keeps_every_filter() -> None:

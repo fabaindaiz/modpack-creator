@@ -397,6 +397,27 @@ def test_a_target_filters_by_kind_and_id_or_by_its_name(mongo: MongoRunner) -> N
     assert got["unknown"] == [] and got["regex"] == []
 
 
+def test_a_name_and_kind_filter_by_both_and_a_nameless_target_by_its_id(mongo: MongoRunner) -> None:
+    """The owner, 2026-10-13 (minor 7): the field holds «name · kind». A target the event kept no
+    name for is offered by its id, so the id reads as its name."""
+    async def scenario() -> dict[str, list[str]]:
+        await AuditEvent.insert_many(_olga_and_pedro() + [_ev("olga", "server.scan", "b1", "Survival", 5, kind="server"),
+                                                          _ev("olga", "server.scan", "s9", None, 6, kind="server")])
+        service = AuditService(AuditDatabase())
+
+        async def actions(**filters: Any) -> list[str]:
+            return [e.action for e in (await service.page(**filters)).events]
+        return {
+            "pack": await actions(target_name="Survival", target_kind="bundle"),
+            "server": await actions(target_name="Survival", target_kind="server"),
+            "nameless": await actions(target_name="s9", target_kind="server"),
+        }
+
+    got = mongo(scenario)
+    assert got["pack"] == ["bundle.pin", "bundle.pin", "bundle.pin"]
+    assert got["server"] == ["server.scan"] and got["nameless"] == ["server.scan"]
+
+
 def test_the_date_window_bounds_the_counts_too(mongo: MongoRunner) -> None:
     async def scenario() -> AuditPage:
         await AuditEvent.insert_many(_olga_and_pedro())

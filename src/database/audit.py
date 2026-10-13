@@ -19,6 +19,7 @@ class AuditDatabase():
             before_id: Optional[str],
             limit: int,
             target_name: Optional[str] = None,
+            target_kind: Optional[str] = None,
             since: Optional[datetime] = None,
             until: Optional[datetime] = None,
             ) -> AuditPage:
@@ -27,7 +28,8 @@ class AuditDatabase():
         one aggregation (A11, A12): the date window bounds everything; each count applies the other
         two filters and not its own; the cursor (`before_id`, the last event shown) pages the
         events only. Filters are exact values (equality only, never a pattern); `target` is
-        (kind, id), `target_name` the name the event kept.
+        (kind, id); `target_name` the name the event kept (or its id, when it kept none), with
+        `target_kind` its kind when given.
         """
         actor_match: dict[str, Any] = {} if actor_sub is None else {"actor.sub": {"$eq": actor_sub}}
         action_match: dict[str, Any] = {} if action is None else {"action": {"$eq": action}}
@@ -35,7 +37,11 @@ class AuditDatabase():
         if target is not None:
             target_match = {"target.kind": {"$eq": target[0]}, "target.id": {"$eq": target[1]}}
         elif target_name is not None:
-            target_match = {"target.name": {"$eq": target_name}}
+            # A target the event kept no name for is offered by its id: the id reads as its name.
+            by_name: list[dict[str, Any]] = [{"target.name": {"$eq": target_name}}, {"target.id": {"$eq": target_name}}]
+            target_match = {"$and": [{"$or": by_name}]}
+            if target_kind is not None:
+                target_match["target.kind"] = {"$eq": target_kind}
         # `since` inclusive, `until` exclusive; both aware UTC. PyMongo stores and compares a naive
         # datetime as if it were UTC, so a naive local time would shift the window silently.
         window: dict[str, datetime] = {}

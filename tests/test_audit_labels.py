@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from src.web.audit_labels import ACTIONS, AREAS, DETAILS, detail_text, target_label
+from src.web.audit_labels import ACTIONS, AREAS, DETAILS, detail_text, parse_target, target_label
 
 
 def test_every_recorded_action_has_a_spanish_text() -> None:
@@ -53,3 +53,19 @@ def test_a_target_reads_by_its_kind_and_name_or_its_id() -> None:
     assert target_label("bundle", "b1", "Survival") == "Pack «Survival»"
     assert target_label("server", "s1", None) == "Servidor s1"
     assert target_label("job", "j1", "") == "job j1"
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("Survival · pack", (None, "Survival", "bundle")),
+    ("Lobby · servidor", (None, "Lobby", "server")),
+    ("a · b · pack", (None, "a · b", "bundle")),
+    ("bundle:b1", (("bundle", "b1"), None, None)),
+    ("hora:12", (None, "hora:12", None)),
+    ("Survival · cosa", (None, "Survival · cosa", None)),
+    ("Survival", (None, "Survival", None)),
+    ("", (None, None, None)),
+])
+def test_a_chosen_target_reads_back_as_a_filter(text: str, expected: tuple[object, ...]) -> None:
+    """The owner, 2026-10-13 (minor 7): the field holds «name · kind»; `kind:id` (old links) still
+    works, only for a kind the panel knows, so a name with a colon is still a name."""
+    assert parse_target(text) == expected

@@ -45,7 +45,7 @@
       placeholder="Nombre de un pack, servidor…" class="{{ FIELD_CLASS }}">
     <datalist id="audit-targets">
       {% for facet in page.targets %}
-      <option value="{{ facet.value }}">{{ audit_target_option(facet.value, facet.label) }} ({{ facet.count }})</option>
+      <option value="{{ audit_target_option(facet.value, facet.label) }}">({{ facet.count }})</option>
       {% endfor %}
     </datalist>
   </div>
