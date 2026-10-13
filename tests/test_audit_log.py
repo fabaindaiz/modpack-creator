@@ -1,6 +1,6 @@
 """The audit log: who did what, to what, and when; stored in MongoDB, read back newest first."""
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Any, Optional
 
 import pytest
 from beanie import PydanticObjectId
@@ -11,9 +11,10 @@ from src.database.modpack import ModpackDatabase
 from src.database.modrinth import ModrinthDatabase
 from src.database.pterodactyl import PterodactylDatabase
 from src.library.logging import _request_id
-from src.model.audit import AuditEvent, AuditTarget
+from src.model.audit import AuditEvent, AuditPage, AuditTarget, Facet
 from src.model.modpack import ModpackBundle, ModpackBundlePatch
 from src.model.pterodactyl import PterodactylServer
+from src.model.users.actor import ActorRef
 from src.model.utils import MinecraftLoaders
 from src.services.audit import AuditService, TargetNames
 from tests._actors import EDITOR, OPERATOR
@@ -281,3 +282,122 @@ def test_a_page_s_mods_and_versions_are_named_from_the_catalog(mongo: MongoRunne
         return await service.names_for(await service.find())
 
     assert mongo(scenario) == {"JJJJ": "JEI", "VVVV": "19.60"}
+
+
+# Filters with counts (A11, A12): one aggregation gives the page and each filter's options.
+
+def _ev(sub: str, action: str, target_id: str = "b1", target_name: Optional[str] = "Survival",
+        minutes: int = 0, kind: str = "bundle") -> AuditEvent:
+    return AuditEvent(at=T0 + timedelta(minutes=minutes), actor=ActorRef(iss="i", sub=sub, name=sub.title()),
+                      action=action, target=AuditTarget(kind=kind, id=target_id, name=target_name))
+
+
+def _olga_and_pedro() -> list[AuditEvent]:
+    return [_ev("olga", "bundle.pin", minutes=0), _ev("olga", "bundle.pin", minutes=1),
+            _ev("olga", "bundle.create", "b2", "Creativo", minutes=2), _ev("pedro", "bundle.pin", minutes=3)]
+
+
+def test_each_facet_counts_with_the_other_filters_but_not_its_own(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[AuditPage, AuditPage]:
+        await AuditEvent.insert_many(_olga_and_pedro())
+        service = AuditService(AuditDatabase())
+        return await service.page(actor_sub="olga"), await service.page(actor_sub="olga", action="bundle.pin")
+
+    by_olga, olga_pins = mongo(scenario)
+    assert [e.action for e in by_olga.events] == ["bundle.create", "bundle.pin", "bundle.pin"]
+    assert by_olga.actions == [Facet(value="bundle.pin", label="bundle.pin", count=2),
+                               Facet(value="bundle.create", label="bundle.create", count=1)]
+    assert by_olga.actors == [Facet(value="olga", label="Olga", count=3), Facet(value="pedro", label="Pedro", count=1)]
+    assert by_olga.targets == [Facet(value="bundle:b1", label="Survival", count=2),
+                               Facet(value="bundle:b2", label="Creativo", count=1)]
+    assert len(olga_pins.events) == 2
+    assert olga_pins.actors == [Facet(value="olga", label="Olga", count=2), Facet(value="pedro", label="Pedro", count=1)]
+    assert olga_pins.actions == by_olga.actions
+    assert olga_pins.targets == [Facet(value="bundle:b1", label="Survival", count=2)]
+
+
+class _CountingCollection:
+    """The audit collection, counting the calls that reach it."""
+    def __init__(self, inner: Any) -> None:
+        self.inner = inner
+        self.calls: list[str] = []
+
+    def __getattr__(self, name: str) -> Any:
+        attribute = getattr(self.inner, name)
+        if not callable(attribute):
+            return attribute
+
+        def counted(*args: Any, **kwargs: Any) -> Any:
+            self.calls.append(name)
+            return attribute(*args, **kwargs)
+        return counted
+
+
+def test_the_page_and_its_facets_come_from_one_query(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[list[str], int]:
+        await AuditEvent.insert_many(_olga_and_pedro())
+        counting = _CountingCollection(AuditEvent.get_pymongo_collection())
+        AuditEvent.get_pymongo_collection = staticmethod(lambda: counting)  # type: ignore[method-assign, assignment]
+        try:
+            page = await AuditService(AuditDatabase()).page(actor_sub="olga", action="bundle.pin")
+        finally:
+            del AuditEvent.get_pymongo_collection
+        return counting.calls, len(page.events)
+
+    calls, shown = mongo(scenario)
+    assert calls == ["aggregate"] and shown == 2
+
+
+def test_paging_with_before_keeps_the_filters(mongo: MongoRunner) -> None:
+    async def scenario() -> list[tuple[list[int], list[Facet]]]:
+        await AuditEvent.insert_many([_ev("olga", "bundle.pin", minutes=i) for i in range(5)]
+                                     + [_ev("pedro", "bundle.pin", minutes=10 + i) for i in range(2)])
+        service = AuditService(AuditDatabase())
+        pages: list[tuple[list[int], list[Facet]]] = []
+        cursor: Optional[str] = None
+        while True:
+            page = await service.page(actor_sub="olga", before_id=cursor, limit=2)
+            if not page.events:
+                return pages
+            pages.append(([int((e.at.replace(tzinfo=timezone.utc) - T0).total_seconds() // 60) for e in page.events],
+                          page.actors))
+            cursor = str(page.events[-1].id)
+
+    pages = mongo(scenario)
+    assert [minutes for minutes, _ in pages] == [[4, 3], [2, 1], [0]]
+    # The cursor pages the events, not the counts.
+    for _, actors in pages:
+        assert actors == [Facet(value="olga", label="Olga", count=5), Facet(value="pedro", label="Pedro", count=2)]
+
+
+def test_a_target_filters_by_kind_and_id_or_by_its_name(mongo: MongoRunner) -> None:
+    async def scenario() -> dict[str, list[str]]:
+        await AuditEvent.insert_many(_olga_and_pedro() + [_ev("olga", "server.scan", "b1", "Lobby", 5, kind="server")])
+        service = AuditService(AuditDatabase())
+
+        async def actions(**filters: Any) -> list[str]:
+            return [e.action for e in (await service.page(**filters)).events]
+        return {
+            "id": await actions(target=("bundle", "b2")),
+            "kind": await actions(target=("server", "b1")),
+            "name": await actions(target_name="Survival"),
+            "unknown": await actions(target_name="Nadie"),
+            "regex": await actions(target_name=".*"),
+        }
+
+    got = mongo(scenario)
+    assert got["id"] == ["bundle.create"]
+    assert got["kind"] == ["server.scan"]
+    assert got["name"] == ["bundle.pin", "bundle.pin", "bundle.pin"]
+    assert got["unknown"] == [] and got["regex"] == []
+
+
+def test_the_date_window_bounds_the_counts_too(mongo: MongoRunner) -> None:
+    async def scenario() -> AuditPage:
+        await AuditEvent.insert_many(_olga_and_pedro())
+        return await AuditService(AuditDatabase()).page(since=T0 + timedelta(minutes=2))
+
+    page = mongo(scenario)
+    assert len(page.events) == 2
+    assert page.actors == [Facet(value="olga", label="Olga", count=1), Facet(value="pedro", label="Pedro", count=1)]
+    assert sum(f.count for f in page.targets) == 2

@@ -7,7 +7,7 @@ from src.database.modpack import ModpackDatabase
 from src.database.modrinth import ModrinthDatabase
 from src.database.pterodactyl import PterodactylDatabase
 from src.library.logging import request_id
-from src.model.audit import AuditEvent, AuditTarget
+from src.model.audit import AuditEvent, AuditPage, AuditTarget
 from src.model.users import Actor
 from src.library.utils import utcnow
 
@@ -127,6 +127,21 @@ class AuditService():
         except Exception:
             logger.warning("naming the mods of the audit log failed", exc_info=True)
             return {}
+
+    async def page(self, *,
+            actor_sub: Optional[str] = None,
+            action: Optional[str] = None,
+            target: Optional[tuple[str, str]] = None,
+            target_name: Optional[str] = None,
+            before_id: Optional[str] = None,
+            limit: int = 50,
+            since: Optional[datetime] = None,
+            until: Optional[datetime] = None,
+            ) -> AuditPage:
+        """Interface only (the facets come with the implementation)."""
+        events = await self.find(actor_sub=actor_sub, action=action, target_id=target[1] if target else None,
+                                 before_id=before_id, limit=limit, since=since, until=until)
+        return AuditPage(events=events)
 
     async def find(self, *,
             actor_sub: Optional[str] = None,
