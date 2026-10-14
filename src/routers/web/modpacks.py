@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, Form, Query, Request
 from starlette.datastructures import FormData, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from src.exceptions import BuildBlocked, DowngradeRefused, HTTP_404_NOT_FOUND, HTTP_413_CONTENT_TOO_LARGE, HTTP_422_UNPROCESSABLE_ENTITY, QuotaExceeded, UpstreamError
-from src.library.bridges import BRIDGES, bridges_for
+from src.library.bridges import BRIDGES, FABRIC_API, REPLACES, bridges_for
 from src.library.mod_filters import ModFilters, apply as filter_rows, counts as filter_counts
 from src.library.onboarding import PackFacts, fact, pack_steps, pending_count
 from src.library.resolution import ADMIN, Lock
@@ -24,7 +24,7 @@ from src.library.utils import as_utc, getenv
 from src.library.cf_import import is_curseforge
 from src.library.prism_import import is_prism
 from src.library.upload_budget import UploadBudget, UploadBusy
-from src.web import BUNDLE_REF, JOB_STARTED, MODRINTH_REF, WebRoute, get_web_actor, render
+from src.web import BUNDLE_REF, JOB_STARTED, MODRINTH_REF, WebRoute, active_bridge, get_web_actor, render
 
 logger = logging.getLogger("modpack.web")
 # The event a pack hears when its last job ended: it reloads.
@@ -43,6 +43,8 @@ DECISION_PREFIX = "decision."
 CHANNELS = ("release", "beta", "alpha")
 SEARCH_LIMIT = 10
 SEARCH_TEXT_MAX = 100
+# The most projects one add takes: a bridged mod and the bridge's mods (three at most today).
+BRIDGE_REFS_MAX = 8
 # The only host the CSP lets an <img> load from besides ourselves (web_security.CSP).
 ICON_HOST = "cdn.modrinth.com"
 MRPACK_TYPE = "application/x-modrinth-modpack+zip"
@@ -510,7 +512,7 @@ async def modpack_search(
     bundle = await modpackService.bundle_get(bundle_id)
     text = q.strip()
     loader = str(bundle.loader.value)
-    active = next((b for b in bridges_for(loader, bundle.version) if b.key in bundle.secondary_loaders), None)
+    active = active_bridge(bundle)
     opened = active if active is not None and via == active.key else None
 
     def show(hits: list[SearchHit], failed: bool | str = False) -> Response:
@@ -542,22 +544,57 @@ async def modpack_search(
 async def project_add(
         bundle_id: str,
         request: Request,
-        ref: Annotated[str, Form(min_length=1, max_length=200, pattern=MODRINTH_REF)],
+        ref: Annotated[list[str], Form(min_length=1, max_length=BRIDGE_REFS_MAX)],
+        confirm_bridge: Annotated[bool, Form()] = False,
+        contexto: Annotated[Optional[Contexto], Form()] = None,
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
+        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         ):
     """Add a Modrinth project (slug or id) as an addition of the admin. Says what was added; when
-    the click came from a search hit (its form's id), that hit is marked "Ya está" out of band."""
-    ref = ref.strip()
-    before = {p.project_id for p in (await modpackService.bundle_get(bundle_id)).projects}
-    projects = await modpackService.project_add(bundle_id, [ref], ProjectOrigin.admin, actor)
+    the click came from a search hit (its form's id), that hit is marked "Ya está" out of band.
+
+    A project that only runs through the pack's bridge, while the pack lacks the bridge or one of
+    its companions, is not added: the answer is a dialog, into #bridge-dialog, with what enters
+    with it and «Agregar todo», which sends the project and those mods again with `confirm_bridge`
+    (C4; d-7985ee-56a529: nothing enters without that click). Several projects go together only
+    so confirmed. From a problem's card (`contexto`), the pack is resolved again and the answer
+    goes where it was clicked."""
+    refs = [r.strip() for r in ref]
+    if any(not r or len(r) > 200 or not re.fullmatch(MODRINTH_REF, r) for r in refs):
+        raise HTTP_422_UNPROCESSABLE_ENTITY("Eso no es un slug ni un id de Modrinth")
+    if len(refs) > 1 and not confirm_bridge:
+        raise HTTP_422_UNPROCESSABLE_ENTITY("Varios mods se agregan juntos solo al confirmar lo que entra con un puente")
+    main = refs[0]
+    bundle = await modpackService.bundle_get(bundle_id)
+    if not confirm_bridge:
+        missing = await modpackService.bridge_companions_missing(bundle_id, main)
+        used = active_bridge(bundle)
+        if missing and used is not None:
+            titles = await _titles(modrinthService, [main])
+            # What a companion stands in for (Forgified Fabric API for Fabric API, spec §1).
+            instead = {replacement: "Fabric API" if replaced == FABRIC_API else replaced
+                       for replaced, replacement in REPLACES.get(used.key, {}).items()}
+            response = render(request, "modpacks/_bridge_dialog.html", actor, bundle_id=bundle_id, main=main,
+                              title=titles.get(main, main), bridge=used, missing=missing, instead=instead,
+                              contexto=contexto)
+            response.headers["HX-Retarget"] = "#bridge-dialog"
+            response.headers["HX-Reswap"] = "innerHTML"
+            return response
+    before = {p.project_id for p in bundle.projects}
+    projects = await modpackService.project_add(bundle_id, refs, ProjectOrigin.admin, actor)
     added = [p.project_id for p in projects if p.project_id not in before]
-    from_hit = request.headers.get("HX-Trigger") == f"hit-add-{ref}" and any(p.project_id == ref for p in projects)
+    if contexto is not None:
+        titles = await _titles(modrinthService, added)
+        return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto,
+                            "Agregado: " + ", ".join(titles[i] for i in added) if added else "Ya estaban en el modpack")
+    trigger = request.headers.get("HX-Trigger")
+    from_hit = trigger in (f"hit-add-{main}", f"bridge-add-{main}") and any(p.project_id == main for p in projects)
     context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request), _filters_from(request))
     names = ", ".join(context["titles"].get(i, i) for i in added)
     return render(request, "modpacks/_mods.html", actor, success=f"Agregado: {names}" if names else None,
-                  info=None if names else "Ese mod ya estaba en el modpack", hit=ref if from_hit else None, **context)
+                  info=None if names else "Ese mod ya estaba en el modpack", hit=main if from_hit else None, **context)
 
 @router.delete("/modpacks/{bundle_id}/projects/{project_id}")
 @inject

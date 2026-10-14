@@ -1,10 +1,16 @@
 """The panel with secondary loaders (batch C; spec 2026-10-13-loaders-secundarios-design.md §4):
 the search tabs, the dialog that adds a bridged mod with what enters with it, and the actions of
 the bridges' problems. The services are doubles, as in `tests/test_web_modpacks.py`."""
+import re
 from typing import Any
 
+from src.library.bridges import CONNECTOR, FABRIC_API, FORGIFIED_FABRIC_API
+from src.library.resolution import Problem
+from src.model.modpack import PackProject, ProjectOrigin
 from src.model.utils import MinecraftLoaders
-from tests.test_web_modpacks import BUNDLE_ID, HTMX, FakeModpack, said, setup
+from tests._actors import EDITOR
+from tests.test_web_modpacks import (BUNDLE_ID, HTMX, FakeModpack, call, entry, lock, problem_card, problems_page,
+                                     resolution, said, setup)
 
 
 def bridged(modpack: FakeModpack, loader: MinecraftLoaders = MinecraftLoaders.neoforge,
@@ -95,3 +101,111 @@ def test_modrinth_failing_in_the_bridged_tab_keeps_the_tabs_and_says_so() -> Non
     modrinth.error = RuntimeError("down")
     text = search(client, q="map", via="connector")
     assert "Modrinth no respondió" in text and 'data-search-tab="nativos"' in text
+
+
+# Task 6: adding a bridged mod asks first (C4, d-7985ee-56a529).
+
+MISSING = [(CONNECTOR, "Connector"), (FORGIFIED_FABRIC_API, "Forgified Fabric API")]
+
+
+def dialog_form(text: str) -> str:
+    start = text.index("<form", text.index("<dialog"))
+    return text[start:text.index("</form>", start)]
+
+
+def test_the_pack_page_has_the_bridge_dialog_slot() -> None:
+    client, _, _ = setup()
+    assert '<div id="bridge-dialog"></div>' in client.get(f"/modpacks/{BUNDLE_ID}").text
+
+
+def test_adding_a_bridged_mod_answers_a_dialog_with_what_enters_and_adds_nothing() -> None:
+    client, modpack, modrinth = setup()
+    bridged(modpack)
+    modpack.missing = MISSING  # type: ignore[attr-defined]
+    modrinth.titles["FM"] = "FabricMiniMap"
+    response = client.post(f"/modpacks/{BUNDLE_ID}/projects", headers={**HTMX, "HX-Trigger": "hit-add-FM"},
+                           data={"ref": "FM"})
+    assert response.status_code == 200
+    assert response.headers["HX-Retarget"] == "#bridge-dialog" and response.headers["HX-Reswap"] == "innerHTML"
+    assert not [c for c in modpack.calls if c[0] == "project_add"]
+    text = response.text
+    assert "<dialog data-autoopen" in text
+    assert "FabricMiniMap necesita Connector y Forgified Fabric API (en lugar de Fabric API)" in said(text)
+    assert "vía Connector (Fabric)" in said(text)
+    form = dialog_form(text)
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/projects"' in form and 'hx-target="#mods"' in form
+    assert 'id="bridge-add-FM"' in form and 'name="confirm_bridge" value="1"' in form
+    refs = [part.split('"')[0] for part in form.split('name="ref" value="')[1:]]
+    assert refs == ["FM", CONNECTOR, FORGIFIED_FABRIC_API]
+    assert "Cancelar" in said(text) and "Agregar todo" in said(form) and "data-dialog-close" in text
+
+
+def test_agregar_todo_adds_the_mod_and_its_companions_and_answers_the_mods() -> None:
+    client, modpack, _ = setup()
+    bridged(modpack)
+    modpack.missing = MISSING  # type: ignore[attr-defined]
+    response = client.post(f"/modpacks/{BUNDLE_ID}/projects", headers={**HTMX, "HX-Trigger": "bridge-add-FM"},
+                           data={"ref": ["FM", CONNECTOR, FORGIFIED_FABRIC_API], "confirm_bridge": "1"})
+    assert response.status_code == 200 and 'id="mods"' in response.text and "HX-Retarget" not in response.headers
+    assert call(modpack, "project_add")[1:] == (str(BUNDLE_ID), ["FM", CONNECTOR, FORGIFIED_FABRIC_API],
+                                               ProjectOrigin.admin, EDITOR)
+    assert re.search(r'<div id="hit-FM" hx-swap-oob="true"', response.text)  # the search hit says «Ya está»
+
+
+def test_a_mod_that_needs_nothing_more_is_added_as_always() -> None:
+    client, modpack, _ = setup()
+    bridged(modpack)
+    response = client.post(f"/modpacks/{BUNDLE_ID}/projects", headers=HTMX, data={"ref": "FM"})
+    assert response.status_code == 200 and "HX-Retarget" not in response.headers
+    assert call(modpack, "project_add")[2] == ["FM"]
+
+
+def test_several_mods_are_added_together_only_once_confirmed() -> None:
+    client, modpack, _ = setup()
+    bridged(modpack)
+    response = client.post(f"/modpacks/{BUNDLE_ID}/projects", headers=HTMX, data={"ref": ["A", "FM"]})
+    assert response.status_code == 422 and not [c for c in modpack.calls if c[0] == "project_add"]
+
+
+def test_agregar_todo_from_a_problem_card_resolves_and_answers_there() -> None:
+    client, modpack, _ = setup()
+    bridged(modpack)
+    response = client.post(f"/modpacks/{BUNDLE_ID}/projects", headers=HTMX,
+                           data={"ref": [CONNECTOR, FORGIFIED_FABRIC_API], "confirm_bridge": "1", "contexto": "problemas"})
+    assert response.status_code == 200 and 'data-vista="problemas"' in response.text
+    assert [c[0] for c in modpack.calls if c[0] in ("project_add", "resolve")] == ["project_add", "resolve"]
+
+
+def test_the_dialog_from_a_problem_card_sends_its_context_back() -> None:
+    client, modpack, _ = setup()
+    bridged(modpack)
+    modpack.missing = [(FORGIFIED_FABRIC_API, "Forgified Fabric API")]  # type: ignore[attr-defined]
+    response = client.post(f"/modpacks/{BUNDLE_ID}/projects", headers=HTMX,
+                           data={"ref": CONNECTOR, "contexto": "dialogo"})
+    form = dialog_form(response.text)
+    assert 'name="contexto" value="dialogo"' in form and 'hx-target="#build-dialog"' in form
+
+
+def test_the_problems_of_a_bridge_have_their_actions() -> None:
+    client, modpack, _ = setup()
+    bridged(modpack)
+    modpack.bundle = modpack.bundle.model_copy(update={"projects": [
+        PackProject(project_id="P1", origin=ProjectOrigin.pack), PackProject(project_id=FABRIC_API, origin=ProjectOrigin.admin)]})
+    modpack.titles |= {FABRIC_API: "Fabric API", CONNECTOR: "Connector", "DEP": "FabricLib"}
+    text = problems_page(modpack, client,
+                         Problem(kind="bridge_missing", project_id=CONNECTOR, detail=f"Connector necesita {CONNECTOR}"),
+                         Problem(kind="bridge_dependency", project_id="DEP", requested_by=["P1"], detail="DEP solo existe para fabric"),
+                         Problem(kind="bridge_conflict", project_id=FABRIC_API, detail="Fabric API no convive con Forgified Fabric API"),
+                         Problem(kind="via_change", project_id="P1", detail="P1 pasó a nativa"))
+    missing = problem_card(text, CONNECTOR)
+    assert "falta el puente" in said(missing) and "Agregar el puente" in said(missing)
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/projects"' in missing and f'name="ref" value="{CONNECTOR}"' in missing
+    assert 'name="contexto" value="problemas"' in missing and "confirm_bridge" not in missing  # the dialog asks
+    dependency = problem_card(text, "DEP")
+    assert "solo por el puente" in said(dependency) and "Usar vía Connector" in said(dependency)
+    assert 'name="ref" value="DEP"' in dependency and "confirm_bridge" not in dependency
+    conflict = problem_card(text, FABRIC_API)
+    assert "choca con el puente" in said(conflict) and "Quitar Fabric API" in said(conflict)
+    assert f'hx-delete="/modpacks/{BUNDLE_ID}/projects/{FABRIC_API}?contexto=problemas"' in conflict
+    change = problem_card(text, "P1").split("</article>")[0]
+    assert "cambio de vía" in said(change) and "<form" not in change and "hx-delete" not in change

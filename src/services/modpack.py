@@ -569,14 +569,19 @@ class ModpackService():
         owned = {p.project_id for p in bundle.projects}
         if found.project_id in owned:
             return []
-        alone = request.model_copy(update={"projects": [found.project_id],
-                                           "origins": {found.project_id: ProjectOrigin.admin.value}})
-        lock = await self._resolve(alone)
-        way = next((e.via for e in lock.entries if e.project_id == found.project_id), None)
-        used = find_bridge(way, request.target.loader, request.target.game_version) if way else None
+        game_version = request.target.game_version
+        # The bridge itself or one of its companions («Agregar el puente»): the rest of its mods.
+        used = next((b for b in request.target._active_bridges()
+                     if found.project_id in {c for c, _ in companions(b, game_version)}), None)
+        if used is None:
+            alone = request.model_copy(update={"projects": [found.project_id],
+                                               "origins": {found.project_id: ProjectOrigin.admin.value}})
+            lock = await self._resolve(alone)
+            way = next((e.via for e in lock.entries if e.project_id == found.project_id), None)
+            used = find_bridge(way, request.target.loader, game_version) if way else None
         if used is None:
             return []
-        missing = [c for c, _ in companions(used, request.target.game_version) if c not in owned]
+        missing = [c for c, _ in companions(used, game_version) if c not in owned and c != found.project_id]
         known = {p.project_id: p.title for p in await self.modrinthDB.project_find_by_modrinth_id(missing)}
         lacking = [c for c in missing if c not in known]
         known |= {p.project_id: p.title for p in await self._projects_fetch(lacking)} if lacking else {}

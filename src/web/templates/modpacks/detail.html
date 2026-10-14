@@ -16,6 +16,8 @@
 <div id="build-dialog" hx-get="/modpacks/{{ bundle_id }}/builds/dialogo" hx-trigger="build-blocked from:body" hx-swap="innerHTML" hx-disinherit="*"></div>
 {# Where a pin that goes back asks to be confirmed (F27): the pin route answers a dialog into it. #}
 <div id="pin-dialog"></div>
+{# Where adding a mod that only runs through the bridge asks first (C4): the add route answers a dialog into it. #}
+<div id="bridge-dialog"></div>
 <div id="pack-main" hx-get="/modpacks/{{ bundle_id }}" hx-select="#pack-main" hx-trigger="job-finished from:body, job-started from:body" hx-swap="outerHTML" hx-disinherit="*">
 {% with steps=onboarding %}{% include "_onboarding.html" %}{% endwith %}
 
