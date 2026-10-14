@@ -103,6 +103,9 @@ class ChangePreview(BaseModel):
     # that the build does not explain, which stop a real update before it writes; None if none.
     unexplained: Optional[Unexplained] = None
     scanned_at: Optional[datetime] = None
+    # Against a server only (batch C, C6): bridge label -> how many of the build's mods go on the
+    # server through it, listed apart because only starting the server says whether they run.
+    bridged: dict[str, int] = {}
 
     @property
     def downgrades(self) -> list[str]:

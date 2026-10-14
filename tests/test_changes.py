@@ -264,6 +264,19 @@ def test_a_server_preview_without_a_scan_is_a_conflict(mongo: MongoRunner) -> No
     assert getattr(error, "status_code", None) == 409 and "Escanea el servidor antes de comparar" in str(error.detail)
 
 
+@pytest.mark.network
+def test_a_server_preview_counts_the_mods_that_go_on_the_server_through_a_bridge(mongo: MongoRunner) -> None:
+    """Batch C (C6): the bridged mods are listed apart, by bridge; a client-only one does not go there."""
+    async def scenario() -> Any:
+        bridged = [entry("P", "v2").model_copy(update={"via": "connector"}),
+                   entry("Q", "q1").model_copy(update={"via": "connector"}),
+                   entry("C", "c1", "exclude").model_copy(update={"via": "connector"})]
+        server_id = await seed_server([scan_file("/mods/p.jar", "P", "v1")], [*bridged, entry("N", "n1")])
+        return await service(FakeAPI({"v2": None, "q1": None, "n1": None})).server_change_preview(server_id, 1)
+
+    assert mongo(scenario).bridged == {"Connector": 2}
+
+
 class SlowAPI(FakeAPI):
     """Modrinth limitando: un lote con versiones lentas tarda mucho más que el plazo."""
 
