@@ -21,6 +21,7 @@ from markupsafe import Markup, escape
 
 from src.exceptions import CatalogPending, QuotaExceeded, UpstreamError
 from src.library.api.limiter import CURRENT_USER
+from src.library.bridges import Bridge, bridges_for
 from src.library.utils import as_utc
 from src.library.auth.redirect import is_local_path
 from src.library.auth.roles import actor_from_session
@@ -143,7 +144,15 @@ def linkify(text: str) -> Markup:
     return Markup("".join(parts))
 
 
+def active_bridge(bundle: Any) -> Optional[Bridge]:
+    """The bridge a pack has on and that works for its loader and Minecraft version (batch C), or
+    None: a loader has at most one."""
+    loader = str(bundle.loader.value)
+    return next((b for b in bridges_for(loader, bundle.version) if b.key in bundle.secondary_loaders), None)
+
+
 templates.env.filters["ago"] = ago
+templates.env.globals["active_bridge"] = active_bridge
 templates.env.globals["AUDIT_ACTIONS"] = audit_labels.ACTIONS
 templates.env.globals["AUDIT_AREAS"] = audit_labels.AREAS
 templates.env.globals["AUDIT_DETAILS"] = audit_labels.DETAILS

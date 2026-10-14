@@ -1176,6 +1176,19 @@ def test_the_dialog_preview_warns_of_the_jars_that_would_stop_the_update() -> No
     assert "se detendrá" not in client.get(f"/servers/{SERVER_ID}/update/preview", params={"build": 3}, headers=HTMX).text
 
 
+def test_the_preview_lists_apart_the_mods_that_go_through_a_bridge() -> None:
+    # Batch C (C6): only starting the server says whether a bridged mod runs.
+    client, fakes = setup(OPERATOR)
+    fakes.modpack.preview = change_preview().model_copy(update={"bridged": {"Connector": 3}})
+    text = client.get(f"/servers/{SERVER_ID}/update/preview", params={"build": 3}, headers=HTMX).text
+    assert "3 mods van por Connector: si el servidor no arranca, revisa sus logs." in " ".join(text.split())
+    fakes.modpack.preview = change_preview().model_copy(update={"bridged": {"Connector": 1}})
+    text = client.get(f"/servers/{SERVER_ID}/update/preview", params={"build": 3}, headers=HTMX).text
+    assert "1 mod va por Connector" in " ".join(text.split())
+    fakes.modpack.preview = change_preview()
+    assert "van por" not in client.get(f"/servers/{SERVER_ID}/update/preview", params={"build": 3}, headers=HTMX).text
+
+
 def test_the_build_of_the_preview_is_a_positive_number() -> None:
     client, fakes = setup(OPERATOR)
     assert client.get(f"/servers/{SERVER_ID}/update/preview", params={"build": 0}, headers=HTMX).status_code == 422

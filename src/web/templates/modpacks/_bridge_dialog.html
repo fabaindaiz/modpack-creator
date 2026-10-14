@@ -1,0 +1,31 @@
+{# A mod that only runs through the pack's bridge, while the pack lacks the bridge or one of its
+   companions (C4; d-7985ee-56a529): nothing was added. A dialog, opened on arrival (data-autoopen,
+   app.js), says what enters with it, and «Agregar todo» sends the mod and those mods again with
+   the confirmation, to where the first click went (the rule of _problem.html). Needs `bundle_id`,
+   `main` (the mod's ref), `title`, `bridge`, `missing` ((project id, title) list), `instead`
+   (companion id → what it stands in for) and `contexto`. #}
+{% import "_macros.html" as ui %}
+{% set target, swap = ("#build-dialog", "innerHTML") if contexto == "dialogo" else ("#mods", "outerHTML") %}
+{% set names = namespace(items=[]) %}
+{% for project_id, name in missing %}
+{% set names.items = names.items + [name ~ (" (en lugar de " ~ instead[project_id] ~ ")" if project_id in instead else "")] %}
+{% endfor %}
+<dialog data-autoopen aria-labelledby="bridge-confirm-title"
+  class="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-zinc-950/50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+  <form id="bridge-add-{{ main }}" class="space-y-4 p-5" hx-post="/modpacks/{{ bundle_id }}/projects" hx-target="{{ target }}" hx-swap="{{ swap }}">
+    <h2 id="bridge-confirm-title" class="text-base font-semibold" autofocus tabindex="-1">Agregar con {{ bridge.label }}</h2>
+    <div class="space-y-2 text-sm text-zinc-700 dark:text-zinc-300">
+      <p class="break-words">{{ title }} necesita {% if names.items | length > 1 %}{{ names.items[:-1] | join(", ") }} y {{ names.items[-1] }}{% else %}{{ names.items[0] }}{% endif %}.</p>
+      <p>Corre vía {{ bridge.label }} ({{ bridge.guest | capitalize }}){% if bridge.experimental %}, que es experimental{% endif %}: si el servidor no arranca, revisa sus logs.</p>
+    </div>
+    <input type="hidden" name="ref" value="{{ main }}">
+    {% for project_id, _ in missing %}<input type="hidden" name="ref" value="{{ project_id }}">
+    {% endfor %}
+    <input type="hidden" name="confirm_bridge" value="1">
+    {% if contexto %}<input type="hidden" name="contexto" value="{{ contexto }}">{% endif %}
+    <div class="flex justify-end gap-2">
+      {{ ui.button("Cancelar", kind="secondary", attrs={"data-dialog-close": ""}) }}
+      {{ ui.button("Agregar todo", type="submit") }}
+    </div>
+  </form>
+</dialog>

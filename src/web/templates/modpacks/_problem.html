@@ -10,7 +10,11 @@
    its own `detail` is shown (ids named by title) and only the actions that need no new field. #}
 {% import "_macros.html" as ui %}
 {% set KIND = {"unresolvable": "sin versión", "pin_mismatch": "versión fijada", "pin_conflict": "versión fijada",
-               "incompatible": "incompatible", "no_file": "sin archivo"} %}
+               "incompatible": "incompatible", "no_file": "sin archivo",
+               "bridge_missing": "falta el puente", "bridge_dependency": "solo por el puente",
+               "bridge_conflict": "choca con el puente", "via_change": "cambio de vía"} %}
+{# The pack's bridge (batch C), for the actions of its problems. #}
+{% set bridge = active_bridge(bundle) %}
 {% set target, swap = ("#build-dialog", "innerHTML") if contexto == "dialogo" else ("#mods", "outerHTML") %}
 {% set pid = problem.project_id %}
 {% set card = cards.get(pid) if pid else none %}
@@ -41,7 +45,8 @@
                 else ("la versión " ~ alternative.version_number ~ " (" ~ alternative.channel ~ ")") %}
 {% endif %}
 {# The pack's mods a "Quitar" button removes. #}
-{% if pin_problem %}
+{% if pin_problem or problem.kind in ("via_change", "bridge_missing") %}
+{# A change of way is confirmed in its own dialog (task 7, d-7985ee-7e602f); a missing companion is added. #}
 {% set removals = [] %}
 {% elif asked_exact %}
 {% set removals = requesters | select("in", pack) | list %}
@@ -116,9 +121,19 @@
       "hx-target": target, "hx-swap": swap}) }}
     {% if in_pack %}{{ ui.link_button("Fijar otra", "/modpacks/" ~ bundle_id ~ "?vista=todos#mod-row-" ~ pid, small=True) }}{% endif %}
     {% endif %}
+    {% if problem.kind in ("bridge_missing", "bridge_dependency") and pid %}
+    {# Through the add route: when the bridge or its companions are missing, it answers the dialog
+       that lists them (C4); nothing enters without its «Agregar todo». #}
+    <form hx-post="/modpacks/{{ bundle_id }}/projects" hx-target="{{ target }}" hx-swap="{{ swap }}">
+      <input type="hidden" name="ref" value="{{ pid }}">
+      <input type="hidden" name="contexto" value="{{ contexto }}">
+      {{ ui.button("Agregar el puente" if problem.kind == "bridge_missing"
+                   else "Usar vía " ~ (bridge.label if bridge else "el puente"), type="submit", small=True) }}
+    </form>
+    {% endif %}
     {% for removal in removals %}
     {% set removal_name = titles.get(removal, removal) %}
-    {{ ui.button("Quitar del modpack" if removal == pid and problem.kind != "incompatible" else "Quitar " ~ removal_name,
+    {{ ui.button("Quitar del modpack" if removal == pid and problem.kind not in ("incompatible", "bridge_conflict") else "Quitar " ~ removal_name,
       kind="secondary", small=True, attrs={
       "hx-delete": "/modpacks/" ~ bundle_id ~ "/projects/" ~ removal ~ "?contexto=" ~ contexto,
       "hx-target": target, "hx-swap": swap, "hx-confirm": "¿Quitar " ~ removal_name ~ " del modpack?"}) }}

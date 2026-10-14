@@ -201,6 +201,11 @@ class FakeModpack:
         self.bundle.projects = self.bundle.projects + [PackProject(project_id=r, origin=origin) for r in refs if r not in owned]
         return self.bundle.projects
 
+    async def bridge_companions_missing(self, bundle_id: str, project_id: str) -> list[tuple[str, str]]:
+        """A read: what `missing` says a bridged mod needs (batch C); nothing by default."""
+        self.calls.append(("bridge_companions_missing", bundle_id, project_id))
+        return list(getattr(self, "missing", []))
+
     async def project_remove(self, bundle_id: str, project_id: str, actor: Actor) -> list[PackProject]:
         self._record("project_remove", bundle_id, project_id, actor)
         self.bundle.projects = [p for p in self.bundle.projects if p.project_id != project_id]

@@ -65,6 +65,8 @@ class PackFact:
     updates: int = 0
     checked_at: Optional[datetime] = None
     resolved_at: Optional[datetime] = None
+    # Bridged mods whose native version caught up (batch C, C7): offered, never moved alone.
+    native_ready: int = 0
 
 
 @dataclass(frozen=True)
@@ -139,6 +141,10 @@ def attention(servers: Sequence[ServerFact], packs: Sequence[PackFact], failed: 
             updates = _plural(pack.updates, "actualización disponible", "actualizaciones disponibles")
             items.append(Attention(AVAILABLE, f"{pack.name} tiene {updates}.", "Ver actualizaciones",
                                    f"/modpacks/{pack.id}/actualizaciones", pack.checked_at))
+        if pack.native_ready:
+            ready = ("1 mod ya tiene" if pack.native_ready == 1 else f"{pack.native_ready} mods ya tienen")
+            items.append(Attention(AVAILABLE, f"{pack.name}: {ready} versión nativa.", "Ver",
+                                   f"/modpacks/{pack.id}?vista=puente", pack.resolved_at))
     # Stable: within a severity and a date, the order the facts came in.
     items.sort(key=lambda i: -as_utc(i.at).timestamp() if i.at else float("inf"))
     items.sort(key=lambda i: i.severity)

@@ -103,6 +103,9 @@ class ChangePreview(BaseModel):
     # that the build does not explain, which stop a real update before it writes; None if none.
     unexplained: Optional[Unexplained] = None
     scanned_at: Optional[datetime] = None
+    # Against a server only (batch C, C6): bridge label -> how many of the build's mods go on the
+    # server through it, listed apart because only starting the server says whether they run.
+    bridged: dict[str, int] = {}
 
     @property
     def downgrades(self) -> list[str]:
@@ -581,6 +584,41 @@ class ModpackService():
         await self.audit.record(actor, "bundle.project.add", _bundle(bundle_id),
                                 {"refs": list(refs), "origin": origin.value})
         return added
+
+    async def bridge_companions_missing(self, bundle_id: str, project_id: str) -> list[tuple[str, str]]:
+        """For a project that only fits through an active bridge, the bridge's mods (the bridge and
+        its companions, spec §1) the pack lacks as projects, as (project id, title), in the table's
+        order: what the add asks to confirm before it enters (C4, d-7985ee-56a529). Empty when the
+        project runs natively, is already in the pack, or the pack has no bridge on (then Modrinth is
+        not asked at all). The project resolves alone, with the pack's target, floors and rules, so
+        its way is the one the resolution would take (native first, C3). `project_id` may be a slug.
+        Writes only the catalog (what it fetched); adds nothing."""
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        request = await self._request(bundle)
+        if not request.target.bridges:
+            return []
+        stored = await self.modrinthDB.project_find_by_modrinth_id([project_id])
+        found = stored[0] if stored else (await self._modrinth_projects([project_id]))[0]
+        owned = {p.project_id for p in bundle.projects}
+        if found.project_id in owned:
+            return []
+        game_version = request.target.game_version
+        # The bridge itself or one of its companions («Agregar el puente»): the rest of its mods.
+        used = next((b for b in request.target._active_bridges()
+                     if found.project_id in {c for c, _ in companions(b, game_version)}), None)
+        if used is None:
+            alone = request.model_copy(update={"projects": [found.project_id],
+                                               "origins": {found.project_id: ProjectOrigin.admin.value}})
+            lock = await self._resolve(alone)
+            way = next((e.via for e in lock.entries if e.project_id == found.project_id), None)
+            used = find_bridge(way, request.target.loader, game_version) if way else None
+        if used is None:
+            return []
+        missing = [c for c, _ in companions(used, game_version) if c not in owned and c != found.project_id]
+        known = {p.project_id: p.title for p in await self.modrinthDB.project_find_by_modrinth_id(missing)}
+        lacking = [c for c in missing if c not in known]
+        known |= {p.project_id: p.title for p in await self._projects_fetch(lacking)} if lacking else {}
+        return [(c, known.get(c, c)) for c in missing]
 
     async def pack_replace(self, bundle_id: str, refs: list[str], actor: Actor) -> list[PackProject]:
         """
@@ -1659,6 +1697,13 @@ class ModpackService():
         jars = unexplained_for(compare(scan.files, build.lock.entries, build.local_files, bundle.claimed_files), bundle)
         if jars.in_pack or jars.foreign:
             preview.unexplained, preview.scanned_at = jars, scan.scanned_at
+        labels = {b.key: b.label for b in BRIDGES}
+        bridged: dict[str, int] = {}
+        for entry in build.lock.entries:
+            if entry.server == "include" and entry.via is not None:
+                label = labels.get(entry.via, entry.via)
+                bridged[label] = bridged.get(label, 0) + 1
+        preview.bridged = bridged
         return preview
 
     # Global replacement rules (d-7985ee-86fffa).

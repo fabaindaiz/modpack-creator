@@ -71,3 +71,60 @@ def test_a_bridge_saved_for_another_minecraft_version_has_no_effect(mongo: Mongo
 
     entries, problems = mongo(scenario)
     assert entries == ["N"] and "unresolvable" in problems  # F: no native version, and no bridge for 1.20.1 here
+
+
+# Task 6: what enters with a bridged mod (C4; d-7985ee-56a529: shown, never added alone).
+
+
+def companions_api(game: str = "1.21.1") -> FakeModrinth:
+    from src.library.bridges import CONNECTOR, FORGIFIED_FABRIC_API
+
+    fake = api(game)
+    fake.projects |= {p.project_id: p for p in (
+        project("M", "FabricMiniMap", loaders=("fabric",), game_versions=(game,)),
+        project(CONNECTOR, "Connector", loaders=("neoforge",), game_versions=(game,)),
+        project(FORGIFIED_FABRIC_API, "Forgified Fabric API", loaders=("neoforge",), game_versions=(game,)))}
+    fake.versions += [version("m1", "M", "1.0", 1, loaders=("fabric",), game_versions=(game,))]
+    return fake
+
+
+def test_a_mod_that_only_runs_through_the_bridge_names_the_companions_the_pack_lacks(mongo: MongoRunner) -> None:
+    from src.library.bridges import CONNECTOR, FORGIFIED_FABRIC_API
+
+    async def scenario() -> Any:
+        s = Scenario(companions_api())
+        bundle_id = await neoforge_pack(s, bridges=("connector",))
+        first = await s.service.bridge_companions_missing(bundle_id, "M")
+        await s.modpackDB.bundle_projects_add(bundle_id, [PackProject(project_id=CONNECTOR, origin=ProjectOrigin.admin)])
+        second = await s.service.bridge_companions_missing(bundle_id, "M")
+        return first, second, (await s.modpackDB.bundle_get(bundle_id)).projects
+
+    first, second, projects = mongo(scenario)
+    assert first == [(CONNECTOR, "Connector"), (FORGIFIED_FABRIC_API, "Forgified Fabric API")]
+    assert second == [(FORGIFIED_FABRIC_API, "Forgified Fabric API")]
+    assert "M" not in [p.project_id for p in projects]  # a read: nothing is added
+
+
+def test_a_native_mod_or_a_pack_without_a_bridge_needs_nothing(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        fake = companions_api()
+        s = Scenario(fake)
+        native = await s.service.bridge_companions_missing(await neoforge_pack(s, bridges=("connector",)), "N")
+        fake.calls.clear()
+        off = await s.service.bridge_companions_missing(await neoforge_pack(s), "M")
+        return native, off, fake.calls
+
+    native, off, calls = mongo(scenario)
+    assert native == [] and off == [] and calls == []  # without a bridge, not even Modrinth is asked
+
+
+def test_adding_the_bridge_itself_names_its_other_companions(mongo: MongoRunner) -> None:
+    """«Agregar el puente» on a `bridge_missing` card adds the bridge's mods, the dialog listing them."""
+    from src.library.bridges import CONNECTOR, FORGIFIED_FABRIC_API
+
+    async def scenario() -> Any:
+        s = Scenario(companions_api())
+        bundle_id = await neoforge_pack(s, bridges=("connector",))
+        return await s.service.bridge_companions_missing(bundle_id, CONNECTOR)
+
+    assert mongo(scenario) == [(FORGIFIED_FABRIC_API, "Forgified Fabric API")]
