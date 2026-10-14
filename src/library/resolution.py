@@ -13,7 +13,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from typing import Any, Literal, Optional
-from src.library.bridges import FABRIC_API, REPLACES, bridge as find_bridge, bridges_for, companions
+from src.library.bridges import FABRIC_API, REPLACES, Bridge, bridge as find_bridge, bridges_for, companions
 from pydantic import BaseModel, field_validator
 
 ADMIN = "admin"
@@ -242,6 +242,12 @@ def request_digest(request: ResolveRequest) -> str:
     # Left out when empty: every resolution saved before the field existed keeps its digest.
     if not data["channel_exceptions"]:
         del data["channel_exceptions"]
+    # Batch C's too (final review): a pack with no bridge and no mod moved to native keeps its digest.
+    for parent, key in ((data["target"], "bridges"), (data, "native_only")):
+        if parent[key]:
+            parent[key] = sorted(parent[key])
+        else:
+            del parent[key]
     # The floors follow the build in force, not what the admin asked for: a new build must not
     # make the saved resolution read as stale.
     del data["floors"]
@@ -430,7 +436,7 @@ class _Run:
         target = self.request.target
         if (target.loaders_with_bridges(project_type) != target.loaders(project_type)
                 and project_id not in self.catalog.bridged_loaded
-                and not any(target.fits(c, project_type) and target.via(c, project_type) is None
+                and not any(target.allows(c, project_type) and target.via(c, project_type) is None
                             for c in self.catalog.by_project[project_id])):
             self.needs_bridged.add(project_id)
             return None
@@ -445,6 +451,13 @@ class _Run:
                 missing_floors = True
             elif self.request.target.fits(known, project_type):
                 fitting_floors.append(known)
+            elif (off := self._bridge_off(known, project_type)) is not None:
+                # Installed through a bridge the pack turned off: the resolution never changes a mod's
+                # way by itself (d-7985ee-7e602f), nor takes an older native one (final review).
+                self.problems.append(Problem(kind="via_change", project_id=project_id, requested_by=_asked(requester),
+                    detail=(f"{project_id} está instalado vía {off.label}, que el pack apagó: reactiva el puente "
+                            "o quita el mod")))
+                return None
         if missing_floors:
             return None
         floor = max(fitting_floors, key=lambda c: _as_utc(c.date_published)) if fitting_floors else None
@@ -495,10 +508,11 @@ class _Run:
         if not pool and project_id in self.request.channel_exceptions:
             pool = same_way(newer(self._excepted(project_id, project_type)))
         if native_only and not pool:
-            pool = same_way(allowed)
-            if not pool:
-                self.problems.append(Problem(kind="via_change", project_id=project_id, requested_by=_asked(requester),
-                    detail=f"{project_id} pasó a nativa, pero no tiene versión nativa en los canales del pack"))
+            # Never back (d-7985ee-6dc34c): with only older native versions it keeps the installed one.
+            older = bool(same_way(allowed))
+            self.problems.append(Problem(kind="via_change", project_id=project_id, requested_by=_asked(requester),
+                detail=(f"{project_id} pasó a nativa, pero su versión nativa es anterior a la instalada" if older
+                        else f"{project_id} pasó a nativa, pero no tiene versión nativa en los canales del pack")))
         if floor_via is not None:
             natives = [c for c in allowed if target.via(c, project_type) is None]
             if natives:
@@ -579,6 +593,17 @@ class _Run:
         parent = self.chosen.get(requester)
         return parent is not None and self.request.target.via(
             parent.candidate, self.catalog.types.get(requester, "mod")) is None
+
+    def _bridge_off(self, candidate: Candidate, project_type: str) -> Optional[Bridge]:
+        """The bridge of this loader and version, not turned on, that a version which does not fit
+        natively would run through: how a mod installed through a bridge is told apart once the pack
+        turns it off. None for a mod's other versions, or any other type."""
+        target = self.request.target
+        if project_type != "mod" or target.game_version not in candidate.game_versions \
+                or target.loaders(project_type) & set(candidate.loaders):
+            return None
+        return next((b for b in bridges_for(target.loader, target.game_version)
+                     if b.key not in target.bridges and b.guest in candidate.loaders), None)
 
     def _bridge_channel(self, project_id: str, project_type: str) -> list[Candidate]:
         """A bridge's own mod takes the channel the bridge table accepts for it (Connector is only

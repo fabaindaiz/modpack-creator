@@ -17,7 +17,7 @@ from src.library.mrpack import mrpack_index, write_mrpack
 from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink
 from src.database.jobs import JobDatabase
 from src.model.jobs import Job
-from src.library.bridges import BRIDGES, VIA_RISK, bridge as find_bridge, companions
+from src.library.bridges import BRIDGES, VIA_RISK, bridge as find_bridge, companions, guest_of
 from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Candidate, Catalog, Lock, LockEntry, ResolveRequest, Target, merge_replacements, request_digest, resolve
 from src.model.modpack import BUNDLE_KEYED_FIELDS, AvailableUpdate, LoaderVersion, UpdateCheck, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject, ModrinthVersion, ModrinthVersionList, VersionBrief
@@ -462,7 +462,9 @@ class ModpackService():
         neither the bundle's nor one its last resolution names, or a version that is not of that
         project: the catalog is asked first, Modrinth if the catalog does not have it. A version
         before the mod's floor is a DowngradeRefused (409) unless `confirm_downgrade` (F27,
-        d-7985ee-c62c61); the event then says it goes back. Nothing is written for a refused pin.
+        d-7985ee-c62c61); the event then says it goes back. A version of the other way (native for a
+        mod installed through a bridge, or bridged for a native one) is a 422: changing a mod's way asks
+        first (d-7985ee-7e602f). Nothing is written for a refused pin.
         """
         for value in (project_id, version_id):
             if not MODRINTH_ID.fullmatch(value):
@@ -470,8 +472,21 @@ class ModpackService():
         bundle = await self.modpackDB.bundle_get(bundle_id)
         if project_id not in {p.project_id for p in bundle.projects} and not await self._resolution_names(bundle, project_id):
             raise HTTP_422_UNPROCESSABLE_ENTITY("Ese proyecto no está en el modpack ni es una de sus dependencias")
-        if await self._version_project(version_id) != project_id:
+        found = await self._version(version_id)
+        if found is None or found.project_id != project_id:
             raise HTTP_422_UNPROCESSABLE_ENTITY("La versión no es de ese proyecto")
+        saved = await self.modpackDB.resolution_get(bundle.id) if bundle.id is not None else None
+        installed = next((e for e in saved.lock.entries if e.project_id == project_id), None) if saved else None
+        if installed is not None:
+            loader = str(bundle.loader.value)
+            native = bool(set(found.loaders) & Target(game_version=bundle.version, loader=loader,
+                                                      channels=frozenset(bundle.channels)).loaders(installed.project_type))
+            bridged = not native and any(b.guest in found.loaders for b in BRIDGES if b.host == loader)
+            if (installed.via is not None and native) or (installed.via is None and bridged):
+                # A pin never changes a mod's way (final review, d-7985ee-7e602f): that asks first.
+                raise HTTP_422_UNPROCESSABLE_ENTITY(
+                    "Esa versión cambia la vía del mod (nativa o por el puente): eso se hace con «Pasar a nativa» "
+                    "o «Volver al puente», que piden confirmación")
         downgrade = (await self.pin_downgrades(bundle, {project_id: version_id})).get(project_id)
         if downgrade is not None and not confirm_downgrade:
             raise DowngradeRefused(downgrade.text, downgrade)
@@ -552,11 +567,16 @@ class ModpackService():
     async def _version_project(self, version_id: str) -> Optional[str]:
         """The project a version belongs to: from the catalog, else from Modrinth (which does not
         know it: None)."""
+        found = await self._version(version_id)
+        return found.project_id if found is not None else None
+
+    async def _version(self, version_id: str) -> Optional[ModrinthVersion]:
+        """A version from the catalog, else from Modrinth; None when Modrinth does not know it."""
         stored = await self.modrinthDB.version_find_by_version_id(version_id)
         if stored is not None:
-            return stored.project_id
+            return stored
         try:
-            return (await self.modrinthAPI.version_get(version_id)).project_id
+            return await self.modrinthAPI.version_get(version_id)
         except HTTPException as error:
             if error.status_code == 404:
                 return None
@@ -654,7 +674,7 @@ class ModpackService():
     async def bridge_idle(self, bundle_id: str) -> list[str]:
         """The bridge mods still in the pack when no mod runs through a bridge any more (d-7985ee-80ee9a),
         by title: what the panel suggests removing, never removes. A mod of the saved resolution counts
-        while it is in the pack or came as a dependency. Without a bridge on, or a resolution, none. A read."""
+        while it is in the pack or a mod in it still brings it. Without a bridge on, or a resolution, none. A read."""
         bundle = await self.modpackDB.bundle_get(bundle_id)
         loader = str(bundle.loader.value)
         found = [b for key in bundle.secondary_loaders if (b := find_bridge(key, loader, bundle.version)) is not None]
@@ -662,7 +682,16 @@ class ModpackService():
         if saved is None:
             return []
         pack = {p.project_id for p in bundle.projects}
-        if any(e.via for e in saved.lock.entries if e.project_id in pack or e.origin is None):
+        # A dependency counts while a mod still in the pack asks for it, directly or through another
+        # one: the saved resolution is from before the removal (final review).
+        alive = set(pack)
+        grew = True
+        while grew:
+            more = {e.project_id for e in saved.lock.entries
+                    if e.origin is None and e.project_id not in alive and alive & set(e.requested_by)}
+            alive |= more
+            grew = bool(more)
+        if any(e.via for e in saved.lock.entries if e.project_id in alive):
             return []
         ids = [i for b in found for i, _ in companions(b, bundle.version) if i in pack]
         titles = {p.project_id: p.title for p in await self.modrinthDB.project_find_by_modrinth_id(ids)}
@@ -749,16 +778,23 @@ class ModpackService():
             found, entry = catalog.get(project_id), entries.get(project_id)
             return entry.project_type if entry else found.project_type.value if found else "mod"
 
+        def way_loaders(project_id: str) -> list[str]:
+            """The loaders of the row's own way: its bridge's guest for a mod that runs through one
+            (final review: a native pin would change its way without asking, d-7985ee-7e602f)."""
+            entry = entries.get(project_id)
+            guest = guest_of(entry.via, str(bundle.loader.value)) if entry is not None and entry.via else None
+            return [guest] if guest else sorted(target.loaders(kind_of(project_id)))
+
         listed: dict[str, ModrinthVersionList] = {}
         for record in await self.modrinthDB.version_lists_find([*pack, *dependencies], bundle.version):
-            if record.loaders == sorted(target.loaders(kind_of(record.project_id))):
+            if record.loaders == way_loaders(record.project_id):
                 listed[record.project_id] = record
         wanted = {i for record in listed.values() for i in record.version_ids}
         wanted |= {bundle.pins[i] for i in [*pack, *dependencies] if i in bundle.pins}
         known = {v.version_id: v for v in await self.modrinthDB.version_briefs(sorted(wanted))} if wanted else {}
 
         def pin_options(project_id: str) -> Optional[list[VersionOption]]:
-            loaders = sorted(target.loaders(kind_of(project_id)))
+            loaders = way_loaders(project_id)
             record = listed.get(project_id)
             if record is None:
                 return None

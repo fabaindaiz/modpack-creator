@@ -1,10 +1,12 @@
 """Resolving with a bridge between loaders (batch C; d-7985ee-09c74f, d-7985ee-6ebc03, d-7985ee-4fd88e):
 the native loaders stay the default, a mod with no native version may run through an active bridge,
 its guest versions are asked for only then, and a native version always wins."""
+import hashlib
+import json
 from typing import Any
 
 from src.library.bridges import CONNECTOR, FABRIC_API, FORGIFIED_FABRIC_API
-from src.library.resolution import Catalog, Target, resolve
+from src.library.resolution import Catalog, Target, request_digest, resolve
 from tests.test_resolution import cand, catalog, chosen, request
 
 NEO = Target(game_version="1.21.1", loader="neoforge")
@@ -127,3 +129,51 @@ def test_with_connector_fabric_api_is_forgified_fabric_api_and_the_bridge_is_ask
 def test_fabric_api_in_a_pack_with_connector_is_a_conflict() -> None:
     lock = resolve(request(FABRIC_API, target=BRIDGED), loaded(fab(FABRIC_API, "fa1"), bridged=(FABRIC_API,)))
     assert [x.kind for x in lock.problems if x.project_id == FABRIC_API] == ["bridge_conflict"]
+
+
+# The final review (2026-10-13).
+
+
+def test_turning_the_bridge_off_keeps_a_bridged_mod_as_a_problem_never_a_native_or_older_one() -> None:
+    """Critical 1 (d-7985ee-7e602f, d-7985ee-6dc34c): with its bridge off, a mod installed through it
+    is a problem that says so; the resolution never moves it to native (here an older one) by itself."""
+    versions = [neo("a", "n1", days=1), fab("a", "f5", days=5)]
+    lock = resolve(request("a", target=NEO, floors={"a": ["f5"]}), loaded(*versions, bridged=("a",)))
+    assert chosen(lock) == {}
+    [problem] = lock.problems
+    assert problem.kind == "via_change" and problem.project_id == "a" and "Connector" in (problem.detail or "")
+
+
+def test_the_digest_of_a_pack_without_bridges_is_the_one_it_had_and_native_only_is_sorted() -> None:
+    """Important 2: a pack with no bridge and nothing moved to native keeps the digest saved before
+    batch C; the marks, in any order, give one digest."""
+    plain = request("a", target=NEO)
+    data = plain.model_dump(mode="json")
+    del data["target"]["bridges"], data["native_only"], data["floors"], data["channel_exceptions"]
+    data["target"]["channels"] = sorted(data["target"]["channels"])
+    before = hashlib.sha256(json.dumps(data, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    assert request_digest(plain) == before
+    marks = [f"m{i}" for i in range(12)]
+    digests = {request_digest(request("a", target=BRIDGED, native_only=set(order)))
+               for order in (marks, marks[::-1], marks[3:] + marks[:3])}
+    assert len(digests) == 1
+
+
+def test_a_mod_moved_to_native_never_takes_a_native_version_older_than_the_installed_one() -> None:
+    """Important 3 (d-7985ee-6dc34c): «Pasar a nativa» with only an older native version keeps the
+    installed one and says why."""
+    versions = [neo("a", "n1", days=1), fab("a", "f5", days=5)]
+    lock = resolve(request("a", target=BRIDGED, floors={"a": ["f5"]}, native_only={"a"}), loaded(*versions, bridged=("a",)))
+    assert chosen(lock) == {"a": "f5"}
+    [problem] = [p for p in lock.problems if p.kind == "via_change"]
+    assert "anterior" in (problem.detail or "")
+
+
+def test_a_native_version_only_in_another_channel_lets_the_bridged_one_run() -> None:
+    """Important 5 (C3): native first, but only within the pack's channels; a native beta in a
+    release pack does not block the bridged release."""
+    versions = [neo("a", "nb", days=9, type="beta"), fab("a", "f1", days=1)]
+    lock = resolve(request("a", target=BRIDGED), loaded(*versions))
+    assert lock.needs_bridged == {"a"}
+    lock = resolve(request("a", target=BRIDGED), loaded(*versions, bridged=("a",)))
+    assert chosen(lock) == {"a": "f1"} and lock.entries[0].via == "connector"
