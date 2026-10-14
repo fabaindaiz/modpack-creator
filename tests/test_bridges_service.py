@@ -116,3 +116,15 @@ def test_a_native_mod_or_a_pack_without_a_bridge_needs_nothing(mongo: MongoRunne
 
     native, off, calls = mongo(scenario)
     assert native == [] and off == [] and calls == []  # without a bridge, not even Modrinth is asked
+
+
+def test_adding_the_bridge_itself_names_its_other_companions(mongo: MongoRunner) -> None:
+    """«Agregar el puente» on a `bridge_missing` card adds the bridge's mods, the dialog listing them."""
+    from src.library.bridges import CONNECTOR, FORGIFIED_FABRIC_API
+
+    async def scenario() -> Any:
+        s = Scenario(companions_api())
+        bundle_id = await neoforge_pack(s, bridges=("connector",))
+        return await s.service.bridge_companions_missing(bundle_id, CONNECTOR)
+
+    assert mongo(scenario) == [(FORGIFIED_FABRIC_API, "Forgified Fabric API")]

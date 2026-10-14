@@ -17,7 +17,7 @@ from src.library.mrpack import mrpack_index, write_mrpack
 from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink
 from src.database.jobs import JobDatabase
 from src.model.jobs import Job
-from src.library.bridges import BRIDGES, bridge as find_bridge
+from src.library.bridges import BRIDGES, bridge as find_bridge, companions
 from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, request_digest, resolve
 from src.model.modpack import BUNDLE_KEYED_FIELDS, AvailableUpdate, LoaderVersion, UpdateCheck, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject, ModrinthVersion, ModrinthVersionList, VersionBrief
@@ -554,8 +554,33 @@ class ModpackService():
 
     async def bridge_companions_missing(self, bundle_id: str, project_id: str) -> list[tuple[str, str]]:
         """For a project that only fits through an active bridge, the bridge's mods (the bridge and
-        its companions) the pack lacks, as (project id, title). Stub (batch C, task 6)."""
-        return []
+        its companions, spec §1) the pack lacks as projects, as (project id, title), in the table's
+        order: what the add asks to confirm before it enters (C4, d-7985ee-56a529). Empty when the
+        project runs natively, is already in the pack, or the pack has no bridge on (then Modrinth is
+        not asked at all). The project resolves alone, with the pack's target, floors and rules, so
+        its way is the one the resolution would take (native first, C3). `project_id` may be a slug.
+        Writes only the catalog (what it fetched); adds nothing."""
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        request = await self._request(bundle)
+        if not request.target.bridges:
+            return []
+        stored = await self.modrinthDB.project_find_by_modrinth_id([project_id])
+        found = stored[0] if stored else (await self._modrinth_projects([project_id]))[0]
+        owned = {p.project_id for p in bundle.projects}
+        if found.project_id in owned:
+            return []
+        alone = request.model_copy(update={"projects": [found.project_id],
+                                           "origins": {found.project_id: ProjectOrigin.admin.value}})
+        lock = await self._resolve(alone)
+        way = next((e.via for e in lock.entries if e.project_id == found.project_id), None)
+        used = find_bridge(way, request.target.loader, request.target.game_version) if way else None
+        if used is None:
+            return []
+        missing = [c for c, _ in companions(used, request.target.game_version) if c not in owned]
+        known = {p.project_id: p.title for p in await self.modrinthDB.project_find_by_modrinth_id(missing)}
+        lacking = [c for c in missing if c not in known]
+        known |= {p.project_id: p.title for p in await self._projects_fetch(lacking)} if lacking else {}
+        return [(c, known.get(c, c)) for c in missing]
 
     async def pack_replace(self, bundle_id: str, refs: list[str], actor: Actor) -> list[PackProject]:
         """
