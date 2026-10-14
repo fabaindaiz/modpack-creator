@@ -552,6 +552,11 @@ class ModpackService():
                                 {"refs": list(refs), "origin": origin.value})
         return added
 
+    async def bridge_companions_missing(self, bundle_id: str, project_id: str) -> list[tuple[str, str]]:
+        """For a project that only fits through an active bridge, the bridge's mods (the bridge and
+        its companions) the pack lacks, as (project id, title). Stub (batch C, task 6)."""
+        return []
+
     async def pack_replace(self, bundle_id: str, refs: list[str], actor: Actor) -> list[PackProject]:
         """
         Replace what the pack brings with `refs`; what the admin added stays (d-7985ee-b15dd4).
