@@ -152,3 +152,13 @@ def test_an_editor_sees_operator_cards_without_an_action_of_theirs() -> None:
     sees the card, and opens the page to look, not to act."""
     items = attention([srv(state="drift"), srv("Lobby", has_pack=False, state="unknown")], [], [], NOW, operator=False)
     assert {(i.action_label, i.href) for i in items} == {("Ver", "/servers/id-Survival"), ("Ver", "/servers/id-Lobby")}
+
+
+def test_bridged_mods_whose_native_version_caught_up_are_suggested_never_moved() -> None:
+    """Batch C (C7, d-7985ee-7e602f): «Pasar a nativa» is offered in the «Vía puente» tab; the card leads there."""
+    [item] = attention([], [pack(native_ready=2, resolved_at=NOW)], [], NOW)
+    assert item.text == "Pack Uno: 2 mods ya tienen versión nativa."
+    assert (item.action_label, item.href) == ("Ver", "/modpacks/id-Pack Uno?vista=puente")
+    assert item.severity == 2 and item.at == NOW
+    [one] = attention([], [pack(native_ready=1)], [], NOW)
+    assert one.text == "Pack Uno: 1 mod ya tiene versión nativa."

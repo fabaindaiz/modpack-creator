@@ -78,7 +78,8 @@ async def home(
                   undecided=len(resolutions[bundle_id].lock.undecided) if bundle_id in resolutions else 0,
                   problems=len(resolutions[bundle_id].lock.problems) if bundle_id in resolutions else 0,
                   updates=update_counts.get(bundle_id, 0), checked_at=checked_at.get(bundle_id),
-                  resolved_at=resolutions[bundle_id].resolved_at if bundle_id in resolutions else None)
+                  resolved_at=resolutions[bundle_id].resolved_at if bundle_id in resolutions else None,
+                  native_ready=len(resolutions[bundle_id].lock.native_available) if bundle_id in resolutions else 0)
          for bundle_id in bundle_ids],
         [failed_job_fact(job, server_names, bundle_names) for job in failed], utcnow(), operator=actor.is_operator)
     last_check = max((as_utc(check.checked_at) for check in checks.values()), default=None)

@@ -166,3 +166,14 @@ def test_a_failure_a_later_success_fixed_is_not_in_the_strip() -> None:
                                 created_at=now - timedelta(hours=1), finished_at=now - timedelta(hours=1))
     text = client(EDITOR, (pterodactyl, default_fakes()[1], FakeJobs(jobs.jobs, [failed], [fixed]))).get("/").text
     assert f'href="/jobs/{failed.id}"' not in strip(text)
+
+
+def test_a_pack_whose_bridged_mods_have_a_native_version_says_so() -> None:
+    """Batch C (C7): counted from the pack's saved resolution, `native_available`."""
+    pterodactyl, _, jobs = calm_fakes()
+    saved = resolution()
+    saved.lock.native_available = {"m1": "v1", "m2": "v2"}
+    modpack = FakeModpack(default_fakes()[1].rows, {str(BUNDLE_ID): saved})
+    section = strip(client(EDITOR, (pterodactyl, modpack, jobs)).get("/").text)
+    assert "Pack Uno: 2 mods ya tienen versión nativa." in section
+    assert f'href="/modpacks/{BUNDLE_ID}?vista=puente"' in section
