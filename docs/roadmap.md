@@ -22,14 +22,11 @@ vista previa del servidor. **Sin verificar:** Modrinth real (las versiones de Co
 cambian: la tabla es a mano) y si un mod concreto corre de verdad por Connector (solo arrancándolo). **Primer
 paso:** el dueño revisa la tanda (la demo local con un pack NeoForge 1.21.1 y Connector) y pide el merge.
 Revisión final en contexto limpio: 1 crítico y 5 importantes, arreglados con su test visto fallar.
-**Menores diferidos de la revisión de la tanda C (2026-10-13):**
-1. «Volver al puente» solo quita la marca: tras un build nativo el mod sigue nativo y el aviso dice lo
-   contrario;
-2. el problema de un mod puenteado sin vía (puente apagado) no ofrece «Reactivar el puente» (la spec lo pide);
-3. la revisión diaria de actualizaciones no mira si el puente sigue activo (`guest_of`);
-4. agregar Fabric API a mano en un pack con Connector abre el diálogo de compañeros y termina en
-   `bridge_conflict`: podría decirlo antes;
-5. guardar «Loaders secundarios» no resuelve de nuevo (la spec §4 dice que sí; hoy es como los canales).
+Sus 5 menores, hechos a pedido del dueño (2026-10-13, «implementa todos los detalles menores»), cada uno con
+su test visto fallar: «Volver al puente» solo mientras lo instalado sigue por el puente; «Reactivar el
+puente» en la tarjeta del mod cuyo puente se apagó; la revisión diaria no anuncia nada de un puente
+apagado; Fabric API a mano con Connector se rechaza nombrando a Forgified Fabric API; guardar los loaders
+secundarios resuelve de nuevo.
 
 **2026-10-13, tandas A (con sus menores) y B hechas, en la rama `feat/panel-tanda-b`** (sobre
 `fix/tanda-a-menores`; sin merge ni push): sale todo en 0.3.2 (el dueño, d-7985ee-a95f45: minor y
