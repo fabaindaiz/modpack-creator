@@ -10,6 +10,18 @@ y tokens, con en qué se apoya (bundle 0.0.30); `close` la compara después con 
 
 ## Dónde estamos
 
+**2026-10-13, tanda C (loaders secundarios) hecha en la rama `feat/loaders-secundarios`** (sobre
+`main` = `fcf3a86`; sin merge ni push). Spec `docs/superpowers/specs/2026-10-13-loaders-secundarios-design.md`,
+plan `docs/superpowers/plans/2026-10-13-loaders-secundarios.md`, decisiones d-7985ee-45c2ba … d-7985ee-b7bddf
+y d-7985ee-56a529 (una acción peligrosa se sugiere, nunca es automática). Hecho: la tabla de puentes
+(Connector, Kilt experimental), la opción del pack, la resolución nativo primero con la vía instalada
+guardada, los problemas del puente con sus acciones, la búsqueda con pestañas, el diálogo de lo que entra
+con el primer mod puenteado, la lista con la vía de cada mod, la pestaña «Vía puente» con «Pasar a nativa»
+(siempre con confirmación), el filtro «Loader», el aviso al quitar el último mod puenteado, el tablero y la
+vista previa del servidor. **Sin verificar:** Modrinth real (las versiones de Connector y sus compañeros
+cambian: la tabla es a mano) y si un mod concreto corre de verdad por Connector (solo arrancándolo). **Primer
+paso:** el dueño revisa la tanda (la demo local con un pack NeoForge 1.21.1 y Connector) y pide el merge.
+
 **2026-10-13, tandas A (con sus menores) y B hechas, en la rama `feat/panel-tanda-b`** (sobre
 `fix/tanda-a-menores`; sin merge ni push): sale todo en 0.3.2 (el dueño, d-7985ee-a95f45: minor y
 major solo con su autorización), con su sección del runbook; el tag va después de sus observaciones

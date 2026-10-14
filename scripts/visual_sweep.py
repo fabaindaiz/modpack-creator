@@ -30,7 +30,7 @@ from src.model.audit import AuditEvent, AuditTarget
 from src.model.jobs import Job
 from src.library.scan import LocalFile, ScanFile
 from src.library.resolution import Lock, LockEntry, ResolveRequest, Target
-from src.model.modpack import AvailableUpdate, ModpackBuild, ModpackBundle, ModpackReplacement, PackProject, ProjectOrigin, UpdateCheck
+from src.model.modpack import AvailableUpdate, ModpackBuild, ModpackBundle, ModpackReplacement, ModpackResolution, PackProject, ProjectOrigin, UpdateCheck
 from src.model.modrinth import ModrinthProject, ModrinthVersion
 from src.model.pterodactyl import PterodactylServer, ServerScan
 from src.model.users.actor import ActorRef
@@ -227,6 +227,26 @@ async def seed_builds(bundle: ModpackBundle) -> None:
             dependencies=[], files=[], changelog=text).insert()
 
 
+async def seed_bridged(sodium: dict[str, Any], now: datetime) -> str:
+    """Batch C: a NeoForge 1.21.1 pack with Connector on, two Fabric mods through it (one whose native
+    version caught up, one without) and Connector itself, with its saved resolution: the row labels,
+    the «Vía puente» tab and its «Pasar a nativa» dialog."""
+    bridged = ModpackBundle(name="Con puente", description="", version="1.21.1", loader=MinecraftLoaders.neoforge,
+                            projects=[PackProject(project_id=p, origin=ProjectOrigin.admin)
+                                      for p in ("fab-minimap", "fab-tweaks", "u58R1TMW")],
+                            secondary_loaders=["connector"])
+    await bridged.insert()
+    for project_id, title in (("fab-minimap", "FabricMiniMap"), ("fab-tweaks", "Fabric Tweaks con un nombre largo"),
+                              ("u58R1TMW", "Connector")):
+        await ModrinthProject.parse(**{**sodium, "id": project_id, "slug": project_id, "title": title}).insert()
+    entries = [_entry(p, f"{p}-1").model_copy(update={"origin": "admin", "via": "connector"})
+               for p in ("fab-minimap", "fab-tweaks")] + [_entry("u58R1TMW", "connector-1").model_copy(update={"origin": "admin"})]
+    lock = Lock(entries=entries, problems=[], suggestions=[], needs_projects=set(), needs_types=set(), needs_versions=set(),
+                native_available={"fab-minimap": "fab-minimap-native"})
+    await ModpackResolution(bundle_id=bridged.id, resolved_at=now, request_digest="sweep", lock=lock).insert()  # type: ignore[arg-type]
+    return str(bridged.id)
+
+
 async def seed(mongo_uri: str) -> dict[str, str]:
     """Demo data through the app's own models; returns the ids the sweep visits."""
     now = datetime.now(timezone.utc)
@@ -311,6 +331,7 @@ async def seed(mongo_uri: str) -> dict[str, str]:
                                AvailableUpdate(project_id="iris", title="Iris", from_version="1.0", to_version="1.1",
                                                pinned=True)]).insert()
     await ModpackReplacement(project_id="optifine", replacement="sodium").insert()
+    bridged = await seed_bridged(sodium, now)
     servers = []
     for i, (name, bundle) in enumerate([("Survival", big), (LONG_NAME, big), ("Creativo", small)]):
         server = PterodactylServer(
@@ -391,7 +412,7 @@ async def seed(mongo_uri: str) -> dict[str, str]:
     await client.close()
     return {"server": survival, "server_new": str(bare.id), "bundle": str(big.id), "pending": str(pending.id),
             "empty": str(empty.id), "job": str(failed.id), "dryrun": str(jobs[0].id), "problems": str(problems.id),
-            "fix": str(fix.id), "import_job": str(jobs[-1].id), "downgrade": str(downgrade.id)}
+            "fix": str(fix.id), "import_job": str(jobs[-1].id), "downgrade": str(downgrade.id), "bridged": bridged}
 
 
 def wait_ready(base: str, app: "subprocess.Popen[bytes]") -> None:
@@ -417,6 +438,8 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
              # Batch A (2026-10-13): the filter bar with a filter on, and the suggestions tab.
              "modpack-filtered": f"/modpacks/{ids['bundle']}?vista=todos&lado=servidor&nombre=s",
              "modpack-suggestions": f"/modpacks/{ids['bundle']}?vista=sugerencias",
+             # Batch C: the rows through a bridge and the «Vía puente» tab.
+             "modpack-bridged": f"/modpacks/{ids['bridged']}", "modpack-bridge-tab": f"/modpacks/{ids['bridged']}?vista=puente",
              "replacements": "/replacements", "servers": "/servers", "server": f"/servers/{ids['server']}",
              "server-new": f"/servers/{ids['server_new']}",
              "jobs": "/jobs", "job": f"/jobs/{ids['job']}", "dryrun": f"/jobs/{ids['dryrun']}", "audit": "/audit",
@@ -466,6 +489,7 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
                             report.update(shoot_update_dialog(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                             report.update(shoot_build_dialog(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                             report.update(shoot_pin_dialog(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
+                            report.update(shoot_via_dialog(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                             if (scheme, width) in MOD_CARD_CONTEXTS:
                                 prefix = f"{who}-{scheme}-{width}"
                                 # The tabs first: they resolve the pack, so the catalog has the
@@ -613,6 +637,26 @@ def shoot_pin_dialog(page: Any, base: str, out: Path, ids: dict[str, str], prefi
     page.wait_for_timeout(300)
     closed = page.evaluate("document.querySelector('#pin-dialog dialog')?.open === false")
     problems = [p for p, bad in (("la lista no marca el pin que baja", not marked),
+                                 ("«Cancelar» no cerró el diálogo", not closed)) if bad]
+    return {key: _report(response, errors, problems)}
+
+
+def shoot_via_dialog(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
+                     errors: list[str]) -> dict[str, dict[str, Any]]:
+    """Batch C (d-7985ee-7e602f): «Pasar a nativa» in the «Vía puente» tab opens the dialog in
+    #pin-dialog (nothing is saved), and "Cancelar" closes it."""
+    response = page.goto(base + f"/modpacks/{ids['bridged']}?vista=puente")
+    page.wait_for_load_state("networkidle")
+    labelled = page.locator("#mods :text('vía Connector (Fabric)')").count() > 0
+    page.locator("#mods button:has-text('Pasar a nativa')").first.click()
+    page.wait_for_selector("#pin-dialog dialog[open]", timeout=10_000)
+    page.wait_for_timeout(300)
+    key = f"{prefix}-via-dialog"
+    page.screenshot(path=str(out / f"{key}.png"))
+    page.locator("#pin-dialog dialog button[data-dialog-close]").click()
+    page.wait_for_timeout(300)
+    closed = page.evaluate("document.querySelector('#pin-dialog dialog')?.open === false")
+    problems = [p for p, bad in (("la pestaña no rotula la vía", not labelled),
                                  ("«Cancelar» no cerró el diálogo", not closed)) if bad]
     return {key: _report(response, errors, problems)}
 
