@@ -16,6 +16,7 @@ class Row:
     origin: Optional[str] = "admin"
     pinned: bool = False
     pin_floor: Optional[str] = None
+    via: Optional[str] = None
 
 
 ROWS = [
@@ -24,6 +25,7 @@ ROWS = [
     Row("I", "Iris", side="admin", origin="pack"),
     Row("F", "Fabric API", origin=None, pinned=True, pin_floor="0.9"),
 ]
+BRIDGED = [Row("X", "Xaero"), Row("M", "FabricMap", via="connector")]
 EXCEPTIONS = {"S": "beta", "I": "alpha"}
 
 
@@ -76,3 +78,10 @@ def test_unknown_values_are_dropped() -> None:
                                "otro": "1"})
     assert parsed == ModFilters(nombre="x" * 100, fijacion="baja")
     assert parsed.active and not ModFilters().active
+
+
+def test_the_loader_filter_splits_native_and_bridged() -> None:
+    """Batch C (d-7985ee-533aff)."""
+    assert [r.project_id for r in apply(BRIDGED, ModFilters(loader="nativos"), {})] == ["X"]
+    assert [r.project_id for r in apply(BRIDGED, ModFilters(loader="puente"), {})] == ["M"]
+    assert counts(BRIDGED, ModFilters(), {})["loader"] == {"": 2, "nativos": 1, "puente": 1}

@@ -1,0 +1,46 @@
+{# The «Vía puente» view (batch C, d-7985ee-533aff): each mod that runs through a bridge, with whether
+   a native version exists, and «Pasar a nativa» once one caught up with the installed one; the mods
+   moved to native can go back. Both ask first (d-7985ee-7e602f). Part of _mods.html. #}
+{% import "_macros.html" as ui %}
+{% set STATE = {
+  "alcanza": "hay nativa: se puede pasar",
+  "detrás": "hay nativa más vieja que la instalada",
+  "otro canal": "hay nativa en otro canal",
+} %}
+{% set bridged_rows = mods.rows | selectattr("via") | list %}
+{% if not bridged_rows and not bundle.native_only %}
+<p class="text-sm text-zinc-600 dark:text-zinc-400">Ningún mod va por un puente.</p>
+{% else %}
+<ul class="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+  {% for row in bridged_rows %}
+  <li data-project="{{ row.project_id }}" class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
+    <div class="min-w-0 flex-1">
+      <span class="font-medium break-words">{{ ui.mod_link(row.project_id, row.title, pack=bundle_id) }}</span>
+      {% set label = bridge_labels.get(row.via) %}
+      {% if label %}{{ ui.badge("vía " ~ label[0] ~ " (" ~ label[1] ~ ")", "info") }}{% endif %}
+      <span class="block text-xs text-zinc-500 dark:text-zinc-400">{{ STATE.get(row.native, "sin versión nativa") }}</span>
+    </div>
+    {% if row.native == "alcanza" %}
+    <form hx-post="/modpacks/{{ bundle_id }}/via" hx-target="#mods" hx-swap="outerHTML">
+      <input type="hidden" name="project_id" value="{{ row.project_id }}">
+      <input type="hidden" name="native" value="1">
+      {{ ui.button("Pasar a nativa", type="submit", kind="secondary", small=True) }}
+    </form>
+    {% endif %}
+  </li>
+  {% endfor %}
+  {% for project_id in bundle.native_only %}
+  <li data-project="{{ project_id }}" class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
+    <div class="min-w-0 flex-1">
+      <span class="font-medium break-words">{{ ui.mod_link(project_id, mods.titles.get(project_id, project_id), pack=bundle_id) }}</span>
+      <span class="block text-xs text-zinc-500 dark:text-zinc-400">pasó a nativa</span>
+    </div>
+    <form hx-post="/modpacks/{{ bundle_id }}/via" hx-target="#mods" hx-swap="outerHTML">
+      <input type="hidden" name="project_id" value="{{ project_id }}">
+      <input type="hidden" name="native" value="0">
+      {{ ui.button("Volver al puente", type="submit", kind="ghost", small=True) }}
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}

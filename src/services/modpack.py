@@ -17,8 +17,8 @@ from src.library.mrpack import mrpack_index, write_mrpack
 from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink
 from src.database.jobs import JobDatabase
 from src.model.jobs import Job
-from src.library.bridges import BRIDGES, bridge as find_bridge
-from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, request_digest, resolve
+from src.library.bridges import BRIDGES, VIA_RISK, bridge as find_bridge, companions
+from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Candidate, Catalog, Lock, LockEntry, ResolveRequest, Target, merge_replacements, request_digest, resolve
 from src.model.modpack import BUNDLE_KEYED_FIELDS, AvailableUpdate, LoaderVersion, UpdateCheck, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject, ModrinthVersion, ModrinthVersionList, VersionBrief
 from src.model.modrinth.version import ModrinthDependencyType
@@ -169,6 +169,13 @@ class ModRow:
     pin_options: Optional[list["VersionOption"]] = None
     # The pinned version's id, or None.
     pinned_version: Optional[str] = None
+    # The bridge it runs through (batch C), None when native.
+    via: Optional[str] = None
+    # For a bridged mod, its native version: "alcanza" (caught up with the installed one: offered),
+    # "detrás" (older), "otro canal" (only outside the pack's channels); None when there is none.
+    native: Optional[str] = None
+    # A bridged mod that goes on the server: «servidor: probar antes» (d-7985ee-98c52a).
+    server_risky: bool = False
 
 
 @dataclass
@@ -472,6 +479,29 @@ class ModpackService():
         await self.audit.record(actor, "bundle.pin", _bundle(bundle_id), details)
         return updated
 
+    async def via_set(self, bundle_id: str, project_id: str, native: bool, actor: Actor,
+                      confirm: bool = False) -> ModpackBundle:
+        """Move a mod to its native versions (`native`) or back to the bridge's (batch C,
+        d-7985ee-8e5f9e). Changing a mod's way does not always work (its config or the world's data
+        may not carry over): without `confirm` it is a ViaChangeRefused (409) that describes the
+        change, and nothing is written (d-7985ee-7e602f). Audited as `bundle.via`."""
+        if not MODRINTH_ID.fullmatch(project_id):
+            raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{project_id}' no es un id de Modrinth")
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        if not confirm:
+            stored = await self.modrinthDB.project_find_by_modrinth_id([project_id])
+            title = stored[0].title if stored else project_id
+            loader = str(bundle.loader.value)
+            label = next((b.label for b in BRIDGES if b.host == loader and b.key in bundle.secondary_loaders), "el puente")
+            way = (f"vía {label} → nativa ({loader})", f"nativa → vía {label}")[0 if native else 1]
+            raise ViaChangeRefused(
+                f"{title}: {way}. {VIA_RISK} Para hacerlo igual, repite con confirm_via=true.", project_id=project_id,
+                title=title, to_native=native, change=f"{title}: {way}")
+        updated = await self.modpackDB.bundle_native_only_set(bundle_id, project_id, native)
+        await self.audit.record(actor, "bundle.via", _bundle(bundle_id),
+                                {"project_id": project_id, "to": "nativa" if native else "puente"})
+        return updated
+
     async def channel_exception_set(self, bundle_id: str, project_id: str, channel: str, actor: Actor) -> ModpackBundle:
         """Let one project also take versions of `channel` ("beta" or "alpha") while none of its
         versions fits in the pack's channels ("Usar la beta"); only that key changes, atomically.
@@ -583,6 +613,23 @@ class ModpackService():
                                 {"project_id": project_id, "cleared": cleared})
         return remaining
 
+    async def bridge_idle(self, bundle_id: str) -> list[str]:
+        """The bridge mods still in the pack when no mod runs through a bridge any more (d-7985ee-80ee9a),
+        by title: what the panel suggests removing, never removes. A mod of the saved resolution counts
+        while it is in the pack or came as a dependency. Without a bridge on, or a resolution, none. A read."""
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        loader = str(bundle.loader.value)
+        found = [b for key in bundle.secondary_loaders if (b := find_bridge(key, loader, bundle.version)) is not None]
+        saved = await self.modpackDB.resolution_get(bundle.id) if found and bundle.id is not None else None
+        if saved is None:
+            return []
+        pack = {p.project_id for p in bundle.projects}
+        if any(e.via for e in saved.lock.entries if e.project_id in pack or e.origin is None):
+            return []
+        ids = [i for b in found for i, _ in companions(b, bundle.version) if i in pack]
+        titles = {p.project_id: p.title for p in await self.modrinthDB.project_find_by_modrinth_id(ids)}
+        return [titles.get(i, i) for i in dict.fromkeys(ids)]
+
     async def project_dependents(self, bundle_id: str, project_id: str) -> Optional[list[str]]:
         """The other mods that, in the last saved resolution, need this one: the requesters of its
         entry, or of its problem when it could not be resolved. None when nothing can say: without a
@@ -649,7 +696,9 @@ class ModpackService():
         # build's versions, the latest's (a check of the recommended build compares older ones).
         current = check is not None and check.build_number == bundle.latest_build
         newer = {u.project_id: u.to_version for u in check.updates if not u.pinned} if check and current else {}
-        target = Target(game_version=bundle.version, loader=str(bundle.loader.value), channels=frozenset(bundle.channels))
+        target = Target(game_version=bundle.version, loader=str(bundle.loader.value), channels=frozenset(bundle.channels),
+                        bridges=frozenset(bundle.secondary_loaders))
+        lock_saved = resolution.lock if resolution is not None else None
         for_version: dict[str, list[ModrinthVersion]] = {}
         for found_version in await self.modrinthDB.version_find_for_game_version([*pack, *dependencies], bundle.version):
             for_version.setdefault(found_version.project_id, []).append(found_version)
@@ -686,6 +735,18 @@ class ModpackService():
                                              published=stored.date_published if stored else _UNKNOWN_DATE))
             return options
 
+        def native_state(project_id: str, entry: Optional[LockEntry]) -> Optional[str]:
+            """For a bridged mod: whether a native version caught up, is behind, or exists only outside
+            the pack's channels (batch C)."""
+            if entry is None or entry.via is None:
+                return None
+            if lock_saved is not None and project_id in lock_saved.native_available:
+                return "alcanza"
+            if lock_saved is not None and project_id in lock_saved.native_behind:
+                return "detrás"
+            natives = [v for v in for_version.get(project_id, []) if target.loaders(entry.project_type) & set(v.loaders)]
+            return "otro canal" if natives else None
+
         def row(project_id: str, origin: Optional[str]) -> ModRow:
             found, entry = catalog.get(project_id), entries.get(project_id)
             pinned = project_id in bundle.pins
@@ -709,7 +770,10 @@ class ModpackService():
                 version_channel=version_channel,
                 pin_floor=pins_back[project_id].floor_number if pinned and project_id in pins_back else None,
                 pin_options=pin_options(project_id),
-                pinned_version=bundle.pins.get(project_id))
+                pinned_version=bundle.pins.get(project_id),
+                via=entry.via if entry else None,
+                native=native_state(project_id, entry),
+                server_risky=entry is not None and entry.via is not None and entry.server == "include")
 
         rows = [row(i, origin) for i, origin in pack.items()]
         rows += sorted((row(i, None) for i in dependencies), key=lambda r: r.title)

@@ -81,6 +81,7 @@ los dos, o una fila mal formada, hace fallar el test. El nombre del método no s
 | `ModpackService.decisions_set` | editor | Decide varios mods a la vez, en una sola escritura atómica. |
 | `ModpackService.pin_set` | editor | Fija un mod del bundle, o una dependencia que nombra su última resolución, a una versión que es de ese proyecto. |
 | `ModpackService.pin_unset` | editor | Quita la versión fijada de un mod. |
+| `ModpackService.via_set` | editor | Pasa un mod del pack a sus versiones nativas o lo devuelve al puente (tanda C, d-7985ee-8e5f9e); siempre pide confirmación antes (d-7985ee-7e602f), sin ella es un 409 que describe el cambio |
 | `ModpackService.channel_exception_set` | editor | Deja que un mod del bundle, o una dependencia que nombra su última resolución, acepte beta o alpha mientras ninguna versión suya quepa en los canales del pack. |
 | `ModpackService.channel_exception_unset` | editor | Quita la excepción de canal de un mod. |
 | `ModpackService.catalog_refresh` | editor | «Actualizar desde Modrinth»: deja el trabajo de catálogo del pack (o muestra el que corre), una vez por minuto por pack. |

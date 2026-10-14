@@ -14,7 +14,7 @@ from beanie import PydanticObjectId
 from dependency_injector import providers
 from fastapi.testclient import TestClient
 
-from src.exceptions import BuildBlocked, DowngradeRefused, HTTP_404_NOT_FOUND, HTTP_409_CONFLICT, UpstreamError
+from src.exceptions import BuildBlocked, DowngradeRefused, ViaChangeRefused, HTTP_404_NOT_FOUND, HTTP_409_CONFLICT, UpstreamError
 from src.library.resolution import Alternative, Lock, LockEntry, Problem, Suggestion
 from src.library.scan import LocalFile
 from src.model.modpack import (AvailableUpdate, ModpackBuild, ModpackBundle, ModpackReplacement, ModpackResolution,
@@ -117,6 +117,8 @@ class FakeModpack:
         self.checks_seen: list[Optional[UpdateCheck]] = []
         # What project_dependents answers (a read, not recorded): who needs a mod being removed.
         self.dependents: Optional[list[str]] = []
+        # What bridge_idle answers: the bridge mods left when no mod runs through a bridge.
+        self.idle: list[str] = []
         # A pin pin_set refuses as a step back unless confirmed (F27), and each call's confirmation.
         self.downgrade: Optional[PinDowngrade] = None
         self.confirmed: list[bool] = []
@@ -161,6 +163,14 @@ class FakeModpack:
         self.bundle.pins = {**self.bundle.pins, project_id: version_id}
         return self.bundle
 
+    async def via_set(self, bundle_id: str, project_id: str, native: bool, actor: Actor,
+                      confirm: bool = False) -> ModpackBundle:
+        self._record("via_set", bundle_id, project_id, native, actor, confirm)
+        if not confirm:
+            raise ViaChangeRefused("FabricMod: vía Connector → nativa.", project_id=project_id, title="FabricMod",
+                                   to_native=native)
+        return self.bundle
+
     async def pin_unset(self, bundle_id: str, project_id: str, actor: Actor) -> ModpackBundle:
         self._record("pin_unset", bundle_id, project_id, actor)
         self.bundle.pins = {k: v for k, v in self.bundle.pins.items() if k != project_id}
@@ -198,6 +208,9 @@ class FakeModpack:
 
     async def project_dependents(self, bundle_id: str, project_id: str) -> Optional[list[str]]:
         return self.dependents
+
+    async def bridge_idle(self, bundle_id: str) -> list[str]:
+        return self.idle
 
     async def resolve(self, bundle_id: str, actor: Optional[Actor] = None) -> Lock:
         self._record("resolve", bundle_id, actor)
@@ -962,6 +975,15 @@ def test_removing_a_mod_another_one_needs_says_what_it_kept() -> None:
     modpack.dependents = []
     text = client.delete(f"/modpacks/{BUNDLE_ID}/projects/P1", headers=HTMX).text
     assert "Sigue como dependencia" not in text
+
+
+def test_removing_the_last_bridged_mod_suggests_removing_the_bridge() -> None:
+    """d-7985ee-80ee9a: the notice names the bridge mods left, to remove by hand; nothing else goes."""
+    client, modpack, _ = setup()
+    modpack.idle = ["Connector", "Forgified Fabric API"]
+    text = client.delete(f"/modpacks/{BUNDLE_ID}/projects/P2", headers=HTMX).text
+    assert "Ya no hay mods por el puente: puedes quitar Connector y Forgified Fabric API." in text
+    assert [c[0] for c in modpack.calls].count("project_remove") == 1
 
 
 JEI_DOWN = PinDowngrade(project_id="P2", title="JEI", floor_version="ver-57", floor_number="19.57",
@@ -2724,3 +2746,76 @@ def test_v1_patch_turns_a_bridge_on() -> None:
     v1 = TestClient(app, base_url="https://testserver")
     assert v1.patch(f"/v1/modpack/{BUNDLE_ID}", json={"secondary_loaders": ["kilt"]}).status_code == 200
     assert call(modpack, "bundle_update")[2].secondary_loaders == ["kilt"]
+
+
+# The way of a mod (batch C, task 7).
+
+
+def bridged(modpack: FakeModpack) -> None:
+    modpack.bundle = modpack.bundle.model_copy(update={"loader": MinecraftLoaders.neoforge, "secondary_loaders": ["connector"]})
+    modpack.rows = [row("N", "NativeMod", "admin", side="include"),
+                    row("F", "FabricMod", "admin", side="include", via="connector", native="alcanza", server_risky=True),
+                    row("G", "OtherMod", "admin", side="exclude", via="connector", native="detrás"),
+                    row("H", "LoneMod", "admin", side="include", via="connector")]
+
+
+def test_a_bridged_row_says_its_way_that_it_is_not_preferred_and_that_the_server_should_test_it() -> None:
+    client, modpack, _ = setup()
+    bridged(modpack)
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    first = said(card(text, "F"))
+    assert "vía Connector (Fabric)" in first and "no preferible" in first and "servidor: probar antes" in first
+    assert "vía Connector" not in said(card(text, "N"))
+    assert "servidor: probar antes" not in said(card(text, "G"))  # disabled on the server
+
+
+def test_the_via_tab_lists_the_bridged_mods_with_their_state_and_offers_moving_to_native() -> None:
+    client, modpack, _ = setup(OPERATOR)
+    bridged(modpack)
+    text = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "puente"}).text
+    assert said(tab(text, "puente")) == "Vía puente 3"
+    shown = view(text, "puente")
+    assert "hay nativa: se puede pasar" in said(shown) and "hay nativa más vieja que la instalada" in said(shown)
+    assert "sin versión nativa" in said(shown) and "NativeMod" not in shown
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/via"' in shown and 'name="native" value="1"' in shown
+
+
+def test_moving_a_mod_s_way_asks_with_a_dialog_then_saves_with_the_confirmation() -> None:
+    client, modpack, _ = setup()
+    bridged(modpack)
+    asked = client.post(f"/modpacks/{BUNDLE_ID}/via", headers=HTMX, data={"project_id": "F", "native": "1"})
+    assert asked.headers["HX-Retarget"] == "#pin-dialog" and "<dialog" in asked.text
+    shown = said(asked.text)
+    assert "Cambiar de vía no siempre funciona" in shown and "Pasar igual" in shown
+    assert 'name="confirm" value="1"' in asked.text
+    done = client.post(f"/modpacks/{BUNDLE_ID}/via", headers=HTMX, data={"project_id": "F", "native": "1", "confirm": "1"})
+    assert done.status_code == 200 and done.text.lstrip().startswith('<div id="mods"')
+    assert [c[5] for c in modpack.calls if c[0] == "via_set"] == [False, True]
+
+
+def test_the_filter_bar_has_a_loader_list_when_a_bridge_is_on() -> None:
+    client, modpack, _ = setup()
+    bridged(modpack)
+    form = bar(client.get(f"/modpacks/{BUNDLE_ID}").text)
+    assert ">vía puente (3)</option>" in form and ">nativos (1)</option>" in form
+    text = client.get(f"/modpacks/{BUNDLE_ID}", params={"loader": "nativos"}).text
+    assert 'data-project="N"' in view(text, "todos") and 'data-project="F"' not in view(text, "todos")
+
+
+def test_v1_moves_a_mod_s_way_only_with_the_confirmation() -> None:
+    """Batch C (d-7985ee-7e602f): `/v1` answers 409 describing the change, and repeats with
+    `confirm_via=true`."""
+    from fastapi import FastAPI
+    from src.dependences import get_current_actor
+    from src.routers.v1 import include_routers_v1
+
+    _, modpack, _ = setup()
+    app = FastAPI()
+    include_routers_v1(app)
+    app.dependency_overrides[get_current_actor] = lambda: EDITOR
+    v1 = TestClient(app, base_url="https://testserver")
+    refused = v1.post(f"/v1/modpack/{BUNDLE_ID}/via", json={"project_id": "F", "native": True})
+    assert refused.status_code == 409 and "FabricMod" in refused.json()["detail"]
+    done = v1.post(f"/v1/modpack/{BUNDLE_ID}/via", params={"confirm_via": "true"}, json={"project_id": "F", "native": True})
+    assert done.status_code == 200
+    assert [c[5] for c in modpack.calls if c[0] == "via_set"] == [False, True]

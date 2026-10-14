@@ -41,6 +41,10 @@ BRIDGES: tuple[Bridge, ...] = (
            experimental=True),
 )
 
+# Why a change of a mod's way asks first (d-7985ee-7e602f): said by the dialog and by /v1's 409.
+VIA_RISK = ("Cambiar de vía no siempre funciona: la configuración o los datos del mundo pueden no pasar. "
+            "Simula en un servidor antes de instalar.")
+
 # With Connector a dependency on Fabric API is Forgified Fabric API: the two never run together
 # (Connector's README). Only this one (d-7985ee-d7fcae): nothing else is guessed.
 REPLACES: dict[str, dict[str, str]] = {"connector": {FABRIC_API: FORGIFIED_FABRIC_API}}

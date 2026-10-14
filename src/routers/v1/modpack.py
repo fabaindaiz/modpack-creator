@@ -3,6 +3,7 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Query, Request
 from starlette.datastructures import UploadFile
 from typing import Optional
+from pydantic import BaseModel
 from fastapi import Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -62,6 +63,24 @@ async def bundle_update(
         ):
     response = await modpack.bundle_update(bundle_id=id, patch=bundle, actor=actor, confirm_downgrade=confirm_downgrade)
     return response
+
+class ViaChange(BaseModel):
+    project_id: str
+    # True: to its native versions; False: back through its bridge.
+    native: bool
+
+@router.post("/modpack/{id}/via")
+@inject
+async def bundle_via(
+        id: str,
+        change: ViaChange,
+        confirm_via: bool = Query(False, description="move the mod's way (native or through its bridge): without it, "
+                                                     "a 409 that describes the change and its risk"),
+        modpack: ModpackService = Depends(Provide[Dependences.modpackService]),
+        actor: Actor = Depends(get_current_actor)
+        ):
+    """Move a mod between its native and bridged versions (batch C, d-7985ee-7e602f)."""
+    return await modpack.via_set(id, change.project_id, change.native, actor, confirm=confirm_via)
 
 @router.delete("/modpack/{id}/replacement/{project_id}", response_model=ModpackBundle)
 @inject

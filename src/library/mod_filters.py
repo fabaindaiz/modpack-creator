@@ -27,6 +27,8 @@ class FilterableRow(Protocol):
     def pinned(self) -> bool: ...
     @property
     def pin_floor(self) -> Optional[str]: ...
+    @property
+    def via(self) -> Optional[str]: ...
 
 
 Row = TypeVar("Row", bound=FilterableRow)
@@ -50,6 +52,11 @@ OPTIONS: dict[str, dict[str, Test]] = {
         "sin": lambda r, e: not r.pinned,
         "baja": lambda r, e: r.pin_floor is not None,
     },
+    # Batch C (d-7985ee-533aff): native mods, or those through a bridge.
+    "loader": {
+        "nativos": lambda r, e: r.via is None,
+        "puente": lambda r, e: r.via is not None,
+    },
     "origen": {
         "agregados": lambda r, e: r.origin == "admin",
         "mrpack": lambda r, e: r.origin == "pack",
@@ -71,6 +78,7 @@ class ModFilters:
     canal: str = ""
     fijacion: str = ""
     origen: str = ""
+    loader: str = ""
 
     @classmethod
     def parse(cls, query: Mapping[str, str]) -> "ModFilters":

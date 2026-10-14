@@ -209,6 +209,12 @@ class ModpackDatabase():
         """Remove one project's channel exception, touching only that key."""
         return await self._bundle_key(bundle_id, {"$unset": {f"channel_exceptions.{project_id}": ""}})
 
+    async def bundle_native_only_set(self, bundle_id: str, project_id: str, native: bool) -> ModpackBundle:
+        """Add a project to (or remove it from) the mods moved to their native versions, atomically
+        (batch C, d-7985ee-8e5f9e)."""
+        op = "$addToSet" if native else "$pull"
+        return await self._bundle_key(bundle_id, {op: {"native_only": project_id}})
+
     async def bundle_keys_set_missing(self, bundle_id: str, field: str, values: dict[str, Any]) -> dict[str, Any]:
         """Set each key of a bundle's map (`server_decisions`, `channel_exceptions`) only where it is
         absent, key by key: a value someone set, even at the same time, is never overwritten. The

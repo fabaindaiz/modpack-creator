@@ -23,7 +23,9 @@
   ("decidir", "Por decidir", (saved.undecided | length) if current else none, "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200"),
   ("problemas", "Con problemas", (saved.problems | length) if current else none, "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-200"),
   ("sugerencias", "Sugerencias", (saved.suggestions | length) if current else none, "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200"),
-) %}
+) + ((
+  ("puente", "Vía puente", mods.rows | selectattr("via") | list | length, "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200"),
+) if bridges_on else ()) %}
 <div id="mods" class="space-y-4"{% if mods_oob is defined and mods_oob %} hx-swap-oob="true"{% endif %}>
   {% include "modpacks/_resolution.html" %}
 
@@ -39,6 +41,8 @@
 
   {% if vista == "decidir" %}
   <div data-vista="decidir">{% include "modpacks/_pending.html" %}</div>
+  {% elif vista == "puente" %}
+  <div data-vista="puente" class="space-y-2">{% include "modpacks/_via_tab.html" %}</div>
   {% elif vista == "sugerencias" %}
   <div data-vista="sugerencias" class="space-y-2">{% with titles=mods.titles %}{% include "modpacks/_suggestions.html" %}{% endwith %}</div>
   {% elif vista == "problemas" %}
@@ -87,6 +91,10 @@
                 <span class="min-w-0 font-medium wrap-anywhere">{{ ui.mod_link(row.project_id, row.title, pack=bundle_id) }}</span>
                 {% if row.origin == "admin" %}{{ ui.badge("agregado") }}{% elif row.origin == "pack" %}{{ ui.badge("del .mrpack") }}{% endif %}
                 {% if side %}{{ ui.badge(side[0], side[1]) }}{% endif %}
+                {% set bridge_label = bridge_labels.get(row.via) if row.via else none %}
+                {% if bridge_label %}{{ ui.badge("vía " ~ bridge_label[0] ~ " (" ~ bridge_label[1] ~ ")", "info") }}{% endif %}
+                {% if row.native %}{{ ui.badge("no preferible", "warning", title="Hay una versión nativa de este mod") }}{% endif %}
+                {% if row.server_risky %}{{ ui.badge("servidor: probar antes", "warning", title="Connector tiene fallos conocidos en servidor dedicado: simula antes de instalar") }}{% endif %}
               </div>
               <p class="text-xs break-words text-zinc-500 dark:text-zinc-400">
                 {%- if not in_pack %}dependencia de

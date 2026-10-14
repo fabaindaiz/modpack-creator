@@ -10,8 +10,8 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Form, Query, Request
 from starlette.datastructures import FormData, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from src.exceptions import BuildBlocked, DowngradeRefused, HTTP_404_NOT_FOUND, HTTP_413_CONTENT_TOO_LARGE, HTTP_422_UNPROCESSABLE_ENTITY, QuotaExceeded, UpstreamError
-from src.library.bridges import BRIDGES, bridges_for
+from src.exceptions import BuildBlocked, DowngradeRefused, HTTP_404_NOT_FOUND, HTTP_413_CONTENT_TOO_LARGE, HTTP_422_UNPROCESSABLE_ENTITY, QuotaExceeded, UpstreamError, ViaChangeRefused
+from src.library.bridges import BRIDGES, VIA_RISK, bridges_for
 from src.library.mod_filters import ModFilters, apply as filter_rows, counts as filter_counts
 from src.library.onboarding import PackFacts, fact, pack_steps, pending_count
 from src.library.resolution import ADMIN, Lock
@@ -48,7 +48,7 @@ ICON_HOST = "cdn.modrinth.com"
 MRPACK_TYPE = "application/x-modrinth-modpack+zip"
 # The views of a pack's Mods (spec §3): every mod, the ones to decide, the problems. Any other value
 # is "todos": a stale or hand-written link still shows the pack.
-VISTAS = ("todos", "decidir", "problemas", "sugerencias")
+VISTAS = ("todos", "decidir", "problemas", "sugerencias", "puente")
 # Where a problem's action was clicked: the route applies it, resolves again and answers there (spec
 # §1): "problemas" the Mods tab, "dialogo" the build dialog. Without it, the route answers as it
 # always did.
@@ -177,7 +177,11 @@ async def _mods_context(modpackService: ModpackService, updateCheckService: Upda
     bundle = await modpackService.bundle_get(bundle_id)
     mods = await modpackService.mod_list(bundle_id, await updateCheckService.latest(bundle_id))
     exceptions = bundle.channel_exceptions
-    return {"filters": filters, "shown": filter_rows(mods.rows, filters, exceptions),
+    loader = str(bundle.loader.value)
+    # Batch C: each bridge of the pack's loader by key, for the rows' labels.
+    bridge_labels = {b.key: (b.label, b.guest.capitalize()) for b in BRIDGES if b.host == loader}
+    return {"filters": filters, "bridge_labels": bridge_labels,
+            "bridges_on": bool(bundle.secondary_loaders) or any(r.via for r in mods.rows), "shown": filter_rows(mods.rows, filters, exceptions),
             "filter_counts": filter_counts(mods.rows, filters, exceptions),
             "bundle": bundle, "bundle_id": bundle_id, "mods": mods, "titles": mods.titles, "icon": _icon,
             "https_url": _https_url, "downloads": abbreviate_downloads, "vista": _vista(vista),
@@ -563,10 +567,15 @@ async def project_remove(
         titles = await _titles(modrinthService, dependents)
         success += (f". Sigue como dependencia de {', '.join(titles[i] for i in dependents)}: "
                     "su fijación, su decisión y su excepción se mantienen.")
-        if contexto is None:
-            # The list alone would show the mod still there, as a dependency, with no word why.
-            return await _mods(request, actor, modpackService, updateCheckService, bundle_id, info=success,
-                               vista=_vista_from(request))
+    # The last bridged mod gone: the bridge's mods are named to remove by hand, never removed (d-7985ee-80ee9a).
+    idle = await modpackService.bridge_idle(bundle_id)
+    if idle:
+        names = idle[0] if len(idle) == 1 else f"{', '.join(idle[:-1])} y {idle[-1]}"
+        success += f"{' ' if success.endswith('.') else '. '}Ya no hay mods por el puente: puedes quitar {names}."
+    if (dependents or idle) and contexto is None:
+        # The list alone would show the mod still there, as a dependency, with no word why.
+        return await _mods(request, actor, modpackService, updateCheckService, bundle_id, info=success,
+                           vista=_vista_from(request))
     return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto, success)
 
 @router.get("/modpacks/{bundle_id}/projects/{project_id}/versions")
@@ -610,6 +619,35 @@ async def modpack_channels(
     updated = await modpackService.bundle_update(
         bundle_id, ModpackBundlePatch(channels=[c for c in CHANNELS if c in chosen]), actor)
     return _channels(request, actor, updated, bundle_id)
+
+@router.post("/modpacks/{bundle_id}/via")
+@inject
+async def modpack_via(
+        bundle_id: str,
+        request: Request,
+        project_id: Annotated[str, Form(min_length=1, max_length=200, pattern=MODRINTH_REF)],
+        native: Annotated[Literal["0", "1"], Form()],
+        confirm: Annotated[bool, Form()] = False,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
+        ):
+    """Move a mod to its native versions or back through its bridge (batch C, d-7985ee-8e5f9e). It
+    always asks first (d-7985ee-7e602f): without `confirm` the answer is a dialog, into #pin-dialog,
+    that says the change and its risk and sends it again confirmed; confirmed, the pack resolves
+    again and #mods answers."""
+    try:
+        await modpackService.via_set(bundle_id, project_id, native == "1", actor, confirm=confirm)
+    except ViaChangeRefused as refused:
+        response = render(request, "modpacks/_via_confirm.html", actor, bundle_id=bundle_id, refused=refused,
+                          native=native, via_risk=VIA_RISK)
+        response.headers["HX-Retarget"] = "#pin-dialog"
+        response.headers["HX-Reswap"] = "innerHTML"
+        return response
+    await modpackService.resolve(bundle_id, actor)
+    return await _resolved(request, actor, modpackService, updateCheckService, bundle_id,
+                           "El mod pasa a sus versiones nativas" if native == "1" else "El mod vuelve a ir por el puente",
+                           vista=_vista_from(request))
 
 @router.post("/modpacks/{bundle_id}/bridges")
 @inject

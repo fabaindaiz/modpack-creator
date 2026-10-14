@@ -56,6 +56,18 @@ class DowngradeRefused(HTTP_409_CONFLICT):
         super().__init__(detail)
         self.downgrade = downgrade
 
+class ViaChangeRefused(HTTP_409_CONFLICT):
+    """Moving a mod between its native and bridged versions without confirming it (batch C,
+    d-7985ee-7e602f): the detail says the change; the panel asks with a dialog, `/v1` repeats with
+    `confirm_via=true`."""
+    def __init__(self, detail: str, project_id: str, title: str, to_native: bool, change: str = ""):
+        super().__init__(detail)
+        self.project_id = project_id
+        self.title = title
+        self.to_native = to_native
+        # The change alone ("FabricMod: vía Connector → nativa (neoforge)"): the dialog adds the risk.
+        self.change = change or detail
+
 class CatalogPending(HTTP_409_CONFLICT):
     """The pack needs information from Modrinth the catalog lacks: a job brings it (spec
     2026-10-09-economia-de-requests, E6) and the pack resolves when it ends. `job` is that job."""

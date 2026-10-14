@@ -13,6 +13,7 @@ ACTIONS: dict[str, tuple[str, str]] = {
     "bundle.project.add": ("Agregó un mod", "Packs"),
     "bundle.project.remove": ("Quitó un mod", "Packs"),
     "bundle.project.replace": ("Reemplazó un mod", "Packs"),
+    "bundle.via": ("Cambió la vía de un mod", "Packs"),
     "bundle.decision": ("Decidió el lado", "Packs"),
     "bundle.pin": ("Fijó una versión", "Packs"),
     "bundle.channel_exception": ("Aceptó otro canal", "Packs"),
