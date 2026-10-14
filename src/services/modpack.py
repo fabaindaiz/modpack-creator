@@ -1633,6 +1633,13 @@ class ModpackService():
         jars = unexplained_for(compare(scan.files, build.lock.entries, build.local_files, bundle.claimed_files), bundle)
         if jars.in_pack or jars.foreign:
             preview.unexplained, preview.scanned_at = jars, scan.scanned_at
+        labels = {b.key: b.label for b in BRIDGES}
+        bridged: dict[str, int] = {}
+        for entry in build.lock.entries:
+            if entry.server == "include" and entry.via is not None:
+                label = labels.get(entry.via, entry.via)
+                bridged[label] = bridged.get(label, 0) + 1
+        preview.bridged = bridged
         return preview
 
     # Global replacement rules (d-7985ee-86fffa).

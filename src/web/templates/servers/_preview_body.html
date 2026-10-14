@@ -18,6 +18,14 @@
   {% endif %}
 </div>
 {% endif %}
+{% if preview.bridged %}
+{# Batch C (C6): the mods that go on the server through a bridge, apart: only starting it says whether they run. #}
+<div data-bridged role="status" class="space-y-1 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+  {% for label, count in preview.bridged | dictsort %}
+  <p>{{ count }} {{ "mod va" if count == 1 else "mods van" }} por {{ label }}: si el servidor no arranca, revisa sus logs.</p>
+  {% endfor %}
+</div>
+{% endif %}
 <div class="space-y-2">
   <h3 class="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Qué cambiaría en el servidor</h3>
   {% set against_server = True %}
