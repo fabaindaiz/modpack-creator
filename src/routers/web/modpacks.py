@@ -494,30 +494,48 @@ async def modpack_search(
         bundle_id: str,
         request: Request,
         q: Annotated[str, Query(max_length=SEARCH_TEXT_MAX)] = "",
+        via: Annotated[Optional[str], Query(max_length=40)] = None,
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
         ):
     """Live search on Modrinth, for the bundle's game version and loader. Whatever goes wrong
-    on Modrinth's side is an answer in the fragment, never a 500."""
+    on Modrinth's side is an answer in the fragment, never a 500.
+
+    With a bridge on (batch C, C8), the results have two tabs: «Nativos», the default and the
+    search as it always was, and «Vía Connector», which `via` opens: the same search with the
+    bridge's guest loader, only the mods that do not run natively, each labelled. Its count is
+    known only once it is opened: one more request, on that click. A `via` that is not an active
+    bridge of the pack is the native search."""
     bundle = await modpackService.bundle_get(bundle_id)
     text = q.strip()
+    loader = str(bundle.loader.value)
+    active = next((b for b in bridges_for(loader, bundle.version) if b.key in bundle.secondary_loaders), None)
+    opened = active if active is not None and via == active.key else None
+
+    def show(hits: list[SearchHit], failed: bool | str = False) -> Response:
+        return render(request, "modpacks/_search.html", actor, bundle_id=bundle_id, hits=hits, failed=failed,
+                      searched=True, q=text, bridge=active, opened=opened)
+
     if not text:
         return render(request, "modpacks/_search.html", actor, bundle_id=bundle_id, hits=[], failed=False, searched=False)
     try:
-        raw = await modrinthService.search(text, bundle.version, str(bundle.loader.value), SEARCH_LIMIT)
+        raw = await modrinthService.search(text, bundle.version, opened.guest if opened else loader, SEARCH_LIMIT)
     except QuotaExceeded as error:
         # Not a failure of Modrinth: no requests left this minute, and it says for how long (E5).
-        return render(request, "modpacks/_search.html", actor, bundle_id=bundle_id, hits=[], failed=str(error.detail),
-                      searched=True)
+        return show([], str(error.detail))
     except Exception:
         logger.warning("Modrinth search failed for bundle %s", bundle_id, exc_info=True)
-        return render(request, "modpacks/_search.html", actor, bundle_id=bundle_id, hits=[], failed=True, searched=True)
+        return show([], True)
+    if opened is not None:
+        # Only the mods the bridge brings: another type, or a mod Modrinth also lists for the pack's
+        # own loader, is in «Nativos» (C3: native first).
+        raw = [item for item in raw if isinstance(item, dict) and item.get("project_type") == "mod"
+               and loader not in (item.get("categories") or [])]
     owned = {p.project_id for p in bundle.projects}
     # No catalog fill: the hit carries its title and icon, and a card the catalog lacks fetches
     # its own project when opened. Filling here doubled the Modrinth calls on every keystroke.
-    hits = [hit for hit in (_hit(item, owned) for item in raw if isinstance(item, dict)) if hit is not None]
-    return render(request, "modpacks/_search.html", actor, bundle_id=bundle_id, hits=hits, failed=False, searched=True)
+    return show([hit for hit in (_hit(item, owned) for item in raw if isinstance(item, dict)) if hit is not None])
 
 @router.post("/modpacks/{bundle_id}/projects")
 @inject

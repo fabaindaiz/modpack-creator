@@ -1,6 +1,18 @@
 {# Search hits for the live search; htmx swaps it into #search-results. Each hit opens its card,
    which fetches the project from Modrinth if the catalog lacks it. #}
 {% import "_macros.html" as ui %}
+{# With a bridge on (batch C, C8): «Nativos», the default, and the bridge's tab, whose count is
+   known once it is opened (`opened`). Each tab asks for its own results. #}
+{% if searched and bridge is defined and bridge %}
+{% set TAB = "-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-1.5 text-sm font-medium " %}
+{% set ON = "border-emerald-600 text-emerald-800 dark:border-emerald-400 dark:text-emerald-200" %}
+{% set OFF = "border-transparent text-zinc-600 hover:border-zinc-300 hover:text-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:text-zinc-100" %}
+{% set base = "/modpacks/" ~ bundle_id ~ "/search?q=" ~ (q | urlencode) %}
+<div role="tablist" aria-label="Resultados de la búsqueda" class="mb-2 flex flex-wrap gap-x-1 border-b border-zinc-200 dark:border-zinc-800">
+  <button type="button" role="tab" data-search-tab="nativos" aria-selected="{{ 'false' if opened else 'true' }}" hx-get="{{ base }}" hx-target="#search-results" class="{{ TAB }}{{ OFF if opened else ON }}">Nativos</button>
+  <button type="button" role="tab" data-search-tab="puente" aria-selected="{{ 'true' if opened else 'false' }}" hx-get="{{ base }}&amp;via={{ bridge.key }}" hx-target="#search-results" class="{{ TAB }}{{ ON if opened else OFF }}">Vía {{ bridge.label }}{% if opened %} ({{ hits | length }}){% endif %}{% if bridge.experimental %} · experimental{% endif %}</button>
+</div>
+{% endif %}
 {% if failed %}
 {{ ui.notice(failed if failed is string else "Modrinth no respondió; intenta de nuevo", "warning") }}
 {% elif searched and not hits %}
@@ -19,6 +31,7 @@
         <span class="font-medium break-words">{{ ui.mod_link(hit.project_id, hit.title, pack=bundle_id) }}</span>
         {% if hit.project_type %}{{ ui.badge(hit.project_type) }}{% endif %}
         {% if hit.side %}{{ ui.badge(hit.side) }}{% endif %}
+        {% if opened is defined and opened %}{{ ui.badge("vía " ~ opened.label ~ " (" ~ (opened.guest | capitalize) ~ ")" ~ (" · experimental" if opened.experimental else ""), "warning") }}{% endif %}
       </div>
       {% if hit.description %}<p class="line-clamp-2 text-sm break-words text-zinc-600 dark:text-zinc-400">{{ hit.description }}</p>{% endif %}
       <p class="text-xs text-zinc-500 dark:text-zinc-400">{% if hit.author %}@{{ hit.author }} · {% endif %}{{ hit.downloads }} descargas</p>
