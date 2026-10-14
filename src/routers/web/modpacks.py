@@ -709,15 +709,24 @@ async def modpack_via(
 async def modpack_bridges(
         bundle_id: str,
         request: Request,
+        contexto: Annotated[Optional[Contexto], Form()] = None,
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         ):
     """Save the bridges the pack turns on (the checked boxes; none turns them all off, batch C).
-    The service checks each against the pack's loader."""
+    The service checks each against the pack's loader. Saving resolves again (spec §4): the section
+    answers with #mods out of band. From a problem's card («Reactivar el puente», `contexto`) it
+    answers where it was clicked, like the card's other actions."""
     chosen = [str(v) for k, v in (await request.form()).multi_items() if k == "bridge"]
     updated = await modpackService.bundle_update(bundle_id, ModpackBundlePatch(secondary_loaders=chosen), actor)
-    return render(request, "modpacks/_bridges.html", actor, bundle_id=bundle_id, bundle=updated,
-                  **_bridges_context(updated))
+    if contexto is not None:
+        return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto,
+                            "Puente reactivado")
+    await modpackService.resolve(bundle_id, actor)
+    context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request), _filters_from(request))
+    return render(request, "modpacks/_bridges.html", actor, **{**context, "bundle_id": bundle_id, "bundle": updated,
+                                                               "mods_oob": True, **_bridges_context(updated)})
 
 @router.post("/modpacks/{bundle_id}/pins")
 @inject

@@ -300,6 +300,9 @@ class Problem(BaseModel):
     requested_by: list[str] = []
     alternative: Optional[Alternative] = None
     conflict_with: Optional[str] = None
+    # For a mod installed through a bridge the pack turned off: that bridge, which its card offers to
+    # turn back on (review of batch C).
+    bridge: Optional[str] = None
     # About a fixed version: True if the admin's pin is at fault, False if a dependency asks for an
     # exact version; None otherwise, and in problems stored before this field.
     pinned: Optional[bool] = None
@@ -454,7 +457,7 @@ class _Run:
             elif (off := self._bridge_off(known, project_type)) is not None:
                 # Installed through a bridge the pack turned off: the resolution never changes a mod's
                 # way by itself (d-7985ee-7e602f), nor takes an older native one (final review).
-                self.problems.append(Problem(kind="via_change", project_id=project_id, requested_by=_asked(requester),
+                self.problems.append(Problem(kind="via_change", project_id=project_id, requested_by=_asked(requester), bridge=off.key,
                     detail=(f"{project_id} está instalado vía {off.label}, que el pack apagó: reactiva el puente "
                             "o quita el mod")))
                 return None

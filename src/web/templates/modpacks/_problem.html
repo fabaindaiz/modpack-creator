@@ -45,8 +45,9 @@
                 else ("la versión " ~ alternative.version_number ~ " (" ~ alternative.channel ~ ")") %}
 {% endif %}
 {# The pack's mods a "Quitar" button removes. #}
-{% if pin_problem or problem.kind in ("via_change", "bridge_missing") %}
-{# A change of way is confirmed in its own dialog (task 7, d-7985ee-7e602f); a missing companion is added. #}
+{% if pin_problem or problem.kind == "bridge_missing" or (problem.kind == "via_change" and not problem.bridge) %}
+{# A change of way is confirmed in its own dialog (task 7, d-7985ee-7e602f); a missing companion is added.
+   A mod installed through a bridge the pack turned off is removed, or the bridge turned back on. #}
 {% set removals = [] %}
 {% elif asked_exact %}
 {% set removals = requesters | select("in", pack) | list %}
@@ -129,6 +130,15 @@
       <input type="hidden" name="contexto" value="{{ contexto }}">
       {{ ui.button("Agregar el puente" if problem.kind == "bridge_missing"
                    else "Usar vía " ~ (bridge.label if bridge else "el puente"), type="submit", small=True) }}
+    </form>
+    {% endif %}
+    {% if problem.kind == "via_change" and problem.bridge and problem.bridge not in bundle.secondary_loaders %}
+    {# Turns the pack's bridge back on (its other bridges stay), then resolves where it was clicked. #}
+    <form hx-post="/modpacks/{{ bundle_id }}/bridges" hx-target="{{ target }}" hx-swap="{{ swap }}">
+      {% for key in bundle.secondary_loaders %}<input type="hidden" name="bridge" value="{{ key }}">{% endfor %}
+      <input type="hidden" name="bridge" value="{{ problem.bridge }}">
+      <input type="hidden" name="contexto" value="{{ contexto }}">
+      {{ ui.button("Reactivar el puente", type="submit", small=True) }}
     </form>
     {% endif %}
     {% for removal in removals %}

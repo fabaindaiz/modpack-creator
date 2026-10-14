@@ -1,6 +1,7 @@
 {# The «Vía puente» view (batch C, d-7985ee-533aff): each mod that runs through a bridge, with whether
    a native version exists, and «Pasar a nativa» once one caught up with the installed one; the mods
-   moved to native can go back. Both ask first (d-7985ee-7e602f). Part of _mods.html. #}
+   moved to native can go back while what is installed still runs through the bridge (`mods.via_back`).
+   Both ask first (d-7985ee-7e602f). Part of _mods.html. #}
 {% import "_macros.html" as ui %}
 {% set STATE = {
   "alcanza": "hay nativa: se puede pasar",
@@ -33,13 +34,16 @@
   <li data-project="{{ project_id }}" class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
     <div class="min-w-0 flex-1">
       <span class="font-medium break-words">{{ ui.mod_link(project_id, mods.titles.get(project_id, project_id), pack=bundle_id) }}</span>
-      <span class="block text-xs text-zinc-500 dark:text-zinc-400">pasó a nativa</span>
+      {# Back to the bridge only while what is installed still runs through it (review of batch C). #}
+      <span class="block text-xs text-zinc-500 dark:text-zinc-400">{{ "pasó a nativa" if project_id in mods.via_back else "ya instalada nativa" }}</span>
     </div>
+    {% if project_id in mods.via_back %}
     <form hx-post="/modpacks/{{ bundle_id }}/via" hx-target="#mods" hx-swap="outerHTML">
       <input type="hidden" name="project_id" value="{{ project_id }}">
       <input type="hidden" name="native" value="0">
       {{ ui.button("Volver al puente", type="submit", kind="ghost", small=True) }}
     </form>
+    {% endif %}
   </li>
   {% endfor %}
 </ul>

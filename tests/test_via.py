@@ -144,3 +144,27 @@ def test_the_bridge_is_named_to_remove_even_when_the_removed_mod_brought_bridged
         return busy, await s.service.bridge_idle(bundle_id)
 
     assert mongo(scenario) == ([], ["Connector"])
+
+
+def test_a_mod_already_installed_native_cannot_go_back_to_the_bridge(mongo: MongoRunner) -> None:
+    """Review of batch C (minor 1): «Volver al puente» is offered only while what is installed still
+    runs through the bridge; once the build in force has its native version, going back would be a
+    change of way the resolution never makes, so it is refused and the mark stays."""
+    async def scenario() -> Any:
+        s = Scenario(FakeModrinth())
+        bundle_id = await bridged_pack(s, "none")
+        await s.modpackDB.bundle_native_only_set(bundle_id, "F", True)
+        before = (await s.service.mod_list(bundle_id, check=None)).via_back
+        await s.modrinthDB.version_upsert_many([version("v-F-2.0", "F", "2.0", 5, loaders=("neoforge",))])
+        await s.built(bundle_id, entry("F", "2.0", origin="admin"))
+        after = (await s.service.mod_list(bundle_id, check=None)).via_back
+        refused = None
+        try:
+            await s.service.via_set(bundle_id, "F", native=False, actor=EDITOR, confirm=True)
+        except HTTPException as error:
+            refused = (error.status_code, str(error.detail))
+        return before, after, refused, (await s.modpackDB.bundle_get(bundle_id)).native_only
+
+    before, after, refused, kept = mongo(scenario)
+    assert before == {"F"} and after == set()
+    assert refused is not None and refused[0] == 422 and "nativa" in refused[1] and kept == ["F"]

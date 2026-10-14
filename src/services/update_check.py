@@ -21,7 +21,7 @@ from src.database.modrinth import ModrinthDatabase
 from src.database.update_check import UpdateCheckDatabase
 from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
 from src.library.api.client.modrinth import ModrinthAPI
-from src.library.bridges import guest_of
+from src.library.bridges import bridges_for, guest_of
 from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Target
 from src.library import utils
 from src.library.utils import getenv, getenv_opt, utcnow
@@ -126,7 +126,10 @@ class UpdateCheckService():
             raise HTTP_409_CONFLICT(f"Bundle '{bundle_id}' has no build")
         build = await self.modpackDB.build_get(bundle_id, number)
         target = Target(game_version=bundle.version, loader=bundle.loader.value)
-        entries = [e for e in build.lock.entries if e.file is not None]
+        # A mod through a bridge the pack turned off is a problem of the pack, not an update: nothing
+        # is announced for it, neither bridged nor native (a change of way; review of batch C).
+        active = {b.key for b in bridges_for(bundle.loader.value, bundle.version) if b.key in bundle.secondary_loaders}
+        entries = [e for e in build.lock.entries if e.file is not None and (e.via is None or e.via in active)]
         exceptions = bundle.channel_exceptions
 
         def query(entry: Any, channels: list[str]) -> dict[str, Any]:

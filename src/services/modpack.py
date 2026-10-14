@@ -17,7 +17,7 @@ from src.library.mrpack import mrpack_index, write_mrpack
 from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink
 from src.database.jobs import JobDatabase
 from src.model.jobs import Job
-from src.library.bridges import BRIDGES, VIA_RISK, bridge as find_bridge, companions, guest_of
+from src.library.bridges import BRIDGES, REPLACES, VIA_RISK, bridge as find_bridge, companions, guest_of
 from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Candidate, Catalog, Lock, LockEntry, ResolveRequest, Target, merge_replacements, request_digest, resolve
 from src.model.modpack import BUNDLE_KEYED_FIELDS, AvailableUpdate, LoaderVersion, UpdateCheck, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject, ModrinthVersion, ModrinthVersionList, VersionBrief
@@ -197,6 +197,9 @@ class ModList:
     # The card of each project a problem is about that no row shows (an unresolvable dependency),
     # from the same fill: "Con problemas" shows every problem with its mod's card.
     problem_cards: dict[str, ModRow] = field(default_factory=dict)
+    # The mods moved to native that can still go back to the bridge: what is installed of them (the
+    # build in force, the servers) still runs through it (review of batch C).
+    via_back: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -502,10 +505,14 @@ class ModpackService():
         """Move a mod to its native versions (`native`) or back to the bridge's (batch C,
         d-7985ee-8e5f9e). Changing a mod's way does not always work (its config or the world's data
         may not carry over): without `confirm` it is a ViaChangeRefused (409) that describes the
-        change, and nothing is written (d-7985ee-7e602f). Audited as `bundle.via`."""
+        change, and nothing is written (d-7985ee-7e602f). Back to the bridge is a 422 once the build in
+        force or a server runs its native version (review of batch C). Audited as `bundle.via`."""
         if not MODRINTH_ID.fullmatch(project_id):
             raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{project_id}' no es un id de Modrinth")
         bundle = await self.modpackDB.bundle_get(bundle_id)
+        if not native and await self._installed_native(bundle, [project_id]):
+            raise HTTP_422_UNPROCESSABLE_ENTITY(
+                "Ese mod ya está instalado en su versión nativa: no vuelve al puente (sería otro cambio de vía)")
         if not confirm:
             stored = await self.modrinthDB.project_find_by_modrinth_id([project_id])
             title = stored[0].title if stored else project_id
@@ -597,13 +604,42 @@ class ModpackService():
         :param origin: Whether the pack brings them or the admin adds them.
         :return: The bundle's projects afterwards.
         """
-        await self.modpackDB.bundle_get(bundle_id)
+        bundle = await self.modpackDB.bundle_get(bundle_id)
         projects = await self._modrinth_projects(refs)
+        for found in projects:
+            await self._refuse_replaced(bundle, found)
         added = await self.modpackDB.bundle_projects_add(
             bundle_id, [PackProject(project_id=p.project_id, origin=origin) for p in projects])
         await self.audit.record(actor, "bundle.project.add", _bundle(bundle_id),
                                 {"refs": list(refs), "origin": origin.value})
         return added
+
+    async def _installed_native(self, bundle: ModpackBundle, project_ids: Iterable[str]) -> set[str]:
+        """Of these projects, those that the build in force or a linked server already runs in a native
+        version: going back to the bridge would be a change of way the resolution never makes (review
+        of batch C). Only MongoDB is read; a version the catalog lacks counts as not native."""
+        wanted = set(project_ids)
+        if not wanted:
+            return set()
+        sources = {p: versions for p, versions in (await self._floor_sources(bundle)).items() if p in wanted}
+        found = {v.version_id: v for v in await self.modrinthDB.version_find_by_version_ids(
+            sorted({v for versions in sources.values() for v in versions}))}
+        native = Target(game_version=bundle.version, loader=str(bundle.loader.value)).loaders("mod")
+        return {p for p, versions in sources.items()
+                if any(v in found and native & set(found[v].loaders) for v in versions)}
+
+    async def _refuse_replaced(self, bundle: ModpackBundle, found: ModrinthProject) -> None:
+        """A project an active bridge replaces (Fabric API with Connector, d-7985ee-d7fcae) would only
+        end in a conflict: a 422 that names what goes in its place (review of batch C)."""
+        loader = str(bundle.loader.value)
+        for key in bundle.secondary_loaders:
+            active = find_bridge(key, loader, bundle.version)
+            replacement = REPLACES.get(key, {}).get(found.project_id) if active is not None else None
+            if active is not None and replacement is not None:
+                named = await self.modrinthDB.project_find_by_modrinth_id([replacement])
+                title = named[0].title if named else (await self._modrinth_projects([replacement]))[0].title
+                raise HTTP_422_UNPROCESSABLE_ENTITY(
+                    f"Con {active.label}, {found.title} se reemplaza por {title}: agrega ese en su lugar")
 
     async def bridge_companions_missing(self, bundle_id: str, project_id: str) -> list[tuple[str, str]]:
         """For a project that only fits through an active bridge, the bridge's mods (the bridge and
@@ -622,6 +658,7 @@ class ModpackService():
         owned = {p.project_id for p in bundle.projects}
         if found.project_id in owned:
             return []
+        await self._refuse_replaced(bundle, found)
         game_version = request.target.game_version
         # The bridge itself or one of its companions («Agregar el puente»): the rest of its mods.
         used = next((b for b in request.target._active_bridges()
@@ -858,7 +895,8 @@ class ModpackService():
                          if x.project_id and x.project_id not in shown}
         return ModList(rows=rows, resolution=resolution, stale=stale,
                        icons_missing=sum(1 for r in rows if r.icon_url is None), titles=titles, orphan_pins=orphan_pins,
-                       problem_cards=problem_cards)
+                       problem_cards=problem_cards,
+                       via_back=set(bundle.native_only) - await self._installed_native(bundle, bundle.native_only))
 
     async def project_versions(self, bundle_id: str, project_id: str) -> list[VersionOption]:
         """

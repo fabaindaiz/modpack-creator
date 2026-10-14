@@ -87,7 +87,7 @@ LOCKED = "2019-01-01T00:00:00Z"
 async def bundle_with(entries: list[LockEntry], pins: dict[str, str] | None = None,
                       channels: list[str] | None = None, recommended: int | None = 1,
                       exceptions: dict[str, str] | None = None, lock_types: dict[str, str] | None = None,
-                      catalog: bool = True) -> str:
+                      catalog: bool = True, version: str = "26.3", secondary: list[str] | None = None) -> str:
     """Un bundle con un build de estas entradas; sus versiones, en el catálogo con fecha LOCKED
     (`catalog=False` las deja fuera)."""
     if catalog:
@@ -95,9 +95,9 @@ async def bundle_with(entries: list[LockEntry], pins: dict[str, str] | None = No
             version_doc(e.version_id, e.project_id, e.version_number, type=(lock_types or {}).get(e.project_id, "release"),
                         date=LOCKED) for e in entries)
     bundle = await ModpackDatabase().bundle_insert(ModpackBundle(
-        name="Survival", description="", version="26.3", loader=MinecraftLoaders.fabric,
+        name="Survival", description="", version=version, loader=MinecraftLoaders.fabric,
         pins=pins or {}, channels=channels or ["release", "beta"], latest_build=1, recommended_build=recommended,
-        channel_exceptions=exceptions or {}))
+        channel_exceptions=exceptions or {}, secondary_loaders=secondary or []))
     await ModpackBuild.insert(ModpackBuild(
         bundle_id=PydanticObjectId(str(bundle.id)), number=1, created_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
         request=ResolveRequest(target=Target(game_version="26.3", loader="fabric"), projects=[]),
@@ -498,9 +498,24 @@ def test_a_bridged_mod_is_checked_for_updates_through_its_own_way(mongo: MongoRu
     async def scenario() -> FakeModrinth:
         api = FakeModrinth({})
         bridged = entry("K", "k1", "1").model_copy(update={"via": "kilt"})
-        bundle_id = await bundle_with([entry("A", "a1", "1"), bridged])
+        bundle_id = await bundle_with([entry("A", "a1", "1"), bridged], version="1.21.1", secondary=["kilt"])
         await make(api).compute(bundle_id)
         return api
 
     [call] = mongo(scenario).calls
     assert {item["hash"]: item["loaders"] for item in call} == {"h-A": ["fabric"], "h-K": ["forge"]}
+
+
+@pytest.mark.network
+def test_a_mod_whose_bridge_the_pack_turned_off_is_not_checked(mongo: MongoRunner) -> None:
+    """Review of batch C (minor 3): with its bridge off the mod is a problem of the pack; the daily
+    check announces nothing for it, neither through the bridge nor natively (a change of way)."""
+    async def scenario() -> FakeModrinth:
+        api = FakeModrinth({})
+        bridged = entry("K", "k1", "1").model_copy(update={"via": "kilt"})
+        bundle_id = await bundle_with([entry("A", "a1", "1"), bridged], version="1.21.1")
+        await make(api).compute(bundle_id)
+        return api
+
+    [call] = mongo(scenario).calls
+    assert [item["hash"] for item in call] == ["h-A"]

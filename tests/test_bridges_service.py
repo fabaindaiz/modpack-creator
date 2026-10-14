@@ -128,3 +128,28 @@ def test_adding_the_bridge_itself_names_its_other_companions(mongo: MongoRunner)
         return await s.service.bridge_companions_missing(bundle_id, CONNECTOR)
 
     assert mongo(scenario) == [(FORGIFIED_FABRIC_API, "Forgified Fabric API")]
+
+
+def test_fabric_api_by_hand_in_a_pack_with_connector_is_refused_and_names_its_replacement(mongo: MongoRunner) -> None:
+    """Review of batch C (minor 4, d-7985ee-d7fcae): with Connector, Fabric API would only end in a
+    conflict; the add says so up front, before any dialog, and adds nothing (the API too)."""
+    from src.library.bridges import FABRIC_API
+
+    async def scenario() -> Any:
+        fake = companions_api()
+        fake.projects[FABRIC_API] = project(FABRIC_API, "Fabric API", loaders=("fabric",), game_versions=("1.21.1",))
+        s = Scenario(fake)
+        bundle_id = await neoforge_pack(s, bridges=("connector",))
+        refused = []
+        for call in (lambda: s.service.bridge_companions_missing(bundle_id, FABRIC_API),
+                     lambda: s.service.project_add(bundle_id, [FABRIC_API], ProjectOrigin.admin, EDITOR)):
+            try:
+                await call()
+            except HTTPException as error:
+                refused.append((error.status_code, str(error.detail)))
+        return refused, [p.project_id for p in (await s.modpackDB.bundle_get(bundle_id)).projects]
+
+    refused, projects = mongo(scenario)
+    assert [code for code, _ in refused] == [422, 422]
+    assert all("Forgified Fabric API" in detail for _, detail in refused)
+    assert projects == ["N", "F"]

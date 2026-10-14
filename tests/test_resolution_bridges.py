@@ -177,3 +177,10 @@ def test_a_native_version_only_in_another_channel_lets_the_bridged_one_run() -> 
     assert lock.needs_bridged == {"a"}
     lock = resolve(request("a", target=BRIDGED), loaded(*versions, bridged=("a",)))
     assert chosen(lock) == {"a": "f1"} and lock.entries[0].via == "connector"
+
+
+def test_the_problem_of_a_mod_whose_bridge_is_off_names_the_bridge_to_turn_back_on() -> None:
+    """Review of batch C (minor 2): its card offers «Reactivar el puente»."""
+    lock = resolve(request("a", target=NEO, floors={"a": ["f5"]}), loaded(fab("a", "f5", days=5), bridged=("a",)))
+    [problem] = lock.problems
+    assert problem.kind == "via_change" and problem.bridge == "connector"

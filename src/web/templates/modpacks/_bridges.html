@@ -1,6 +1,7 @@
 {# Loaders secundarios (batch C; d-7985ee-a8d395, d-7985ee-45c2ba): the bridges the pack's loader and
    Minecraft version can turn on, and those kept from another version that have no effect now. Shown
-   only when there is something to say. Needs `bundle_id`, `bundle`, `bridges` and `bridges_idle`. #}
+   only when there is something to say. Needs `bundle_id`, `bundle`, `bridges` and `bridges_idle`; after a
+   save, `mods_oob` and the #mods context. #}
 {% import "_macros.html" as ui %}
 {% if bridges or bridges_idle %}
 <form id="bridges" hx-post="/modpacks/{{ bundle_id }}/bridges" hx-target="#bridges" hx-swap="outerHTML"
@@ -23,3 +24,5 @@
   {% if bridges %}{{ ui.button("Guardar loaders secundarios", type="submit", kind="secondary") }}{% endif %}
 </form>
 {% endif %}
+{# Saving resolves again (spec §4): #mods comes with it, out of band. #}
+{% if mods_oob is defined and mods_oob %}{% include "modpacks/_mods.html" %}{% endif %}

@@ -119,6 +119,8 @@ class FakeModpack:
         self.dependents: Optional[list[str]] = []
         # What bridge_idle answers: the bridge mods left when no mod runs through a bridge.
         self.idle: list[str] = []
+        # What mod_list says can go back to the bridge; None: every mod moved to native.
+        self.via_back: Optional[set[str]] = None
         # A pin pin_set refuses as a step back unless confirmed (F27), and each call's confirmation.
         self.downgrade: Optional[PinDowngrade] = None
         self.confirmed: list[bool] = []
@@ -246,7 +248,8 @@ class FakeModpack:
         problem_cards = {p.project_id: self.cards.get(p.project_id) or row(p.project_id, titles[p.project_id], None)
                          for p in problems if p.project_id and p.project_id not in shown}
         return ModList(rows=rows, resolution=self.saved, stale=self.stale, icons_missing=0, titles=titles,
-                       orphan_pins=orphan_pins, problem_cards=problem_cards)
+                       orphan_pins=orphan_pins, problem_cards=problem_cards,
+                       via_back=set(self.bundle.native_only) if self.via_back is None else self.via_back)
 
     async def project_versions(self, bundle_id: str, project_id: str) -> list[VersionOption]:
         self.calls.append(("project_versions", bundle_id, project_id))

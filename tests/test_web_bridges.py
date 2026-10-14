@@ -209,3 +209,52 @@ def test_the_problems_of_a_bridge_have_their_actions() -> None:
     assert f'hx-delete="/modpacks/{BUNDLE_ID}/projects/{FABRIC_API}?contexto=problemas"' in conflict
     change = problem_card(text, "P1").split("</article>")[0]
     assert "cambio de vía" in said(change) and "<form" not in change and "hx-delete" not in change
+
+
+# The review of batch C, minors 1, 2 and 5.
+
+
+def test_a_mod_whose_bridge_is_off_offers_turning_it_back_on_or_removing_it() -> None:
+    """Minor 2 (spec, errors): the card turns the bridge back on, from where it was clicked, or
+    removes the mod; nothing happens until it is clicked."""
+    client, modpack, _ = setup()
+    bridged(modpack, bridges=())
+    text = problems_page(modpack, client, Problem(kind="via_change", project_id="P1", bridge="connector",
+                                                  detail="P1 está instalado vía Connector, que el pack apagó"))
+    card = problem_card(text, "P1")
+    assert "Reactivar el puente" in said(card) and f'hx-post="/modpacks/{BUNDLE_ID}/bridges"' in card
+    assert 'name="bridge" value="connector"' in card and 'name="contexto" value="problemas"' in card
+    assert f'hx-delete="/modpacks/{BUNDLE_ID}/projects/P1?contexto=problemas"' in card
+
+
+def test_turning_a_bridge_back_on_from_a_card_resolves_and_answers_there() -> None:
+    client, modpack, _ = setup()
+    bridged(modpack, bridges=())
+    response = client.post(f"/modpacks/{BUNDLE_ID}/bridges", headers=HTMX,
+                           data={"bridge": "connector", "contexto": "problemas"})
+    assert response.status_code == 200 and response.text.lstrip().startswith('<div id="mods"')
+    assert call(modpack, "bundle_update")[2].secondary_loaders == ["connector"]
+    assert [c[0] for c in modpack.calls].count("resolve") == 1
+
+
+def test_saving_the_bridges_resolves_again_and_redraws_the_mods() -> None:
+    """Minor 5 (spec §4: «Guardarla resuelve de nuevo»): the section answers, #mods comes out of band."""
+    client, modpack, _ = setup()
+    bridged(modpack)
+    response = client.post(f"/modpacks/{BUNDLE_ID}/bridges", headers=HTMX, data={"bridge": "connector"})
+    assert response.status_code == 200 and response.text.lstrip().startswith('<form id="bridges"')
+    assert '<div id="mods" class="space-y-4" hx-swap-oob="true"' in response.text
+    assert [c[0] for c in modpack.calls].count("resolve") == 1
+
+
+def test_volver_al_puente_only_while_the_installed_version_still_runs_through_it() -> None:
+    """Minor 1: once the build in force has the native version, the tab says so and offers nothing."""
+    client, modpack, _ = setup()
+    bridged(modpack)
+    modpack.bundle = modpack.bundle.model_copy(update={"native_only": ["P1", "P2"]})
+    modpack.via_back = {"P1"}
+    text = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "puente"}).text
+    back = text.split('data-project="P1"')[1].split("</li>")[0]
+    built = text.split('data-project="P2"')[1].split("</li>")[0]
+    assert "Volver al puente" in said(back) and 'name="native" value="0"' in back
+    assert "ya instalada nativa" in said(built) and "<form" not in built
