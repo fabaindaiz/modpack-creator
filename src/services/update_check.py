@@ -21,6 +21,7 @@ from src.database.modrinth import ModrinthDatabase
 from src.database.update_check import UpdateCheckDatabase
 from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
 from src.library.api.client.modrinth import ModrinthAPI
+from src.library.bridges import guest_of
 from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Target
 from src.library import utils
 from src.library.utils import getenv, getenv_opt, utcnow
@@ -129,7 +130,10 @@ class UpdateCheckService():
         exceptions = bundle.channel_exceptions
 
         def query(entry: Any, channels: list[str]) -> dict[str, Any]:
-            return {"hash": entry.file.sha512, "loaders": sorted(target.loaders(entry.project_type)),
+            # A safe update keeps the mod's way (batch C): through its bridge, the guest's versions.
+            guest = guest_of(entry.via, bundle.loader.value) if entry.via else None
+            loaders = [guest] if guest else sorted(target.loaders(entry.project_type))
+            return {"hash": entry.file.sha512, "loaders": loaders,
                     "game_versions": [bundle.version], "version_types": channels}
 
         def widened(project_id: str) -> list[str]:

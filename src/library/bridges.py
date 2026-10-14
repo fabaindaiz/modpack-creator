@@ -59,3 +59,9 @@ def bridge(key: str, loader: str, game_version: str) -> Optional[Bridge]:
 def companions(found: Bridge, game_version: str) -> list[tuple[str, str]]:
     """The bridge's mods for this Minecraft version, with the channel each accepts."""
     return [*found.mods, *found.extra.get(game_version, ())]
+
+
+def guest_of(key: str, host: str) -> Optional[str]:
+    """The loader a bridge runs on a host loader, whatever the Minecraft version: how a mod already
+    installed through it keeps being checked for updates."""
+    return next((b.guest for b in BRIDGES if b.key == key and b.host == host), None)

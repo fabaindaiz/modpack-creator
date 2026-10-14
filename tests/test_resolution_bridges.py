@@ -3,6 +3,7 @@ the native loaders stay the default, a mod with no native version may run throug
 its guest versions are asked for only then, and a native version always wins."""
 from typing import Any
 
+from src.library.bridges import CONNECTOR, FABRIC_API, FORGIFIED_FABRIC_API
 from src.library.resolution import Catalog, Target, resolve
 from tests.test_resolution import cand, catalog, chosen, request
 
@@ -64,3 +65,65 @@ def test_a_suggestion_that_only_runs_through_the_bridge_is_not_offered() -> None
     parent = neo("a", "n1", deps=(("c", None, "optional"), ("d", None, "optional")))
     lock = resolve(request("a", target=BRIDGED), loaded(parent, fab("c", "c1"), neo("d", "d1"), bridged=("c",)))
     assert [s.project_id for s in lock.suggestions] == ["d"]
+
+
+# Task 3: the way a mod is installed, its dependencies, and what the bridge needs.
+
+
+
+def test_an_installed_bridged_mod_stays_bridged_and_says_a_native_caught_up() -> None:
+    """d-7985ee-7e602f, d-7985ee-dea282: the resolution never changes a mod's way by itself."""
+    versions = [fab("a", "f1", days=1), fab("a", "f2", days=3), neo("a", "n2", days=5)]
+    lock = resolve(request("a", target=BRIDGED, floors={"a": ["f1"]}), loaded(*versions, bridged=("a",)))
+    assert chosen(lock) == {"a": "f2"} and lock.entries[0].via == "connector"
+    assert lock.native_available == {"a": "n2"} and lock.native_behind == {}
+
+
+def test_a_native_version_older_than_the_installed_one_is_behind() -> None:
+    versions = [neo("a", "n0", days=0), fab("a", "f1", days=1), fab("a", "f2", days=3)]
+    lock = resolve(request("a", target=BRIDGED, floors={"a": ["f1"]}), loaded(*versions, bridged=("a",)))
+    assert chosen(lock) == {"a": "f2"} and lock.native_behind == {"a": "n0"} and lock.native_available == {}
+
+
+def test_an_installed_native_mod_never_becomes_bridged() -> None:
+    versions = [neo("a", "n1", days=1), fab("a", "f9", days=9)]
+    lock = resolve(request("a", target=BRIDGED, floors={"a": ["n1"]}), loaded(*versions, bridged=("a",)))
+    assert chosen(lock) == {"a": "n1"} and lock.entries[0].via is None
+
+
+def test_a_mod_marked_native_only_takes_its_native_versions() -> None:
+    """d-7985ee-8e5f9e: what the admin accepted with «Pasar a nativa»."""
+    versions = [fab("a", "f1", days=1), fab("a", "f2", days=3), neo("a", "n2", days=5)]
+    lock = resolve(request("a", target=BRIDGED, floors={"a": ["f1"]}, native_only={"a"}), loaded(*versions, bridged=("a",)))
+    assert chosen(lock) == {"a": "n2"} and lock.entries[0].via is None and lock.native_available == {}
+
+
+def test_a_native_mod_s_dependency_that_only_runs_through_the_bridge_is_a_problem_not_added() -> None:
+    """d-7985ee-b921b2."""
+    parent = neo("p", "p1", deps=(("lib", None, "required"),))
+    lock = resolve(request("p", target=BRIDGED), loaded(parent, fab("lib", "l1"), bridged=("lib",)))
+    assert chosen(lock) == {"p": "p1"}
+    [problem] = [x for x in lock.problems if x.kind == "bridge_dependency"]
+    assert problem.project_id == "lib" and problem.requested_by == ["p"]
+
+
+def test_a_bridged_mod_s_dependencies_run_through_the_bridge() -> None:
+    """d-7985ee-b7bddf."""
+    parent = fab("b", "b1", deps=(("lib", None, "required"),))
+    lock = resolve(request("b", target=BRIDGED), loaded(parent, fab("lib", "l1"), bridged=("b", "lib")))
+    assert chosen(lock)["lib"] == "l1" and {e.project_id: e.via for e in lock.entries}["lib"] == "connector"
+
+
+def test_with_connector_fabric_api_is_forgified_fabric_api_and_the_bridge_is_asked_for() -> None:
+    """d-7985ee-d7fcae, d-7985ee-80ee9a: the resolution never adds the bridge itself."""
+    parent = fab("b", "b1", deps=((FABRIC_API, None, "required"),))
+    ffapi = neo(FORGIFIED_FABRIC_API, "ff1")
+    lock = resolve(request("b", target=BRIDGED), loaded(parent, ffapi, bridged=("b",)))
+    assert FORGIFIED_FABRIC_API in chosen(lock) and FABRIC_API not in chosen(lock)
+    missing = [x.project_id for x in lock.problems if x.kind == "bridge_missing"]
+    assert missing == [CONNECTOR]
+
+
+def test_fabric_api_in_a_pack_with_connector_is_a_conflict() -> None:
+    lock = resolve(request(FABRIC_API, target=BRIDGED), loaded(fab(FABRIC_API, "fa1"), bridged=(FABRIC_API,)))
+    assert [x.kind for x in lock.problems if x.project_id == FABRIC_API] == ["bridge_conflict"]

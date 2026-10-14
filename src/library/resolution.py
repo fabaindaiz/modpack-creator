@@ -13,7 +13,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from typing import Any, Literal, Optional
-from src.library.bridges import bridges_for
+from src.library.bridges import FABRIC_API, REPLACES, bridge as find_bridge, bridges_for, companions
 from pydantic import BaseModel, field_validator
 
 ADMIN = "admin"
@@ -223,6 +223,8 @@ class ResolveRequest(BaseModel):
     # fits the target (one for another game version or loader does not count); a free choice only
     # takes versions published at or after it, and keeps it when none is. A pin may go lower.
     floors: dict[str, list[str]] = {}
+    # Projects the admin moved to their native versions («Pasar a nativa», d-7985ee-8e5f9e).
+    native_only: set[str] = set()
 
     @field_validator("floors", mode="before")
     @classmethod
@@ -285,7 +287,8 @@ class Alternative(BaseModel):
 
 
 class Problem(BaseModel):
-    kind: Literal["unresolvable", "pin_mismatch", "pin_conflict", "incompatible", "no_file"]
+    kind: Literal["unresolvable", "pin_mismatch", "pin_conflict", "incompatible", "no_file",
+                  "bridge_dependency", "bridge_missing", "bridge_conflict", "via_change"]
     project_id: Optional[str]
     detail: str
     requested_by: list[str] = []
@@ -315,6 +318,11 @@ class Lock(BaseModel):
     # Projects with no native version that fits, whose versions for the active bridges' loaders
     # are still to fetch (d-7985ee-4fd88e).
     needs_bridged: set[str] = set()
+    # A mod installed through a bridge whose native version caught up with it (published at or after
+    # the installed one): offered as «Pasar a nativa», never taken (d-7985ee-7e602f). Project -> version.
+    native_available: dict[str, str] = {}
+    # One whose native version is still older than the installed one: not offered yet.
+    native_behind: dict[str, str] = {}
 
     @property
     def complete(self) -> bool:
@@ -363,6 +371,8 @@ class _Run:
         self.needs_types: set[str] = set()
         self.needs_versions: set[str] = set()
         self.needs_bridged: set[str] = set()
+        self.native_available: dict[str, str] = {}
+        self.native_behind: dict[str, str] = {}
         self.excepted: set[str] = set()
 
     def run(self) -> Lock:
@@ -439,6 +449,10 @@ class _Run:
             return None
         floor = max(fitting_floors, key=lambda c: _as_utc(c.date_published)) if fitting_floors else None
         allowed = [c for c in self.catalog.by_project[project_id] if self.request.target.allows(c, project_type)]
+        if project_id in self.request.native_only:
+            allowed = [c for c in allowed if self.request.target.via(c, project_type) is None]
+        if not allowed:
+            allowed = self._bridge_channel(project_id, project_type)
         if floor is not None:
             return self._take_from_floor(project_id, project_type, floor, allowed, reason, requester)
         if not allowed and project_id in self.request.channel_exceptions:
@@ -457,6 +471,10 @@ class _Run:
                     f"en los canales {', '.join(sorted(self.request.target.channels))}; pedido por {requester}")))
             return None
         best = min(allowed, key=lambda c: self._rank(c, project_type))
+        if self.request.target.via(best, project_type) is not None and self._native_parent(requester):
+            self.problems.append(Problem(kind="bridge_dependency", project_id=project_id, requested_by=_asked(requester),
+                detail=f"{project_id} solo existe para {', '.join(sorted(best.loaders))}; la pide {requester}"))
+            return None
         return self._take(best, reason, requester, exact=False)
 
     def _take_from_floor(self, project_id: str, project_type: str, floor: Candidate, allowed: list[Candidate],
@@ -466,9 +484,27 @@ class _Run:
         def newer(found: list[Candidate]) -> list[Candidate]:
             return [c for c in found if _as_utc(c.date_published) >= _as_utc(floor.date_published)]
 
-        pool = newer(allowed)
+        target = self.request.target
+        native_only = project_id in self.request.native_only
+        floor_via = None if native_only else target.via(floor, project_type)
+
+        def same_way(found: list[Candidate]) -> list[Candidate]:
+            return [c for c in found if target.via(c, project_type) == floor_via]
+
+        pool = same_way(newer(allowed))
         if not pool and project_id in self.request.channel_exceptions:
-            pool = newer(self._excepted(project_id, project_type))
+            pool = same_way(newer(self._excepted(project_id, project_type)))
+        if native_only and not pool:
+            pool = same_way(allowed)
+            if not pool:
+                self.problems.append(Problem(kind="via_change", project_id=project_id, requested_by=_asked(requester),
+                    detail=f"{project_id} pasó a nativa, pero no tiene versión nativa en los canales del pack"))
+        if floor_via is not None:
+            natives = [c for c in allowed if target.via(c, project_type) is None]
+            if natives:
+                native = min(natives, key=lambda c: self._rank(c, project_type))
+                caught_up = _as_utc(native.date_published) >= _as_utc(floor.date_published)
+                (self.native_available if caught_up else self.native_behind)[project_id] = native.version_id
         best = min(pool, key=lambda c: self._rank(c, project_type)) if pool else floor
         if not self.request.target.allows(best, project_type):
             self.excepted.add(project_id)
@@ -538,6 +574,42 @@ class _Run:
                                          detail=f"{candidate.version_id} no tiene archivo"))
         return candidate
 
+    def _native_parent(self, requester: str) -> bool:
+        """Whether the requirement comes from a mod chosen natively (not the admin, not a bridged mod)."""
+        parent = self.chosen.get(requester)
+        return parent is not None and self.request.target.via(
+            parent.candidate, self.catalog.types.get(requester, "mod")) is None
+
+    def _bridge_channel(self, project_id: str, project_type: str) -> list[Candidate]:
+        """A bridge's own mod takes the channel the bridge table accepts for it (Connector is only
+        ever beta), whatever the pack's channels."""
+        target = self.request.target
+        for active in target._active_bridges():
+            for companion, channel in companions(active, target.game_version):
+                if companion == project_id:
+                    limit = CHANNEL_RANK.get(channel, 0)
+                    return [c for c in self.catalog.by_project[project_id] if target.fits(c, project_type)
+                            and CHANNEL_RANK.get(c.version_type, 99) <= limit]
+        return []
+
+    def _bridge_problems(self) -> None:
+        """What the bridges in use need and the resolution never adds itself (d-7985ee-80ee9a): each
+        companion missing, and Fabric API next to Connector."""
+        target = self.request.target
+        used = {target.via(c.candidate, self.catalog.types.get(p, "mod")) for p, c in self.chosen.items()} - {None}
+        for key in sorted(k for k in used if k is not None):
+            found = find_bridge(key, target.loader, target.game_version)
+            if found is None:
+                continue
+            for companion, _ in companions(found, target.game_version):
+                if companion not in self.chosen:
+                    self.problems.append(Problem(kind="bridge_missing", project_id=companion,
+                        detail=f"{found.label} necesita {companion} para correr los mods de {found.guest}"))
+        if "connector" in target.bridges and FABRIC_API in self.chosen and find_bridge(
+                "connector", target.loader, target.game_version) is not None:
+            self.problems.append(Problem(kind="bridge_conflict", project_id=FABRIC_API,
+                detail="Fabric API no convive con Forgified Fabric API, que Connector usa en su lugar"))
+
     def _only_bridged(self, project_id: str) -> bool:
         """Whether every known version of the project that fits runs only through a bridge."""
         kind = self.catalog.types.get(project_id, "mod")
@@ -573,6 +645,9 @@ class _Run:
             if substitute is None:
                 return []
             return [(substitute, None, parent, f"reemplaza a {project_id}, requerida por {parent}")]
+        for active in self.request.target._active_bridges():
+            if project_id is not None and project_id in REPLACES.get(active.key, {}):
+                project_id, version_id = REPLACES[active.key][project_id], None
         if project_id is None and version_id is None:
             self.problems.append(Problem(kind="unresolvable", project_id=None, requested_by=_asked(parent), detail=(
                 f"{parent} requiere una dependencia sin proyecto ni versión ({dependency.file_name})")))
@@ -613,11 +688,13 @@ class _Run:
             loaders = [l for l in chosen.candidate.loaders if l in SHADER_LOADER_MODS]
             if loaders and not any(SHADER_LOADER_MODS[l] in self.chosen for l in loaders):
                 self.suggested.setdefault(SHADER_LOADER_MODS[loaders[0]], []).append(project_id)
+        self._bridge_problems()
         suggestions = [Suggestion(project_id=p, requested_by=r) for p, r in self.suggested.items()
                        if p not in self.chosen and not self._only_bridged(p)]
         return Lock(entries=entries, problems=self.problems, suggestions=suggestions,
                     needs_projects=self.needs_projects, needs_types=self.needs_types,
                     needs_versions=self.needs_versions, needs_bridged=self.needs_bridged,
+                    native_available=self.native_available, native_behind=self.native_behind,
                     excepted=[p for p in self.chosen if p in self.excepted])
 
 

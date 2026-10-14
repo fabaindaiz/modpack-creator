@@ -489,3 +489,18 @@ def test_a_mod_with_an_exception_already_on_a_stable_does_not_hear_of_betas(mong
         return await make(api).compute(bundle_id)
 
     assert mongo(scenario).updates == []
+
+
+@pytest.mark.network
+def test_a_bridged_mod_is_checked_for_updates_through_its_own_way(mongo: MongoRunner) -> None:
+    """Batch C (d-7985ee-7e602f): a safe update keeps the way the mod is installed by; one through
+    Kilt asks Modrinth for its Forge versions, not the pack's Fabric ones."""
+    async def scenario() -> FakeModrinth:
+        api = FakeModrinth({})
+        bridged = entry("K", "k1", "1").model_copy(update={"via": "kilt"})
+        bundle_id = await bundle_with([entry("A", "a1", "1"), bridged])
+        await make(api).compute(bundle_id)
+        return api
+
+    [call] = mongo(scenario).calls
+    assert {item["hash"]: item["loaders"] for item in call} == {"h-A": ["fabric"], "h-K": ["forge"]}
