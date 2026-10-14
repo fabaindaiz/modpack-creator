@@ -148,7 +148,7 @@ class FakeModpack:
         self._record("decisions_set", bundle_id, decisions, actor)
         return self.bundle
 
-    async def bundle_update(self, bundle_id: str, patch: Any, actor: Actor) -> ModpackBundle:
+    async def bundle_update(self, bundle_id: str, patch: Any, actor: Actor, confirm_downgrade: bool = False) -> ModpackBundle:
         self._record("bundle_update", bundle_id, patch, actor)
         return self.bundle
 
@@ -2664,3 +2664,63 @@ def test_every_table_cell_carries_its_header_for_the_phone(path: str, cells: int
     # B4 (d-7985ee-937ca8): below sm: each row is a card, its cells labelled by their header.
     client, _, _ = setup()
     assert assert_cells_labelled(client.get(path).text) >= cells
+
+
+# Loaders secundarios (batch C; d-7985ee-a8d395, d-7985ee-45c2ba).
+
+
+def bridges_form(text: str) -> str:
+    start = text.index('id="bridges"')
+    start = text.rindex("<form", 0, start)
+    return text[start:text.index("</form>", start)]
+
+
+def test_channels_offer_the_bridges_of_the_pack_s_loader_and_version() -> None:
+    client, modpack, _ = setup()  # Fabric 1.21.1: Kilt
+    form = bridges_form(client.get(f"/modpacks/{BUNDLE_ID}").text)
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/bridges"' in form and 'name="bridge" value="kilt"' in form
+    shown = said(form)
+    assert "Loaders secundarios" in shown and "Usar mods de Forge (vía Kilt)" in shown and "experimental" in shown
+    assert "checked" not in form[form.index('value="kilt"'):].split(">")[0]
+
+
+def test_a_pack_whose_version_has_no_bridge_offers_none() -> None:
+    client, modpack, _ = setup()
+    modpack.bundle = modpack.bundle.model_copy(update={"version": "1.21"})
+    assert 'id="bridges"' not in client.get(f"/modpacks/{BUNDLE_ID}").text
+
+
+def test_saving_the_bridges_patches_the_pack() -> None:
+    client, modpack, _ = setup()
+    response = client.post(f"/modpacks/{BUNDLE_ID}/bridges", headers=HTMX, data={"bridge": "kilt"})
+    assert response.status_code == 200
+    patch = call(modpack, "bundle_update")[2]
+    assert patch.secondary_loaders == ["kilt"]
+    modpack.calls.clear()
+    client.post(f"/modpacks/{BUNDLE_ID}/bridges", headers=HTMX, data={})
+    assert call(modpack, "bundle_update")[2].secondary_loaders == []
+
+
+def test_a_bridge_kept_for_another_version_says_it_has_no_effect() -> None:
+    client, modpack, _ = setup()
+    modpack.bundle = modpack.bundle.model_copy(update={"version": "1.20.1", "secondary_loaders": ["kilt", "old"]})
+    form = bridges_form(client.get(f"/modpacks/{BUNDLE_ID}").text)
+    assert 'value="kilt" checked' in form
+    modpack.bundle = modpack.bundle.model_copy(update={"version": "1.21", "secondary_loaders": ["kilt"]})
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert "Kilt está activo, pero no sirve en 1.21: no tiene efecto." in visible(text)
+
+
+def test_v1_patch_turns_a_bridge_on() -> None:
+    """Batch C: `/v1` sets the pack's bridges through the same patch, checked by the service."""
+    from fastapi import FastAPI
+    from src.dependences import get_current_actor
+    from src.routers.v1 import include_routers_v1
+
+    _, modpack, _ = setup()
+    app = FastAPI()
+    include_routers_v1(app)
+    app.dependency_overrides[get_current_actor] = lambda: EDITOR
+    v1 = TestClient(app, base_url="https://testserver")
+    assert v1.patch(f"/v1/modpack/{BUNDLE_ID}", json={"secondary_loaders": ["kilt"]}).status_code == 200
+    assert call(modpack, "bundle_update")[2].secondary_loaders == ["kilt"]

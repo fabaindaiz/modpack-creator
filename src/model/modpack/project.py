@@ -46,6 +46,8 @@ class ModpackBundlePatch(BaseModel):
     pins: Optional[dict[str, Optional[str]]] = None
     replacements: Optional[dict[str, Optional[str]]] = None
     server_decisions: Optional[dict[str, Optional[bool]]] = None
+    # The bridges turned on (batch C, d-7985ee-a8d395): the whole list is replaced.
+    secondary_loaders: Optional[list[str]] = None
 
 # The fields of ModpackBundlePatch written key by key, and those where a null value removes the key.
 BUNDLE_KEYED_FIELDS = ("pins", "replacements", "server_decisions")
@@ -83,6 +85,11 @@ class ModpackBundle(Document):
     # admin's choice, or the version a server import found. It only has an effect while none of the
     # project's versions fits in `channels` (decided by the owner, 2026-10-09).
     channel_exceptions: dict[str, str] = Field(default_factory=dict)
+    # The bridges the pack turned on (batch C, d-7985ee-a8d395): keys of src/library/bridges.py.
+    # Kept when the Minecraft version changes; only those that apply to it take effect.
+    secondary_loaders: list[str] = Field(default_factory=list)
+    # Mods moved to their native versions («Pasar a nativa», d-7985ee-8e5f9e).
+    native_only: list[str] = Field(default_factory=list)
 
     # Build pointers (i-7985ee-098611): latest follows the newest build; recommended moves only
     # when the admin moves it, and going back is moving it to an older build.

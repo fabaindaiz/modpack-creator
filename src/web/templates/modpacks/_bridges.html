@@ -1,0 +1,25 @@
+{# Loaders secundarios (batch C; d-7985ee-a8d395, d-7985ee-45c2ba): the bridges the pack's loader and
+   Minecraft version can turn on, and those kept from another version that have no effect now. Shown
+   only when there is something to say. Needs `bundle_id`, `bundle`, `bridges` and `bridges_idle`. #}
+{% import "_macros.html" as ui %}
+{% if bridges or bridges_idle %}
+<form id="bridges" hx-post="/modpacks/{{ bundle_id }}/bridges" hx-target="#bridges" hx-swap="outerHTML"
+  class="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+  <h3 class="text-sm font-semibold">Loaders secundarios</h3>
+  {% for found in bridges %}
+  <label class="flex items-start gap-2 text-sm">
+    <input type="checkbox" name="bridge" value="{{ found.key }}"{% if found.key in bundle.secondary_loaders %} checked{% endif %}
+      class="mt-0.5 size-4 rounded border-zinc-300 text-emerald-600 focus-visible:outline-2 focus-visible:outline-emerald-600 dark:border-zinc-700">
+    <span>
+      Usar mods de {{ found.guest | capitalize }} (vía {{ found.label }})
+      {% if found.experimental %}{{ ui.badge("experimental", "warning") }}{% endif %}
+      <span class="block text-xs text-zinc-500 dark:text-zinc-400">Los mods nativos siempre van primero; lo que va por el puente se elige a propósito y pide confirmar lo que agrega.</span>
+    </span>
+  </label>
+  {% endfor %}
+  {% for label in bridges_idle %}
+  <p class="text-xs text-amber-800 dark:text-amber-300">{{ label }} está activo, pero no sirve en {{ bundle.version }}: no tiene efecto.</p>
+  {% endfor %}
+  {% if bridges %}{{ ui.button("Guardar loaders secundarios", type="submit", kind="secondary") }}{% endif %}
+</form>
+{% endif %}

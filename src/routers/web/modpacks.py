@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Form, Query, Request
 from starlette.datastructures import FormData, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from src.exceptions import BuildBlocked, DowngradeRefused, HTTP_404_NOT_FOUND, HTTP_413_CONTENT_TOO_LARGE, HTTP_422_UNPROCESSABLE_ENTITY, QuotaExceeded, UpstreamError
+from src.library.bridges import BRIDGES, bridges_for
 from src.library.mod_filters import ModFilters, apply as filter_rows, counts as filter_counts
 from src.library.onboarding import PackFacts, fact, pack_steps, pending_count
 from src.library.resolution import ADMIN, Lock
@@ -200,6 +201,15 @@ def human_size(size: int) -> str:
         return f"{max(size, 0)} B"
     unit, divisor = ("KiB", 1024) if size < 1024 ** 2 else ("MiB", 1024 ** 2)
     return f"{size / divisor:.1f}".replace(".", ",") + f" {unit}"
+
+def _bridges_context(bundle: ModpackBundle) -> dict[str, Any]:
+    """What the pack's «Loaders secundarios» shows: the bridges its loader and version can turn on,
+    and the labels of those kept from another version that have no effect now (batch C)."""
+    loader = str(bundle.loader.value)
+    offered = bridges_for(loader, bundle.version)
+    labels = {b.key: b.label for b in BRIDGES if b.host == loader}
+    idle = [labels[k] for k in bundle.secondary_loaders if k in labels and not any(b.key == k for b in offered)]
+    return {"bridges": offered, "bridges_idle": idle}
 
 def _channels(request: Request, actor: Actor, bundle: ModpackBundle, bundle_id: str) -> Response:
     return render(request, "modpacks/_channels.html", actor, bundle_id=bundle_id, bundle=bundle, channel_names=CHANNELS)
@@ -473,7 +483,7 @@ async def modpack_detail(
         pending=pending_count((saved, context["mods"].stale) if saved else None), latest_build=bundle.latest_build,
         linked_servers=tuple((str(s.id), s.name) for s in servers),
         simulated=bundle.latest_build is not None and bundle.latest_build in simulated), operator=actor.is_operator)
-    return render(request, "modpacks/detail.html", actor, onboarding=onboarding, builds=builds, servers=servers, channel_names=CHANNELS,
+    return render(request, "modpacks/detail.html", actor, onboarding=onboarding, **_bridges_context(bundle), builds=builds, servers=servers, channel_names=CHANNELS,
                   pending=_has_pending((saved, context["mods"].stale) if saved else None),
                   next_servers=servers if fresh else None, human_size=human_size, nav_active="modpacks",
                   curseforge=importService.curseforge_enabled, **context)
@@ -600,6 +610,21 @@ async def modpack_channels(
     updated = await modpackService.bundle_update(
         bundle_id, ModpackBundlePatch(channels=[c for c in CHANNELS if c in chosen]), actor)
     return _channels(request, actor, updated, bundle_id)
+
+@router.post("/modpacks/{bundle_id}/bridges")
+@inject
+async def modpack_bridges(
+        bundle_id: str,
+        request: Request,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        ):
+    """Save the bridges the pack turns on (the checked boxes; none turns them all off, batch C).
+    The service checks each against the pack's loader."""
+    chosen = [str(v) for k, v in (await request.form()).multi_items() if k == "bridge"]
+    updated = await modpackService.bundle_update(bundle_id, ModpackBundlePatch(secondary_loaders=chosen), actor)
+    return render(request, "modpacks/_bridges.html", actor, bundle_id=bundle_id, bundle=updated,
+                  **_bridges_context(updated))
 
 @router.post("/modpacks/{bundle_id}/pins")
 @inject

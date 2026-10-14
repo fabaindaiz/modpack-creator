@@ -17,6 +17,7 @@ from src.library.mrpack import mrpack_index, write_mrpack
 from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink
 from src.database.jobs import JobDatabase
 from src.model.jobs import Job
+from src.library.bridges import BRIDGES, bridge as find_bridge
 from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Candidate, Catalog, Lock, ResolveRequest, Target, merge_replacements, request_digest, resolve
 from src.model.modpack import BUNDLE_KEYED_FIELDS, AvailableUpdate, LoaderVersion, UpdateCheck, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject, ModrinthVersion, ModrinthVersionList, VersionBrief
@@ -45,7 +46,7 @@ BLOCKED_BUILD_RECENT = timedelta(minutes=1)
 # One request decides at most this many mods: a bigger one is a mistake or abuse.
 MAX_DECISIONS = 500
 # Fields of a bundle that a patch may leave out but never set to null: the bundle would not load.
-BUNDLE_NOT_NULL = ("name", "description", "version", "loader", "channels", *BUNDLE_KEYED_FIELDS)
+BUNDLE_NOT_NULL = ("name", "description", "version", "loader", "channels", "secondary_loaders", *BUNDLE_KEYED_FIELDS)
 
 # What a catalog job hears as it goes: what it processes, done and total.
 Report = Callable[[str, int, int], Awaitable[None]]
@@ -387,6 +388,15 @@ class ModpackService():
             for key in sent.get(name) or {}:
                 if not MODRINTH_ID.fullmatch(key):
                     raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{key}' no es un id de proyecto de Modrinth")
+        if sent.get("secondary_loaders"):
+            # Only the bridges of the pack's loader (batch C, d-7985ee-a8d395); one that does not
+            # cover its Minecraft version is kept and has no effect until it does.
+            current = await self.modpackDB.bundle_get(bundle_id)
+            loader = str((patch.loader or current.loader).value)
+            known = {b.key for b in BRIDGES if b.host == loader}
+            unknown = [k for k in sent["secondary_loaders"] if k not in known]
+            if unknown:
+                raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{unknown[0]}' no es un puente para {loader}")
         new_pins = {p: v for p, v in (sent.get("pins") or {}).items() if v is not None}
         if new_pins and not confirm_downgrade:
             downgrades = await self.pin_downgrades(await self.modpackDB.bundle_get(bundle_id), new_pins)
@@ -1068,7 +1078,10 @@ class ModpackService():
         floors = await self._floors(bundle)
         return ResolveRequest(
             target=Target(game_version=bundle.version, loader=str(bundle.loader.value),
-                          channels=frozenset(bundle.channels)),
+                          channels=frozenset(bundle.channels),
+                          bridges=frozenset(k for k in bundle.secondary_loaders
+                                            if find_bridge(k, str(bundle.loader.value), bundle.version))),
+            native_only=set(bundle.native_only),
             projects=[p.project_id for p in bundle.projects],
             origins={p.project_id: p.origin.value for p in bundle.projects},
             pins=bundle.pins, server_decisions=bundle.server_decisions, channel_exceptions=bundle.channel_exceptions,
@@ -1234,6 +1247,24 @@ class ModpackService():
                         catalog.add(candidate(version))
             if cold and report is not None:
                 await report("Versiones de los mods", fetched_cold, len(cold))
+        if lock.needs_bridged:
+            bridged = sorted(lock.needs_bridged)
+            guests = sorted(request.target.loaders_with_bridges("mod") - request.target.loaders("mod"))
+            bridged_lists = {r.project_id: r for r in await self.modrinthDB.version_lists_find(bridged, game_version)
+                             if r.loaders == guests}
+            if local_only and any(i not in bridged_lists for i in bridged):
+                raise _NeedsModrinth()
+            for project_id in bridged:
+                bridged_list = bridged_lists.get(project_id)
+                if bridged_list is not None:
+                    versions = await self.modrinthDB.version_find_listed(project_id, bridged_list.version_ids)
+                else:
+                    versions = await self._versions_fetch(project_id, guests, game_version)
+                    checked.add(project_id)
+                catalog.bridged_loaded.add(project_id)
+                for version in versions:
+                    if game_version in version.game_versions and set(guests) & set(version.loaders):
+                        catalog.add(candidate(version))
         if lock.needs_versions:
             asked = sorted(lock.needs_versions)
             stored_versions = await self.modrinthDB.version_find_by_version_ids(asked)
