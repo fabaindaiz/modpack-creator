@@ -168,3 +168,16 @@ def test_a_mod_already_installed_native_cannot_go_back_to_the_bridge(mongo: Mong
     before, after, refused, kept = mongo(scenario)
     assert before == {"F"} and after == set()
     assert refused is not None and refused[0] == 422 and "nativa" in refused[1] and kept == ["F"]
+
+
+def test_an_installed_version_the_catalog_does_not_know_does_not_offer_going_back(mongo: MongoRunner) -> None:
+    """Review of the minors (minor 4): a version nobody can say is bridged may be native, so going back
+    is neither offered nor done (it fails closed)."""
+    async def scenario() -> Any:
+        s = Scenario(FakeModrinth())
+        bundle_id = await bridged_pack(s, "none")
+        await s.modpackDB.bundle_native_only_set(bundle_id, "F", True)
+        await s.built(bundle_id, entry("F", "9.9", origin="admin"))
+        return (await s.service.mod_list(bundle_id, check=None)).via_back
+
+    assert mongo(scenario) == set()

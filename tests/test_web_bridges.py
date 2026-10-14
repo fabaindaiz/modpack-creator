@@ -257,4 +257,25 @@ def test_volver_al_puente_only_while_the_installed_version_still_runs_through_it
     back = text.split('data-project="P1"')[1].split("</li>")[0]
     built = text.split('data-project="P2"')[1].split("</li>")[0]
     assert "Volver al puente" in said(back) and 'name="native" value="0"' in back
-    assert "ya instalada nativa" in said(built) and "<form" not in built
+    assert "ya instalado en su versión nativa" in said(built) and "<form" not in built
+
+
+# The review of the minors (2026-10-14).
+
+
+def test_turning_a_bridge_back_on_from_a_card_redraws_the_bridges_section_too() -> None:
+    """Important 1: the section's checkbox must show the bridge on, or its next save turns it off."""
+    client, modpack, _ = setup()
+    bridged(modpack, bridges=())
+    response = client.post(f"/modpacks/{BUNDLE_ID}/bridges", headers=HTMX,
+                           data={"bridge": "connector", "contexto": "problemas"})
+    section = response.text.split('<form id="bridges"')[1].split("</form>")[0]
+    assert 'hx-swap-oob="true"' in section and 'value="connector" checked' in section
+
+
+def test_saving_the_bridges_redraws_the_builds_too() -> None:
+    """Minor 2: like every answer that resolved again, #builds says whether a build is the next step."""
+    client, modpack, _ = setup()
+    bridged(modpack)
+    response = client.post(f"/modpacks/{BUNDLE_ID}/bridges", headers=HTMX, data={"bridge": "connector"})
+    assert '<div id="builds" class="space-y-3" hx-swap-oob="true"' in response.text

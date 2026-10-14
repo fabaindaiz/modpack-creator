@@ -606,7 +606,8 @@ class ModpackService():
         """
         bundle = await self.modpackDB.bundle_get(bundle_id)
         projects = await self._modrinth_projects(refs)
-        for found in projects:
+        # Only an add by hand (review of the minors): what a pack brings enters, as a conflict.
+        for found in projects if origin == ProjectOrigin.admin else []:
             await self._refuse_replaced(bundle, found)
         added = await self.modpackDB.bundle_projects_add(
             bundle_id, [PackProject(project_id=p.project_id, origin=origin) for p in projects])
@@ -614,19 +615,22 @@ class ModpackService():
                                 {"refs": list(refs), "origin": origin.value})
         return added
 
-    async def _installed_native(self, bundle: ModpackBundle, project_ids: Iterable[str]) -> set[str]:
+    async def _installed_native(self, bundle: ModpackBundle, project_ids: Iterable[str],
+                                sources: Optional[dict[str, dict[str, list[str]]]] = None) -> set[str]:
         """Of these projects, those that the build in force or a linked server already runs in a native
         version: going back to the bridge would be a change of way the resolution never makes (review
-        of batch C). Only MongoDB is read; a version the catalog lacks counts as not native."""
+        of batch C). Only MongoDB is read; a version the catalog lacks may be native, so it counts as
+        one (it fails closed). `sources`, when the caller already read them (`_floor_sources`)."""
         wanted = set(project_ids)
         if not wanted:
             return set()
-        sources = {p: versions for p, versions in (await self._floor_sources(bundle)).items() if p in wanted}
+        read = sources if sources is not None else await self._floor_sources(bundle)
+        installed = {p: versions for p, versions in read.items() if p in wanted}
         found = {v.version_id: v for v in await self.modrinthDB.version_find_by_version_ids(
-            sorted({v for versions in sources.values() for v in versions}))}
+            sorted({v for versions in installed.values() for v in versions}))}
         native = Target(game_version=bundle.version, loader=str(bundle.loader.value)).loaders("mod")
-        return {p for p, versions in sources.items()
-                if any(v in found and native & set(found[v].loaders) for v in versions)}
+        return {p for p, versions in installed.items()
+                if any(v not in found or native & set(found[v].loaders) for v in versions)}
 
     async def _refuse_replaced(self, bundle: ModpackBundle, found: ModrinthProject) -> None:
         """A project an active bridge replaces (Fabric API with Connector, d-7985ee-d7fcae) would only
@@ -807,7 +811,9 @@ class ModpackService():
         for found_version in await self.modrinthDB.version_find_for_game_version([*pack, *dependencies], bundle.version):
             for_version.setdefault(found_version.project_id, []).append(found_version)
         # A pin can go back after it was set, when the floor rises; the page never asks Modrinth.
-        pins_back = await self.pin_downgrades(bundle, bundle.pins, fetch=False) if bundle.pins else {}
+        # The build in force and the servers, read once for the pins and the mods moved to native.
+        sources = await self._floor_sources(bundle) if bundle.pins or bundle.native_only else {}
+        pins_back = await self.pin_downgrades(bundle, bundle.pins, fetch=False, sources=sources) if bundle.pins else {}
         # What each row's pin select offers (A3): the catalog's list for each row's target and its
         # versions, as briefs, in two queries for the whole page, never Modrinth. Only the list of
         # the row's own loaders (final review, 2026-10-13: every list was read whole).
@@ -896,7 +902,7 @@ class ModpackService():
         return ModList(rows=rows, resolution=resolution, stale=stale,
                        icons_missing=sum(1 for r in rows if r.icon_url is None), titles=titles, orphan_pins=orphan_pins,
                        problem_cards=problem_cards,
-                       via_back=set(bundle.native_only) - await self._installed_native(bundle, bundle.native_only))
+                       via_back=set(bundle.native_only) - await self._installed_native(bundle, bundle.native_only, sources))
 
     async def project_versions(self, bundle_id: str, project_id: str) -> list[VersionOption]:
         """
@@ -1300,13 +1306,14 @@ class ModpackService():
         return found
 
     async def pin_downgrades(self, bundle: ModpackBundle, pins: Mapping[str, str],
-                             fetch: bool = True) -> dict[str, PinDowngrade]:
+                             fetch: bool = True,
+                             sources: Optional[dict[str, dict[str, list[str]]]] = None) -> dict[str, PinDowngrade]:
         """The pins (project id -> version id) before their mod's floor (F27, d-7985ee-322302): the
         floor is the newest of the versions the build in force and the linked servers run that is
         for the pack's Minecraft version, and a pin goes back when it was published before it (a pin
         for another Minecraft version or loader is a branch change, not a step back). With `fetch`,
         a version the catalog lacks is read from Modrinth; without it, that pin is left out."""
-        sources = await self._floor_sources(bundle)
+        sources = sources if sources is not None else await self._floor_sources(bundle)
         wanted = {p: v for p, v in pins.items() if p in sources}
         if not wanted:
             return {}

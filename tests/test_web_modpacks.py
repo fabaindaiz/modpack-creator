@@ -154,6 +154,9 @@ class FakeModpack:
 
     async def bundle_update(self, bundle_id: str, patch: Any, actor: Actor, confirm_downgrade: bool = False) -> ModpackBundle:
         self._record("bundle_update", bundle_id, patch, actor)
+        # Like the service: the fields the patch sets.
+        if hasattr(patch, "model_dump"):
+            self.bundle = self.bundle.model_copy(update=patch.model_dump(exclude_unset=True))
         return self.bundle
 
     async def pin_set(self, bundle_id: str, project_id: str, version_id: str, actor: Actor,

@@ -1,10 +1,11 @@
 {# Loaders secundarios (batch C; d-7985ee-a8d395, d-7985ee-45c2ba): the bridges the pack's loader and
    Minecraft version can turn on, and those kept from another version that have no effect now. Shown
    only when there is something to say. Needs `bundle_id`, `bundle`, `bridges` and `bridges_idle`; after a
-   save, `mods_oob` and the #mods context. #}
+   save, `mods_oob` and the #mods context; `bridges_oob` sends the section out of band (after a card turned
+   a bridge back on). #}
 {% import "_macros.html" as ui %}
 {% if bridges or bridges_idle %}
-<form id="bridges" hx-post="/modpacks/{{ bundle_id }}/bridges" hx-target="#bridges" hx-swap="outerHTML"
+<form id="bridges" hx-post="/modpacks/{{ bundle_id }}/bridges" hx-target="#bridges" hx-swap="outerHTML"{% if bridges_oob is defined and bridges_oob %} hx-swap-oob="true"{% endif %}
   class="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
   <h3 class="text-sm font-semibold">Loaders secundarios</h3>
   {% for found in bridges %}

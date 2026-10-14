@@ -153,3 +153,19 @@ def test_fabric_api_by_hand_in_a_pack_with_connector_is_refused_and_names_its_re
     assert [code for code, _ in refused] == [422, 422]
     assert all("Forgified Fabric API" in detail for _, detail in refused)
     assert projects == ["N", "F"]
+
+
+def test_fabric_api_that_a_pack_brings_still_enters_as_a_conflict(mongo: MongoRunner) -> None:
+    """Review of the minors (minor 5): only an add by hand is refused (spec: «agregado a mano»); what a
+    pack brings enters as always and the resolution says `bridge_conflict`, like replacing its content."""
+    from src.library.bridges import FABRIC_API
+
+    async def scenario() -> Any:
+        fake = companions_api()
+        fake.projects[FABRIC_API] = project(FABRIC_API, "Fabric API", loaders=("fabric",), game_versions=("1.21.1",))
+        s = Scenario(fake)
+        bundle_id = await neoforge_pack(s, bridges=("connector",))
+        await s.service.project_add(bundle_id, [FABRIC_API], ProjectOrigin.pack, EDITOR)
+        return [p.project_id for p in (await s.modpackDB.bundle_get(bundle_id)).projects]
+
+    assert mongo(scenario) == ["N", "F", FABRIC_API]

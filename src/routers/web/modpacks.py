@@ -721,12 +721,25 @@ async def modpack_bridges(
     chosen = [str(v) for k, v in (await request.form()).multi_items() if k == "bridge"]
     updated = await modpackService.bundle_update(bundle_id, ModpackBundlePatch(secondary_loaders=chosen), actor)
     if contexto is not None:
-        return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto,
-                            "Puente reactivado")
+        acted = await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto,
+                             "Puente reactivado")
+        # The section too, out of band: its checkbox must show the bridge on, or its next save turns
+        # it off again (review of the minors, 2026-10-14).
+        section = render(request, "modpacks/_bridges.html", actor, bundle_id=bundle_id, bundle=updated,
+                         bridges_oob=True, **_bridges_context(updated))
+        headers = {k: v for k, v in acted.headers.items() if k.lower() != "content-length"}
+        return Response(content=bytes(acted.body) + bytes(section.body), status_code=acted.status_code,
+                        headers=headers, media_type="text/html")
     await modpackService.resolve(bundle_id, actor)
     context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request), _filters_from(request))
-    return render(request, "modpacks/_bridges.html", actor, **{**context, "bundle_id": bundle_id, "bundle": updated,
-                                                               "mods_oob": True, **_bridges_context(updated)})
+    mods = context["mods"]
+    pending = _has_pending((mods.resolution, mods.stale) if mods.resolution else None)
+    lock = mods.resolution.lock if mods.resolution else None
+    ready = lock is not None and not mods.stale and not pending and not lock.problems and lock.complete
+    return render(request, "modpacks/_bridges.html", actor, **{
+        **context, "bundle_id": bundle_id, "bundle": updated, "mods_oob": True, **_bridges_context(updated),
+        # #builds too, like every answer that resolved again (_resolved).
+        "builds_oob": True, "builds": await modpackService.build_find(bundle_id), "pending": pending, "ready": ready})
 
 @router.post("/modpacks/{bundle_id}/pins")
 @inject

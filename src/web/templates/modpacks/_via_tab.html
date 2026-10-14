@@ -35,7 +35,7 @@
     <div class="min-w-0 flex-1">
       <span class="font-medium break-words">{{ ui.mod_link(project_id, mods.titles.get(project_id, project_id), pack=bundle_id) }}</span>
       {# Back to the bridge only while what is installed still runs through it (review of batch C). #}
-      <span class="block text-xs text-zinc-500 dark:text-zinc-400">{{ "pasó a nativa" if project_id in mods.via_back else "ya instalada nativa" }}</span>
+      <span class="block text-xs text-zinc-500 dark:text-zinc-400">{{ "pasó a nativa" if project_id in mods.via_back else "ya instalado en su versión nativa" }}</span>
     </div>
     {% if project_id in mods.via_back %}
     <form hx-post="/modpacks/{{ bundle_id }}/via" hx-target="#mods" hx-swap="outerHTML">
