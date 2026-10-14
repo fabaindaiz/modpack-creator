@@ -51,6 +51,20 @@ def test_each_loader_has_its_dependency_key(loader: str, key: str) -> None:
     assert index(loader=loader, loader_version="1.0")["dependencies"] == {"minecraft": "26.3", key: "1.0"}
 
 
+def test_a_build_with_a_bridged_mod_names_only_the_pack_s_loader() -> None:
+    """Batch C (spec §5): the bridge and the bridged mod travel as mods; the guest loader is never a dependency."""
+    from src.library.bridges import CONNECTOR, FORGIFIED_FABRIC_API
+
+    bridged = entry("fabricmod").model_copy(update={"via": "connector"})
+    built = index(entry("nativemod"), bridged, entry(CONNECTOR), entry(FORGIFIED_FABRIC_API),
+                  loader="neoforge", loader_version="21.1.1")
+    assert built["dependencies"] == {"minecraft": "26.3", "neoforge": "21.1.1"}
+    assert [f["path"] for f in built["files"]] == ["mods/nativemod.jar", "mods/fabricmod.jar",
+                                                   f"mods/{CONNECTOR}.jar", f"mods/{FORGIFIED_FABRIC_API}.jar"]
+    assert built["files"][1]["env"] == {"client": "required", "server": "required"}
+    assert validate_index(built) == []
+
+
 def test_each_type_goes_to_its_folder() -> None:
     built = index(entry("m"), entry("s", type="shader", env=None, server="exclude", filename="s.zip"),
                   entry("r", type="resourcepack", env=None, server="exclude", filename="r.zip"),
