@@ -569,6 +569,15 @@ charged them for the privilege. The line is not subtle:
 | **Fact interview** | facts only the human holds | your reading stated, for them to confirm or correct; no recommendation, since the fact is theirs; one fact per question, since a two-part question gets an answer that fits either part; a reason they did not give is never recorded |
 | **Parked** | while working alone, or mid-work with no channel opened | decide what is yours; write the rest to the roadmap as questions with a recommendation; raise them all at the next report |
 
+**The three parts do different work, and a procedure that lists them without
+saying so is answered as a formality.** *Together*, because a question arriving
+mid-way costs the human a context switch they had already paid for. *Before the
+writing*, because an answer that arrives after it turns into a rewrite. *Priced*,
+because an option without its cost is not a choice: the human is comparing two
+unknowns and will take whichever was described more confidently — which means the
+agent's preference decided. With the price, the human overrules the recommendation
+exactly when their own constraints differ, which is the only reason to ask.
+
 Batch before writing, before an expensive or irreversible step, and before the
 human leaves you to work alone: a question that arrives in the middle of the work
 has usually been answered by the code. It has not when a measurement overturned
@@ -1251,7 +1260,13 @@ generated files and on the guards (hooks, settings, git hooks), so an intended c
 passes with one confirmation and an accidental one is seen; originals, incoming
 material, the carrier's own fields and proposals get no rule. An exception is a path
 left without a rule, never an allow, since a deny at any scope wins; a host may
-consult path rules for its edit tool only, so write them for that tool.
+consult path rules for its edit tool only, so write them for that tool. **Which is
+why a shell command, a script or a tool that regenerates the file writes it with no
+confirmation at all**: the rule exists for the edit tool and sees nothing else. Say
+so in so many words in the standing rules a delegate brief carries — the files on the ask list are changed
+with the edit tool, never with `sed`, a redirection or a generating command — and
+where a regenerating tool would overwrite one, either the human runs it or a diff
+is shown before anything is committed.
 
 **Deny per destructive subcommand, and know what a deny refuses.** A prefix rule
 catches every form of its subcommand, the read-only ones too: a deny on a stash
@@ -1271,6 +1286,15 @@ one machine's user-level file, loses wherever it is not loaded. Set
 versions also read), and back it with a check that
 fails on an attribution trailer: a `commit-msg` hook, or the gate over
 `git log --format=%B <base>..HEAD`.
+
+**The author and committer identity is a second channel the setting does not
+reach.** In a fresh environment the assistant's identity can be the configured git
+user, so commits carry it as their author with no trailer at all and a trailer
+check passes: one repository had to rewrite its history twice, once for the
+trailers and again for the authors. So the gate also reads the author and committer
+of the unpublished range (`git log --format='%an <%ae>|%cn <%ce>' <base>..HEAD`)
+against who is allowed to author, and a session in a new environment sets the
+identity before its first commit.
 
 Commit this file; keep `settings.local.json` out of git. The `.claude/`
 directory is how the repo explains itself — it belongs to the team.
@@ -2028,15 +2052,27 @@ whole limit asleep. Keep the machine awake for a long run (on mains power, lid
 open, a keep-awake held), or attend it.
 
 - **A gate under the foreground ceiling** runs in the foreground, with a timeout
-  above its usual time. **A longer one** runs in the background with a timeout of
-  about three times its usual time, and the delegate ends its turn until notified;
-  never a sleep loop, and printing progress resets nothing.
+  above its usual time. **A longer one**, *for the main session*, runs in the
+  background with a timeout of about three times its usual time, ending the turn
+  until notified; never a sleep loop, and printing progress resets nothing.
+  **For a delegate this is the wrong default**: its report is its final message, so
+  ending its turn ends the task, and a wait on a watcher is what a stall watchdog
+  cuts. A delegate splits the run into pieces that each fit under the foreground
+  ceiling — by test file — with the timeout at its maximum and the output in its
+  scratch file, and reports a result per piece. Measured in one repository: three
+  delegates cut while waiting and three background suites dead before finishing,
+  then none across the two following sessions.
 - **Gates are serialised**, one per machine behind a lock (`flock`, `lockf`), or
   each delegate stops at *staged, message saved* and the coordinator runs them one
   at a time: the gates, not the agents, compete for the machine.
-- **Every delegate brief carries three lines**: its scratch directory and its
-  done-state; how to run the gate, and the lock; and that its report is its final
-  message, which is the channel a harness keeps.
+- **Every delegate brief carries four lines**, beside the standing rules it repeats: its scratch directory and its
+  done-state; how to run the gate, and the lock; that its report is its final
+  message, which is the channel a harness keeps; and that **a commit is chained on
+  the check's own exit status, never through a filter** — a delegate that commits
+  mid-work never loads the closing procedure, and a check piped into `tail` inside
+  an `&&` chain returns the filter's status, so a red check lets the commit
+  through. Where a gate is composed by hand, make it one script under
+  `set -euo pipefail` so nobody composes it again.
 - **A stalled delegate is not a failed task**: read its scratch directory and
   `git status`, then resume it by message. Check every report first-hand.
 

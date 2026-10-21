@@ -4,7 +4,7 @@ slug: "a-rewrite-cleans-only-what-refs-reach"
 topic: "evolving-contracts"
 claim: "Rewriting published history removes a line only from what branches and tags still reach: the forge keeps the old commits by hash and any clone that merges brings them back, so a published line is left and documented, and a rewrite, when chosen, is range-limited, leased and followed on every other machine."
 confidence: "reasoned"
-check: "before any rewrite: every machine has pushed, the server's refs and a mirror are saved, the range starts at the first offending commit, each branch is pushed with a lease on its old hash, and every other clone rebases or re-clones instead of merging"
+check: "before any rewrite: every machine has pushed, the server's refs and a mirror are saved, the range starts at the first offending commit, each branch is pushed with a lease on its old hash; the repository is not shallow (`git rev-parse --is-shallow-repository`; if it is, `git fetch --unshallow` first, or rewrite in a full clone) and each branch's commit count equals the full history's, because identical trees do not show a lost commit; and every other clone rebases or re-clones instead of merging"
 boundary: "A repository nobody else has cloned and the forge has not shown · a secret, which is rotated first and purged through the forge's own procedure, whatever the cost"
 cues: ["git rebase", "filter-branch", "force push", "force-with-lease", "amend", "rewrite history", "remove trailer", "co-authored-by", "git reset", "commit message", "published commits", "filter-repo", "reflog", "pushed branch"]
 ---

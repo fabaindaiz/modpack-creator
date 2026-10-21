@@ -125,7 +125,7 @@ chmod 600 docker/.env
 | Variable | Qué poner |
 |---|---|
 | `MONGO_VERSION` | `8.0` en una instalación nueva. Con datos existentes, la que los escribió ([`runbooks/migrar-mongo-a-volumen.md`](runbooks/migrar-mongo-a-volumen.md)) |
-| `MONGODB_PASSWORD` | la contraseña del usuario `mongoadmin`, la misma de `MONGODB_URI` |
+| `MONGODB_PASSWORD` | la contraseña del usuario `mongoadmin`, la misma de `MONGODB_URI`. Compose toma antes la de la shell: una `MONGODB_PASSWORD` exportada, aunque vacía, le gana a este archivo (`unset MONGODB_PASSWORD` antes de levantar) |
 | `MONGOWEB_PASSWORD` | la de mongo-express |
 | `API_BIND_IP` | la IP de LAN de **este** servidor por la que llega el proxy. La API se publica solo ahí |
 | `FORWARDED_ALLOW_IPS` | la IP de LAN **del proxy**: uvicorn solo confía en su `X-Forwarded-Proto` |

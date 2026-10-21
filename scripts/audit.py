@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import ast
 import re
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -193,6 +194,29 @@ def ungated_writes(source: str, name: str) -> list[str]:
     return found
 
 
+# Quien puede ser autor y committer de un commit de este repositorio: el dueño, el único autor
+# (d-7985ee-8b8db2). El bundle 0.0.32 suma este segundo canal a las líneas de atribución.
+AUTHORS = {"fabaindaiz <fabiandiaz@ug.uchile.cl>"}
+
+
+def commit_identities(log: list[str], allowed: set[str]) -> list[str]:
+    """Cada línea es `hash<TAB>autor<TAB>committer`; falla la que tenga otra identidad."""
+    failures = []
+    for line in log:
+        short, author, committer = line.split("\t")
+        for role, who in (("autor", author), ("committer", committer)):
+            if who not in allowed:
+                failures.append(f"commit {short}: {role} {who}, que no es el dueño del repositorio")
+    return failures
+
+
+def unpublished_log() -> list[str]:
+    """Los commits que ninguna rama remota tiene todavía (en CI, ninguno)."""
+    found = subprocess.run(["git", "log", "--format=%h%x09%an <%ae>%x09%cn <%ce>", "HEAD", "--not", "--remotes"],
+                           cwd=ROOT, capture_output=True, text=True, check=True)
+    return [line for line in found.stdout.splitlines() if line]
+
+
 def main() -> int:
     sources = {rel(p): p.read_text() for p in [ROOT / "main.py", *sorted((ROOT / "src").rglob("*.py")),
                                                *sorted((ROOT / "scripts").glob("*.py")),
@@ -217,6 +241,7 @@ def main() -> int:
         failures += retried_writes(text, name, IDEMPOTENT_POSTS)
     failures += stale_idempotent_posts(IDEMPOTENT_POSTS, clients)
     failures += ungated_writes(sources["src/library/api/client/pterodactyl.py"], "src/library/api/client/pterodactyl.py")
+    failures += commit_identities(unpublished_log(), AUTHORS)
     advisories: list[str] = []
 
     for line in advisories:

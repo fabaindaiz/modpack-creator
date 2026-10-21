@@ -36,6 +36,11 @@ docker exec modpack-mongodb mongosh --quiet -u mongoadmin -p "$MONGODB_PASSWORD"
   --authenticationDatabase admin --eval 'db.version()'
 ```
 
+**Ojo con la variable exportada:** mientras `MONGODB_PASSWORD` siga exportada en la shell, aunque
+esté vacía, docker compose la usa en lugar de la de `docker/.env` (la del entorno gana) y dice que
+falta, o arranca con otra. Antes de `./scripts/run.sh`, `./scripts/update.sh` o cualquier `docker
+compose`, `unset MONGODB_PASSWORD` (tropiezo del deploy del 2026-10-12).
+
 `MONGO_VERSION` será esa versión mayor y menor (por ejemplo `8.0`). **Nunca una menor**: MongoDB
 no admite bajar de versión.
 

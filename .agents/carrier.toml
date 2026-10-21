@@ -2,7 +2,7 @@
 carrier = "r-7985ee"
 adopted = "2026-10-01"
 upstream = "r-5ed7e8"
-harvested_through = "2026-10-12"
+harvested_through = "2026-10-21"
 adapted = [
   "AGENTS.md is the canonical root file and CLAUDE.md only imports it, so every assistant reads one source",
   "the gate is `hatch run gate` (pyproject.toml), run by CI and by scripts/check.sh; bundle.py runs inside that Python 3.12 environment, because the machine's default python3 is 3.9 and cannot import tomllib",
@@ -22,6 +22,8 @@ declined = [
 ]
 lineage = [
   "0.0.31 r-5ed7e8 2026-10-12",
+  "0.0.32 r-5ed7e8 2026-10-21",
+
 ]
 [skills]
 verification = "verify"

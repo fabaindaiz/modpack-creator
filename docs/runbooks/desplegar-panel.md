@@ -122,7 +122,7 @@ que hay que mirar antes de `./scripts/update.sh`:
    actualización real vieja no la tuviera, el panel la mostraría como simulación y no ofrecería su
    rollback. Con el `MONGODB_PASSWORD` de "1. Leer la versión que corre" de
    `migrar-mongo-a-volumen.md` (base `jobs`, colección `Job`, como las registra
-   `src/model/__init__.py`):
+   `src/model/__init__.py`), y con su `unset` antes de levantar nada (ese mismo paso dice por qué):
 
    ```bash
    docker exec modpack-mongodb mongosh --quiet -u mongoadmin -p "$MONGODB_PASSWORD" \

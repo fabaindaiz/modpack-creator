@@ -405,6 +405,14 @@ Add a `state-review` skill that runs on demand and answers:
 - **Is this repo's bundle behind the latest release?** If so, run the update
   invocation before the next significant piece of work, not after it.
 
+**A skill's own text never names this repository's directories.** Where a step needs
+them — the area guides to read, where the browser tests live — it says to read them
+from that skill's `LOCAL.md`, and falls back to finding the files when `LOCAL.md`
+says nothing. A path written into the skill goes stale the day a directory moves,
+and a skill installed from the bundle cannot be fixed here: its file is generated,
+and the permission rules ask before any skill file is edited. One carrier moved its
+web application and was left with two installed skills pointing at the old place.
+
 ---
 
 ## The session loop

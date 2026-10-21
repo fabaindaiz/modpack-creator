@@ -4,8 +4,8 @@ slug: "ratchet-in-a-pinned-environment"
 topic: "verification"
 claim: "Introduce a rule against an existing backlog as a ratchet that can only go down — violations listed inside the check, or an advisory with a written promotion condition — never as zero and never by disabling the rule; and pin the tools that produce the count."
 confidence: "measured"
-check: "the baseline has one home and lives inside the check; the counting tools are pinned"
-boundary: "A greenfield codebase that can hold zero from day one · hermetic builds, which already pay the pinning half · a backlog small enough to clear in the same change · a rule with legitimate exceptions, which needs an exemption mechanism instead · a rule with no correct, portable zero, which stays out of the blocking gate · a dedicated pinned measurement machine · a timeout, which is not a threshold"
+check: "the baseline has one home inside the check; the counting tools are pinned; the baseline is findings (file, rule, count), never one total, so an environment difference reads as a named rule in a named file; a pure rename and a pure block move each pass"
+boundary: "A greenfield codebase that can hold zero from day one · hermetic builds, which already pay the pinning half · a backlog small enough to clear in the same change · a rule with legitimate exceptions, which needs an exemption mechanism instead · a rule with no correct, portable zero, which stays out of the blocking gate · a dedicated pinned measurement machine · a timeout, which is not a threshold · an environment no machine can pin, where the gate compares branch against base measured together"
 cues: ["lint baseline", "existing violations", "ratchet", "noqa", "disable rule", "warnings count", "allowlist of violations", "pin version", "ruff", "eslint", "type check errors", "new rule", "advisory", "mypy baseline", "requirements pin"]
 ---
 

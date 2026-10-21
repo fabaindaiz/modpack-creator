@@ -50,8 +50,8 @@ pendientes, dejadas aquí por el dueño (2026-10-13):** los logs sin errores; un
 tres logins (fuera del grupo, editor, operador con una simulación; la simulación pide antes un
 servidor con modpack y build). Pasos: `docs/runbooks/desplegar-panel.md` §4. También: `docker/.env` y
 `.env.yaml` están con permisos 644 (legibles por cualquier usuario del servidor; la guía pide 600).
-Tropiezo del deploy, para la guía: un `MONGODB_PASSWORD` exportado vacío en la shell le gana a
-`docker/.env` y compose dice que falta.
+Tropiezo del deploy: un `MONGODB_PASSWORD` exportado vacío en la shell le gana a `docker/.env` y
+compose dice que falta (ya en la guía y en `migrar-mongo-a-volumen.md`, 2026-10-21).
 
 **2026-10-12, releases 0.3.0 y 0.3.1 en `main` (0.3.1 con tag `v0.3.1` desde el 2026-10-13; sin
 tag `v0.3.0` ni `v0.2.0`):** T1, T4 con la regla de no retroceder (d-7985ee-6dc34c), T3, T7, T6 (Prism) con el tope
@@ -1248,13 +1248,17 @@ Fricción vista al menos dos veces, con su costo.
   aserción, y recién después el cuerpo. **Propuesta, decisión del dueño:** escribir ese paso en
   `AGENTS.md` («Verificación») como el procedimiento para un test de base. Costo: una línea; nada lo
   hace cumplir (peldaño 1).
+  **Siguió (cosecha del 2026-10-21, leyendo el registro):** en las tandas A y sus menores, B y C hubo
+  más (en C, varias veces, y un test de base sin `@pytest.mark.network` que atrapó el conftest). La
+  propuesta sigue pendiente.
 - **Comandos que esperan stdin:** un heredoc canalizado a `cat` colgó a un subagente dos veces.
   Cuesta una sesión de subagente detenida a mano. Ya es regla en `AGENTS.md`.
   **La regla no basta (cierre del 2026-10-12, contado con `bundle.py count` en el registro):** después
   de escrita hubo heredocs en 2026-10-05 (el revisor hacia `cat`, el barrido hacia `python3`) y dos
   veces en 2026-10-12 (propuestas hacia `cat`; en la tanda 1, tres comandos y un heredoc vacío), y otra
   vez en 2026-10-13 (tanda A: dos heredocs vacíos, contados en s-7985ee-1602e4): tres sesiones seguidas
-  con al menos un incidente, siempre del agente principal, que conoce la regla. Ninguno
+  con al menos un incidente, siempre del agente principal, que conoce la regla. La cosecha del
+  2026-10-21 cuenta 5 de 5 sesiones del 2026-10-12 al 2026-10-14 (las tandas B y C suman dos). Ninguno
   colgó, pero es disciplina sin nada que la haga cumplir (peldaño 1). **Propuesta, decisión del dueño:**
   un hook `PreToolUse` sobre Bash en `.claude/settings.json` que rechace un comando con `<<` y diga
   «escribe el script a un archivo». Costo: un script de ~15 líneas, su test y una fila de decisión;
@@ -1270,6 +1274,17 @@ Fricción vista al menos dos veces, con su costo.
   `scratchpad/mongo/with-mongo.sh` y `scratchpad/shots/run.sh`, que no viven en el repositorio.
   Cuesta punteros muertos en la sesión siguiente. Decisión del dueño: un modo "solo tests" de
   `./scripts/test-mongo.sh` (y el barrido visual ya es `./scripts/visual-sweep.sh`).
+- **El ledger del plan va a mano** (2026-10-13): los scripts `task-start`/`task-done` del plugin de
+  planes buscan «Task N» y los planes de aquí dicen «Tarea N». Costo: unas líneas a mano por tarea.
+- **El push va a mano:** el sandbox niega SSH, así que el dueño corrió cada push del período (4). Costo:
+  un mensaje por push; es el límite del sandbox, no del repositorio.
+- **Un script envoltorio y el worktree de un delegado quedan dentro del sandbox** (2026-10-13):
+  `test-mongo.sh` llamado desde otro script no queda exento, y el worktree de un delegado no puede
+  crear su entorno de hatch. Los rojos del delegado se vieron en el árbol principal, commit por commit.
+  Antes de delegar en un worktree, preparar su entorno o planear verlo desde el árbol principal.
+- **El barrido visual en paralelo con la suite da timeouts** (2026-10-14): se corre solo.
+- **Los datos de uso no se guardan:** `bundle.py usage` escribe en una carpeta que el sandbox niega
+  (2 cierres); propuesto al bundle en la cosecha del 2026-10-21.
 
 ## Decisiones pendientes del dueño
 
@@ -1288,6 +1303,8 @@ aplica sin su respuesta.
    `.env.default`; `carrier.toml` rechazó los hooks, así que es decisión suya (d-7985ee-794d11,
    d-7985ee-57db37).
 6. Aprobar en el próximo release las 7 propuestas de la cosecha.
+7. La cosecha del 2026-10-21 (bundle 0.0.32) dejó 12 propuestas más en `.agents/proposals/`, elegidas
+   por el dueño una por una; esperan el próximo release del home.
 
 ## Cerradas por medición
 

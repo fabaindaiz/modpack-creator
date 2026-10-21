@@ -5,6 +5,32 @@ introducción. Los commits de este repositorio fueron `wip` sin cuerpo: el *por 
 no quedaba en ninguna parte, y una sesión no ve lo que otra aprendió. La referencia del formato
 está al final del archivo, para que nada entre este párrafo y la primera entrada capture texto.
 
+## 2026-10-21 · s-7985ee-963637 — Bundle 0.0.32: cosecha y actualización; observaciones de la ronda 3
+
+**Qué.** Dos partes. **La ronda 3 de observaciones**: lo que un tester y el dueño vieron en la versión desplegada (O1–O9), con las respuestas del dueño y el inventario de lo que todavía trabaja dentro de la petición, en `docs/research/2026-10-21-observaciones-ronda-3.md`; el plan se arma cuando todas estén cerradas. **El bundle de `.agents/` de 0.0.31 a 0.0.32**: la cosecha desde el 2026-10-12 (12 propuestas nuevas, elegidas por el dueño una por una), el reemplazo, el agente `researcher` con `onFailure: "block"`, las skills reinstaladas, un chequeo nuevo del gate (autor y committer de los commits sin publicar, d-7985ee-98fb0d), el aviso del `MONGODB_PASSWORD` exportado en la guía y los runbooks, las fricciones del roadmap con sus conteos, y `harvested_through` al 2026-10-21.
+
+**Áreas.** `.agents/` (release, `carrier.toml`, `proposals/`), `scripts/audit.py`, `tests/test_audit.py`, `docs/decisions.md`, `docs/roadmap.md`, `docs/guia-instalacion.md`, `docs/runbooks/`, `docs/research/2026-10-21-*.md`, `.claude/skills/` (instaladas por el dueño).
+
+**Por qué.** El dueño trajo el feedback de un tester y pidió, en orden: «primero trae agents-knowledge 0.0.32, apliquemos el harvest y la actualización completa, y luego sigamos el orden del plan»; y «te iré dando observaciones que iremos revisando; cuando todo esté cerrado armemos el plan».
+
+**Arquitectura.** ✅ Cumple: ningún cambio de producto; el chequeo nuevo es una función pura del audit con su test.
+
+**Qué salió mal en el camino.** `export --replace` falló dentro del sandbox (escribir `.agents/` está negado) sin dejar nada a medias (`verify` seguía en 0.0.31); lo corrió el dueño, igual que `install-skills`; copiar el agente `researcher` a `.claude/agents/` también está negado. Un `bundle.py ids` sobre más archivos que los del gate dio 7 «definido dos veces»: desde 0.0.32 un ítem con viñeta de `docs/plan-de-trabajo.md` cuenta como definición; el gate no lo lee. Un `sed` armó mal una frase del runbook de deploy y se rehízo a mano. El agente investigador no pudo guardar páginas (el sandbox le negó `curl` a su carpeta) y citó a través de un resumidor: las citas quedan como supuesto.
+
+**Qué quedó sin hacer.** Copiar `.agents/agents/researcher.md` a `.claude/agents/` (lo corre el dueño). Las observaciones O1–O9 siguen abiertas: faltan el log del servidor y la versión desplegada (O1, O4) y el diseño de O6–O9. Los ids duplicados entre `docs/plan-de-trabajo.md` y el roadmap (7, fuera del gate). El hook contra heredocs sigue pendiente de decisión.
+
+**Desvío del plan.** Ninguno: el dueño aprobó el triage y la poda tal cual; el candidato 5 de la cosecha quedó local, como eligió.
+
+**No verificado.** Que el `researcher` con `onFailure` cargue en el Claude Code del dueño (el host lo documenta desde 2.1.295); que en CI el rango sin publicar quede vacío (SUPUESTO sobre `actions/checkout`, en d-7985ee-98fb0d); las citas de la investigación de automatización segura, leídas por un resumidor.
+
+**Medido.** Cosecha: 13 candidatos mostrados, 12 escritos, 1 local. `bundle.py privacy`: 0 fallas y 0 avisos sobre 145 archivos. `bundle.py ids` del gate: 0 errores y 0 avisos. Audit: 0 fallos.
+
+**Tarjetas y chequeos.** `readout-per-silent-outcome` y `a-workaround-that-writes-the-subject-destroys-the-measurement` (nueva) para O1/O4: diagnosticar sin escribir en el servidor. Chequeos: `verify --release`, `check-local`, `verify`, `privacy`, `ids`, `decisions`, el audit y el gate.
+
+**Revisión.** Sin revisión de código: el único cambio de código es el chequeo del audit, con su test visto fallar. La cosecha la leyó un agente de solo lectura y el dueño eligió cada candidato.
+
+**Aprendido.** Los pasos que el sandbox niega se entregan como comandos de una línea, sin variables: esta vez los dos corrieron a la primera (es la propuesta del candidato 12). Captured: propuestas p-6b583cb289, p-91cac5014e, p-d7a9641a72, p-db0b78433b, p-11ffa9ae39, p-ebf2a97ae7, p-575fca0206, p-93bccf4e09, p-d54485ce58, p-5c8af95499, p-410bf8d05f, p-5a6ba4beba; las fricciones en el roadmap.
+
 ## 2026-10-13 · s-7985ee-7583d4 — Tanda C: loaders secundarios (Connector y Kilt), con su revisión final
 
 **Qué.** La tanda C de i-7985ee-44060c (observación 7 del dueño) en la rama `feat/loaders-secundarios`: mods de otro loader por un puente. La tabla de puentes (`src/library/bridges.py`: Connector y Forgified Fabric API en NeoForge 1.21/1.21.1/26.1.2 y Forge 1.20.1, Kilt experimental en Fabric); la opción del pack «Loaders secundarios»; la resolución nativo primero, que guarda la vía instalada, nunca la cambia sola y pide las versiones del huésped solo para los mods sin nativa; los problemas `bridge_dependency`, `bridge_missing`, `bridge_conflict` y `via_change` con sus acciones; la búsqueda con pestañas «Nativos» y «Vía Connector»; el diálogo de lo que entra con el primer mod puenteado; la lista con la vía de cada mod, «no preferible» y «servidor: probar antes»; la pestaña «Vía puente» con «Pasar a nativa» y «Volver al puente», siempre con confirmación (también `POST /v1/modpack/{id}/via`); el filtro «Loader»; el aviso al quitar el último mod puenteado; el tablero cuando una nativa alcanzó; la vista previa del servidor con los puenteados aparte; el barrido con un pack con Connector.

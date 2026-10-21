@@ -8,16 +8,19 @@ Generated at each release from the home's records. Each row is a proposal some c
 | `p-00c0b433e4` | 0.0.26 | — |
 | `p-00cb1ad8d0` | 0.0.27 | — |
 | `p-017d89caf7` | 0.0.27 | — |
-| `p-02684c9994` | 0.0.30 | queued as `a-carriers-audit-reads-the-release-layout` |
+| `p-01b64707f7` | 0.0.32 | another occurrence of `refusal-must-not-read-like-an-answer`, to merge |
+| `p-02684c9994` | 0.0.30 | — |
 | `p-029f0e713d` | 0.0.29 | — |
+| `p-031ead1231` | 0.0.32 | another occurrence of `instructions-arrive-through-three-channels`, to merge |
 | `p-03af58edfc` | 0.0.31 | folded into `prompt-context` §15 as an occurrence (`history.md`) |
 | `p-055c3ccdef` | 0.0.29 | — |
 | `p-0633cfe548` | 0.0.27 | — |
 | `p-06475b65b2` | 0.0.27 | — |
 | `p-0724a44a03` | 0.0.27 | — |
-| `p-0728ee228d` | 0.0.30 | queued as `the-log-path-is-a-carrier-field` |
+| `p-0728ee228d` | 0.0.30 | — |
 | `p-07753c3965` | 0.0.27 | — |
 | `p-080479aecc` | 0.0.27 | — |
+| `p-0907e14e60` | 0.0.32 | queued as `questions-go-together-priced-and-before-the-writing` |
 | `p-09742db1c8` | 0.0.27 | — |
 | `p-0a1b8bf5c4` | 0.0.27 | — |
 | `p-0a421dcd81` | 0.0.27 | — |
@@ -29,14 +32,16 @@ Generated at each release from the home's records. Each row is a proposal some c
 | `p-0d91291209` | 0.0.27 | — |
 | `p-0dbcddd68d` | 0.0.27 | — |
 | `p-0ddd2bc888` | 0.0.29 | — |
-| `p-0e598a6664` | 0.0.30 | queued as `close-stops-at-ready-for-review` |
+| `p-0e598a6664` | 0.0.30 | — |
 | `p-0ebd0b0dbf` | 0.0.27 | — |
 | `p-0f36ede788` | 0.0.27 | — |
-| `p-0f86cf7f59` | 0.0.30 | queued as `align-compares-against-the-tag` |
+| `p-0f86cf7f59` | 0.0.30 | — |
 | `p-0f9cb857ca` | 0.0.27 | — |
 | `p-0fc110b447` | 0.0.27 | — |
+| `p-10200ae07a` | 0.0.32 | another occurrence of `count-both-sides-and-use-a-control-window`, to merge |
+| `p-10252a897c` | 0.0.32 | another occurrence of `a-request-accepted-is-not-an-effect`, to merge |
 | `p-10331493b3` | 0.0.26 | — |
-| `p-1070df9806` | 0.0.30 | answered: the catalogue and its trigger are in `method/skills/README.md` since 0.0.30; recorded in the history |
+| `p-1070df9806` | 0.0.30 | — |
 | `p-10e696d3ae` | 0.0.26 | — |
 | `p-10f85b5cb7` | 0.0.27 | — |
 | `p-111c3c7143` | 0.0.24 | — |
@@ -45,12 +50,14 @@ Generated at each release from the home's records. Each row is a proposal some c
 | `p-11cb79103c` | 0.0.29 | — |
 | `p-127099fa7f` | 0.0.26 | — |
 | `p-12c61d894f` | 0.0.27 | — |
-| `p-12f06b3438` | 0.0.30 | queued as `docs-drift-is-checked-not-reviewed` |
+| `p-12f06b3438` | 0.0.30 | — |
 | `p-1316b0ef30` | 0.0.26 | — |
 | `p-1420579d20` | 0.0.27 | — |
 | `p-1545f8de70` | 0.0.26 | — |
+| `p-15e0f40f16` | 0.0.32 | another occurrence of `host-shell-traps`, to merge |
 | `p-161bdcd683` | 0.0.27 | — |
 | `p-1626b85549` | 0.0.27 | — |
+| `p-1a2eedf51d` | 0.0.32 | another occurrence of `test-double-fidelity`, to merge |
 | `p-1b8559b29c` | 0.0.27 | — |
 | `p-1ba10e1a86` | 0.0.29 | — |
 | `p-1bf4aedf89` | 0.0.26 | — |
@@ -65,21 +72,23 @@ Generated at each release from the home's records. Each row is a proposal some c
 | `p-25adfe5ab5` | 0.0.27 | — |
 | `p-25ed1d040b` | 0.0.27 | — |
 | `p-2688a9b9a6` | 0.0.27 | — |
+| `p-26dc5c14cd` | 0.0.32 | another occurrence of `questions-go-together-priced-and-before-the-writing`, to merge |
 | `p-271241e4dc` | 0.0.27 | — |
 | `p-272e889ea9` | 0.0.27 | — |
-| `p-2804dab2bd` | 0.0.30 | queued as `carrier-linters-exclude-the-bundle` |
+| `p-2804dab2bd` | 0.0.30 | — |
 | `p-28f485e075` | 0.0.27 | — |
 | `p-290a632863` | 0.0.27 | — |
 | `p-29b56acbc2` | 0.0.27 | — |
 | `p-29be475822` | 0.0.27 | — |
-| `p-2b25ab65ae` | 0.0.30 | answered: fixed in 0.0.30; recorded in the history |
+| `p-2b25ab65ae` | 0.0.30 | — |
 | `p-2d8db87a40` | 0.0.27 | — |
 | `p-2dd8588046` | 0.0.27 | — |
 | `p-2e680bc5bb` | 0.0.27 | — |
 | `p-2e724dea78` | 0.0.27 | — |
 | `p-2fa5a68b2e` | 0.0.29 | — |
 | `p-303423ae22` | 0.0.27 | — |
-| `p-32c8ccbcfd` | 0.0.30 | queued as `a-tracker-is-the-roadmaps-source` |
+| `p-32b9f2d027` | 0.0.32 | queued as `a-workaround-that-writes-the-subject-destroys-the-measurement` |
+| `p-32c8ccbcfd` | 0.0.30 | — |
 | `p-32fee93dc6` | 0.0.26 | — |
 | `p-330f16caed` | 0.0.24 | — |
 | `p-334db2d590` | 0.0.27 | — |
@@ -89,6 +98,7 @@ Generated at each release from the home's records. Each row is a proposal some c
 | `p-35193c106c` | 0.0.27 | — |
 | `p-35bd7d36ec` | 0.0.27 | — |
 | `p-35d9df2709` | 0.0.26 | — |
+| `p-360caf783c` | 0.0.32 | another occurrence of `prompt-context`, to merge |
 | `p-36ca1d311b` | 0.0.27 | — |
 | `p-36e0bf31bd` | 0.0.27 | — |
 | `p-370ca7c158` | 0.0.27 | — |
@@ -97,14 +107,20 @@ Generated at each release from the home's records. Each row is a proposal some c
 | `p-38d4f4f130` | 0.0.26 | — |
 | `p-39841077c7` | 0.0.27 | — |
 | `p-3a3b473225` | 0.0.27 | — |
+| `p-3a5177156d` | 0.0.32 | queued as `researcher` |
+| `p-3aa4282e09` | 0.0.32 | run logged against `timeout-is-not-an-outcome` |
 | `p-3ad6ecc680` | 0.0.27 | — |
 | `p-3b5da3c834` | 0.0.27 | — |
 | `p-3cd68c8c75` | 0.0.29 | — |
 | `p-3d21b013e1` | 0.0.27 | — |
+| `p-3d3316d1ee` | 0.0.32 | queued as `state-review` |
 | `p-3d56f1da7b` | 0.0.27 | — |
+| `p-3d5f7e5d77` | 0.0.32 | another occurrence of `prompt-context`, to merge |
+| `p-3da35ed9c3` | 0.0.32 | queued as `a-typed-callable-can-be-the-unbound-declaration` |
 | `p-410a0f3b1d` | 0.0.27 | — |
 | `p-41ddd01e45` | 0.0.27 | — |
 | `p-428932cd54` | 0.0.27 | — |
+| `p-4299e95d58` | 0.0.32 | queued as `control-messages-do-not-share-a-lossy-queue-with-telemetry` |
 | `p-42c4bba691` | 0.0.27 | — |
 | `p-42cc550005` | 0.0.26 | — |
 | `p-42cd3ebe8d` | 0.0.27 | — |
@@ -118,11 +134,12 @@ Generated at each release from the home's records. Each row is a proposal some c
 | `p-4553abdc95` | 0.0.27 | — |
 | `p-458150cf50` | 0.0.27 | — |
 | `p-47766d2196` | 0.0.27 | — |
-| `p-480f968069` | 0.0.30 | answered: the catalogue and its trigger are in `method/skills/README.md` since 0.0.30; recorded in the history |
+| `p-480f968069` | 0.0.30 | — |
 | `p-486cadec03` | 0.0.27 | — |
 | `p-4a2be00ec2` | 0.0.26 | — |
 | `p-4cbe922a45` | 0.0.29 | — |
 | `p-4ce378d8b4` | 0.0.27 | — |
+| `p-4d00f226a1` | 0.0.32 | another occurrence of `isolated-review-by-default`, to merge |
 | `p-4d07bc8699` | 0.0.27 | — |
 | `p-4d8247843c` | 0.0.29 | — |
 | `p-4f3ae7128a` | 0.0.27 | — |
@@ -140,22 +157,28 @@ Generated at each release from the home's records. Each row is a proposal some c
 | `p-5473653cb3` | 0.0.27 | — |
 | `p-558d9bb6f6` | 0.0.27 | — |
 | `p-56092db9f7` | 0.0.24 | — |
-| `p-5720a81212` | 0.0.30 | queued as `mint-names-the-home-as-upstream` |
+| `p-5720a81212` | 0.0.30 | — |
 | `p-57dc3221f5` | 0.0.27 | — |
 | `p-580c209938` | 0.0.31 | another occurrence of `user-walk`, to merge |
 | `p-5a04855aa7` | 0.0.27 | — |
 | `p-5a33d7a5d9` | 0.0.26 | — |
+| `p-5a407946ce` | 0.0.32 | queued as `a-capped-key-list-and-a-ladder-by-form` |
 | `p-5c945ae226` | 0.0.27 | — |
 | `p-5da3b658f6` | 0.0.29 | — |
 | `p-5db9d3ed20` | 0.0.24 | — |
+| `p-5e0bb60fc9` | 0.0.32 | another occurrence of `reproduce-the-checkout-not-only-the-environment`, to merge |
 | `p-5e301aac5a` | 0.0.27 | — |
+| `p-5ed6279a27` | 0.0.32 | queued as `bundle-count` |
 | `p-5fd3ec7890` | 0.0.27 | — |
+| `p-61c0386538` | 0.0.32 | queued as `a-convention-only-one-party-follows-degrades-to-a-suggestion` |
+| `p-61ec6b0a14` | 0.0.32 | another occurrence of `a-worktree-check-needs-its-own-environment`, to merge |
 | `p-63e0444f85` | 0.0.27 | — |
 | `p-652328dc7f` | 0.0.27 | — |
 | `p-6570f77eec` | 0.0.27 | — |
 | `p-67b5b69aef` | 0.0.26 | — |
 | `p-67f46a97cb` | 0.0.26 | — |
 | `p-6892cc83d1` | 0.0.27 | — |
+| `p-68b51667be` | 0.0.32 | queued as `a-delegation-is-priced-before-it-starts` |
 | `p-6a1060aa5b` | 0.0.31 | merged into `index-unread-where-rules-absorbed-it` |
 | `p-6a61ef5881` | 0.0.27 | — |
 | `p-6c0dce949e` | 0.0.27 | — |
@@ -166,28 +189,34 @@ Generated at each release from the home's records. Each row is a proposal some c
 | `p-6e440b2922` | 0.0.24 | — |
 | `p-6f21be4805` | 0.0.27 | — |
 | `p-6fc1a0ee2d` | 0.0.31 | merged into the queued row `changelog-order-is-checked`, *Evidence* |
+| `p-6ff0438253` | 0.0.32 | queued as `verification-load-competes-with-the-product` |
 | `p-703335d6cd` | 0.0.27 | — |
 | `p-72375210fa` | 0.0.26 | — |
 | `p-72d567bcea` | 0.0.27 | — |
 | `p-7361d45428` | 0.0.27 | — |
 | `p-744dd70511` | 0.0.24 | — |
+| `p-74aa2517d1` | 0.0.32 | queued as `an-exemption-must-fail-when-its-reason-is-gone` |
 | `p-75253ad330` | 0.0.27 | — |
 | `p-7634a735de` | 0.0.24 | — |
 | `p-7653b5934e` | 0.0.27 | — |
 | `p-772be4bb93` | 0.0.27 | — |
 | `p-77479dde43` | 0.0.27 | — |
+| `p-778e62a33b` | 0.0.32 | another occurrence of `prompt-context`, to merge |
 | `p-77bea5ac3d` | 0.0.26 | — |
 | `p-7816fd2b2d` | 0.0.26 | — |
+| `p-789fae0a47` | 0.0.32 | another occurrence of `ratchet-in-a-pinned-environment`, to merge |
 | `p-7954a4c123` | 0.0.31 | another occurrence of `prompt-context`, to merge |
+| `p-7a55883d4d` | 0.0.32 | queued as `an-injected-parameter-defeats-the-checker-and-its-usual-test` |
 | `p-7aa1e47b96` | 0.0.27 | — |
 | `p-7b47cea448` | 0.0.27 | — |
 | `p-7c5d30a28f` | 0.0.27 | — |
+| `p-7d6c334723` | 0.0.32 | queued as `kill-by-command-line-pattern-matches-own-shell` |
 | `p-7da5916ce3` | 0.0.27 | — |
 | `p-7e912173fa` | 0.0.31 | admitted into `prompt-context.md` and `prompt-bootstrap.md` Phase 5 (permission rules); recorded in the history |
 | `p-7e93ae63c6` | 0.0.27 | — |
 | `p-7eafee1538` | 0.0.27 | — |
 | `p-7ef07de020` | 0.0.26 | — |
-| `p-80486d03e9` | 0.0.30 | queued as `a-plan-keeps-a-status-table` |
+| `p-80486d03e9` | 0.0.30 | — |
 | `p-81f946fe00` | 0.0.27 | — |
 | `p-822de2ac26` | 0.0.26 | — |
 | `p-823b7ee2d0` | 0.0.26 | — |
@@ -205,6 +234,7 @@ Generated at each release from the home's records. Each row is a proposal some c
 | `p-881066296a` | 0.0.27 | — |
 | `p-888bb155cc` | 0.0.27 | — |
 | `p-89be736558` | 0.0.27 | — |
+| `p-8a31b505c4` | 0.0.32 | queued as `ids-reports-a-cited-id-defined-nowhere` |
 | `p-8a7b029e40` | 0.0.27 | — |
 | `p-8a923f0004` | 0.0.27 | — |
 | `p-8b14810588` | 0.0.29 | — |
@@ -217,47 +247,65 @@ Generated at each release from the home's records. Each row is a proposal some c
 | `p-8f681c5178` | 0.0.27 | — |
 | `p-8fa65c3651` | 0.0.27 | — |
 | `p-91486eed54` | 0.0.27 | — |
-| `p-9243a43766` | 0.0.30 | queued as `a-worktree-check-needs-its-own-environment` |
+| `p-9243a43766` | 0.0.30 | — |
+| `p-933d6dd2d0` | 0.0.32 | another occurrence of `ratchet-in-a-pinned-environment`, to merge |
 | `p-940bf2c979` | 0.0.27 | — |
+| `p-94b8414888` | 0.0.32 | another occurrence of `order-writes-by-failure-residue`, to merge |
 | `p-94fc43c6d1` | 0.0.26 | — |
 | `p-95873d5caf` | 0.0.26 | — |
 | `p-9589187233` | 0.0.29 | — |
+| `p-9594c7ac75` | 0.0.32 | another occurrence of `prompt-harvest`, to merge |
 | `p-9620d10a56` | 0.0.27 | — |
 | `p-96bc2c9474` | 0.0.27 | — |
+| `p-96c1b445c5` | 0.0.32 | queued as `a-completeness-marker-must-survive-truncation` |
 | `p-988df660e1` | 0.0.27 | — |
 | `p-9974240ff8` | 0.0.27 | — |
 | `p-99a4367619` | 0.0.27 | — |
 | `p-99aa6e1da6` | 0.0.27 | — |
 | `p-99f5c50238` | 0.0.27 | — |
 | `p-99fc55db59` | 0.0.27 | — |
+| `p-9b2fbaad7a` | 0.0.32 | queued as `an-interaction-is-designed-one-decision-per-turn` |
 | `p-9b3e664daf` | 0.0.27 | — |
 | `p-9b6a8f6919` | 0.0.27 | — |
+| `p-9b961f278a` | 0.0.32 | queued as `a-batch-states-why-it-is-split-and-which-model` |
 | `p-9c29cf76db` | 0.0.27 | — |
 | `p-9c8ce26da0` | 0.0.27 | — |
 | `p-9cb706ce2e` | 0.0.26 | — |
+| `p-9ce408ea7a` | 0.0.32 | another occurrence of `sweep-the-rendered-extremes`, to merge |
 | `p-9ce95c6cd8` | 0.0.27 | — |
+| `p-9d64b4aa5b` | 0.0.32 | another occurrence of `a-default-scope-is-the-widest-one`, to merge |
 | `p-9e406b711e` | 0.0.27 | — |
 | `p-9e9ad8fdf2` | 0.0.27 | — |
 | `p-9f1754a08c` | 0.0.27 | — |
 | `p-9f3e748afb` | 0.0.26 | — |
 | `p-9f5d7c91ff` | 0.0.27 | — |
 | `p-a112d996ee` | 0.0.31 | another occurrence of `prompt-context`, to merge |
+| `p-a17f44c746` | 0.0.32 | another occurrence of `test-double-fidelity`, to merge |
+| `p-a1d190ad15` | 0.0.32 | another occurrence of `a-plan-keeps-a-status-table`, to merge |
+| `p-a2a7b66e7d` | 0.0.32 | queued as `bundle-ids` |
+| `p-a350eb7be0` | 0.0.32 | queued as `an-owner-instruction-file-is-one-source` |
 | `p-a3b4441308` | 0.0.27 | — |
 | `p-a4fdcd562e` | 0.0.24 | — |
 | `p-a5a8909619` | 0.0.26 | — |
 | `p-a5f91db5e3` | 0.0.27 | — |
 | `p-a60e154a9e` | 0.0.27 | — |
+| `p-a710d381ad` | 0.0.32 | run logged against `nested-partial-update-replaces` |
+| `p-a794efaf45` | 0.0.32 | another occurrence of `coverage-measures-execution`, to merge |
 | `p-a7f3a1f305` | 0.0.27 | — |
 | `p-a83f2dfa38` | 0.0.27 | — |
 | `p-a8c6a74c00` | 0.0.24 | — |
 | `p-a9a38ce10f` | 0.0.24 | — |
 | `p-a9ede7e057` | 0.0.27 | — |
 | `p-aa28d761f6` | 0.0.27 | — |
-| `p-aaea071f67` | 0.0.30 | queued as `answering-a-privacy-warning-rewrites-the-proposal` |
+| `p-aaa9bac8d0` | 0.0.32 | queued as `ready-is-stated-in-the-humans-terms` |
+| `p-aaea071f67` | 0.0.30 | — |
 | `p-acaf4cb669` | 0.0.27 | — |
+| `p-ad30abad01` | 0.0.32 | queued as `a-push-that-deploys-is-a-publish` |
 | `p-ad51fa8803` | 0.0.29 | — |
+| `p-ad6874c637` | 0.0.32 | queued as `cited-identifiers-carry-their-names` |
 | `p-ad97de28a0` | 0.0.27 | — |
-| `p-b102eeae6f` | 0.0.30 | answered: admitted into `prompt-context.md` §15 in 0.0.30; recorded in the history |
+| `p-aede899fd0` | 0.0.32 | queued as `a-board-of-what-is-active-while-agents-run` |
+| `p-b102eeae6f` | 0.0.30 | — |
 | `p-b10b689423` | 0.0.31 | merged into the note `refusal-must-not-read-like-an-answer`, *Evidence* |
 | `p-b19ea8150f` | 0.0.26 | — |
 | `p-b1d0825adf` | 0.0.27 | — |
@@ -267,8 +315,10 @@ Generated at each release from the home's records. Each row is a proposal some c
 | `p-b42d2322a0` | 0.0.27 | — |
 | `p-b4a2a380c8` | 0.0.27 | — |
 | `p-b5ed4535bd` | 0.0.31 | merged into the note `reproduce-the-checkout-not-only-the-environment`, *Evidence* |
+| `p-b67eebb06b` | 0.0.32 | another occurrence of `a-check-must-be-seen-to-fail`, to merge |
 | `p-b73457b956` | 0.0.27 | — |
 | `p-b757765f45` | 0.0.27 | — |
+| `p-b79c6549b7` | 0.0.32 | queued as `proposals-readme` |
 | `p-b7b7b02aba` | 0.0.27 | — |
 | `p-b90d59393e` | 0.0.27 | — |
 | `p-b90ef8c317` | 0.0.31 | merged into the note `derived-copy-goes-stale-silently`, *Evidence* |
@@ -279,24 +329,30 @@ Generated at each release from the home's records. Each row is a proposal some c
 | `p-bd85188ec9` | 0.0.27 | — |
 | `p-bde82faab4` | 0.0.24 | — |
 | `p-bdfc8f7fcc` | 0.0.27 | — |
-| `p-be515ef967` | 0.0.30 | narrowed: the pre-flight and `gather` cover the branch question; the rest stays queued as `gather-reads-a-branch-not-only-the-checkout` |
+| `p-be515ef967` | 0.0.30 | — |
 | `p-be7f469024` | 0.0.29 | — |
 | `p-be8c106a62` | 0.0.27 | — |
 | `p-bf2579d9d9` | 0.0.27 | — |
 | `p-bf6195cb90` | 0.0.27 | — |
 | `p-bfa052f6c5` | 0.0.27 | — |
 | `p-c1c068ac6b` | 0.0.27 | — |
+| `p-c1f5e5068b` | 0.0.32 | another occurrence of `prompt-update`, to merge |
 | `p-c22bb27256` | 0.0.26 | — |
 | `p-c2c01db7f1` | 0.0.27 | — |
 | `p-c2c2e25846` | 0.0.26 | — |
 | `p-c2ed95b9a3` | 0.0.26 | — |
+| `p-c3405d47c0` | 0.0.32 | queued as `a-reservation-lock-and-an-atomicity-lock-are-not-the-same-wait` |
+| `p-c3aab40082` | 0.0.32 | queued as `instructions-arrive-through-three-channels` |
 | `p-c3e1633d33` | 0.0.26 | — |
 | `p-c40f953232` | 0.0.27 | — |
+| `p-c457db22cd` | 0.0.32 | queued as `a-failure-before-the-limiter-counts-is-a-free-attempt` |
 | `p-c48b3661f4` | 0.0.27 | — |
+| `p-c5257b91f6` | 0.0.32 | refused by its harvest; recorded in the history |
 | `p-c5401dbd7f` | 0.0.27 | — |
 | `p-c59eb782a0` | 0.0.27 | — |
 | `p-c5ccb46250` | 0.0.31 | merged into the note `best-effort-side-channels`, *Evidence* |
 | `p-c604d1066e` | 0.0.29 | — |
+| `p-c653e9969c` | 0.0.32 | another occurrence of `prompt-update`, to merge |
 | `p-c6597e57b4` | 0.0.27 | — |
 | `p-c6ccf81eb7` | 0.0.24 | — |
 | `p-c8a0d1ee0b` | 0.0.27 | — |
@@ -304,12 +360,15 @@ Generated at each release from the home's records. Each row is a proposal some c
 | `p-c8cc171d0c` | 0.0.26 | — |
 | `p-c986101c49` | 0.0.31 | merged into the note `a-surviving-guard-mutation-means-a-missing-input`, *Evidence* |
 | `p-c9c6fa4459` | 0.0.27 | — |
+| `p-ca617d2726` | 0.0.32 | queued as `a-remaining-budget-reorders-the-plan-toward-closing` |
 | `p-cabae99b5e` | 0.0.26 | — |
 | `p-cacafbf6a4` | 0.0.26 | — |
 | `p-cb1ba3bc96` | 0.0.26 | — |
+| `p-cc533b4818` | 0.0.32 | queued as `a-probe-catalogue-is-an-allow-list-not-a-shell` |
 | `p-cc620f4084` | 0.0.31 | admitted into `prompt-update.md`, *Rules for the folder* (`--no-track`); recorded in the history |
 | `p-cd7569810c` | 0.0.31 | merged into the note `ratchet-in-a-pinned-environment`, *Evidence*, as observed |
 | `p-cd94f30172` | 0.0.27 | — |
+| `p-ce0c867e01` | 0.0.32 | queued as `a-finding-belongs-to-the-repository-that-can-fix-it` |
 | `p-ce6e731325` | 0.0.27 | — |
 | `p-cf09c3b3a2` | 0.0.27 | — |
 | `p-d1dd80e03f` | 0.0.27 | — |
@@ -318,37 +377,50 @@ Generated at each release from the home's records. Each row is a proposal some c
 | `p-d2d951b71e` | 0.0.24 | — |
 | `p-d2fa16b1fd` | 0.0.31 | another occurrence of `prompt-update`, to merge |
 | `p-d34301cac5` | 0.0.27 | — |
+| `p-d3aee52401` | 0.0.32 | another occurrence of `bundle-tool-export`, to merge |
+| `p-d403dcf9a0` | 0.0.32 | another occurrence of `a-workaround-that-writes-the-subject-destroys-the-measurement`, to merge |
+| `p-d4e7c33d0e` | 0.0.32 | another occurrence of `validate-each-transformation-run`, to merge |
 | `p-d5b044935c` | 0.0.26 | — |
 | `p-d7956af6c5` | 0.0.27 | — |
 | `p-d8c7a59ff1` | 0.0.29 | — |
-| `p-d8e9d86928` | 0.0.30 | queued as `criteria-and-tasks-map-both-ways` |
+| `p-d8e9d86928` | 0.0.30 | — |
 | `p-d8ec6a1d1c` | 0.0.26 | — |
 | `p-d939b1aadc` | 0.0.27 | — |
 | `p-d977e402eb` | 0.0.29 | — |
 | `p-d9a96d5862` | 0.0.31 | queued as `a-card-enters-an-answer-as-a-mechanism` |
+| `p-d9d4ea8c83` | 0.0.32 | another occurrence of `a-surviving-guard-mutation-means-a-missing-input`, to merge |
 | `p-dac316fe6f` | 0.0.27 | — |
+| `p-db2fbd6bf8` | 0.0.32 | queued as `a-guided-test-holds-the-blind-in-the-agent` |
 | `p-db9415fe19` | 0.0.27 | — |
 | `p-dc22c63de8` | 0.0.29 | — |
 | `p-dcc52047a5` | 0.0.26 | — |
 | `p-dcf54666cf` | 0.0.27 | — |
 | `p-dd2d347a1d` | 0.0.27 | — |
+| `p-ddd0740846` | 0.0.32 | another occurrence of `refuse-only-on-unassertable-evidence`, to merge |
 | `p-de14564c12` | 0.0.31 | answered by `bundle.py export --replace` (0.0.31); recorded in the history |
-| `p-de578f3f63` | 0.0.30 | queued as `new-entry-reads-the-logs-own-format` |
+| `p-de578f3f63` | 0.0.30 | — |
+| `p-df414d871b` | 0.0.32 | another occurrence of `a-delegation-is-priced-before-it-starts`, to merge |
+| `p-df53430dec` | 0.0.32 | queued as `bundle-privacy` |
 | `p-dfd72fb9b6` | 0.0.26 | — |
 | `p-dff3130647` | 0.0.27 | — |
 | `p-e0ce4d142d` | 0.0.27 | — |
 | `p-e191a3b34f` | 0.0.27 | — |
+| `p-e31a0177df` | 0.0.32 | queued as `a-plan-carries-a-cost-ledger` |
 | `p-e4de9e38bc` | 0.0.27 | — |
 | `p-e534c841e6` | 0.0.27 | — |
 | `p-e5ca0d38a7` | 0.0.27 | — |
 | `p-e5dbb8905e` | 0.0.27 | — |
 | `p-e5f8cf02ff` | 0.0.24 | — |
+| `p-e6b84078cb` | 0.0.32 | another occurrence of `prompt-context`, to merge |
+| `p-e6e2f44afe` | 0.0.32 | queued as `releasing-a-global-lock-per-short-call-convoys` |
 | `p-e72a5d1152` | 0.0.27 | — |
 | `p-e75676f7ea` | 0.0.27 | — |
 | `p-e7988eb53a` | 0.0.26 | — |
+| `p-e8e7ae397b` | 0.0.32 | queued as `a-perceptual-comparison-switches-without-a-gap-with-confounds-matched` |
 | `p-e9ae388290` | 0.0.27 | — |
 | `p-e9c72b7355` | 0.0.27 | — |
 | `p-e9dc244466` | 0.0.27 | — |
+| `p-eacfe1124f` | 0.0.32 | queued as `a-passing-observation-is-not-an-order-to-purge` |
 | `p-eaf9e35bde` | 0.0.26 | — |
 | `p-eb3da07c0f` | 0.0.26 | — |
 | `p-eb559fe989` | 0.0.27 | — |
@@ -362,23 +434,29 @@ Generated at each release from the home's records. Each row is a proposal some c
 | `p-f1d4188f8a` | 0.0.27 | — |
 | `p-f23391f5cc` | 0.0.31 | merged into the note `order-writes-by-failure-residue`, *Evidence* |
 | `p-f312ccbcd2` | 0.0.27 | — |
+| `p-f37ce3e959` | 0.0.32 | another occurrence of `a-rewrite-cleans-only-what-refs-reach`, to merge |
 | `p-f43f143cdd` | 0.0.27 | — |
 | `p-f4dea4b6c6` | 0.0.27 | — |
+| `p-f5033c1cc7` | 0.0.32 | another occurrence of `prompt-harvest`, to merge |
 | `p-f557e6fa1f` | 0.0.27 | — |
 | `p-f5e5eef0cf` | 0.0.26 | — |
 | `p-f62a14e734` | 0.0.27 | — |
 | `p-f63866a6a4` | 0.0.27 | — |
 | `p-f692458588` | 0.0.31 | run logged against `copied-instruction-claims-its-origin` |
 | `p-f6cb6c9d22` | 0.0.27 | — |
-| `p-f76353b351` | 0.0.30 | answered: admitted into `prompt-context.md` §15 in 0.0.30; recorded in the history |
+| `p-f76353b351` | 0.0.30 | — |
 | `p-f860b8c6a1` | 0.0.27 | — |
 | `p-f94bec8bcc` | 0.0.31 | run logged against `a-check-must-be-seen-to-fail` |
 | `p-f99c1f6cc1` | 0.0.26 | — |
 | `p-f9a5484ffc` | 0.0.26 | — |
 | `p-f9ca8f11f7` | 0.0.26 | — |
+| `p-fa58a0105d` | 0.0.32 | another occurrence of `proposals-readme`, to merge |
 | `p-fafd1e6405` | 0.0.24 | — |
+| `p-fbc5e24561` | 0.0.32 | queued as `a-lease-is-the-stranding-window-not-the-work-window` |
 | `p-fc3163ca1b` | 0.0.24 | — |
-| `p-fc57dd0369` | 0.0.30 | queued as `a-plan-may-be-a-working-artifact` |
+| `p-fc57dd0369` | 0.0.30 | — |
+| `p-fc9e89ae49` | 0.0.32 | refused by its harvest; recorded in the history |
 | `p-fcdcab8859` | 0.0.27 | — |
 | `p-fd9bbde5f8` | 0.0.26 | — |
 | `p-fe2d6ac260` | 0.0.24 | — |
+| `p-fefac267a4` | 0.0.32 | queued as `a-relative-priority-is-relative-to-an-inherited-one` |

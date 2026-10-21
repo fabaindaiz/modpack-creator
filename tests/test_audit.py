@@ -74,3 +74,16 @@ def test_an_idempotent_post_that_no_longer_retries_leaves_the_list() -> None:
     assert audit.stale_idempotent_posts({("c.py", "power"), ("c.py", "gone")}, {"c.py": client}) == [
         "c.py gone: ya no reintenta un POST; sácalo de IDEMPOTENT_POSTS en scripts/audit.py",
         "c.py power: ya no reintenta un POST; sácalo de IDEMPOTENT_POSTS en scripts/audit.py"]
+
+
+def test_an_unpublished_commit_by_another_identity_fails() -> None:
+    """Bundle 0.0.32: the attribution has a second channel, the commit's author and committer. In a
+    fresh environment git may be configured as the assistant, and no trailer says so."""
+    owner = "Dueño <dueno@example.org>"
+    log = [f"abc1234\t{owner}\t{owner}", f"def5678\tAsistente <bot@example.org>\t{owner}",
+           f"0123abc\t{owner}\tAsistente <bot@example.org>"]
+    assert audit.commit_identities(log, {owner}) == [
+        "commit def5678: autor Asistente <bot@example.org>, que no es el dueño del repositorio",
+        "commit 0123abc: committer Asistente <bot@example.org>, que no es el dueño del repositorio"]
+    assert not audit.commit_identities(log[:1], {owner})
+    assert not audit.commit_identities([], {owner})

@@ -7,6 +7,117 @@ Every release of the agent-guides bundle, newest first. The format follows
 release may change the format a carrier depends on (SemVer §4); a carrier reads what changed since the
 version it holds with `bundle.py changelog --since <its version>`.
 
+## [0.0.32] - 2026-10-15
+
+**What a carrier runs at this update.** Follow `prompt-update.md` as it now reads, and read its new paragraph
+first: a delta that changes the update procedure itself is diffed against the live procedure before the live one
+is followed, and a release that fails `verify --release` with many findings of one kind is checked again with the
+incoming tool. Then, in each carrier: (1) if a structural audit of its own asks every document for exactly one
+top-level heading, exempt `proposals/p-*.md` by path, once, until the proposals written by earlier releases are
+pruned (*Changed* below); (2) the `researcher` agent is copied with the new hook field, so a carrier that kept its
+own adapted copy adds `onFailure: "block"` to the hook handler by hand. The host documents the field from version
+2.1.295 (privacy-allow: the host's own published minimum version, which is the only way a carrier can tell whether
+its host reads the field; the rule's gap is queued as i-5ed7e8-b8c4b2 and the owner allowed this class on
+2026-10-15). On an older host the exit status is what protects the boundary; **what we have not verified is whether
+such a host ignores the unknown key or refuses the agent's frontmatter**, so a carrier on an older host checks that
+its researcher still loads (*Fixed*); (3) a carrier whose `python3` is older than
+3.11 will find the researcher has no shell at all, which is the intended refusal; (4) run `bundle.py privacy`
+on any proposal waiting in `.agents/proposals/`, because a warning there now fails, and answer it on its line or
+generalise it. (5) a carrier whose own skill files name its directories moves those paths into that skill's `LOCAL.md`, so an update cannot leave them stale (*Changed*); (6) a carrier whose gate checks commit trailers adds the author and committer of the unpublished range to it (*Changed*), which is the one method change here that needs a gate edit rather than a reading. Everything else needs nothing: the new `carrier.toml` field is optional, the record-id warnings
+are warnings, and the remaining method and note changes are read, not run. No format a carrier depends on is removed.
+
+### Added
+
+- **`harvested_gaps` in `carrier.toml`** (optional): the spans before `harvested_through` that a harvest did not
+  read, `YYYY-MM-DD..YYYY-MM-DD`, earliest first. A harvest the human narrows to a recent period writes the span it
+  skipped there and still advances the frontier, so the frontier never claims what was not read and the recent work
+  is not read twice; the next harvest reads the gaps before fixing its period. `verify` fails a span of another
+  shape. A carrier that writes none changes nothing.
+- **`ids-allow: <reason>` for the record-id scan**: a line that carries it, outside inline code, is left to its
+  reason, and `bundle.py ids` lists every allowance among its warnings so none is silent. It is meant for an
+  append-only record that quotes an id-shaped placeholder and so could never be corrected; it repeats the shape
+  of `privacy-allow:`.
+- **`bundle.py ids` warns on a decision cited and defined nowhere**: a well-formed decision id of this carrier's own
+  prefix that is cited in the files read and defined in none of them. Only decisions, because only their records
+  are never removed; a roadmap item removed after it ships, or a session entry defined in the log, is not reported.
+  It is a warning, and it points at `bundle.py id`: an id is minted, never written from memory.
+
+- **A note: `a-workaround-that-writes-the-subject-destroys-the-measurement`** (topic *measurement*, phase
+  *debug*). On a live system, a workaround that writes the very thing under diagnosis destroys the measurement,
+  because the convenient workaround is usually the candidate fix itself — setting the suspect value, restarting
+  the service, installing the missing tool. Read-only diagnosis stays read-only until the cause is named, and
+  each probe verifies its target and counts its own writes, since a probe whose target does not exist can fall
+  through to the subject. Two repositories, two incidents, neither reduced to a number. The literature
+  (the probe effect, the Heisenbug) covers observation altering behaviour and **not** this case, where the probe
+  and the fix are the same action; what is cited was checked at the source, and what was only a bibliographic
+  record says so.
+
+### Changed
+
+- **A generated proposal carries its own title** (`# Proposal: <target>`), so it satisfies the ordinary rule that a
+  document has one top-level heading; `parse_proposal` reads old and new alike. Proposals written by earlier
+  releases have none and cannot be given one, since the file's name is a hash of its content and editing it breaks
+  the check that verifies it. `proposals/README.md` now names the exemption (by path, until they are pruned). Two
+  carriers had met this as a red check in the step meant to confirm a close.
+- **A carrier's own `privacy` run applies the home's rule over a proposal**: a warning in a proposal with no
+  allowance on its line is a failure there, because the home's intake holds such a proposal back until it is
+  generalised or answered. Before, the carrier saw a warning, closed, and found the work held at a door it never saw.
+- **A delegate splits a long check into foreground pieces** (`prompt-context.md`, *Long runs and delegates*): each
+  under the foreground ceiling, the timeout at its maximum, the output in its scratch file, a result reported per
+  piece. The background run with a wake stays the main session's default. The old advice told a delegate to end its
+  turn until notified, which ends its task. Measured in one repository: delegates cut while waiting and suites
+  dead before finishing, then none across the two following sessions.
+- **A delegate brief carries four lines, not three**: the fourth is that a commit is chained on the check's own
+  exit status, never through a filter, since a check piped into `tail` inside an `&&` chain returns the filter's
+  status and a red check lets the commit through. A gate composed by hand becomes one script under `set -euo pipefail`.
+- **The file-rule section says what a permission rule does not see** (`prompt-context.md`, artifact 4): a shell
+  command, a script or a regenerating tool writes a file with no confirmation at all, since the rule exists for the
+  edit tool. A delegate brief says so, and where a regenerating tool would overwrite a guarded file, the human runs
+  it or a diff is shown before anything is committed.
+- **The attribution artifact gains a second channel**: the author and committer identity. In a fresh environment
+  the configured git user can be the assistant, so commits carry it as author with no trailer and a trailer check
+  passes. The gate also reads the author and committer of the unpublished range against who may author, and a
+  session in a new environment sets the identity before its first commit.
+- **A skill's own text never names a carrier's directories** (`prompt-bootstrap.md` Phase 9, and
+  `method/skills/README.md`): where a step needs them, it reads them from that skill's `LOCAL.md` and falls back
+  to finding the files. A path written into a skill goes stale the day a directory moves, and an installed skill
+  cannot be fixed in the carrier — its file is generated and its edits are asked for. One carrier moved an
+  application and was left with two installed skills pointing at the old place.
+- **The harvest counts one owner's repositories as one source** for a method rule (`prompt-harvest.md`, and the
+  home's admission steps): where carriers belong to one owner with a global instruction file, a candidate that
+  restates a line of it is one occurrence, not several, since their agreement measures that file's reach. It is
+  not a veto: such a rule is still admitted on a mechanism plus a check, or on a measured effect in one carrier.
+- **Principle 15 says why its three parts matter** (together, before the writing, priced), so a procedure that lists
+  them is not answered as a formality.
+- **The update reads a delta that changes the update procedure before following it**, and says which tool verifies
+  a release across a shape change: when `verify --release` fails with many findings of one kind, the incoming tool is
+  run against the incoming copy with an isolated interpreter (the one exception to the rule that nothing in
+  `incoming/` runs), both results are reported, and the update stops only if both fail.
+- **The update's pre-flight carries the harvest's own questions**, with their defaults, instead of asking a second
+  round at the harvest step: the one that changes the cost is its period, this update's frictions or everything since
+  the frontier.
+- **The harvest shows its candidate list before writing it**, in one message with the slug, the claim and what each
+  lacks, so the human picks, and their reason goes into the proposal. It also records, in `harvested_gaps`, any span
+  it did not read.
+- **Notes**: seventeen gained a dated occurrence or a sharper boundary; two moved their `check`: a planted fault must
+  sit where its property is observable and be seen to change the checked quantity, and a ratchet's baseline is a set
+  of findings, not one total, with a branch-against-base comparison where the environment cannot be pinned. One note
+  left review for active: rewriting history now also requires a repository that is not shallow and equal commit
+  counts per branch, because identical trees do not show a lost commit.
+
+### Fixed
+
+- **The researcher's shell hook fails closed.** Run as that hook, the interpreter-version refusal exits with the
+  refusing status 2, where the host takes any other status as a non-blocking error and lets the call through; and the
+  handler declares `onFailure: "block"`, which the host documents from the version named above. On an older host the
+  exit status is what protects the boundary, and whether such a host ignores an unknown key or refuses the whole
+  frontmatter **is not verified here**: check that the researcher still loads.
+- **The record-id scan reads a roadmap bullet as a definition** (`- <id> · ...`, with or without bold or backticks),
+  where before such items read as citations of ids defined nowhere, which the new undefined-citation warning would
+  have reported by the hundred.
+- **The friction count matches on word boundaries** and prints its unit: entries that mention the symptom, not
+  incidents, to be read and counted by hand. A symptom whose edges are not word characters is matched as written.
+
 ## [0.0.31] - 2026-10-09
 
 **What a carrier runs at this update.** In each carrier, first read `declined` in `carrier.toml`: `install-skills`

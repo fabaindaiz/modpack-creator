@@ -26,6 +26,11 @@ commits:
 - a `##` section replaces the base section with the same heading; an empty one removes it; a new one
   is appended.
 
+**Every path of this repository belongs here, not in a base.** A base that named a carrier's own
+directory would go stale the day it moved, and the carrier could not fix it: the installed file is
+generated and its edits are asked for. So a base step says to read the paths from `LOCAL.md`, with
+finding the files as its fallback, and `LOCAL.md` is where they live.
+
 The installed `SKILL.md` is generated: edit `LOCAL.md` and install again. A `SKILL.md` the carrier
 wrote itself is never overwritten; move its rules into `LOCAL.md` (every line kept, or its removal
 named), then install with `--force`.

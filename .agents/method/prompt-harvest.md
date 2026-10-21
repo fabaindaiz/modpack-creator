@@ -36,13 +36,14 @@ question and, unless I say otherwise, left alone: harvest only what is already
 recorded.
 
 Then read what this repository recorded since `harvested_through` in
-`.agents/carrier.toml`, and what the human said in that period's session
+`.agents/carrier.toml` — **and every span its `harvested_gaps` lists, which the frontier does not
+cover** — and what the human said in that period's session
 transcripts, mid-turn messages and question answers included (Phase 1, step 1),
 check `.agents/knowledge/OPEN.md` for what the home is
 already waiting for, and write what it learned that the bundle does not know —
 **as proposals, one per learning, written with `bundle.py propose` into
 `.agents/proposals/`, and nowhere else in `.agents/`** except `harvested_through`,
-which moves to the last date read. `bundle.py proposals` lists the ones already
+which moves to the last date read, and `harvested_gaps`, which lists any earlier span left unread. `bundle.py proposals` lists the ones already
 written. Every other file there belongs to the release; a note edited here is a
 fork of it.
 
@@ -98,9 +99,11 @@ as proposed.
    rules allow: where they say commits are offered, or made only when asked,
    I offer them and stop.
 
-4. Scope. I will write only proposals in `.agents/proposals/` and
-   `harvested_through`, and put process friction that belongs to this
-   repository in its own roadmap. Nothing else in `.agents/` changes.
+4. Scope. I will write only proposals in `.agents/proposals/`, `harvested_through`
+   and `harvested_gaps` (the spans I do not read, if you narrow the period), and
+   put process friction that belongs to this repository in its own roadmap.
+   Nothing else in `.agents/` changes. Before I write any proposal I will show you
+   the candidate list, in one message, for you to pick from.
 ~~~
 
 ---
@@ -152,8 +155,9 @@ session without being told: the uncommitted diff is their work.
 
 ## Phase 1 — the harvest, per repository
 
-1. **Read what this repository recorded since `harvested_through`**, that day included, not what it
-   summarises: the root
+1. **Read what this repository recorded since `harvested_through`**, that day included, **and every
+   span listed in `harvested_gaps`, which the frontier passed over**: a gap read is removed from the
+   field, and a gap left unread stays in it. Not what the records summarise, but them: the root
    instruction file, the area rules, the decisions log and its evidence (never the private folder), the changelog in full (it
    holds the discarded alternatives and the numbers), the roadmap, the audit script's comments, and
    the commit messages of the period. With several repositories open, one read-only agent per
@@ -176,9 +180,25 @@ session without being told: the uncommitted diff is their work.
    literature before writing anything**, and check each citation against its source: an established
    result is cited with what it contributes, a contradicting one kills or narrows the candidate, and
    nothing found is written as "none known".
-3. **Apply the generality test strictly**, and report plainly when nothing survives. **That is the
+3. **Show the candidate list before writing it, in one message**, and let the human pick. Where this
+   repository's pass is a delegated agent with no human on the other end, the list goes back in its
+   report and the proposals wait for the session that can show it. Only they can
+   tell their own one-off instruction from their own rule: an agent reading a record sees both as
+   sentences the human said. Each line is the slug, the claim in one sentence, and what it lacks; the
+   human's own reason, given while picking, is better evidence than a reconstruction of it, and goes into
+   the proposal. Run as a question on eight candidates in one carrier, the human took all eight — an
+   agent choosing alone would have written two and dropped six it judged thin, including the ones the
+   human holds as standing rules. It is one message, so it is unconditional.
+4. **Apply the generality test strictly**, and report plainly when nothing survives. **That is the
    common and correct outcome**; a bundle that takes every offered learning is portable to nowhere.
-4. **Extend before adding — as a candidate.** Check `knowledge/OPEN.md` and the index first. A new
+
+   **One owner's repositories are one source for a method rule.** Where several carriers belong to one owner
+   who keeps a global instruction file, a method candidate that restates a line of it is one occurrence, not
+   several: their agreement measures that file's reach, not the rule's generality. Say so in the proposal's
+   `lacks` (a carrier of another owner, or a mechanism plus a check, or a measured effect here), and do not
+   offer the same agreement again next time.
+
+5. **Extend before adding — as a candidate.** Check `knowledge/OPEN.md` and the index first. A new
    occurrence, number or boundary of an existing note, or of a candidate `OPEN.md` lists, is the most
    valuable thing a harvest produces, and it is *still* not written into the note here: the proposal
    names what it extends (`--action extends --target <slug>`) and carries the evidence. A candidate
@@ -186,16 +206,21 @@ session without being told: the uncommitted diff is their work.
    words quoted in the claim, so the home can join the two. A claim a
    measurement here contradicts is a proposal of kind `experiment` with the verdict — *confirms*,
    *moves the boundary* or *falsifies*.
-5. **Run the cheap queued experiments** from `knowledge/OPEN.md` that this repository can answer, and
+6. **Run the cheap queued experiments** from `knowledge/OPEN.md` that this repository can answer, and
    write each as a proposal of kind `experiment`: the date, the note, the repository by mechanism rather
    than by name (`--where`), what was run, the result, and the verdict. Only this repository's runs
    since the last release are proposed.
    Optionally, run `bundle.py usage summary`, show it, and ask whether any generalised figure enters a
    proposal as Evidence; a preference never does.
-6. **Friction that belongs to this repository** — a command that is awkward here, a check this host
+7. **Friction that belongs to this repository** — a command that is awkward here, a check this host
    needs — goes in **this repository's** roadmap. Only the part that is true of any repository is a
    method candidate.
-7. **Check and commit**: set `harvested_through` in `carrier.toml` to the last date read; then
+8. **Check and commit**: set `harvested_through` in `carrier.toml` to the last date read, **and when the
+   human narrowed the period, write the span you did not read in `harvested_gaps`** (`YYYY-MM-DD..YYYY-MM-DD`,
+   earliest first). A single frontier cannot say "read to here, except that" — moving it discards the gap in
+   silence, leaving it reads the recent work again — and a note in the repository's own roadmap is the one
+   place the next harvest is not sent. The next harvest reads the gaps before fixing its period, and the
+   home's `gather` reports them. Then
    `bundle.py privacy`, `bundle.py verify` and `bundle.py check-local .` pass; then one commit in this
    repository's own style, under its own commit rules and bar: offered and left to the user where those
    rules say so. An allowance the privacy check lists exists only because the user asked for
