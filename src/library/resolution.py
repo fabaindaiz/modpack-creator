@@ -205,6 +205,8 @@ class Catalog:
 
 
 ORIGIN_REASON = {"pack": "en el pack", "admin": "agregado por el admin"}
+# The reason of a lock entry that takes the imported pack's own version outside Modrinth's tags (O2).
+OUTSIDE_TAGS = "versión del pack, fuera de las etiquetas de Modrinth"
 
 
 class ResolveRequest(BaseModel):
@@ -225,6 +227,13 @@ class ResolveRequest(BaseModel):
     floors: dict[str, list[str]] = {}
     # Projects the admin moved to their native versions («Pasar a nativa», d-7985ee-8e5f9e).
     native_only: set[str] = set()
+    # Pinned projects whose version in use is the imported pack's own (O2): taken even when Modrinth
+    # does not mark it for this Minecraft version or loader, and marked in the lock (`off_tags`).
+    # An admin's pin that does not fit is still a problem.
+    unchecked: set[str] = set()
+    # Pinned projects whose free choice the lock also reports (`Lock.free`): the «resolución» origin
+    # of their pin. It never changes what the lock takes.
+    free: set[str] = set()
 
     @field_validator("floors", mode="before")
     @classmethod
@@ -243,7 +252,8 @@ def request_digest(request: ResolveRequest) -> str:
     if not data["channel_exceptions"]:
         del data["channel_exceptions"]
     # Batch C's too (final review): a pack with no bridge and no mod moved to native keeps its digest.
-    for parent, key in ((data["target"], "bridges"), (data, "native_only")):
+    # And O2's: a pack whose pins have no origin but the admin keeps its digest.
+    for parent, key in ((data["target"], "bridges"), (data, "native_only"), (data, "unchecked"), (data, "free")):
         if parent[key]:
             parent[key] = sorted(parent[key])
         else:
@@ -273,6 +283,9 @@ class LockEntry(BaseModel):
     requested_by: list[str]
     # The bridge it runs through (batch C), None when native.
     via: Optional[str] = None
+    # The imported pack's own version, taken although Modrinth does not mark it for the pack's
+    # Minecraft version or loader (O2). Entries frozen before read as False.
+    off_tags: bool = False
 
 
 def _asked(requester: str) -> list[str]:
@@ -332,6 +345,11 @@ class Lock(BaseModel):
     native_available: dict[str, str] = {}
     # One whose native version is still older than the installed one: not offered yet.
     native_behind: dict[str, str] = {}
+    # For the projects of `ResolveRequest.free`: the version a free choice takes (O2, the
+    # «resolución» origin of their pin), and those whose versions are still to read for it. Neither
+    # makes the lock incomplete: the pin is what it takes.
+    free: dict[str, str] = {}
+    free_needs: set[str] = set()
 
     @property
     def complete(self) -> bool:
@@ -350,6 +368,7 @@ class _Chosen:
     reason: str
     requested_by: list[str]
     exact: bool
+    off_tags: bool = False
 
 
 @dataclass
@@ -421,6 +440,11 @@ class _Run:
                 self.needs_types.add(project_id)
                 return None
             if not self.request.target.fits(candidate, self.catalog.types[project_id]):
+                if project_id in self.request.unchecked:
+                    # The imported pack's own version (O2): used, and marked.
+                    taken = self._take(candidate, OUTSIDE_TAGS, requester, exact=True)
+                    self.chosen[project_id].off_tags = True
+                    return taken
                 self.problems.append(Problem(kind="pin_mismatch", project_id=project_id,
                     requested_by=_asked(requester), pinned=ADMIN in pin.requested_by, detail=(
                     f"{pin.version_id}, fijada por {', '.join(pin.requested_by)}, no es para "
@@ -709,7 +733,8 @@ class _Run:
                 version_number=chosen.candidate.version_number, file=chosen.candidate.file,
                 environment=chosen.candidate.environment, server=server, reason=chosen.reason,
                 requested_by=chosen.requested_by,
-                via=self.request.target.via(chosen.candidate, self.catalog.types.get(project_id, "mod"))))
+                via=self.request.target.via(chosen.candidate, self.catalog.types.get(project_id, "mod")),
+                off_tags=chosen.off_tags))
         for project_id, chosen in self.chosen.items():
             if self.catalog.types.get(project_id) != "shader":
                 continue
@@ -742,7 +767,35 @@ def resolve(request: ResolveRequest, catalog: Catalog) -> Lock:
     exact = {project: _Exact(version, [ADMIN]) for project, version in request.pins.items()}
     for _ in range(len(catalog.by_id) + 1):
         try:
-            return _Run(request, catalog, exact).run()
+            lock = _Run(request, catalog, exact).run()
+            break
         except _Restart as restart:
             exact[restart.project_id] = restart.exact
-    raise RuntimeError("resolution did not converge")
+    else:
+        raise RuntimeError("resolution did not converge")
+    if request.free:
+        lock.free, lock.free_needs = _free_choices(request, catalog)
+    return lock
+
+
+def _free_choices(request: ResolveRequest, catalog: Catalog) -> tuple[dict[str, str], set[str]]:
+    """What a free choice takes for each project of `request.free` (O2): the same request with their
+    pins left out, so with the same floors, channels, exceptions and bridges. Its other choices and
+    problems are not the pack's and are dropped; what it lacks for those projects is asked for."""
+    free = set(request.free)
+    lock = resolve(free_request(request), catalog)
+    chosen = {e.project_id: e.version_id for e in lock.entries if e.project_id in free}
+    floors = {v for p in free for v in request.floors.get(p, [])}
+    lacking = {p for p in free if p not in chosen and (
+        p in lock.needs_projects | lock.needs_types | lock.needs_bridged
+        or any(v in lock.needs_versions and v in floors for v in request.floors.get(p, [])))}
+    return chosen, lacking
+
+
+def free_request(request: ResolveRequest) -> ResolveRequest:
+    """The request whose lock is the free choice of `request.free` (see `_free_choices`): those
+    projects alone, unpinned. The caller reads what it lacks for them from its lock."""
+    free = set(request.free)
+    return request.model_copy(update={
+        "projects": sorted(free), "pins": {p: v for p, v in request.pins.items() if p not in free},
+        "unchecked": set(), "free": set()})

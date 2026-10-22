@@ -14,6 +14,38 @@ class ProjectOrigin(CustomEnum):
     pack = "pack"
     admin = "admin"
 
+class PinSource(CustomEnum):
+    """Where a pinned version came from (O2, the minimal base of O8): the imported pack's own version,
+    the admin's choice, what resolving freely takes, or what a scanned server runs."""
+    pack = "pack"
+    admin = "admin"
+    resolution = "resolution"
+    server = "server"
+
+class PinOrigin(BaseModel):
+    """One candidate version of a pinned mod, with where it came from and whether it passes the
+    pack's validation (its Minecraft version, loader and channels, as the resolver checks them)."""
+    source: PinSource
+    version_id: str
+    version_number: Optional[str] = None
+    # None when it was not checked (the version was not in the catalog).
+    valid: Optional[bool] = None
+    # Why it does not pass, in the panel's words («Modrinth no la marca para 1.20.1»).
+    problem: Optional[str] = None
+    # What named it: the imported pack and its version, a server.
+    label: Optional[str] = None
+    at: Optional[datetime] = None
+
+class PinRecord(BaseModel):
+    """A mod's pin with its origins (O2): one per source, and the one the pack uses. `selected` is
+    `resolution` (or None) when nothing is pinned: the resolver chooses freely. The bundle's `pins`
+    keeps the version in use, so everything that reads pins reads it as before."""
+    origins: list[PinOrigin] = Field(default_factory=list)
+    selected: Optional[PinSource] = None
+
+    def origin(self, source: PinSource) -> Optional[PinOrigin]:
+        return next((o for o in self.origins if o.source == source), None)
+
 class PackProject(BaseModel):
     """A Modrinth project in a bundle, by its Modrinth id: a reference, not a copy of the project
     that would go stale as the catalog refreshes (i-7985ee-a17c2c)."""
@@ -76,6 +108,9 @@ class ModpackBundle(Document):
     channels: list[str] = Field(default_factory=lambda: ["release"])
     # Modrinth project id → version id the admin fixed.
     pins: dict[str, str] = Field(default_factory=dict)
+    # Modrinth project id → the origins of its pin (O2): where each candidate version came from and
+    # which one is in use. A pin without a record (every pin stored before O2) reads as the admin's.
+    pin_origins: dict[str, PinRecord] = Field(default_factory=dict)
     # Modrinth project id → substitute project id, or None to drop it. Added to the global
     # rules, and wins over them for the same project (d-7985ee-86fffa).
     replacements: dict[str, Optional[str]] = Field(default_factory=dict)

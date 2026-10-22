@@ -176,6 +176,14 @@ class FakeModpack:
                                    to_native=native)
         return self.bundle
 
+    async def pin_origin_select(self, bundle_id: str, project_id: str, source: Any, actor: Actor,
+                                confirm_downgrade: bool = False) -> ModpackBundle:
+        self._record("pin_origin_select", bundle_id, project_id, source, actor)
+        self.confirmed.append(confirm_downgrade)
+        if self.downgrade is not None and not confirm_downgrade:
+            raise DowngradeRefused(self.downgrade.text, self.downgrade)
+        return self.bundle
+
     async def pin_unset(self, bundle_id: str, project_id: str, actor: Actor) -> ModpackBundle:
         self._record("pin_unset", bundle_id, project_id, actor)
         self.bundle.pins = {k: v for k, v in self.bundle.pins.items() if k != project_id}

@@ -95,6 +95,7 @@
                 {% if bridge_label %}{{ ui.badge("vía " ~ bridge_label[0] ~ " (" ~ bridge_label[1] ~ ")", "info") }}{% endif %}
                 {% if row.native %}{{ ui.badge("no preferible", "warning", title="Hay una versión nativa de este mod") }}{% endif %}
                 {% if row.server_risky %}{{ ui.badge("servidor: probar antes", "warning", title="Connector tiene fallos conocidos en servidor dedicado: simula antes de instalar") }}{% endif %}
+                {% if row.off_tags %}{{ ui.badge("versión del pack, fuera de las etiquetas de Modrinth", "warning", title="El pack trae esta versión aunque Modrinth no la marca para esta versión de Minecraft o este loader: se usa igual") }}{% endif %}
               </div>
               <p class="text-xs break-words text-zinc-500 dark:text-zinc-400">
                 {%- if not in_pack %}dependencia de
@@ -143,6 +144,29 @@
                   "hx-delete": "/modpacks/" ~ bundle_id ~ "/pins/" ~ row.project_id,
                   "hx-target": "#mods", "hx-swap": "outerHTML",
                   "hx-confirm": "¿Quitar la versión fijada de " ~ row.title ~ "?"}) }}
+              </div>
+              {% endif %}
+              {# Where the version comes from (O2): every origin, the one in use marked; another is put
+                 in use from here, and an older one asks first, as any pin. #}
+              {% if row.pin_origins %}
+              <div class="space-y-1 text-xs" data-pin-origins>
+                <p class="font-medium">De dónde sale la versión</p>
+                <ul class="space-y-1">
+                  {% for origin in row.pin_origins %}
+                  <li class="flex flex-wrap items-center gap-2">
+                    <span>{{ origin.label }} {{ origin.version_number or origin.version_id }}{% if origin.named_by %} ({{ origin.named_by }}){% endif %}</span>
+                    {% if origin.in_use %}{{ ui.badge("en uso", "accent") }}{% endif %}
+                    {% if origin.valid is false %}<span class="text-amber-800 dark:text-amber-300">{{ origin.problem or "no pasa la validación del pack" }}</span>
+                    {% elif origin.valid %}<span class="text-zinc-500 dark:text-zinc-400">pasa la validación del pack</span>{% endif %}
+                    {% if not origin.in_use %}
+                    <form hx-post="/modpacks/{{ bundle_id }}/pins/{{ row.project_id }}/origen" hx-target="#mods" hx-swap="outerHTML">
+                      <input type="hidden" name="origin" value="{{ origin.source }}">
+                      {{ ui.button("Usar esta", kind="ghost", small=True, type="submit") }}
+                    </form>
+                    {% endif %}
+                  </li>
+                  {% endfor %}
+                </ul>
               </div>
               {% endif %}
               {% if in_pack %}

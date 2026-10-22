@@ -18,8 +18,9 @@ from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink
 from src.database.jobs import JobDatabase
 from src.model.jobs import Job
 from src.library.bridges import BRIDGES, REPLACES, VIA_RISK, bridge as find_bridge, companions, guest_of
-from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Candidate, Catalog, Lock, LockEntry, ResolveRequest, Target, merge_replacements, request_digest, resolve
-from src.model.modpack import BUNDLE_KEYED_FIELDS, AvailableUpdate, LoaderVersion, UpdateCheck, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, ProjectOrigin
+from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Candidate, Catalog, Lock, LockEntry, ResolveRequest, Target, free_request, merge_replacements, request_digest, resolve
+from src.model.modpack import BUNDLE_KEYED_FIELDS, AvailableUpdate, LoaderVersion, UpdateCheck, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, PinOrigin, PinRecord, PinSource, ProjectOrigin
+from src.library.pins import ORIGIN_LABEL, PinView, import_selects, pin_view, resolution_inputs, version_problem
 from src.model.modrinth import ModrinthProject, ModrinthVersion, ModrinthVersionList, VersionBrief
 from src.model.modrinth.version import ModrinthDependencyType
 from src.model.pterodactyl import PterodactylServer
@@ -112,6 +113,27 @@ class ChangePreview(BaseModel):
         return sorted(p for p, d in self.directions.items() if d == "down")
 
 
+@dataclass
+class PackPins:
+    """What pinning an imported pack's versions did (O2), for the import's report."""
+    # Pinned to the pack's version, in use.
+    pinned: list[str] = field(default_factory=list)
+    # Of those, the ones Modrinth does not mark for the pack: project id -> why.
+    outside: dict[str, str] = field(default_factory=dict)
+    # Offered only, on the card: another choice was in use, or the pack's version goes back.
+    offered: list[str] = field(default_factory=list)
+    # Left alone: someone pinned the mod while the import ran.
+    kept: list[str] = field(default_factory=list)
+
+
+def _with_origin(record: PinRecord, origin: PinOrigin, select: bool) -> PinRecord:
+    """`record` with `origin` in place of the one of its source; in use if `select`."""
+    origins = [origin if o.source == origin.source else o for o in record.origins]
+    if not any(o.source == origin.source for o in record.origins):
+        origins.append(origin)
+    return PinRecord(origins=origins, selected=origin.source if select else record.selected)
+
+
 @dataclass(frozen=True)
 class PinDowngrade:
     """A pin before the mod's floor (F27, d-7985ee-c62c61): the floor's version, the pin's, and what
@@ -179,6 +201,26 @@ class ModRow:
     native: Optional[str] = None
     # A bridged mod that goes on the server: «servidor: probar antes» (d-7985ee-98c52a).
     server_risky: bool = False
+    # Where the pinned version came from (O2): each origin, the one in use first marked. Empty for a
+    # mod with no pin; a pin stored before O2 shows one, «elegida a mano».
+    pin_origins: list["OriginRow"] = field(default_factory=list)
+    # The last resolution took the imported pack's own version outside Modrinth's tags (O2).
+    off_tags: bool = False
+
+
+@dataclass(frozen=True)
+class OriginRow:
+    """One origin of a mod's pin, as its card shows it (O2)."""
+    source: str
+    label: str
+    version_id: str
+    version_number: Optional[str]
+    # Whether it passes the pack's validation; None when unknown.
+    valid: Optional[bool]
+    problem: Optional[str]
+    # What named it: the imported pack and its version.
+    named_by: Optional[str]
+    in_use: bool
 
 
 @dataclass
@@ -473,6 +515,118 @@ class ModpackService():
             if not MODRINTH_ID.fullmatch(value):
                 raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{value}' no es un id de Modrinth")
         bundle = await self.modpackDB.bundle_get(bundle_id)
+        found, downgrade = await self._pin_checked(bundle, project_id, version_id, confirm_downgrade)
+        record = bundle.pin_origins.get(project_id)
+        if record is None:
+            updated = await self.modpackDB.bundle_pin_set(bundle_id, project_id, version_id)
+        else:
+            # A mod with origins (O2): the admin's version becomes its «elegida a mano» origin, in use.
+            problem = version_problem(candidate(found), self._target(bundle), bundle.channel_exceptions.get(project_id))
+            record = _with_origin(record, PinOrigin(
+                source=PinSource.admin, version_id=version_id, version_number=found.version_number,
+                valid=problem is None, problem=problem, at=self.clock()), select=True)
+            await self.modpackDB.bundle_pin_record_set(bundle_id, project_id, record, version_id)
+            updated = await self.modpackDB.bundle_get(bundle_id)
+        details: dict[str, Any] = {"project_id": project_id, "version_id": version_id}
+        if downgrade is not None:
+            details["downgrade"] = {"from": downgrade.floor_number, "to": downgrade.pin_number}
+        await self.audit.record(actor, "bundle.pin", _bundle(bundle_id), details)
+        return updated
+
+    @staticmethod
+    def _target(bundle: ModpackBundle) -> Target:
+        loader = str(bundle.loader.value)
+        return Target(game_version=bundle.version, loader=loader, channels=frozenset(bundle.channels),
+                      bridges=frozenset(k for k in bundle.secondary_loaders if find_bridge(k, loader, bundle.version)))
+
+    async def pin_origin_select(self, bundle_id: str, project_id: str, source: PinSource, actor: Actor,
+                                confirm_downgrade: bool = False) -> ModpackBundle:
+        """
+        Put one of a pinned mod's origins in use (O2), from its card: the pack's version, the one
+        chosen by hand, a server's, or «resolución» (unpinned: the resolver chooses freely, never
+        going back). The same checks as pin_set: a version before the mod's floor is a
+        DowngradeRefused (409) unless `confirm_downgrade` (going back is only ever this explicit
+        choice, d-7985ee-6dc34c), and one of the other way is a 422. 422 too for an origin the mod
+        does not have. Only that mod's pin and origins change, in one write.
+        """
+        if not MODRINTH_ID.fullmatch(project_id):
+            raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{project_id}' no es un id de Modrinth")
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        view = pin_view(bundle, project_id)
+        if view is None:
+            raise HTTP_422_UNPROCESSABLE_ENTITY("Ese mod no tiene una versión fijada con orígenes")
+        stored = [o for o in view.origins if o.source != PinSource.resolution]
+        details: dict[str, Any] = {"project_id": project_id, "origin": source.value}
+        if source == PinSource.resolution:
+            await self.modpackDB.bundle_pin_record_set(
+                bundle_id, project_id, PinRecord(origins=stored, selected=PinSource.resolution), None)
+            details["version_id"] = None
+        else:
+            chosen = view.origin(source)
+            if chosen is None:
+                raise HTTP_422_UNPROCESSABLE_ENTITY(f"Ese mod no tiene la versión de origen «{ORIGIN_LABEL[source]}»")
+            _, downgrade = await self._pin_checked(bundle, project_id, chosen.version_id, confirm_downgrade)
+            await self.modpackDB.bundle_pin_record_set(
+                bundle_id, project_id, PinRecord(origins=stored, selected=source), chosen.version_id)
+            details["version_id"] = chosen.version_id
+            if downgrade is not None:
+                details["downgrade"] = {"from": downgrade.floor_number, "to": downgrade.pin_number}
+        await self.audit.record(actor, "bundle.pin", _bundle(bundle_id), details)
+        return await self.modpackDB.bundle_get(bundle_id)
+
+    async def pins_from_pack(self, bundle_id: str, versions: Mapping[str, ModrinthVersion], label: str,
+                             actor: Actor) -> PackPins:
+        """
+        Pin each mod of an imported pack to the pack's own version (O2): its «versión del pack»
+        origin, checked as the resolver checks the pack (`version_problem`) and kept with that
+        result. A version that does not pass is still used, and marked. It is put in use only where
+        nothing else was chosen (no pin, or the pack's version already in use) and never when it
+        goes back (d-7985ee-6dc34c): there it is only offered on the mod's card. A pin someone sets
+        meanwhile is left alone. `versions` must be keyed by plain Modrinth ids.
+        """
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        target = self._target(bundle)
+        wanted = {p: v for p, v in versions.items() if MODRINTH_ID.fullmatch(p)}
+        back = await self.pin_downgrades(bundle, {p: v.version_id for p, v in wanted.items()}, fetch=False)
+        result = PackPins()
+        for project_id, version in wanted.items():
+            problem = version_problem(candidate(version), target, bundle.channel_exceptions.get(project_id))
+            origin = PinOrigin(source=PinSource.pack, version_id=version.version_id,
+                               version_number=version.version_number, valid=problem is None, problem=problem,
+                               label=label, at=self.clock())
+            current = bundle.pin_origins.get(project_id)
+            pinned = bundle.pins.get(project_id)
+            base = current
+            if base is None and pinned is not None:
+                # A pin stored before O2 is the admin's: kept, and in use.
+                base = PinRecord(origins=[PinOrigin(source=PinSource.admin, version_id=pinned)], selected=PinSource.admin)
+            selects = import_selects(current, project_id in back, pinned=pinned is not None)
+            if selects:
+                record = _with_origin(base or PinRecord(), origin, select=True)
+                written = await self.modpackDB.bundle_pin_record_set(bundle_id, project_id, record, version.version_id,
+                                                                     when_pin=pinned)
+            else:
+                record = _with_origin(base or PinRecord(selected=PinSource.resolution), origin, select=False)
+                written = await self.modpackDB.bundle_pin_record_set(bundle_id, project_id, record, pinned,
+                                                                     when_pin=pinned)
+            if not written:
+                result.kept.append(project_id)
+            elif selects:
+                result.pinned.append(project_id)
+                if problem is not None:
+                    result.outside[project_id] = problem
+            else:
+                result.offered.append(project_id)
+        if result.pinned or result.offered:
+            await self.audit.record(actor, "bundle.pin.import", _bundle(bundle_id),
+                                    {"source": label, "pinned": len(result.pinned), "outside": sorted(result.outside),
+                                     "offered": result.offered})
+        return result
+
+    async def _pin_checked(self, bundle: ModpackBundle, project_id: str, version_id: str,
+                           confirm_downgrade: bool) -> tuple[ModrinthVersion, Optional[PinDowngrade]]:
+        """pin_set's checks, for any way of pinning: the project is the pack's or its resolution's,
+        the version is that project's and keeps its way, and a step back needs `confirm_downgrade`."""
         if project_id not in {p.project_id for p in bundle.projects} and not await self._resolution_names(bundle, project_id):
             raise HTTP_422_UNPROCESSABLE_ENTITY("Ese proyecto no está en el modpack ni es una de sus dependencias")
         found = await self._version(version_id)
@@ -493,12 +647,7 @@ class ModpackService():
         downgrade = (await self.pin_downgrades(bundle, {project_id: version_id})).get(project_id)
         if downgrade is not None and not confirm_downgrade:
             raise DowngradeRefused(downgrade.text, downgrade)
-        updated = await self.modpackDB.bundle_pin_set(bundle_id, project_id, version_id)
-        details: dict[str, Any] = {"project_id": project_id, "version_id": version_id}
-        if downgrade is not None:
-            details["downgrade"] = {"from": downgrade.floor_number, "to": downgrade.pin_number}
-        await self.audit.record(actor, "bundle.pin", _bundle(bundle_id), details)
-        return updated
+        return found, downgrade
 
     async def via_set(self, bundle_id: str, project_id: str, native: bool, actor: Actor,
                       confirm: bool = False) -> ModpackBundle:
@@ -566,7 +715,15 @@ class ModpackService():
         """Remove the pin of one mod; only that pin changes. 422 for an id that is not a Modrinth id."""
         if not MODRINTH_ID.fullmatch(project_id):
             raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{project_id}' no es un id de Modrinth")
-        updated = await self.modpackDB.bundle_pin_unset(bundle_id, project_id)
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        view = pin_view(bundle, project_id) if project_id in bundle.pin_origins else None
+        if view is None:
+            updated = await self.modpackDB.bundle_pin_unset(bundle_id, project_id)
+        else:
+            # With origins (O2), unpinning is «resolución» in use; the other origins stay on offer.
+            await self.modpackDB.bundle_pin_record_set(bundle_id, project_id, PinRecord(
+                origins=[o for o in view.origins if o.source != PinSource.resolution], selected=PinSource.resolution), None)
+            updated = await self.modpackDB.bundle_get(bundle_id)
         await self.audit.record(actor, "bundle.pin", _bundle(bundle_id),
                                 {"project_id": project_id, "version_id": None})
         return updated
@@ -854,7 +1011,31 @@ class ModpackService():
                 listed[record.project_id] = record
         wanted = {i for record in listed.values() for i in record.version_ids}
         wanted |= {bundle.pins[i] for i in [*pack, *dependencies] if i in bundle.pins}
+        # The «resolución» origin of a pinned mod (O2): what the last resolution would take freely.
+        freely = dict(lock_saved.free) if lock_saved is not None else {}
+        wanted |= set(freely.values())
         known = {v.version_id: v for v in await self.modrinthDB.version_briefs(sorted(wanted))} if wanted else {}
+
+        def origin_rows(project_id: str, entry: Optional[LockEntry]) -> list[OriginRow]:
+            """The card's origins of a mod whose pin has them (O2); none for a pin stored before."""
+            if project_id not in bundle.pin_origins:
+                return []
+            resolved = freely.get(project_id) if project_id in bundle.pins else (entry.version_id if entry else None)
+            view = pin_view(bundle, project_id, resolved=resolved)
+            if view is None:
+                return []
+
+            def number(origin: PinOrigin) -> Optional[str]:
+                if origin.version_number:
+                    return origin.version_number
+                if entry is not None and entry.version_id == origin.version_id:
+                    return entry.version_number
+                brief = known.get(origin.version_id)
+                return brief.version_number if brief else None
+
+            return [OriginRow(source=o.source.value, label=ORIGIN_LABEL[o.source], version_id=o.version_id,
+                              version_number=number(o), valid=o.valid, problem=o.problem, named_by=o.label,
+                              in_use=o.source == view.selected) for o in view.origins]
 
         def pin_options(project_id: str) -> Optional[list[VersionOption]]:
             loaders = way_loaders(project_id)
@@ -910,7 +1091,8 @@ class ModpackService():
                 pinned_version=bundle.pins.get(project_id),
                 via=entry.via if entry else None,
                 native=native_state(project_id, entry),
-                server_risky=entry is not None and entry.via is not None and entry.server == "include")
+                server_risky=entry is not None and entry.via is not None and entry.server == "include",
+                pin_origins=origin_rows(project_id, entry), off_tags=entry is not None and entry.off_tags)
 
         rows = [row(i, origin) for i, origin in pack.items()]
         rows += sorted((row(i, None) for i in dependencies), key=lambda r: r.title)
@@ -1126,7 +1308,8 @@ class ModpackService():
         except _NeedsModrinth:
             raise CatalogPending(await self._catalog_job(bundle_id, actor, force=False))
         await self._resolution_save(bundle, request, lock)
-        if self._stale(bundle):
+        # What the catalog lacks for the «resolución» origin of a pin (O2) the catalog job reads.
+        if self._stale(bundle) or lock.free_needs:
             await self._catalog_job(bundle_id, actor, force=False)
         return lock
 
@@ -1304,7 +1487,9 @@ class ModpackService():
     async def _request(self, bundle: ModpackBundle) -> ResolveRequest:
         global_rules = {r.project_id: r.replacement for r in await self.modpackDB.replacement_find()}
         floors = await self._floors(bundle)
+        unchecked, free = resolution_inputs(bundle)
         return ResolveRequest(
+            unchecked=unchecked, free=free,
             target=Target(game_version=bundle.version, loader=str(bundle.loader.value),
                           channels=frozenset(bundle.channels),
                           bridges=frozenset(k for k in bundle.secondary_loaders
@@ -1416,9 +1601,34 @@ class ModpackService():
         lock = resolve(request, catalog)
         for _ in range(RESOLVE_ROUNDS):
             if lock.complete:
-                return lock
+                return await self._free_loaded(catalog, lock, request, check, checked, local_only, report)
             await self._load(catalog, lock, request, check, checked, local_only, report)
             lock = resolve(request, catalog)
+        return lock
+
+    async def _free_loaded(self, catalog: Catalog, lock: Lock, request: ResolveRequest, check: bool, checked: set[str],
+                           local_only: bool, report: Optional[Report]) -> Lock:
+        """The complete lock, with the free choice of its origin-pinned mods (O2, `Lock.free`) once
+        their versions are read: the same path as the rest, a round or two. With `local_only`, what
+        the catalog lacks for it is left for the catalog job, never waited for: the pins are what the
+        lock takes, so it is complete either way."""
+        for _ in range(2):
+            if not lock.free_needs:
+                return lock
+            needs = lock.free_needs
+            floors = {v for p in needs for v in request.floors.get(p, [])}
+            alone = resolve(free_request(request), catalog)
+            wanting = Lock(entries=[], problems=[], suggestions=[], needs_versions=alone.needs_versions & floors,
+                           needs_projects=alone.needs_projects & needs, needs_types=alone.needs_types & needs,
+                           needs_bridged=alone.needs_bridged & needs)
+            try:
+                await self._load(catalog, wanting, request, check, checked, local_only, report)
+            except _NeedsModrinth:
+                return lock
+            again = resolve(request, catalog)
+            if not again.complete:
+                return lock
+            lock = again
         return lock
 
     async def _load(self, catalog: Catalog, lock: Lock, request: ResolveRequest, check: bool, checked: set[str],

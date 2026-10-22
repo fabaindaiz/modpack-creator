@@ -1,0 +1,185 @@
+"""Los orígenes de una fijación (O2, la base mínima de O8; docs/research/2026-10-21-observaciones-ronda-3.md).
+
+Una fijación guarda de dónde salió cada versión candidata (el pack importado, el admin, la
+resolución, un servidor), si pasa la validación del pack y cuál se usa. Funciones puras: el
+resolvedor y las reglas de `src/library/pins.py`, sin base ni red.
+"""
+from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
+
+from src.library.pins import (ORIGIN_LABEL, OUTSIDE_TAGS, PinView, import_selects, pin_view, resolution_inputs,
+                              version_problem)
+from src.library.resolution import (Candidate, CandidateFile, Catalog, ResolveRequest, Target, request_digest,
+                                    resolve)
+from src.model.modpack import ModpackBundle, PinOrigin, PinRecord, PinSource
+
+EPOCH = datetime(2026, 1, 1, tzinfo=timezone.utc)
+MOD = "MIXTRACE"
+
+
+def cand(version: str, *, days: int = 0, type: str = "release", game: str = "1.20.1", loader: str = "forge",
+         status: str = "listed", project: str = MOD) -> Candidate:
+    return Candidate(project_id=project, version_id=version, version_number=version, version_type=type,
+                     status=status, date_published=EPOCH + timedelta(days=days), game_versions=[game],
+                     loaders=[loader], environment="client_and_server", dependencies=[],
+                     file=CandidateFile(filename=f"{version}.jar", url=f"https://cdn.modrinth.com/{version}.jar",
+                                        sha1=version, sha512=version * 2, size=1))
+
+
+def request(**overrides: Any) -> ResolveRequest:
+    fields: dict[str, Any] = {"target": Target(game_version="1.20.1", loader="forge"), "projects": [MOD]}
+    fields.update(overrides)
+    return ResolveRequest(**fields)
+
+
+def origin(source: PinSource, version: str, valid: Optional[bool] = True, problem: Optional[str] = None) -> PinOrigin:
+    return PinOrigin(source=source, version_id=version, version_number=version, valid=valid, problem=problem)
+
+
+# El resolvedor.
+
+
+def test_a_pack_version_outside_modrinths_tags_is_used_and_marked() -> None:
+    # MixinTrace Reborn: la versión del pack no dice 1.20.1 en Modrinth, pero el pack la trae.
+    off = cand("mt-pack", game="1.20")
+    lock = resolve(request(pins={MOD: "mt-pack"}, unchecked={MOD}), Catalog.of([off]))
+    assert not lock.problems
+    [entry] = lock.entries
+    assert (entry.version_id, entry.off_tags, entry.reason) == ("mt-pack", True, OUTSIDE_TAGS)
+
+
+def test_an_admin_pin_outside_the_tags_is_still_the_pins_problem() -> None:
+    lock = resolve(request(pins={MOD: "mt-pack"}), Catalog.of([cand("mt-pack", game="1.20")]))
+    assert not lock.entries and [p.kind for p in lock.problems] == ["pin_mismatch"]
+
+
+def test_a_pack_version_that_fits_is_not_marked() -> None:
+    lock = resolve(request(pins={MOD: "mt-1"}, unchecked={MOD}), Catalog.of([cand("mt-1")]))
+    assert [(e.version_id, e.off_tags) for e in lock.entries] == [("mt-1", False)]
+
+
+def test_resolving_says_what_it_would_take_freely_for_a_mod_the_pack_pins() -> None:
+    catalog = Catalog.of([cand("mt-1"), cand("mt-2", days=5)])
+    lock = resolve(request(pins={MOD: "mt-1"}, unchecked={MOD}, free={MOD}), catalog)
+    assert [e.version_id for e in lock.entries] == ["mt-1"]
+    assert lock.free == {MOD: "mt-2"}
+
+
+def test_the_free_choice_never_goes_below_the_floor() -> None:
+    catalog = Catalog.of([cand("mt-1"), cand("mt-2", days=5), cand("mt-3", days=9, type="beta")])
+    lock = resolve(request(pins={MOD: "mt-1"}, unchecked={MOD}, free={MOD}, floors={MOD: ["mt-2"]}), catalog)
+    assert lock.free == {MOD: "mt-2"}
+
+
+def test_a_free_choice_the_catalog_cannot_answer_yet_is_asked_for_without_blocking_the_lock() -> None:
+    catalog = Catalog()
+    catalog.add(cand("mt-pack", game="1.20"))
+    catalog.types = {MOD: "mod"}
+    # Only the pinned version is known: its list of versions has not been read.
+    catalog.by_project.pop(MOD)
+    lock = resolve(request(pins={MOD: "mt-pack"}, unchecked={MOD}, free={MOD}), catalog)
+    assert lock.complete and [e.version_id for e in lock.entries] == ["mt-pack"]
+    assert lock.free == {} and lock.free_needs == {MOD}
+
+
+def test_a_request_without_origins_keeps_its_digest() -> None:
+    plain = request(pins={MOD: "mt-1"})
+    assert request_digest(plain) == request_digest(request(pins={MOD: "mt-1"}, unchecked=set(), free=set()))
+    assert request_digest(plain) != request_digest(request(pins={MOD: "mt-1"}, unchecked={MOD}))
+
+
+# La validación.
+
+
+def test_validation_says_what_the_version_lacks() -> None:
+    target = Target(game_version="1.20.1", loader="forge")
+    assert version_problem(cand("ok"), target) is None
+    assert version_problem(cand("x", game="1.20"), target) == "Modrinth no la marca para 1.20.1"
+    assert version_problem(cand("x", loader="fabric"), target) == "Modrinth no la marca para forge"
+    assert version_problem(cand("x", status="unlisted"), target) == "no está publicada en Modrinth"
+    assert version_problem(cand("x", type="beta"), target) == "es beta, fuera de los canales del pack"
+    assert version_problem(cand("x", type="beta"), target, exception="beta") is None
+
+
+# La fijación vista con sus orígenes.
+
+
+def bundle(pins: dict[str, str], records: Optional[dict[str, PinRecord]] = None) -> ModpackBundle:
+    return ModpackBundle.model_construct(version="1.20.1", pins=pins, pin_origins=records or {})
+
+
+def viewed(pack: ModpackBundle, project_id: str, resolved: Optional[str] = None) -> PinView:
+    view = pin_view(pack, project_id, resolved=resolved)
+    assert view is not None
+    return view
+
+
+def test_a_pin_stored_before_origins_reads_as_the_admins() -> None:
+    view = viewed(bundle({MOD: "mt-1"}), MOD)
+    assert [(o.source, o.version_id) for o in view.origins] == [(PinSource.admin, "mt-1")]
+    assert view.selected == PinSource.admin
+
+
+def test_a_pinned_pack_version_is_the_selected_origin() -> None:
+    record = PinRecord(origins=[origin(PinSource.pack, "mt-pack", valid=False, problem="Modrinth no la marca para 1.20.1"),
+                                origin(PinSource.resolution, "mt-2")], selected=PinSource.pack)
+    view = viewed(bundle({MOD: "mt-pack"}, {MOD: record}), MOD)
+    assert view.selected == PinSource.pack
+    assert [o.source for o in view.origins] == [PinSource.pack, PinSource.resolution]
+
+
+def test_a_pin_changed_elsewhere_reads_as_the_admins_and_keeps_the_other_origins() -> None:
+    # Un PATCH de /v1 cambió el pin sin tocar los orígenes: la versión fijada manda.
+    record = PinRecord(origins=[origin(PinSource.pack, "mt-pack")], selected=PinSource.pack)
+    view = viewed(bundle({MOD: "mt-9"}, {MOD: record}), MOD)
+    assert view.selected == PinSource.admin
+    assert {(o.source, o.version_id) for o in view.origins} == {(PinSource.pack, "mt-pack"), (PinSource.admin, "mt-9")}
+
+
+def test_without_a_pin_the_resolution_is_selected() -> None:
+    record = PinRecord(origins=[origin(PinSource.pack, "mt-pack")], selected=PinSource.resolution)
+    view = viewed(bundle({}, {MOD: record}), MOD, resolved="mt-2")
+    assert view.selected == PinSource.resolution
+    assert [(o.source, o.version_id) for o in view.origins] == [(PinSource.pack, "mt-pack"), (PinSource.resolution, "mt-2")]
+
+
+def test_a_mod_with_no_pin_and_no_origins_has_no_view() -> None:
+    assert pin_view(bundle({}), MOD) is None
+
+
+def test_the_resolver_takes_unchecked_only_the_pack_or_server_versions_in_use() -> None:
+    records = {MOD: PinRecord(origins=[origin(PinSource.pack, "mt-pack", valid=False)], selected=PinSource.pack),
+               "ADMINPIN": PinRecord(origins=[origin(PinSource.pack, "a-1"), origin(PinSource.admin, "a-2")],
+                                     selected=PinSource.admin),
+               "FREEMOD": PinRecord(origins=[origin(PinSource.pack, "f-1")], selected=PinSource.resolution)}
+    unchecked, free = resolution_inputs(bundle({MOD: "mt-pack", "ADMINPIN": "a-2", "LEGACY": "l-1"}, records))
+    assert unchecked == {MOD}
+    # What resolving freely takes is asked for every pinned mod that has another origin than the admin.
+    assert free == {MOD, "ADMINPIN"}
+
+
+# Importar: la versión del pack se usa salvo que pise una elección o baje el mod.
+
+
+def test_importing_selects_the_pack_version_when_nothing_else_is_chosen() -> None:
+    assert import_selects(current=None, downgrade=False) is True
+    assert import_selects(current=PinRecord(origins=[origin(PinSource.pack, "old")], selected=PinSource.pack),
+                          downgrade=False) is True
+
+
+def test_importing_never_replaces_a_choice_nor_goes_back() -> None:
+    chosen = PinRecord(origins=[origin(PinSource.admin, "a-1")], selected=PinSource.admin)
+    assert import_selects(current=chosen, downgrade=False) is False
+    freed = PinRecord(origins=[origin(PinSource.pack, "p-1")], selected=PinSource.resolution)
+    assert import_selects(current=freed, downgrade=False) is False
+    assert import_selects(current=None, downgrade=True) is False
+
+
+def test_a_legacy_pin_is_a_choice_importing_keeps() -> None:
+    assert import_selects(current=None, downgrade=False, pinned=True) is False
+
+
+def test_every_origin_has_a_label() -> None:
+    assert {s: ORIGIN_LABEL[s] for s in PinSource} == {
+        PinSource.pack: "versión del pack", PinSource.admin: "elegida a mano", PinSource.resolution: "resolución",
+        PinSource.server: "servidor"}

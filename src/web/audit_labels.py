@@ -16,6 +16,7 @@ ACTIONS: dict[str, tuple[str, str]] = {
     "bundle.via": ("Cambió la vía de un mod", "Packs"),
     "bundle.decision": ("Decidió el lado", "Packs"),
     "bundle.pin": ("Fijó una versión", "Packs"),
+    "bundle.pin.import": ("Fijó las versiones del pack importado", "Packs"),
     "bundle.channel_exception": ("Aceptó otro canal", "Packs"),
     "bundle.channel_exception.delete": ("Quitó la excepción de canal", "Packs"),
     "bundle.replacement.delete": ("Quitó un reemplazo del pack", "Packs"),

@@ -15,9 +15,13 @@ from src.model.modpack import (
     ModpackReplacement,
     ModpackResolution,
     PackProject,
+    PinRecord,
     ProjectOrigin,
 )
 from src.exceptions import *
+
+# `when_pin` left out: write whatever the pin is now.
+ANY_PIN = object()
 
 class ModpackDatabase():
     def bundle_find(self,
@@ -140,12 +144,12 @@ class ModpackDatabase():
 
     async def bundle_project_remove(self, bundle_id: str, project_id: str, clear_keys: bool = False) -> list[PackProject]:
         """Remove a project from a bundle; 404 if the bundle does not have it. With `clear_keys`, its
-        pin, server decision and channel exception go in the same update (d-7985ee-881689);
+        pin (with its origins, O2), server decision and channel exception go in the same update (d-7985ee-881689);
         `project_id` must then be a plain Modrinth id: it becomes a key of a dotted path."""
         oid = self._bundle_oid(bundle_id)
         update: dict[str, Any] = {"$pull": {"projects": {"project_id": project_id}}}
         if clear_keys:
-            update["$unset"] = {f"{field}.{project_id}": "" for field in ("pins", "server_decisions", "channel_exceptions")}
+            update["$unset"] = {f"{field}.{project_id}": "" for field in ("pins", "pin_origins", "server_decisions", "channel_exceptions")}
         result = await ModpackBundle.get_pymongo_collection().update_one(
             {"_id": oid, "projects.project_id": project_id}, update)
         if not result.modified_count:
@@ -190,6 +194,32 @@ class ModpackDatabase():
         if not result.matched_count:
             raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' not found")
         return await self.bundle_get(bundle_id)
+
+    async def bundle_pin_record_set(self, bundle_id: str, project_id: str, record: PinRecord, pin: Optional[str],
+                                    when_pin: object = ANY_PIN) -> bool:
+        """
+        Write one mod's pin origins (O2) and its pin in one update, touching only those two keys:
+        `pin` is the version in use, None to leave it unpinned. With `when_pin`, only if the pin
+        stored is still that one (None: no pin), so a pin someone set meanwhile is never replaced.
+        Returns whether it wrote; 404 if the bundle does not exist. `project_id` must be a plain
+        Modrinth id (the caller checks it): it becomes a key of a dotted path.
+        """
+        oid = self._bundle_oid(bundle_id)
+        update: dict[str, Any] = {"$set": {f"pin_origins.{project_id}": record.model_dump()}}
+        if pin is not None:
+            update["$set"][f"pins.{project_id}"] = pin
+        else:
+            update["$unset"] = {f"pins.{project_id}": ""}
+        query: dict[str, Any] = {"_id": oid}
+        if when_pin is not ANY_PIN:
+            query[f"pins.{project_id}"] = when_pin if when_pin is not None else {"$exists": False}
+        collection = ModpackBundle.get_pymongo_collection()
+        result = await collection.update_one(query, update)
+        if result.matched_count:
+            return True
+        if not await collection.count_documents({"_id": oid}, limit=1):
+            raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' not found")
+        return False
 
     async def bundle_pin_unset(self, bundle_id: str, project_id: str) -> ModpackBundle:
         """Remove one mod's pin, touching only that key. `project_id` must be a plain Modrinth id."""

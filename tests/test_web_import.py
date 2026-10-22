@@ -290,6 +290,25 @@ def test_the_report_lists_what_is_only_on_curseforge_by_its_ids() -> None:
     assert 'href="https://www.curseforge.com/projects/238222"' in text
 
 
+def test_the_report_says_what_was_pinned_to_the_packs_version_and_what_is_outside_the_tags() -> None:
+    client, fake = setup()
+    fake.report.pinned = ["P1", "P2", "P3"]
+    fake.report.outside = {"P2": "Modrinth no la marca para 1.20.1"}
+    fake.report.offered = ["P4"]
+    fake.job.status, fake.job.active = "done", False
+    shown = " ".join(visible(client.get(f"/modpacks/importar/{fake.job.id}", headers=HTMX).text).split())
+    assert "Fijados a la versión del pack: 3 mods" in shown
+    assert "1 fuera de las etiquetas de Modrinth: se usan igual y quedan marcados en la lista de mods" in shown
+    assert "1 con otra versión elegida o que bajaría: la versión del pack queda ofrecida en su tarjeta" in shown
+
+
+def test_a_report_without_pins_says_nothing_of_them() -> None:
+    client, fake = setup()
+    fake.job.status, fake.job.active = "done", False
+    shown = visible(client.get(f"/modpacks/importar/{fake.job.id}", headers=HTMX).text)
+    assert "versión del pack" not in shown
+
+
 def test_v1_takes_a_curseforge_zip_and_a_profile_code_as_jobs() -> None:
     _, fake = setup()
     fake.curseforge_enabled = True

@@ -8,6 +8,9 @@ from src.model.modpack.project import (
     ModpackReplacement,
     ModpackResolution,
     PackProject,
+    PinOrigin,
+    PinRecord,
+    PinSource,
     ProjectOrigin,
 )
 from src.model.modpack.loader_version import LoaderVersion
@@ -23,6 +26,9 @@ __all__ = [
     "ModpackReplacement",
     "ModpackResolution",
     "PackProject",
+    "PinOrigin",
+    "PinRecord",
+    "PinSource",
     "ProjectOrigin",
     "AvailableUpdate",
     "LoaderVersion",

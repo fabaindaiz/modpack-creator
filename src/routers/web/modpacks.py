@@ -16,7 +16,7 @@ from src.library.mod_filters import ModFilters, apply as filter_rows, counts as 
 from src.library.onboarding import PackFacts, fact, pack_steps, pending_count
 from src.library.resolution import ADMIN, Lock
 from src.dependences import Dependences, JobService, ModpackImportService, ModpackService, ModrinthService, PterodactylService, UpdateCheckService
-from src.model.modpack import ModpackBundle, ModpackBundleCreate, ModpackBundlePatch, ProjectOrigin
+from src.model.modpack import ModpackBundle, ModpackBundleCreate, ModpackBundlePatch, PinSource, ProjectOrigin
 from src.model.modrinth.project import ModrinthEnvironment
 from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
@@ -808,6 +808,31 @@ async def pin_remove(
     """Remove a mod's pin; from a problem's card (`contexto`), resolve again too."""
     await modpackService.pin_unset(bundle_id, project_id, actor)
     return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto, "Fijación quitada")
+
+@router.post("/modpacks/{bundle_id}/pins/{project_id}/origen")
+@inject
+async def pin_origin(
+        bundle_id: str,
+        project_id: str,
+        request: Request,
+        origin: Annotated[PinSource, Form()],
+        confirm_downgrade: Annotated[bool, Form()] = False,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
+        ):
+    """Put one of a mod's pin origins in use, from its card (O2). An older version than the mod's
+    floor is not saved: the answer is the pin dialog, into #pin-dialog, that sends the same choice
+    again with `confirm_downgrade` (d-7985ee-c62c61)."""
+    try:
+        await modpackService.pin_origin_select(bundle_id, project_id, origin, actor, confirm_downgrade=confirm_downgrade)
+    except DowngradeRefused as refused:
+        response = render(request, "modpacks/_pin_confirm.html", actor, bundle_id=bundle_id, downgrade=refused.downgrade,
+                          version_id=refused.downgrade.pin_version, contexto=None, origin=origin.value)
+        response.headers["HX-Retarget"] = "#pin-dialog"
+        response.headers["HX-Reswap"] = "innerHTML"
+        return response
+    return await _acted(request, actor, modpackService, updateCheckService, bundle_id, None, "Versión en uso cambiada")
 
 @router.get("/modpacks/{bundle_id}/trabajo")
 @inject

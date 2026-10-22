@@ -5,6 +5,14 @@
 <div class="space-y-3 rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-950/40 dark:text-emerald-100" data-import-report>
   <p class="font-medium">Importado: {{ report.projects | length }} mods de {{ report.source }}</p>
   {{ ui.running_counts(report.decisions.values() | select | list | length, report.channel_exceptions) }}
+  {# O2: each mod pinned to the pack's own version; one outside Modrinth's tags is used anyway. #}
+  {% if report.pinned or report.offered %}
+  <div class="space-y-1">
+    {% if report.pinned %}<p>Fijados a la versión del pack: {{ report.pinned | length }} mods</p>{% endif %}
+    {% if report.outside %}<p>{{ report.outside | length }} fuera de las etiquetas de Modrinth: se usan igual y quedan marcados en la lista de mods.</p>{% endif %}
+    {% if report.offered %}<p>{{ report.offered | length }} con otra versión elegida o que bajaría: la versión del pack queda ofrecida en su tarjeta.</p>{% endif %}
+  </div>
+  {% endif %}
   {% if report.curseforge_only %}
   <div class="space-y-1">
     <p class="font-medium">Solo en CurseForge ({{ report.curseforge_only | length }})</p>

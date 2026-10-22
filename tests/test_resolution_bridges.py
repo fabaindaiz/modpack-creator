@@ -149,7 +149,7 @@ def test_the_digest_of_a_pack_without_bridges_is_the_one_it_had_and_native_only_
     batch C; the marks, in any order, give one digest."""
     plain = request("a", target=NEO)
     data = plain.model_dump(mode="json")
-    del data["target"]["bridges"], data["native_only"], data["floors"], data["channel_exceptions"]
+    del data["target"]["bridges"], data["native_only"], data["floors"], data["channel_exceptions"], data["unchecked"], data["free"]
     data["target"]["channels"] = sorted(data["target"]["channels"])
     before = hashlib.sha256(json.dumps(data, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     assert request_digest(plain) == before

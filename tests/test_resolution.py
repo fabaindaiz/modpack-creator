@@ -440,7 +440,7 @@ def test_floors_leave_the_digest_as_it_was_before_they_existed() -> None:
 
     plain = digest_request()
     data = plain.model_dump(mode="json")
-    del data["floors"], data["target"]["bridges"], data["native_only"]  # batch C keeps the digest too
+    del data["floors"], data["target"]["bridges"], data["native_only"], data["unchecked"], data["free"]  # batch C and O2 keep it too
     if not data["channel_exceptions"]:
         del data["channel_exceptions"]
     data["projects"] = sorted(data["projects"])
@@ -456,7 +456,7 @@ def test_digest_without_exceptions_is_the_one_stored_before_they_existed() -> No
 
     plain = digest_request()
     data = plain.model_dump(mode="json")
-    del data["channel_exceptions"], data["floors"], data["target"]["bridges"], data["native_only"]  # none existed then
+    del data["channel_exceptions"], data["floors"], data["target"]["bridges"], data["native_only"], data["unchecked"], data["free"]  # none existed then
     data["projects"] = sorted(data["projects"])
     data["target"]["channels"] = sorted(data["target"]["channels"])
     before = hashlib.sha256(json_module.dumps(data, sort_keys=True, separators=(",", ":")).encode()).hexdigest()

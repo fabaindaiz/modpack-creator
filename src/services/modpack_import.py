@@ -2,9 +2,11 @@
 
 A .mrpack someone uploads, or one published on Modrinth, becomes a new pack or replaces the content
 of one (what the admin added stays). Its files are identified by hash: the catalog first, then one
-Modrinth call for every hash it lacks, and the projects in one more. Nothing is pinned: what runs is
-recorded as with a server import (d-7985ee-58801d): env.server seeds the server decision and a beta
-or alpha outside the pack's channels the channel exception, only where nothing is set.
+Modrinth call for every hash it lacks, and the projects in one more. What runs is recorded as with a
+server import (d-7985ee-58801d): env.server seeds the server decision and a beta or alpha outside the
+pack's channels the channel exception, only where nothing is set. Each mod is then pinned to the
+pack's own version, its «versión del pack» origin, validated and marked if it does not pass (O2,
+`ModpackService.pins_from_pack`): never over another choice, never going back.
 """
 import asyncio
 import logging
@@ -72,6 +74,12 @@ class ImportReport:
     disabled: int = 0
     # Files of a CurseForge pack Modrinth does not have (C2, C3): the manifest's ids, nothing of CurseForge's.
     curseforge_only: list[dict[str, int]] = field(default_factory=list)
+    # Mods pinned to the pack's own version (O2); of them, those Modrinth does not mark for the pack
+    # (project id -> why), used anyway; and those where it is only offered on the card (another
+    # choice was in use, or it goes back). Reports saved before O2 load without them.
+    pinned: list[str] = field(default_factory=list)
+    outside: dict[str, str] = field(default_factory=dict)
+    offered: list[str] = field(default_factory=list)
 
 
 class ModpackImportService():
@@ -416,9 +424,18 @@ class ModpackImportService():
                 exceptions[version.project_id] = channel
         decided = await self.modpackDB.bundle_keys_set_missing(bundle_id, "server_decisions", decisions)
         excepted = await self.modpackDB.bundle_keys_set_missing(bundle_id, "channel_exceptions", exceptions)
+        # Each mod pinned to the pack's own version (O2), after its channel exception: the
+        # validation counts it. The first file of a project names its version.
+        pack_versions: dict[str, ModrinthVersion] = {}
+        for version in [*(found[h] for h in [f.sha512 for f in content.files] + [j.sha512 for j in content.override_jars]
+                          if h in found), *hinted]:
+            if version.project_id in project_ids:
+                pack_versions.setdefault(version.project_id, version)
+        pinned = await self.modpackService.pins_from_pack(bundle_id, pack_versions, source, actor)
         return ImportReport(bundle_id=bundle_id, created=into is None, source=source, projects=project_ids,
                             unknown=unknown, overrides=dict(content.overrides), decisions=decided,
-                            channel_exceptions=excepted, disabled=len(disabled))
+                            channel_exceptions=excepted, disabled=len(disabled), pinned=pinned.pinned,
+                            outside=pinned.outside, offered=pinned.offered)
 
     async def _hinted(self, version_ids: list[str]) -> list[ModrinthVersion]:
         """The versions packwiz metafiles name for jars the archive lacks (T6/P4): the catalog first,
