@@ -10,6 +10,21 @@ y tokens, con en qué se apoya (bundle 0.0.30); `close` la compara después con 
 
 ## Dónde estamos
 
+**2026-10-21, ronda 3 (O2, O3, O6, O7) hecha en la rama `feat/ronda-3`** (sobre `chore/bundle-0.0.32`; sin
+merge ni push), por tres agentes en paralelo e integrada aquí, cada commit sobre el gate: los zips se leen
+en su trabajo (d-7985ee-4c3f11), agregar con puente encola el catálogo, `POST /v1/server/{id}/scan` responde
+202 con el trabajo, indicadores de carga; el diagnóstico descargable en Auditoría (d-7985ee-ea4185); los
+orígenes de un pin y la versión del pack al importar (d-7985ee-fce4ff); el «?» por sección y «Cómo
+funciona» (d-7985ee-99695d). Todo en `docs/research/2026-10-21-observaciones-ronda-3.md`. **Primer paso:**
+el dueño revisa los textos de ayuda y estas decisiones de los agentes: (1) todo mod importado queda fijado
+y ya no recibe actualizaciones seguras hasta poner «resolución» en uso; (2) `/health` y `/static/` no dejan
+evento de petición; (3) la descarga del diagnóstico no va a la auditoría; (4) un lote de diagnóstico se
+pierde si MongoDB está caído (el archivo lo cuenta); (5) un zip en cola no sobrevive a recrear el contenedor
+(`update.sh`): se pide subirlo de nuevo. **Sin hacer:** el origen «servidor» existe pero nada lo llena; O8
+(spec) y O9 (user-walk); O1 y O4 esperan el log del servidor. **Sin verificar:** Modrinth real (MixinTrace
+Reborn, KotlinLangForge), si el proxy bufferiza la descarga en streaming, y el aspecto de «Cómo funciona», un
+«?» abierto y el bloque de orígenes (el barrido no los captura todavía).
+
 **2026-10-13, tanda C (loaders secundarios) hecha en la rama `feat/loaders-secundarios`** (sobre
 `main` = `fcf3a86`; sin merge ni push). Spec `docs/superpowers/specs/2026-10-13-loaders-secundarios-design.md`,
 plan `docs/superpowers/plans/2026-10-13-loaders-secundarios.md`, decisiones d-7985ee-45c2ba … d-7985ee-b7bddf

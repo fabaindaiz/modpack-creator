@@ -5,6 +5,32 @@ introducción. Los commits de este repositorio fueron `wip` sin cuerpo: el *por 
 no quedaba en ninguna parte, y una sesión no ve lo que otra aprendió. La referencia del formato
 está al final del archivo, para que nada entre este párrafo y la primera entrada capture texto.
 
+## 2026-10-21 · s-7985ee-7784fe — Ronda 3: trabajos para los zips, diagnóstico descargable, orígenes de los pins y ayuda
+
+**Qué.** Lo decidido de la ronda 3, en la rama `feat/ronda-3`. O6: los zips de Prism, mrpack y CurseForge se leen en el trabajo `modpack_import` (la petición guarda una copia en `/tmp/modpack-imports` y encola; un barrido borra las huérfanas); agregar un mod con puente activo resuelve del catálogo y encola `catalog_refresh` para lo que falta; `POST /v1/server/{id}/scan` encola y responde 202; actualizaciones, compare y la vista previa muestran que cargan. O7: eventos de petición, error y trabajo en MongoDB con TTL de 30 días, descargables por un operador como `.jsonl` desde Auditoría, con el usuario como HMAC. O2: un pin guarda sus orígenes (pack, a mano, resolución, servidor) con su validación y uno en uso; importar fija la versión del pack, la valida y la marca si está fuera de las etiquetas. O3: un «?» por sección que se abre en el lugar, y la página «Cómo funciona».
+
+**Áreas.** `src/library/{import_uploads,diagnostics,pins}.py`, `src/model/diagnostics.py`, `src/database/{diagnostics,jobs}.py`, `src/services/{modpack_import,modpack,diagnostics}.py`, `src/library/resolution.py`, `src/routers/`, `src/web/` (plantillas, `help.py`, `app.js`, `app.css`), `main.py`, `docs/decisions.md`, `docs/references.md`, `docs/guia-instalacion.md`, tests nuevos.
+
+**Por qué.** El dueño pidió «continúa implementando las pendientes con hasta 3 agentes» y eligió en un pre-vuelo el reparto (O6 · O7 · O2+O3), la forma de O7 (Mongo y descarga), el alcance de O6 (zips y puente a trabajos; las vistas con indicador) y O2 como base mínima de O8.
+
+**Arquitectura.** ✅ Cumple: los routers solo inyectan servicios (audit de capas), los permisos en los servicios con sus filas en «Acciones y roles», ninguna escritura externa nueva, sin script ni estilo inline. ⚠️ `POST /v1/server/{id}/scan` cambia de contrato (202 con el trabajo), decidido por el dueño.
+
+**Qué salió mal en el camino.** Los worktrees de los agentes salieron de `main` (`f9330c8`), no de la rama en curso: no veían el documento de observaciones (lo leyeron del árbol principal). Un commit del agente de O2 encadenó pytest a un `tail`, así que su código de salida no cerró el commit (los tests habían pasado; el cherry-pick aquí pasó por el gate). El agente de O6 escribió dos heredocs vacíos (no colgaron). Al integrar: un conflicto en `main.py` (las tareas del lifespan, resuelto con las dos) y el sprite de íconos sin `circle-help` hasta `npm run build`. La VM de podman estaba apagada: se arrancó para `test-mongo.sh` y se apagó al terminar.
+
+**Qué quedó sin hacer.** Revisión del dueño de los textos de ayuda y de las cinco decisiones de los agentes (en el roadmap, «Dónde estamos»). El origen «servidor» no lo llena nadie. O8 (spec), O9 (user-walk), O1 y O4 (log del servidor). El barrido visual no captura «Cómo funciona», un «?» abierto ni el bloque de orígenes. El invariante de subidas de `AGENTS.md` no dice que la copia se guarda para el trabajo.
+
+**Desvío del plan.** No hubo plan escrito: el dueño pidió implementar antes de cerrar todas las observaciones, con el alcance decidido en el pre-vuelo.
+
+**No verificado.** Modrinth real (los dos mods reportados), Pterodactyl real, el proxy con la descarga en streaming, un zip de 1 GiB en el contenedor real, y la causa de O1 (sin log).
+
+**Medido.** Integrado: 8 commits, cada uno sobre el gate. `./scripts/test-mongo.sh`: 1656 passed. Barrido visual: 214 capturas, 0 con problemas. Trailers: 0.
+
+**Tarjetas y chequeos.** El gate, `test-mongo.sh`, el barrido visual; cada agente vio fallar sus tests antes del código y leyó la fuente primaria (Starlette 1.7 y su spool, el TTL de MongoDB, Beanie 2.2) en `docs/references.md` y las filas de decisión.
+
+**Revisión.** Revisé los informes de los tres agentes, el cruce entre O6 y O2 (las dos rutas de importación llegan a `_import`, donde se fijan los pins) y capturas del barrido; sin revisión en contexto limpio (no se pidió).
+
+**Aprendido.** Un agente en worktree parte de `main`, no de la rama en curso: lo que necesita leer tiene que estar commiteado en `main` o pasárselo en el prompt. Captured: roadmap («Dónde estamos»).
+
 ## 2026-10-21 · s-7985ee-963637 — Bundle 0.0.32: cosecha y actualización; observaciones de la ronda 3
 
 **Qué.** Dos partes. **La ronda 3 de observaciones**: lo que un tester y el dueño vieron en la versión desplegada (O1–O9), con las respuestas del dueño y el inventario de lo que todavía trabaja dentro de la petición, en `docs/research/2026-10-21-observaciones-ronda-3.md`; el plan se arma cuando todas estén cerradas. **El bundle de `.agents/` de 0.0.31 a 0.0.32**: la cosecha desde el 2026-10-12 (12 propuestas nuevas, elegidas por el dueño una por una), el reemplazo, el agente `researcher` con `onFailure: "block"`, las skills reinstaladas, un chequeo nuevo del gate (autor y committer de los commits sin publicar, d-7985ee-98fb0d), el aviso del `MONGODB_PASSWORD` exportado en la guía y los runbooks, las fricciones del roadmap con sus conteos, y `harvested_through` al 2026-10-21.
