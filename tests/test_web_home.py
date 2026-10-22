@@ -60,9 +60,9 @@ def test_a_failed_job_of_the_last_day_and_a_pack_to_decide_are_in_the_strip() ->
     linked = pterodactyl.servers[0]
     now = datetime.now(timezone.utc)
     failed = Job.model_construct(id=PydanticObjectId(), kind="server_update", key=f"server:{linked.id}",
-                                 payload={"server_id": str(linked.id)}, status="failed",
+                                 payload={"server_id": str(linked.id), "dry_run": False}, status="failed",
                                  created_at=now - timedelta(hours=2), finished_at=now - timedelta(hours=1))
-    old = Job.model_construct(id=PydanticObjectId(), kind="server_scan", key=None, payload={}, status="failed",
+    old =Job.model_construct(id=PydanticObjectId(), kind="server_scan", key=None, payload={}, status="failed",
                               created_at=now - timedelta(days=3), finished_at=now - timedelta(days=3))
     modpack = FakeModpack(default_fakes()[1].rows, {str(BUNDLE_ID): resolution(undecided=2)})
     section = strip(client(OPERATOR, (pterodactyl, modpack, FakeJobs(jobs.jobs, [failed, old]))).get("/").text)
@@ -71,6 +71,33 @@ def test_a_failed_job_of_the_last_day_and_a_pack_to_decide_are_in_the_strip() ->
     assert "Pack Uno tiene 2 mods por decidir." in section
     assert f'href="/modpacks/{BUNDLE_ID}?vista=decidir"' in section
     assert section.index("Falló") < section.index("Simular")
+
+
+def test_a_failed_simulation_reads_as_one_that_left_the_server_as_it_was() -> None:
+    """Group 2 (owner, 2026-10-21): the dashboard tells a dry run from a real update by its payload."""
+    pterodactyl, modpack, jobs = calm_fakes()
+    linked = pterodactyl.servers[0]
+    now = datetime.now(timezone.utc)
+    failed = Job.model_construct(id=PydanticObjectId(), kind="server_update", key=f"server:{linked.id}",
+                                 payload={"server_id": str(linked.id), "dry_run": True}, status="failed",
+                                 created_at=now - timedelta(hours=2), finished_at=now - timedelta(hours=1))
+    section = strip(client(OPERATOR, (pterodactyl, modpack, FakeJobs(jobs.jobs, [failed]))).get("/").text)
+    assert "Falló la simulación de Survival: el servidor no cambió." in section
+    assert "Falló la actualización" not in section
+
+
+def test_a_server_whose_pack_was_deleted_asks_to_link_another() -> None:
+    """Group 2 (owner, 2026-10-21): the server keeps the id of a pack that no longer exists."""
+    pterodactyl, modpack, jobs = calm_fakes()
+    orphan = server("Huérfano", bundle_id=str(PydanticObjectId()))
+    loose = server("Creativo")
+    drifts = pterodactyl.drifts | {str(orphan.id): "✅ coincide", str(loose.id): "✅ coincide"}
+    fakes = (FakePterodactyl([*pterodactyl.servers, orphan, loose], drifts), modpack, jobs)
+    section = strip(client(OPERATOR, fakes).get("/").text)
+    assert "El modpack de Huérfano se borró: vincula otro." in section
+    assert f'href="/servers/{orphan.id}#modpack"' in section
+    assert "Huérfano no tiene un modpack vinculado." not in section
+    assert "Creativo no tiene un modpack vinculado." in section
 
 
 def test_a_pack_with_updates_asks_to_see_them() -> None:

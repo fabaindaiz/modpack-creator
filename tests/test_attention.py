@@ -11,8 +11,9 @@ NOW = datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc)
 
 
 def srv(name: str = "Survival", state: str = "sync", has_pack: bool = True,
-        scanned_at: datetime | None = NOW) -> ServerFact:
-    return ServerFact(id=f"id-{name}", name=name, state=state, has_pack=has_pack, scanned_at=scanned_at)
+        scanned_at: datetime | None = NOW, pack_deleted: bool = False) -> ServerFact:
+    return ServerFact(id=f"id-{name}", name=name, state=state, has_pack=has_pack, scanned_at=scanned_at,
+                      pack_deleted=pack_deleted)
 
 
 def pack(name: str = "Pack Uno", **facts: object) -> PackFact:
@@ -123,6 +124,41 @@ def test_failed_job_fact_names_its_server_or_its_pack() -> None:
     assert fact == FailedJob(id=str(on_server.id), kind="server_scan", about="Survival", at=NOW)
     assert failed_job_fact(on_pack, {}, {bundle_id: "Pack Uno"}).about == "Pack Uno"
     assert failed_job_fact(on_pack, {}, {}).about is None
+
+
+def test_a_failed_simulation_says_the_server_did_not_change() -> None:
+    """Group 2 (owner, 2026-10-21): a dry run that failed wrote nothing, and the card says so; a real
+    update that failed keeps its text."""
+    simulated = FailedJob(id="j1", kind="server_update", about="Survival", at=NOW, simulation=True)
+    real = FailedJob(id="j2", kind="server_update", about="Lobby", at=NOW)
+    texts = [i.text for i in attention([], [], [simulated, real], NOW)]
+    assert "Falló la simulación de Survival: el servidor no cambió." in texts
+    assert "Falló la actualización de Lobby." in texts
+
+
+def test_failed_job_fact_tells_a_simulation_from_a_real_update() -> None:
+    """A dry run is a `server_update` whose payload does not say `dry_run: False` (`is_real_update`)."""
+    def update(payload: dict[str, object]) -> Job:
+        return Job.model_construct(id=PydanticObjectId(), kind="server_update", key="server:s1", payload=payload,
+                                   status="failed", created_at=NOW, finished_at=NOW)
+    assert failed_job_fact(update({"dry_run": True}), {}, {}).simulation
+    assert failed_job_fact(update({}), {}, {}).simulation
+    assert not failed_job_fact(update({"dry_run": False}), {}, {}).simulation
+    scan = Job.model_construct(id=PydanticObjectId(), kind="server_scan", key="server:s1", payload={},
+                               status="failed", created_at=NOW, finished_at=NOW)
+    assert not failed_job_fact(scan, {}, {}).simulation
+
+
+def test_a_server_whose_pack_was_deleted_asks_to_link_another() -> None:
+    """Group 2 (owner, 2026-10-21): the server still points to a pack that no longer exists. Same
+    action and level as a server that never had one, which keeps its text."""
+    [item] = attention([srv(has_pack=False, pack_deleted=True, state="unknown")], [], [], NOW)
+    assert item.text == "El modpack de Survival se borró: vincula otro."
+    assert (item.action_label, item.href, item.severity) == ("Vincular", "/servers/id-Survival#modpack", 3)
+    [seen] = attention([srv(has_pack=False, pack_deleted=True, state="unknown")], [], [], NOW, operator=False)
+    assert (seen.action_label, seen.href) == ("Ver", "/servers/id-Survival")
+    [never] = attention([srv(has_pack=False, state="unknown")], [], [], NOW)
+    assert never.text == "Survival no tiene un modpack vinculado."
 
 
 def made(kind: str, status: str, key: str, minutes: int) -> Job:

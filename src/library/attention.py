@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from typing import Mapping, Optional, Sequence
 
 from src.library.utils import as_utc
-from src.model.jobs import Job
+from src.model.jobs import Job, is_real_update
 
 # How many cards the strip shows before «Ver todas».
 VISIBLE = 5
@@ -53,6 +53,8 @@ class ServerFact:
     state: str
     has_pack: bool
     scanned_at: Optional[datetime]
+    # Without a pack because the one it was linked to was deleted: it keeps that pack's id.
+    pack_deleted: bool = False
 
 
 @dataclass(frozen=True)
@@ -75,17 +77,21 @@ class FailedJob:
     kind: str
     about: Optional[str]  # the server's or the pack's name, when known
     at: datetime
+    # A server update that was a dry run: it wrote nothing, so the server did not change.
+    simulation: bool = False
 
 
 def failed_job_fact(job: Job, server_names: Mapping[str, str], pack_names: Mapping[str, str]) -> FailedJob:
     """A failed job with the name of what it was about: its server (payload or key `server:<id>`)
-    or its pack (payload `bundle_id`)."""
+    or its pack (payload `bundle_id`). A `server_update` that was not a real one is a simulation
+    (`is_real_update`: without `dry_run: False` in its payload)."""
     server_id = job.payload.get("server_id") or (job.key[7:] if job.key and job.key.startswith("server:") else None)
     bundle_id = job.payload.get("bundle_id")
     about = server_names.get(str(server_id)) if server_id else None
     if about is None and bundle_id:
         about = pack_names.get(str(bundle_id))
-    return FailedJob(id=str(job.id), kind=job.kind, about=about, at=job.finished_at or job.created_at)
+    return FailedJob(id=str(job.id), kind=job.kind, about=about, at=job.finished_at or job.created_at,
+                     simulation=job.kind == "server_update" and not is_real_update(job))
 
 
 def unresolved(failed: Sequence[Job], done: Sequence[Job]) -> list[Job]:
@@ -119,8 +125,13 @@ def attention(servers: Sequence[ServerFact], packs: Sequence[PackFact], failed: 
     for job in failed:
         if as_utc(job.at) < now - FAILED_WINDOW:
             continue
-        what = FAILED_KIND.get(job.kind, "un trabajo")
-        text = f"Falló {what} de {job.about}." if job.about else f"Falló {what}."
+        if job.simulation:
+            # Group 2 (owner, 2026-10-21): a dry run writes nothing, and the card says so.
+            text = (f"Falló la simulación de {job.about}: el servidor no cambió." if job.about
+                    else "Falló la simulación: el servidor no cambió.")
+        else:
+            what = FAILED_KIND.get(job.kind, "un trabajo")
+            text = f"Falló {what} de {job.about}." if job.about else f"Falló {what}."
         items.append(Attention(FAILED, text, "Ver", f"/jobs/{job.id}", job.at))
     for server in servers:
         if server.state == "drift":
@@ -131,7 +142,10 @@ def attention(servers: Sequence[ServerFact], packs: Sequence[PackFact], failed: 
                                    f"/servers/{server.id}#escaneo", None))
         if not server.has_pack:
             label, href = ("Vincular", f"/servers/{server.id}#modpack") if operator else ("Ver", f"/servers/{server.id}")
-            items.append(Attention(TIDY, f"{server.name} no tiene un modpack vinculado.", label, href, None))
+            # Group 2 (owner, 2026-10-21): a deleted pack is named as such, with the same action.
+            text = (f"El modpack de {server.name} se borró: vincula otro." if server.pack_deleted
+                    else f"{server.name} no tiene un modpack vinculado.")
+            items.append(Attention(TIDY, text, label, href, None))
     for pack in packs:
         if pack.problems or pack.undecided:
             vista = "problemas" if pack.problems else "decidir"

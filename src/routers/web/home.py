@@ -73,7 +73,10 @@ async def home(
     checked_at = {str(bundle_id): check.checked_at for bundle_id, check in checks.items()}
     items = attention(
         [ServerFact(id=str(row.server.id), name=row.server.name, state=row.state, has_pack=row.bundle_name is not None,
-                    scanned_at=row.scanned_at) for row in servers],
+                    scanned_at=row.scanned_at,
+                    # It keeps the id of a pack every bundle was read for, and none has it: deleted.
+                    pack_deleted=row.server.bundle_id is not None and row.bundle_name is None)
+         for row in servers],
         [PackFact(id=bundle_id, name=bundle_names[bundle_id],
                   undecided=len(resolutions[bundle_id].lock.undecided) if bundle_id in resolutions else 0,
                   problems=len(resolutions[bundle_id].lock.problems) if bundle_id in resolutions else 0,
