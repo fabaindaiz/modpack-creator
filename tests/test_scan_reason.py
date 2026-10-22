@@ -175,7 +175,10 @@ def test_the_panel_words_only_the_reasons_it_can_say_plainly() -> None:
     assert full_reason_text("no_activity_permission") == (
         "Escaneo completo: la key no tiene permiso para leer la actividad (activity.read); con él, los siguientes "
         "solo leen lo que cambió")
-    assert full_reason_text(None) is None and full_reason_text("forced") is None
-    assert full_reason_text("unknown-code") is None
+    assert full_reason_text(None) is None and full_reason_text("unknown-code") is None
+    # Owner, 2026-10-22: the three left with only «completo» get a text too.
+    assert full_reason_text("forced") == "Escaneo completo: lo pediste así"
+    assert full_reason_text("periodic") == "Escaneo completo: el repaso periódico que relee todo cada tanto"
+    assert full_reason_text("node_unreadable") == "Escaneo completo: no se pudo leer en qué nodo está el servidor"
     assert set(FULL_REASON_TEXT) == {"no_activity_permission", "first", "restored", "too_old", "node_changed",
-                                     "activity_unreadable"}
+                                     "activity_unreadable", "forced", "periodic", "node_unreadable"}

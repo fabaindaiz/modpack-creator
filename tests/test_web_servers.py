@@ -443,7 +443,7 @@ def test_detail_shows_bundle_scan_and_comparison() -> None:
 
 def test_the_last_scan_says_why_it_was_full_when_it_can_say_it_plainly() -> None:
     """Owner, 2026-10-21: a scan that read every jar because the key lacks `activity.read` says so
-    next to the last scan; a full scan asked for says only «completo», and an incremental one nothing."""
+    next to the last scan, as every other full scan says its reason (2026-10-22); an incremental one nothing."""
     client, fakes = setup()
     assert fakes.ptero.scan is not None
     fakes.ptero.scan = fakes.ptero.scan.model_copy(update={"full": True, "full_reason": "no_activity_permission"})
@@ -452,7 +452,7 @@ def test_the_last_scan_says_why_it_was_full_when_it_can_say_it_plainly() -> None
             "siguientes solo leen lo que cambió") in text
     fakes.ptero.scan = fakes.ptero.scan.model_copy(update={"full_reason": "forced"})
     text = client.get(f"/servers/{SERVER_ID}").text
-    assert "· completo" in text and "Escaneo completo:" not in text
+    assert "Escaneo completo: lo pediste así" in text
     fakes.ptero.scan = fakes.ptero.scan.model_copy(update={"full": False, "full_reason": None})
     assert "Escaneo completo" not in client.get(f"/servers/{SERVER_ID}").text
 

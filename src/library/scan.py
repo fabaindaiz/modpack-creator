@@ -26,8 +26,8 @@ ScanStatus = Literal["identified", "unknown", "too_large"]
 FullReason = Literal["first", "forced", "periodic", "restored", "too_old", "no_activity_permission",
                      "activity_unreadable", "node_changed", "node_unreadable"]
 
-# What the server's page says next to the last scan, only for the reasons that read plainly; the
-# others (asked for, periodic, the node unreadable) show only «completo».
+# What the server's page says next to the last scan, one text per reason (owner, 2026-10-22); an
+# unknown code shows only «completo».
 FULL_REASON_TEXT: dict[str, str] = {
     "no_activity_permission": "Escaneo completo: la key no tiene permiso para leer la actividad (activity.read); "
                               "con él, los siguientes solo leen lo que cambió",
@@ -37,6 +37,9 @@ FULL_REASON_TEXT: dict[str, str] = {
     "too_old": "Escaneo completo: el escaneo anterior tiene más de 90 días, más de lo que el panel guarda de actividad",
     "node_changed": "Escaneo completo: el servidor cambió de nodo desde el escaneo anterior",
     "activity_unreadable": "Escaneo completo: no se pudo leer la actividad del servidor",
+    "forced": "Escaneo completo: lo pediste así",
+    "periodic": "Escaneo completo: el repaso periódico que relee todo cada tanto",
+    "node_unreadable": "Escaneo completo: no se pudo leer en qué nodo está el servidor",
 }
 
 
