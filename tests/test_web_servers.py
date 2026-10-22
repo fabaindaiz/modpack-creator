@@ -109,6 +109,8 @@ class FakePterodactyl:
         self.for_server: BundleForServer = BundleForServer(bundle=new_bundle(), imported=None, import_error=None)
         # What the last import job left (T1, S3); None if never imported by a job.
         self.pending: Optional[ImportResult] = None
+        # The jars (sha512) the admin already decided: a finished import's row leaves them out.
+        self.decided: set[str] = set()
         # The panel's list (U6): when it was asked; what is kept, and since when, if the panel fails.
         self.panel_at: Optional[datetime] = datetime.now(timezone.utc) - timedelta(minutes=12)
         self.panel_kept: list[PterodactylServer] = []
@@ -168,6 +170,10 @@ class FakePterodactyl:
 
     async def import_pending(self, server_id: str) -> Optional[ImportResult]:
         return self.pending
+
+    async def import_undecided(self, server_id: str, result: ImportResult) -> ImportResult:
+        """As the service: the candidates whose jar (`decided`, by sha512) was not decided yet."""
+        return result.model_copy(update={"candidates": [c for c in result.candidates if c.sha512 not in self.decided]})
 
     async def import_confirm(self, server_id: str, path: str, project_id: str, actor: Actor) -> list[PackProject]:
         self._record("import_confirm", server_id, path, project_id, actor)

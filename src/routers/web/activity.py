@@ -77,6 +77,13 @@ async def _server_context(job: Job, pterodactylService: PterodactylService,
             # The import's full report lives in its finished row (owner, 2026-10-12): the
             # server's page keeps only what waits for a decision.
             result = ImportResult(**job.checkpoint["import"])
+            # Its pending counted now, as the server's page counts them (review of release 0.3.0); a
+            # server or pack that is gone leaves the report as the import wrote it.
+            try:
+                result = await pterodactylService.import_undecided(server_id, result)
+            except HTTPException as error:
+                if error.status_code != 404:
+                    raise
             context["import_result"] = result
             context["import_titles"] = await _import_titles(modrinthService, result) if modrinthService else {}
     return context

@@ -536,6 +536,20 @@ def test_a_finished_import_row_carries_its_full_report() -> None:
     assert "Marcados «En el servidor»: 1 · Aceptan beta: 0" in shown
 
 
+def test_a_finished_import_row_counts_its_pending_when_it_is_read() -> None:
+    """Review of release 0.3.0: the row said «Pendientes de tu decisión (N)» as the import left it;
+    the server's page lowers N as the admin decides, and so does the row now."""
+    client, jobs, _, ptero = setup()
+    candidate: dict[str, Any] = {"path": "/mods/a.jar", "sha512": "s1", "metadata": None, "candidates": []}
+    report = {"added": [], "candidates": [candidate, {**candidate, "path": "/mods/b.jar", "sha512": "s2"}],
+              "local": [], "too_large": [], "on_server": [], "channel_exceptions": {}}
+    jobs.jobs = [make_job("server_import", status="done", active=False, payload={"server_id": str(SERVER_ID)},
+                          checkpoint={"import": report})]
+    ptero.decided = {"s1"}
+    shown = " ".join(visible(client.get(f"/jobs/{jobs.jobs[0].id}/row").text).split())
+    assert "Pendientes de tu decisión ( 1 )" in shown  # the number in <strong>, spaced by visible()
+
+
 # The audit log as cards, in Spanish (A9).
 
 def _audit_card(text: str) -> tuple[str, str]:

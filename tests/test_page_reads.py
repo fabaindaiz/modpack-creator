@@ -210,6 +210,31 @@ def test_the_pack_s_linked_servers_simulations_are_read_together() -> None:
     assert jobDB.calls == Counter(last_done_update_builds=1)
 
 
+def test_an_import_s_pending_are_those_its_server_s_pack_has_not_decided() -> None:
+    """Review of release 0.3.0: the finished import's row counts its pending when it is read, by the
+    rule of the server's page: a jar confirmed as a project or kept as local leaves the list."""
+    from src.library.scan import ClaimedFile, LocalFile
+    from src.model.pterodactyl import ImportCandidate, ImportResult
+    from src.services.pterodactyl import PterodactylService
+
+    pack = bundle("Pack").model_copy(update={
+        "local_files": [LocalFile.model_construct(sha512="s1")], "claimed_files": [ClaimedFile.model_construct(sha512="s2")]})
+    linked = server("Uno", pack)
+    result = ImportResult(added=[], local=[], too_large=[], candidates=[
+        ImportCandidate(path=f"/mods/{s}.jar", sha512=s, metadata=None, candidates=[]) for s in ("s1", "s2", "s3")])
+
+    def reader(linked_to: Optional[str]) -> PterodactylService:
+        return PterodactylService(
+            pterodactylAPI=cast(Any, None), modrinthAPI=cast(Any, None), modrinthDB=cast(Any, None),
+            PterodactylDB=cast(Any, Counting(server_get=linked.model_copy(update={"bundle_id": linked_to}))),
+            modpackDB=cast(Any, Counting(bundle_get=pack)), audit=RecordingAudit(), jobDB=cast(Any, Counting()))
+
+    left = asyncio.run(reader(str(pack.id)).import_undecided(str(linked.id), result))
+    assert [c.sha512 for c in left.candidates] == ["s3"]
+    unlinked = asyncio.run(reader(None).import_undecided(str(linked.id), result))
+    assert [c.sha512 for c in unlinked.candidates] == ["s1", "s2", "s3"]
+
+
 def test_a_resolution_for_a_pack_already_read_does_not_read_it_again() -> None:
     """The server's page has the pack; its set-up asks whether the resolution is current."""
     pack = bundle("Pack")

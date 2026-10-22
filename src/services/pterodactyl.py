@@ -428,7 +428,12 @@ class PterodactylService():
         last = await self.jobDB.last_of_kind("server_import", f"server:{server_id}")
         if last is None or "import" not in last.checkpoint:
             return None
-        result = ImportResult(**last.checkpoint["import"])
+        return await self.import_undecided(server_id, ImportResult(**last.checkpoint["import"]))
+
+    async def import_undecided(self, server_id: str, result: ImportResult) -> ImportResult:
+        """An import's result with only the candidates the admin has not decided yet, as of now: a jar
+        the server's pack confirmed as a project or keeps as local leaves the list. The server's page
+        and the finished job's row both read it so (review of release 0.3.0). A read."""
         server = await self.pterodactylDB.server_get(server_id)
         if server.bundle_id is None:
             return result
