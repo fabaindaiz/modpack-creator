@@ -179,7 +179,7 @@ class PterodactylService():
     async def scan(self, server_id: str, actor: Optional[Actor], directory: str = SCAN_DIRECTORY,
                    full: bool = False, record_drift: bool = True,
                    seeds: Optional[dict[str, tuple[int, str, str]]] = None,
-                   report: Optional[Report] = None) -> ServerScan:
+                   report: Optional[Report] = None, full_reason: Optional[str] = None) -> ServerScan:
         """
         Scan a directory of a server: which jars it has, and which Modrinth version each one is.
 
@@ -194,15 +194,29 @@ class PterodactylService():
             (U3): one listed with that size takes those hashes instead of being downloaded; it stays
             unconfirmed, so the next scan downloads it once (owner, 2026-10-12).
         :param report: Hears how far it is: «Leyendo los jars del servidor», done and total (T1).
-        :return: The stored scan.
+        :param full_reason: Why `full` was asked for (`periodic` for the scheduler's); `forced` by default.
+        :return: The stored scan, with why it was full (`full_reason`, owner 2026-10-21) and the node.
         """
         server = await self.pterodactylDB.server_get(server_id)
         # The scan is dated when it starts: the next one asks the activity since then, so a restore
         # during a long scan is not missed (code review, 2026-10-12).
         started = self.clock()
         previous = await self.pterodactylDB.scan_latest(server_id, directory)
-        if previous is not None and not full:
-            full = await self._restored_since(server.identifier, previous)
+        node = await self._node(server)
+        reason: Optional[str] = None
+        if previous is None:
+            reason = "first"
+        elif full:
+            reason = full_reason or "forced"
+        elif node is None:
+            reason = "node_unreadable"
+        elif previous.node is not None and previous.node != node:
+            # A transfer leaves no activity event and keeps the modification times (research
+            # 2026-10-12-actividad-pterodactyl §4).
+            reason = "node_changed"
+        else:
+            reason = await self._restored_since(server.identifier, previous)
+        full = reason is not None
         listing = [ListedFile(path=f"{directory.rstrip('/')}/{f.name}", size=f.size, modified_at=f.modified_at,
                               created_at=f.created_at)
                    for f in await self.pterodactylAPI.server_files(server.identifier, directory)
@@ -221,12 +235,26 @@ class PterodactylService():
         files = sorted([*known, *identified, *too_large], key=lambda f: f.path)
         stored = await self.pterodactylDB.scan_insert(ServerScan(
             server_id=server.id, directory=directory, scanned_at=started,  # type: ignore[arg-type]
-            full=full, files=files))
+            full=full, files=files, full_reason=reason, node=node))
         if record_drift and directory == SCAN_DIRECTORY:
             stored = await self._store_drift(server_id, stored)
         if actor is not None:
             await self.audit.record(actor, "server.scan", _target(server_id), {"directory": directory, "full": full})
         return stored
+
+    async def _node(self, server: PterodactylServer) -> Optional[str]:
+        """The server's node now, from `GET /api/client/servers/{id}` (one read; the panel answers it
+        even while the server is busy). A 409 or 429 is raised, as the activity's; any other failure is
+        None, and the scan goes full (fail closed)."""
+        try:
+            return (await self.pterodactylAPI.server_get(server.uuid)).node
+        except HTTPException as error:
+            if error.status_code in (409, 429):
+                raise
+        except Exception:
+            pass
+        logger.warning("node of %s unreadable: the scan is full", server.identifier, exc_info=True)
+        return None
 
     async def record_drift(self, server_id: str) -> None:
         """Record on the latest scan how it compares with the build, with no request to the panel: for
@@ -251,14 +279,16 @@ class PterodactylService():
         await self.pterodactylDB.scan_set_drift(server_id, drift)
         return scan.model_copy(update={"drift": drift})
 
-    async def _restored_since(self, identifier: str, previous: ServerScan) -> bool:
-        """Whether files may have come back with old modification times since `previous`: a backup
-        restore, a decompress or a reinstall in the server's activity (one request), or a scan too
-        old for the activity to still hold it. If the activity cannot be read, yes: one full scan
-        costs less than a stale cache (fail closed). A 409 (restoring, installing, moving) is raised."""
+    async def _restored_since(self, identifier: str, previous: ServerScan) -> Optional[str]:
+        """Why files may have come back with old modification times since `previous`, as a full
+        scan's reason; None if nothing says so. `restored`: a backup restore, a decompress or a
+        reinstall in the server's activity (one request); `too_old`: a scan too old for the activity
+        to still hold it. If the activity cannot be read, a full scan too (fail closed: one costs less
+        than a stale cache): `no_activity_permission` for a 403, the key without `activity.read`;
+        `activity_unreadable` otherwise. A 409 (restoring, installing, moving) or 429 is raised."""
         since = _utc(previous.scanned_at)
         if self.clock() - since > ACTIVITY_KEPT:
-            return True
+            return "too_old"
         try:
             events = await self.pterodactylAPI.server_activity(identifier, RESTORE_EVENTS)
         except HTTPException as error:
@@ -267,11 +297,11 @@ class PterodactylService():
             if error.status_code in (409, 429):
                 raise
             logger.warning("activity of %s unreadable: the scan is full", identifier, exc_info=True)
-            return True
+            return "no_activity_permission" if error.status_code == 403 else "activity_unreadable"
         except Exception:
             logger.warning("activity of %s unreadable: the scan is full", identifier, exc_info=True)
-            return True
-        return any(_utc(stamp) >= since - ACTIVITY_SLACK for _, stamp in events)
+            return "activity_unreadable"
+        return "restored" if any(_utc(stamp) >= since - ACTIVITY_SLACK for _, stamp in events) else None
 
     async def _hash(self, identifier: str, files: list[ListedFile], report: Optional[Report] = None) -> list[ScanFile]:
         """Download each file and hash its bytes, and read its mod metadata as data (S5): the bytes are

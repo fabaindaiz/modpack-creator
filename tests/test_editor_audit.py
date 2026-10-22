@@ -265,7 +265,7 @@ class FakeScans:
         self.actors: list[Any] = []
 
     async def scan(self, server_id: str, actor: Any, full: bool = False, report: Any = None,
-                   directory: str = "/mods") -> Any:
+                   directory: str = "/mods", full_reason: Any = None) -> Any:
         self.actors.append(actor)
         return type("Scan", (), {"id": "scan-1", "files": []})()
 

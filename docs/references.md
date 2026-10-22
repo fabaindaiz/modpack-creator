@@ -56,7 +56,10 @@ bien escrita. Cada entrada dice cuándo se leyó; las que no lo dicen, el 2026-1
   `docs/research/2026-10-12-actividad-pterodactyl.md`.
 
   **Lo que cambió aquí por eso (2026-10-12):** la caché del escaneo no usa el ctime; el escaneo lee la
-  actividad y va completo tras una restauración (d-7985ee-894b2c).
+  actividad y va completo tras una restauración (d-7985ee-894b2c). **(2026-10-21):** una transferencia
+  entre nodos no deja evento: el escaneo lee también `GET /api/client/servers/{id}` (su atributo
+  `node`, que el middleware deja pasar aunque el servidor esté ocupado), lo guarda y va completo si
+  cambió; un 403 de la actividad se guarda como motivo `no_activity_permission` (d-7985ee-5892e7).
 
 - **CurseForge Core API** (docs.curseforge.com/rest-api; investigación
   `docs/research/2026-10-09-curseforge-prism-y-deuda-panel.md`, A1–A3). La clave va en `x-api-key`;

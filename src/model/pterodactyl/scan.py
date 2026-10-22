@@ -18,6 +18,13 @@ class ServerScan(Document):
     files: list[ScanFile]
     # How the scan compared with the server's build, as announced; None if it was not linked.
     drift: Optional[str] = None
+    # Why it was full (a `FullReason` code of src/library/scan.py); None when it read only what changed,
+    # and on scans stored before it was kept (owner, 2026-10-21).
+    full_reason: Optional[str] = None
+    # The server's node when it was scanned (`GET /api/client/servers/{id}`): a transfer leaves no
+    # activity event, so a different node makes the next scan full. None when the panel did not say,
+    # and on scans stored before it was kept, which never count as a change.
+    node: Optional[str] = None
 
 class ProjectCandidate(BaseModel):
     """A Modrinth project a jar's metadata may be: by its mod id as a slug, or by a name search."""

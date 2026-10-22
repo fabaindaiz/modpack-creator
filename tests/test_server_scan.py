@@ -45,6 +45,13 @@ class FakePanel:
         self.calls: list[str] = []
         self.activity: list[tuple[str, datetime]] = []
         self.activity_error: Exception | None = None
+        self.node = "n1"
+
+    async def server_get(self, server_id: str) -> PterodactylServer:
+        """The server as the panel describes it now: the scan reads its node, not recorded in `calls`."""
+        return PterodactylServer(identifier="1a2b3c4d", internal_id=1, uuid=server_id, name="Survival", node=self.node,
+                                 description="", status=None, is_suspended=False, is_installing=False,
+                                 is_transferring=False)
 
     async def server_files(self, server_id: str, directory: str) -> list[PterodactylFile]:
         self.calls.append(f"list {directory}")
@@ -539,3 +546,22 @@ def test_the_baseline_is_when_the_scan_started(mongo: MongoRunner) -> None:
 
     scanned_at, started = mongo(scenario)
     assert scanned_at.replace(tzinfo=None) == started.replace(tzinfo=None)
+
+
+def test_a_full_scan_stores_why_and_the_node_and_a_moved_server_scans_again(mongo: MongoRunner) -> None:
+    """Owner, 2026-10-21: the reason and the node are stored and read back; a transfer to another node
+    leaves no activity event, so the node change makes the scan full."""
+    async def scenario() -> list[tuple[Any, ...]]:
+        panel = FakePanel()
+        panel.files = {"fabric-api.jar": (b"fabric api", T0)}
+        service, server_id = await setup(panel, HashModrinthAPI({}))
+        seen = []
+        for node in ("n1", "n1", "n2"):
+            panel.node = node
+            panel.calls.clear()
+            await service.scan(server_id, actor=None)
+            latest = await service.scan_latest(server_id)
+            seen.append((latest.full, latest.full_reason, latest.node, "download /mods/fabric-api.jar" in panel.calls))
+        return seen
+
+    assert mongo(scenario) == [(True, "first", "n1", True), (False, None, "n1", False), (True, "node_changed", "n2", True)]

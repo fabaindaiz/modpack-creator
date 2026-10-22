@@ -218,10 +218,13 @@ class JobService():
         self.notifier = notifier
 
     async def enqueue_scan(self, server_id: str, actor: Optional[Actor], full: bool = False,
-                           directory: str = SCAN_DIRECTORY) -> Job:
+                           directory: str = SCAN_DIRECTORY, full_reason: Optional[str] = None) -> Job:
         """Queue a scan of a server (of its mods, or of `directory`); 409 if the server already has
-        an active job. `actor` is None for the scheduler, which is not recorded."""
+        an active job. `actor` is None for the scheduler, which is not recorded. `full_reason` is why
+        a full scan was asked for (`periodic` for the scheduler's; the scan says `forced` without it)."""
         payload: dict[str, Any] = {"server_id": server_id, "full": full}
+        if full and full_reason is not None:
+            payload["full_reason"] = full_reason
         details: dict[str, Any] = {"full": full}
         if directory != SCAN_DIRECTORY:
             payload["directory"] = details["directory"] = directory
@@ -325,7 +328,8 @@ class JobService():
             last_full = next((s for s in scans if s.full), None)
             full = last_full is None or as_utc(last_full.scanned_at) <= now - full_every
             try:
-                queued.append(await self.enqueue_scan(server_id, actor=None, full=full))
+                queued.append(await self.enqueue_scan(server_id, actor=None, full=full,
+                                                      full_reason="periodic" if full else None))
             except HTTP_409_CONFLICT:
                 continue
         return queued
@@ -359,7 +363,8 @@ class JobService():
 
         async def scan() -> dict[str, Any]:
             result = await self.pterodactylService.scan(server_id, actor=None, full=bool(job.payload.get("full")),
-                                                        report=context.progress, directory=directory)
+                                                        report=context.progress, directory=directory,
+                                                        full_reason=job.payload.get("full_reason"))
             return {"scan_id": str(result.id), "files": len(result.files)}
         await context.step("scan", scan)
         if directory != SCAN_DIRECTORY:

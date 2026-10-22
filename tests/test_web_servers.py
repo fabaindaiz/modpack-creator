@@ -154,7 +154,7 @@ class FakePterodactyl:
         self._record("server_link_bundle", server_id, bundle_id, actor)
         return self.server
 
-    async def scan_latest(self, server_id: str) -> ServerScan:
+    async def scan_latest(self, server_id: str, directory: str = "/mods") -> ServerScan:
         if self.scan is None:
             raise HTTP_404_NOT_FOUND("no scan")
         return self.scan
@@ -439,6 +439,22 @@ def test_detail_shows_bundle_scan_and_comparison() -> None:
     assert "2026-10-01 12:00" in text
     assert f'hx-post="/servers/{SERVER_ID}/scan"' in text and f'hx-post="/servers/{SERVER_ID}/refresh"' in text
     assert 'id="compare"' in text and "Sodium" in text
+
+
+def test_the_last_scan_says_why_it_was_full_when_it_can_say_it_plainly() -> None:
+    """Owner, 2026-10-21: a scan that read every jar because the key lacks `activity.read` says so
+    next to the last scan; a full scan asked for says only «completo», and an incremental one nothing."""
+    client, fakes = setup()
+    assert fakes.ptero.scan is not None
+    fakes.ptero.scan = fakes.ptero.scan.model_copy(update={"full": True, "full_reason": "no_activity_permission"})
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert ("Escaneo completo: la key no tiene permiso para leer la actividad (activity.read); con él, los "
+            "siguientes solo leen lo que cambió") in text
+    fakes.ptero.scan = fakes.ptero.scan.model_copy(update={"full_reason": "forced"})
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert "· completo" in text and "Escaneo completo:" not in text
+    fakes.ptero.scan = fakes.ptero.scan.model_copy(update={"full": False, "full_reason": None})
+    assert "Escaneo completo" not in client.get(f"/servers/{SERVER_ID}").text
 
 
 def test_detail_without_scan_or_bundle_says_so() -> None:
@@ -1681,3 +1697,20 @@ def test_a_set_up_fact_that_fails_to_read_leaves_its_step_undone_never_a_500() -
     response = client.get(f"/servers/{SERVER_ID}")
     assert response.status_code == 200
     assert "Pack resuelto" in visible(onboarding(response.text))
+
+
+def test_v1_the_latest_scan_says_why_it_was_full_and_the_node() -> None:
+    """Owner, 2026-10-21: the reason is in /v1 too, as its code (`full_reason`), with the node."""
+    from fastapi import FastAPI
+    from src.dependences import get_current_user
+    from src.routers.v1 import include_routers_v1
+
+    _, fakes = setup(EDITOR)
+    assert fakes.ptero.scan is not None
+    fakes.ptero.scan = fakes.ptero.scan.model_copy(update={"full": True, "full_reason": "node_changed", "node": "n2"})
+    app = FastAPI()
+    include_routers_v1(app)
+    app.dependency_overrides[get_current_user] = lambda: {"name": "x"}
+    answer = TestClient(app, base_url="https://testserver").get(f"/v1/server/{SERVER_ID}/scan")
+    assert answer.status_code == 200, answer.text
+    assert (answer.json()["full_reason"], answer.json()["node"]) == ("node_changed", "n2")

@@ -196,7 +196,7 @@ class FakeScans:
         self.scanned: list[tuple[Any, ...]] = []
 
     async def scan(self, server_id: str, actor: Any, full: bool = False, report: Any = None,
-                   directory: str = "/mods") -> Any:
+                   directory: str = "/mods", full_reason: Any = None) -> Any:
         self.scanned.append((server_id, full) if directory == "/mods" else (server_id, full, directory))
         return type("Scan", (), {"id": "scan-1", "files": [1, 2, 3]})()
 
@@ -276,7 +276,7 @@ def test_the_scheduler_queues_what_is_due_and_a_full_scan_when_the_last_one_is_o
         return PterodactylServer(identifier=name, internal_id=1, uuid=name, name=name, node="n", description="",
                                  status=None, is_suspended=False, is_installing=False, is_transferring=False)
 
-    async def scenario() -> tuple[dict[str, bool], list[Job]]:
+    async def scenario() -> tuple[dict[str, tuple[bool, Any]], list[Job]]:
         db = PterodactylDatabase()
         never = await db.server_insert(server("never"))
         fresh = await db.server_insert(server("fresh"))
@@ -288,12 +288,13 @@ def test_the_scheduler_queues_what_is_due_and_a_full_scan_when_the_last_one_is_o
         first = await service.schedule_scans(T0, every=timedelta(hours=6), full_every=timedelta(days=7))
         again = await service.schedule_scans(T0, every=timedelta(hours=6), full_every=timedelta(days=7))
         names = {str(never.id): "never", str(stale_full.id): "stale"}
-        return {names[j.payload["server_id"]]: j.payload["full"] for j in first}, again
+        return {names[j.payload["server_id"]]: (j.payload["full"], j.payload.get("full_reason")) for j in first}, again
 
     queued, again = mongo(scenario)
     # "fresh" se escaneó hace una hora: no toca. "stale" toca, y completo: el último completo
     # tiene 8 días (una restauración conserva fechas viejas; la caché no lo vería).
-    assert queued == {"never": True, "stale": True}
+    # The scheduler's full scan says so (owner, 2026-10-21): the scan stores `periodic` as its reason.
+    assert queued == {"never": (True, "periodic"), "stale": (True, "periodic")}
     assert again == []
 
 

@@ -16,6 +16,34 @@ from src.library.jarmeta import ModMetadata
 
 ScanStatus = Literal["identified", "unknown", "too_large"]
 
+# Why a scan read every jar (owner, 2026-10-21): stored with the scan, None when it read only what
+# changed. `first`: no scan before. `forced`: someone asked for it. `periodic`: the scheduler's full
+# scan. `restored`: a backup restore, a decompress or a reinstall in the activity. `too_old`: the scan
+# before is older than the activity the panel keeps (90 days). `no_activity_permission`: the key lacks
+# `activity.read` (403). `activity_unreadable`: the activity failed otherwise. `node_changed`: the
+# server moved to another node, which leaves no activity event. `node_unreadable`: the panel did not
+# say the server's node.
+FullReason = Literal["first", "forced", "periodic", "restored", "too_old", "no_activity_permission",
+                     "activity_unreadable", "node_changed", "node_unreadable"]
+
+# What the server's page says next to the last scan, only for the reasons that read plainly; the
+# others (asked for, periodic, the node unreadable) show only «completo».
+FULL_REASON_TEXT: dict[str, str] = {
+    "no_activity_permission": "Escaneo completo: la key no tiene permiso para leer la actividad (activity.read); "
+                              "con él, los siguientes solo leen lo que cambió",
+    "first": "Escaneo completo: es el primer escaneo de este servidor",
+    "restored": "Escaneo completo: desde el escaneo anterior hubo una restauración de backup, una descompresión "
+                "o una reinstalación",
+    "too_old": "Escaneo completo: el escaneo anterior tiene más de 90 días, más de lo que el panel guarda de actividad",
+    "node_changed": "Escaneo completo: el servidor cambió de nodo desde el escaneo anterior",
+    "activity_unreadable": "Escaneo completo: no se pudo leer la actividad del servidor",
+}
+
+
+def full_reason_text(reason: Optional[str]) -> Optional[str]:
+    """What the panel says about why a scan was full; None when it says nothing more than «completo»."""
+    return FULL_REASON_TEXT.get(reason) if reason is not None else None
+
 
 class ListedFile(BaseModel):
     """A file as the panel lists it: what the cache keys on."""

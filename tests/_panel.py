@@ -10,7 +10,7 @@ from src.exceptions import UpstreamError
 from datetime import datetime, timezone
 from typing import Optional
 
-from src.model.pterodactyl import PterodactylBackup, PterodactylFile, ServerResources, ServerState
+from src.model.pterodactyl import PterodactylBackup, PterodactylFile, PterodactylServer, ServerResources, ServerState
 
 T0 = datetime(2026, 9, 1, tzinfo=timezone.utc)
 
@@ -39,6 +39,12 @@ class StatefulPanel:
         self._running_reads = 0
 
     # Lecturas.
+
+    async def server_get(self, server_id: str) -> PterodactylServer:
+        """The server as the panel describes it: the scan reads its node (a transfer leaves no event)."""
+        return PterodactylServer(identifier="1a2b3c4d", internal_id=1, uuid=server_id, name="Survival", node="n1",
+                                 description="", status=self.status, is_suspended=False, is_installing=False,
+                                 is_transferring=False)
 
     async def server_files(self, server_id: str, directory: str) -> list[PterodactylFile]:
         prefix = directory.rstrip("/") + "/"

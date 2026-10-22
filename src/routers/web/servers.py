@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from src.dependences import Dependences, JobService, ModpackService, ModrinthService, PterodactylService, UpdateService
 from src.exceptions import HTTP_403_FORBIDDEN, HTTP_409_CONFLICT, HTTP_422_UNPROCESSABLE_ENTITY
 from src.library.onboarding import ServerFacts, fact, pending_count, server_steps
-from src.library.scan import Comparison, unexplained_for
+from src.library.scan import Comparison, full_reason_text, unexplained_for
 from src.model.jobs import Job
 from src.model.modpack import ModpackBundle
 from src.model.pterodactyl import ImportResult, PterodactylServer
@@ -186,6 +186,7 @@ async def server_detail(
     game_versions = await modrinthService.game_versions_release() if server.bundle_id is None else None
     return render(request, "servers/detail.html", actor, onboarding=onboarding, game_versions=game_versions, server=server, server_id=server_id, bundles=bundles,
                   bundle=bundle, scan=scan, comparison=comparison, compare_note=compare_note, titles=titles,
+                  scan_reason=full_reason_text(scan.full_reason) if scan is not None else None,
                   versions=versions, to_import=to_import, installed_build=installed_build, active_job=active,
                   rollback=rollback, build_number=build_number, builds=builds, deduction=deduction,
                   pending_import=pending_import,
