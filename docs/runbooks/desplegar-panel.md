@@ -12,6 +12,23 @@ Antes de empezar, si el servidor aún corre la versión anterior a la fase 0, se
 `MONGO_VERSION` y las contraseñas, y el volumen `mongodb-data` ya en uso. Nunca
 `docker compose … down -v` (d-7985ee-398653).
 
+## La ronda 3 (2026-10-21, rama `feat/ronda-3`, sale en 0.3.2 salvo que el dueño autorice otra)
+
+Sigue de solo lectura. **Ninguna variable nueva** (la clave del diagnóstico sale de `SESSION_SECRET`),
+**nada se migra**: los documentos viejos cargan con sus campos nuevos vacíos. Lo que se nota:
+- **Una base nueva, `diagnostics`**, con un índice TTL de 30 días sobre `at` (d-7985ee-ea4185); Beanie
+  lo crea al arrancar. Cambiar después los días pide `collMod` a mano, no basta con el código.
+- **Las subidas se copian a `/tmp/modpack-imports` del contenedor** para su trabajo (d-7985ee-4c3f11).
+  Recrear el contenedor (`update.sh`) con una importación en cola la hace fallar: esperar a que no
+  haya importaciones en curso antes del deploy, o pedir que se suba de nuevo.
+- **`POST /v1/server/{id}/scan` responde 202 con el trabajo**, no el escaneo: un script que lo use
+  cambia.
+- **Cada escaneo lee una vez más el panel** (el nodo del servidor). Los escaneos viejos no tienen
+  nodo y no cuentan como cambio, así que el deploy no dispara escaneos completos.
+- **Cada mod de un pack importado queda fijado** a la versión del pack (d-7985ee-fce4ff): solo los
+  packs importados después del deploy; los anteriores no cambian.
+- Recargar las pestañas abiertas después del deploy (el estilo y la navegación cambiaron).
+
 ## De 0.3.1 a 0.3.2 (2026-10-13)
 
 Los selects en la fila de cada mod, los filtros, la pestaña Sugerencias y auditoría y trabajos como

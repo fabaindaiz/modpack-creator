@@ -10,6 +10,29 @@ y tokens, con en qué se apoya (bundle 0.0.30); `close` la compara después con 
 
 ## Dónde estamos
 
+**2026-10-22, cierre: ronda 3 y grupo 2 hechos en `feat/ronda-3`** (30 commits sobre `main`, cada uno
+sobre el gate; la rama se sube a `origin` sin merge: falta la revisión). Del grupo 2 está todo lo de
+abajo, más los textos de motivo de los tres escaneos que faltaban (el dueño, 2026-10-22). Medido: con
+MongoDB, 1703 tests verdes antes de la migración de estilo y los dos últimos commits (sin MongoDB después:
+1246); barrido visual con 242 capturas, 0 problemas. **Para seguir, en orden:**
+1. **La barra en segunda fila** por debajo de 1280 px (el dueño, 2026-10-22): las secciones bajan a una
+   fila de ancho completo, como en el teléfono, y «Cómo funciona» vuelve a ella con texto; deshace el
+   ícono junto al nombre de `a2e2887`. A 768 px la barra ya no cabía desde la tanda B: el diagnóstico de
+   que la causaba «Cómo funciona» estaba mal (lo mostró el barrido).
+2. **Un origen «servidor» por servidor vinculado** (el dueño, 2026-10-22): una línea por servidor que
+   difiere, cada una con «Usar esta»; desaparece cuando ese servidor vuelve a la versión fijada o se
+   desvincula. Hoy hay uno por mod y gana el último escaneado (d-7985ee-da27e6, a enmendar).
+3. `./scripts/test-mongo.sh` y `./scripts/visual-sweep.sh` (el barrido pasa los 10 min: correrlo en
+   segundo plano).
+4. **Para el dueño:** revisar los textos de ayuda, el de `LICENSES.html`, y las decisiones de los agentes
+   del párrafo de la ronda 3; al abrir un «?» el ícono baja a la línea siguiente del título (un `<details>`
+   que ocupa la fila; arreglarlo sin JavaScript no es directo); la revisión de la rama en contexto limpio
+   antes del merge (toca datos guardados: pins, escaneos).
+5. Después: O9 (user-walk de los flujos), la spec de O8, y O1 y O4 con el log del servidor.
+Sin verificar: Modrinth y Pterodactyl reales (el nodo, la key sin `activity.read`), el streaming del
+diagnóstico tras el proxy, un teléfono real. Otra máquina necesita lo de siempre (podman con su VM,
+hatch y Python 3.12, `npm ci`, Chromium de Playwright, su `.env.yaml`).
+
 **2026-10-21, ronda 3 (O2, O3, O6, O7) hecha en la rama `feat/ronda-3`** (sobre `chore/bundle-0.0.32`; sin
 merge ni push), por tres agentes en paralelo e integrada aquí, cada commit sobre el gate: los zips se leen
 en su trabajo (d-7985ee-4c3f11), agregar con puente encola el catálogo, `POST /v1/server/{id}/scan` responde
@@ -1285,7 +1308,8 @@ Fricción vista al menos dos veces, con su costo.
   veces en 2026-10-12 (propuestas hacia `cat`; en la tanda 1, tres comandos y un heredoc vacío), y otra
   vez en 2026-10-13 (tanda A: dos heredocs vacíos, contados en s-7985ee-1602e4): tres sesiones seguidas
   con al menos un incidente, siempre del agente principal, que conoce la regla. La cosecha del
-  2026-10-21 cuenta 5 de 5 sesiones del 2026-10-12 al 2026-10-14 (las tandas B y C suman dos). Ninguno
+  2026-10-21 cuenta 5 de 5 sesiones del 2026-10-12 al 2026-10-14 (las tandas B y C suman dos). La sesión
+  del 2026-10-21/22 suma tres heredocs vacíos de delegados a los que el prompt se lo prohibía. Ninguno
   colgó, pero es disciplina sin nada que la haga cumplir (peldaño 1). **Propuesta, decisión del dueño:**
   un hook `PreToolUse` sobre Bash en `.claude/settings.json` que rechace un comando con `<<` y diga
   «escribe el script a un archivo». Costo: un script de ~15 líneas, su test y una fila de decisión;
@@ -1309,6 +1333,22 @@ Fricción vista al menos dos veces, con su costo.
   `test-mongo.sh` llamado desde otro script no queda exento, y el worktree de un delegado no puede
   crear su entorno de hatch. Los rojos del delegado se vieron en el árbol principal, commit por commit.
   Antes de delegar en un worktree, preparar su entorno o planear verlo desde el árbol principal.
+  **Siguió (2026-10-21/22, seis delegados en dos rondas):** el worktree de un delegado sale de `main`, no
+  de la rama en curso (dos rondas: la primera no vio el documento de observaciones; la segunda se
+  arregló en el prompt con un reset); `git reset --hard` falla en el worktree porque el sandbox niega
+  `.claude/agents/researcher.md` (tres delegados: `reset --mixed` y `checkout -- .`); `git worktree
+  remove` lo corre el dueño (dos veces, la primera dejó los worktrees a medio borrar). El gate de los
+  delegados con el Python del entorno de hatch y el cherry-pick de cada commit sobre el gate se armaron a
+  mano dos veces: **propuesta**, `scripts/delegate-gate.sh` (el gate sin hatch, para un worktree) y
+  `scripts/pick-through-gate.sh` (cherry-pick, gate y commit con el mensaje original); ~1 h con sus tests.
+- **Un pipe esconde el código de salida del gate** (2026-10-21, un delegado: `pytest | tail` en la cadena
+  del commit). Primera vez; los prompts ya lo prohíben.
+- **El barrido visual pasa los 10 min** del límite de un comando (2026-10-22, 242 capturas): se corre en
+  segundo plano.
+- **macOS quitó el acceso a `~/Desktop`** a la sesión a mitad de trabajo (2026-10-22): la shell y la
+  lectura de archivos dieron `Operation not permitted` hasta reiniciar Claude Code. Primera vez.
+- **La shell es fish:** una sustitución `$(…)` no se parte en palabras, y un `cherry-pick` recibió toda la
+  lista como un argumento (2026-10-21). Primera vez; pasar los argumentos escritos.
 - **El barrido visual en paralelo con la suite da timeouts** (2026-10-14): se corre solo.
 - **Los datos de uso no se guardan:** `bundle.py usage` escribe en una carpeta que el sandbox niega
   (2 cierres); propuesto al bundle en la cosecha del 2026-10-21.
