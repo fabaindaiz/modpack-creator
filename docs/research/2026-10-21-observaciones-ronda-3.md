@@ -16,7 +16,7 @@ servidor para saber cuál.
 
 Pedido del dueño que la generaliza (O6).
 
-### O2. Un pack importado por URL de Modrinth deja mods «sin versión soportada» — abierta (decisión)
+### O2. Un pack importado por URL de Modrinth deja mods «sin versión soportada» — decidida
 
 MixinTrace Reborn y KotlinLangForge quedaron como problema tras resolver: sus versiones en el pack no
 tienen la versión de Minecraft o el loader del pack en sus etiquetas de Modrinth, y la tarjeta solo
@@ -36,6 +36,11 @@ Opciones puestas al dueño (2026-10-21), sin respuesta todavía:
 importarlas igualmente; total, siempre podemos volver a resolver un modpack manualmente.» Sobre la
 propuesta del tester: que quede con esa marca **y además se valide**; el pin queda con sus orígenes
 marcados y guardados, y se puede elegir cuál usar. Lo amplía en O8.
+
+**Alcance (dueño, 2026-10-21):** la base mínima de O8 ahora. Un pin guarda una lista de orígenes (pack
+importado, admin, resolución, servidor), cada uno con su versión y si pasó la validación, y uno queda
+elegido; importar fija la versión del pack, marcada «versión del pack», y la valida; la tarjeta deja
+cambiar el origen elegido. Comentarios, notas y la base de conocimiento quedan para la spec de O8.
 
 ### O8. Versiones resueltas con historia, fuente y conocimiento — abierta (pedido del dueño, grande)
 
@@ -64,6 +69,12 @@ orden fáciles de seguir y más usable en general» (O9).
 Agrupar las acciones parecidas, ordenar los procesos para que se sigan solos y mejorar la usabilidad en
 general. Pide una revisión de flujos (user-walk) antes de diseñar.
 
+## Reparto (dueño, 2026-10-21)
+
+Con el plan aún sin armar, el dueño pidió implementar lo decidido con hasta tres agentes: O6; O7; O2
+con O3 (el «?» por paso y «Cómo funciona»). O8 y O9 esperan su spec y su user-walk; O1 se arregla con
+O6, y O1 y O4 siguen esperando el log del servidor para confirmar la causa.
+
 ## Orden (dueño, 2026-10-21)
 
 Primero el bundle de `.agents/` a 0.0.32, con la cosecha y la actualización completa; después, el orden
@@ -77,13 +88,18 @@ y la versión desplegada.
 
 ### O5. La auditoría le gustó — sin acción
 
-### O6. Toda tarea larga corre como trabajo — abierta (pedido del dueño)
+### O6. Toda tarea larga corre como trabajo — decidida
 
 «Que importar un zip (y todas las tareas largas) funcione dentro de un job: cualquier tarea que en la
 práctica dure más de 10 o 20 segundos, porque podría dejar al usuario sin saber si se está
 procesando.» Inventario de lo que hoy corre dentro de la petición: en curso (abajo).
 
-### O7. Juntar información de uso y de errores en un archivo — abierta (pedido del dueño)
+**Alcance (dueño, 2026-10-21):** los zips de Prism, mrpack y CurseForge se leen dentro del trabajo (la
+petición solo guarda el archivo y encola); agregar un mod con un puente activo encola el trabajo de
+catálogo en vez de esperar; `POST /v1/server/{id}/scan` encola el trabajo y responde 202 con su id
+(cambia la API /v1); actualizaciones, compare y preview quedan en la petición con un indicador de carga.
+
+### O7. Juntar información de uso y de errores en un archivo — decidida
 
 «Que se pueda juntar info de uso y errores de una forma que luego pueda pasarte ese archivo para
 entender qué ocurrió y cómo mejorarlo, patrones de uso que optimizar.»
@@ -92,6 +108,11 @@ Lo que hay hoy: logs JSON por línea a stderr con `request_id`, una línea por p
 estado, duración; sin query string) en `src/library/logging.py`; solo viven en `docker logs`. La
 auditoría (`AuditEvent`, MongoDB) guarda cada acción de escritura con su actor. Los trabajos guardan
 su error. Nada junta todo eso en un archivo descargable.
+
+**Forma (dueño, 2026-10-21):** una colección de MongoDB con cada petición (ruta, estado, duración),
+cada error con su traceback y cada trabajo (tipo, duración, resultado), que expira a los 30 días (índice
+TTL); un botón de operador en el panel, «Descargar diagnóstico (.jsonl)», baja los últimos N días; el
+usuario va como hash, nunca el email.
 
 ## Investigación
 
