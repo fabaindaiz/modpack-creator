@@ -96,6 +96,45 @@ def test_the_footer_says_the_panel_is_not_modrinth_s_and_links_the_licenses() ->
         assert named in licenses, named
 
 
+# The icons lucide-static 1.56.0's LICENSE says derive from Feather (MIT, Cole Bemis), under the names
+# the panel uses: Lucide renamed alert-triangle to triangle-alert and help-circle to circle-help (the
+# old names are aliases of the same drawing in that package).
+FEATHER = {"airplay", "alert-circle", "alert-octagon", "triangle-alert", "aperture", "arrow-down", "arrow-left",
+           "arrow-right", "arrow-up", "at-sign", "calendar", "cast", "check", "chevron-down", "chevron-left",
+           "chevron-right", "chevron-up", "circle", "clipboard", "clock", "code", "command", "compass",
+           "crosshair", "database", "download", "external-link", "feather", "hash", "headphones", "circle-help",
+           "info", "key", "layout", "link", "loader", "lock", "log-in", "log-out", "maximize", "minimize", "minus",
+           "monitor", "moon", "move", "music", "plus", "power", "radio", "rss", "search", "server", "share",
+           "sidebar", "smartphone", "square", "tablet", "target", "terminal", "trash", "trash-2", "triangle", "tv",
+           "type", "upload", "x", "zoom-in", "zoom-out"}
+
+
+def test_the_licenses_name_feather_for_the_icons_that_come_from_it_and_tailwind() -> None:
+    """Review of batch B, minor 1: some of the served icons are Feather's (MIT) in Lucide's package, and
+    the stylesheet is Tailwind's output (MIT): both are named, with their notice."""
+    licenses = (web.STATIC_DIR / "LICENSES.html").read_text()
+    from_feather = sorted(set(ICONS.read_text().split()) & FEATHER)
+    assert from_feather, "no listed icon comes from Feather"
+    assert "Feather" in licenses and "Cole Bemis" in licenses
+    for name in from_feather:
+        assert f"<code>{name}</code>" in licenses, name
+    assert "Tailwind CSS" in licenses and "Tailwind Labs, Inc." in licenses
+    assert licenses.count("Permission is hereby granted, free of charge") == 1  # Tailwind's MIT text, whole
+    assert "Lucide" in licenses and "ISC" in licenses
+
+
+def test_the_feather_list_is_the_one_lucide_ships() -> None:
+    notice = LUCIDE.parent / "LICENSE"
+    if not notice.is_file():
+        pytest.skip("node_modules not installed (npm ci)")
+    text = notice.read_text()
+    listed = set(text[text.index("derived from the Feather project:"):text.index("The MIT License")].split(":")[1]
+                 .replace(",", " ").split())
+    renamed = {"alert-triangle": "triangle-alert", "help-circle": "circle-help"}
+    used = set(ICONS.read_text().split())
+    assert {renamed.get(n, n) for n in listed} & used == FEATHER & used
+
+
 def test_controls_take_the_owner_s_radii() -> None:
     macros = (TEMPLATES / "_macros.html").read_text()
     button = macros[macros.index("{% macro button("):macros.index("{% endmacro %}", macros.index("{% macro button("))]
