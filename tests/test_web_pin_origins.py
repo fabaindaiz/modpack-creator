@@ -36,6 +36,19 @@ def test_the_card_lists_the_origins_marks_the_one_in_use_and_why_one_does_not_pa
     assert 'name="origin" value="resolution"' in text and "Usar esta" in shown
 
 
+def test_a_servers_origin_is_named_after_the_server_and_offered() -> None:
+    """Owner, 2026-10-21: a scanned linked server's version reads «servidor: Survival», never in use alone."""
+    client, modpack, _ = setup()
+    server = OriginRow(source="server", label="servidor", version_id="mt-3", version_number="1.2.0", valid=True,
+                       problem=None, named_by="Survival", in_use=False)
+    modpack.rows = [row("P1", "MixinTrace Reborn", pinned=True, pinned_version="mt-pack",
+                        pin_origins=[*origins(), server]), row("P2", "Sodium")]
+    text = card(client.get(f"/modpacks/{BUNDLE_ID}").text, "P1")
+    shown = " ".join(visible(text).split())
+    assert "servidor: Survival 1.2.0" in shown and "(Survival)" not in shown
+    assert 'name="origin" value="server"' in text
+
+
 def test_a_mod_without_origins_shows_no_origin_list() -> None:
     client, modpack, _ = setup()
     modpack.rows = [row("P1", "Sodium", pinned=True, pinned_version="ver-p1"), row("P2", "Lithium")]

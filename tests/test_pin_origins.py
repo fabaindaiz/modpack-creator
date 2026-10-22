@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from src.library.pins import (ORIGIN_LABEL, OUTSIDE_TAGS, PinView, import_selects, pin_view, resolution_inputs,
-                              version_problem)
+                              server_origins, version_problem)
 from src.library.resolution import (Candidate, CandidateFile, Catalog, ResolveRequest, Target, request_digest,
                                     resolve)
 from src.model.modpack import ModpackBundle, PinOrigin, PinRecord, PinSource
@@ -183,3 +183,46 @@ def test_every_origin_has_a_label() -> None:
     assert {s: ORIGIN_LABEL[s] for s in PinSource} == {
         PinSource.pack: "versión del pack", PinSource.admin: "elegida a mano", PinSource.resolution: "resolución",
         PinSource.server: "servidor"}
+
+
+
+# Un servidor vinculado escaneado (decisión del dueño, 2026-10-21): la versión que tiene instalada un mod
+# fijado, si difiere de la fijada, es su origen «servidor», validado, nunca en uso solo.
+
+AT = datetime(2026, 10, 21, tzinfo=timezone.utc)
+FORGE = Target(game_version="1.20.1", loader="forge")
+
+
+def test_a_pinned_mod_the_server_runs_at_another_version_gets_a_server_origin_not_in_use() -> None:
+    pack = bundle({MOD: "mt-1", "SAME": "s-1"},
+                  {MOD: PinRecord(origins=[origin(PinSource.pack, "mt-1")], selected=PinSource.pack)})
+    found = server_origins(pack, {MOD: "mt-2", "SAME": "s-1", "FREE": "f-9"},
+                           {"mt-2": cand("mt-2", game="1.20")}, FORGE, "Survival", AT)
+    # The mod on its pinned version and the mod with no pin get nothing.
+    assert set(found) == {MOD}
+    record = found[MOD]
+    assert record.selected == PinSource.pack
+    assert [(o.source, o.version_id, o.valid, o.problem, o.label, o.at) for o in record.origins] == [
+        (PinSource.pack, "mt-1", True, None, None, None),
+        (PinSource.server, "mt-2", False, "Modrinth no la marca para 1.20.1", "Survival", AT)]
+
+
+def test_a_legacy_pin_keeps_the_admins_version_in_use_and_an_unknown_version_is_unchecked() -> None:
+    found = server_origins(bundle({MOD: "mt-1"}), {MOD: "mt-2"}, {}, FORGE, "Survival", AT)
+    record = found[MOD]
+    assert record.selected == PinSource.admin
+    assert [(o.source, o.version_id, o.valid) for o in record.origins] == [(PinSource.admin, "mt-1", None),
+                                                                           (PinSource.server, "mt-2", None)]
+
+
+def test_a_server_origin_is_updated_but_never_one_in_use_nor_rewritten_when_unchanged() -> None:
+    known = PinRecord(origins=[origin(PinSource.admin, "mt-1"),
+                               PinOrigin(source=PinSource.server, version_id="mt-2", label="Survival")],
+                      selected=PinSource.admin)
+    pack = bundle({MOD: "mt-1"}, {MOD: known})
+    assert server_origins(pack, {MOD: "mt-2"}, {}, FORGE, "Survival", AT) == {}
+    moved = server_origins(pack, {MOD: "mt-3"}, {"mt-3": cand("mt-3")}, FORGE, "Creativo", AT)[MOD]
+    assert [(o.source, o.version_id, o.label) for o in moved.origins] == [(PinSource.admin, "mt-1", None),
+                                                                          (PinSource.server, "mt-3", "Creativo")]
+    in_use = PinRecord(origins=[origin(PinSource.server, "mt-1")], selected=PinSource.server)
+    assert server_origins(bundle({MOD: "mt-1"}, {MOD: in_use}), {MOD: "mt-2"}, {}, FORGE, "Survival", AT) == {}

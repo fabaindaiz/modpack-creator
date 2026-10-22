@@ -13,7 +13,8 @@ from src.library.api.client.pterodactyl import PterodactylAPI
 from fastapi import HTTPException
 from src.library.deduce import Deduction, deduce_target
 from src.library.jarmeta import ModMetadata, read_mod_metadata
-from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS
+from src.library.pins import pack_target, server_origins
+from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Candidate
 from src.library.utils import MODRINTH_ID
 from src.library.scan import ClaimedFile, Comparison, ListedFile, LocalFile, ScanFile, compare, drift_message, plan_scan
 from src.model.modpack import ModpackBundle, PackProject, ProjectOrigin
@@ -238,6 +239,8 @@ class PterodactylService():
             full=full, files=files, full_reason=reason, node=node))
         if record_drift and directory == SCAN_DIRECTORY:
             stored = await self._store_drift(server_id, stored)
+        if directory == SCAN_DIRECTORY and server.bundle_id is not None:
+            await self._server_pin_origins(server, stored)
         if actor is not None:
             await self.audit.record(actor, "server.scan", _target(server_id), {"directory": directory, "full": full})
         return stored
@@ -278,6 +281,32 @@ class PterodactylService():
             return scan
         await self.pterodactylDB.scan_set_drift(server_id, drift)
         return scan.model_copy(update={"drift": drift})
+
+    async def _server_pin_origins(self, server: PterodactylServer, scan: ServerScan) -> list[str]:
+        """Offer what a linked server runs as the «servidor» origin of each pinned mod of its pack whose
+        installed version differs from the pinned one (owner, 2026-10-21; `server_origins`): never in
+        use, and written only while the pin is still the one read. Mods without a pin get nothing. A
+        nicety of the scan: if it fails, the scan stays. Returns the mods offered."""
+        try:
+            bundle = await self.modpackDB.bundle_get(str(server.bundle_id))
+            installed = {f.project_id: f.version_id for f in scan.files
+                         if f.status == "identified" and f.project_id and f.version_id and MODRINTH_ID.fullmatch(f.project_id)}
+            differing = sorted({v for p, v in installed.items() if p in bundle.pins and bundle.pins[p] != v})
+            if not differing:
+                return []
+            versions = {v.version_id: Candidate.from_modrinth({**v.model_dump(mode="json"), "id": v.version_id})
+                        for v in await self.modrinthDB.version_find_by_version_ids(differing)}
+            offered = []
+            records = server_origins(bundle, installed, versions, pack_target(bundle), server.name, self.clock())
+            for project_id, record in records.items():
+                pinned = bundle.pins[project_id]
+                if await self.modpackDB.bundle_pin_record_set(str(bundle.id), project_id, record, pinned, when_pin=pinned):
+                    offered.append(project_id)
+            return offered
+        except Exception:
+            logger.warning("offering a scanned server's versions as pin origins failed", exc_info=True,
+                           extra={"server_id": str(server.id)})
+            return []
 
     async def _restored_since(self, identifier: str, previous: ServerScan) -> Optional[str]:
         """Why files may have come back with old modification times since `previous`, as a full

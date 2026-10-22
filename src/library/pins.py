@@ -6,17 +6,21 @@ version, the admin's, what resolving freely takes, a scanned server's. One is in
 /v1 API read pins as before; this module reads both together.
 
 Pure rules, no database: how a pin reads with its origins (`pin_view`), what the resolver gets from
-them (`resolution_inputs`), whether a version passes the pack's validation (`version_problem`), and
-whether importing a pack puts its version in use (`import_selects`).
+them (`resolution_inputs`), whether a version passes the pack's validation (`version_problem`),
+whether importing a pack puts its version in use (`import_selects`), and what a scanned linked server
+offers (`server_origins`).
 """
+from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional
 
+from src.library.bridges import bridge as find_bridge
 from src.library.resolution import CHANNEL_RANK, OUTSIDE_TAGS, Candidate, Target
 from src.model.modpack import ModpackBundle, PinOrigin, PinRecord, PinSource
 
 __all__ = ["ORIGIN_LABEL", "OUTSIDE_TAGS", "PinView", "import_selects", "pin_view", "resolution_inputs",
-           "version_problem"]
+           "pack_target", "server_origins", "version_problem"]
 
 # How the panel names each origin.
 ORIGIN_LABEL = {PinSource.pack: "versión del pack", PinSource.admin: "elegida a mano",
@@ -33,6 +37,13 @@ class PinView:
 
     def origin(self, source: PinSource) -> Optional[PinOrigin]:
         return next((o for o in self.origins if o.source == source), None)
+
+
+def pack_target(bundle: ModpackBundle) -> Target:
+    """What a pack resolves for: its Minecraft version, loader, channels and the bridges it has on."""
+    loader = str(bundle.loader.value)
+    return Target(game_version=bundle.version, loader=loader, channels=frozenset(bundle.channels),
+                  bridges=frozenset(k for k in bundle.secondary_loaders if find_bridge(k, loader, bundle.version)))
 
 
 def version_problem(version: Candidate, target: Target, exception: Optional[str] = None,
@@ -113,3 +124,44 @@ def import_selects(current: Optional[PinRecord], downgrade: bool, pinned: bool =
     if current is None:
         return not pinned
     return current.selected == PinSource.pack
+
+
+def server_origins(bundle: ModpackBundle, installed: Mapping[str, str], versions: Mapping[str, Candidate],
+                   target: Target, server_name: str, at: datetime) -> dict[str, PinRecord]:
+    """
+    What scanning a linked server offers (owner, 2026-10-21): each pinned mod whose installed version
+    differs from the pinned one gets (or updates) its «servidor» origin, labelled with the server's
+    name and checked as the resolver checks the pack. Never put in use: the pin, and the origin in use,
+    stay; the person picks it with «Usar esta», which asks before going back (d-7985ee-6dc34c,
+    d-7985ee-56a529). Nothing for a mod without a pin, nor where nothing changes. A «servidor» origin
+    that is the one in use is left as it is: replacing its version would leave the pin reading as
+    another's choice.
+
+    :param installed: Project id → the version id the server runs (identified jars of the scan).
+    :param versions: Version id → the version, from the catalog; one missing is offered unchecked.
+    :return: Project id → its record to write, only for the mods that change.
+    """
+    found: dict[str, PinRecord] = {}
+    for project_id, pinned in bundle.pins.items():
+        running = installed.get(project_id)
+        if running is None or running == pinned:
+            continue
+        record = bundle.pin_origins.get(project_id)
+        if record is None:
+            # A pin stored before O2 is the admin's: kept, and in use.
+            record = PinRecord(origins=[PinOrigin(source=PinSource.admin, version_id=pinned)], selected=PinSource.admin)
+        if record.selected == PinSource.server:
+            continue
+        known = record.origin(PinSource.server)
+        if known is not None and known.version_id == running and known.label == server_name:
+            continue
+        version = versions.get(running)
+        problem = version_problem(version, target, bundle.channel_exceptions.get(project_id)) if version else None
+        origin = PinOrigin(source=PinSource.server, version_id=running,
+                           version_number=version.version_number if version else None,
+                           valid=(problem is None) if version else None, problem=problem, label=server_name, at=at)
+        origins = [origin if o.source == PinSource.server else o for o in record.origins]
+        if known is None:
+            origins.append(origin)
+        found[project_id] = PinRecord(origins=origins, selected=record.selected)
+    return found

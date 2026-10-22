@@ -20,7 +20,7 @@ from src.model.jobs import Job
 from src.library.bridges import BRIDGES, REPLACES, VIA_RISK, bridge as find_bridge, companions, guest_of
 from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Candidate, Catalog, Lock, LockEntry, ResolveRequest, Target, free_request, merge_replacements, request_digest, resolve
 from src.model.modpack import BUNDLE_KEYED_FIELDS, AvailableUpdate, LoaderVersion, UpdateCheck, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, PinOrigin, PinRecord, PinSource, ProjectOrigin
-from src.library.pins import ORIGIN_LABEL, PinView, import_selects, pin_view, resolution_inputs, version_problem
+from src.library.pins import ORIGIN_LABEL, PinView, import_selects, pack_target, pin_view, resolution_inputs, version_problem
 from src.model.modrinth import ModrinthProject, ModrinthVersion, ModrinthVersionList, VersionBrief
 from src.model.modrinth.version import ModrinthDependencyType
 from src.model.pterodactyl import PterodactylServer, ServerScan
@@ -571,9 +571,7 @@ class ModpackService():
 
     @staticmethod
     def _target(bundle: ModpackBundle) -> Target:
-        loader = str(bundle.loader.value)
-        return Target(game_version=bundle.version, loader=loader, channels=frozenset(bundle.channels),
-                      bridges=frozenset(k for k in bundle.secondary_loaders if find_bridge(k, loader, bundle.version)))
+        return pack_target(bundle)
 
     async def pin_origin_select(self, bundle_id: str, project_id: str, source: PinSource, actor: Actor,
                                 confirm_downgrade: bool = False) -> ModpackBundle:

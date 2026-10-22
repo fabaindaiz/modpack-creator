@@ -565,3 +565,31 @@ def test_a_full_scan_stores_why_and_the_node_and_a_moved_server_scans_again(mong
         return seen
 
     assert mongo(scenario) == [(True, "first", "n1", True), (False, None, "n1", False), (True, "node_changed", "n2", True)]
+
+
+def test_scanning_a_linked_server_offers_its_version_of_a_pinned_mod_as_the_server_origin(mongo: MongoRunner) -> None:
+    """Owner, 2026-10-21 (d-7985ee-fce4ff): the pinned mod the server runs at another version gets a
+    «servidor» origin with the server's name and its validation; the pin stays in use."""
+    from src.model.modpack import PinSource
+
+    async def scenario() -> tuple[Any, ...]:
+        modrinth = HashModrinthAPI({})
+        bundle_id, version_id = await build_with_fabric_api(modrinth)
+        project_id = (await ModpackDatabase().bundle_get(bundle_id)).projects[0].project_id
+        await ModpackDatabase().bundle_pin_set(bundle_id, project_id, version_id)
+        older = next(v for v in FABRIC_API_VERSIONS if v != version_id)
+        modrinth.known[sha1(b"old fabric api")] = older
+        panel = FakePanel()
+        panel.files = {"fabric-api.jar": (b"old fabric api", T0)}
+        service, server_id = await setup(panel, modrinth)
+        await service.server_link_bundle(server_id, bundle_id, actor=OPERATOR)
+        await service.scan(server_id, actor=None)
+        bundle = await ModpackDatabase().bundle_get(bundle_id)
+        record = bundle.pin_origins[project_id]
+        server = record.origin(PinSource.server)
+        assert server is not None
+        return bundle.pins[project_id], record.selected, server.version_id, server.label, server.valid, older, version_id
+
+    pinned, selected, offered, label, valid, older, version_id = mongo(scenario)
+    assert pinned == version_id and selected == PinSource.admin
+    assert (offered, label) == (older, "Survival") and valid is not None
