@@ -1,0 +1,125 @@
+{# «Cómo funciona» (O3, owner 2026-10-21): what each concept of the panel is and the usual order of a
+   session. Every «?» of a section (src/web/help.py) points to one of these anchors. The owner reviews
+   this copy. #}
+{% extends "base.html" %}
+{% set nav_active = "help" %}
+{% block title %}Cómo funciona{% endblock %}
+
+{% set H2 = "scroll-mt-20 text-base font-semibold" %}
+{% set TEXT = "space-y-2 text-sm text-zinc-700 dark:text-zinc-300" %}
+
+{% block content %}
+{% call ui.page_header("Cómo funciona", "Qué es cada cosa del panel y en qué orden se usan.") %}{% endcall %}
+<div class="max-w-prose space-y-8">
+  <nav aria-label="En esta página" class="text-sm">
+    <ul class="flex flex-wrap gap-x-3 gap-y-1">
+      {% for anchor, label in [("sesion", "Una sesión típica"), ("modpack", "Modpack"), ("resolver", "Resolver"),
+                               ("fijar", "Fijar"), ("origenes", "Orígenes"), ("build", "Build"), ("puente", "Puente"),
+                               ("vincular", "Vincular"), ("escanear", "Escanear"), ("actualizar", "Actualizar"),
+                               ("rollback", "Rollback")] %}
+      <li><a href="#{{ anchor }}" class="font-medium text-emerald-700 hover:underline dark:text-emerald-300">{{ label }}</a></li>
+      {% endfor %}
+    </ul>
+  </nav>
+
+  <section class="space-y-2" aria-labelledby="sesion">
+    <h2 id="sesion" class="{{ H2 }}">Una sesión típica</h2>
+    <ol class="list-inside list-decimal {{ TEXT }}">
+      <li>Crea un modpack, o impórtalo con «Importar modpack…» en Modpacks.</li>
+      <li>Agrega o quita mods y pulsa «Resolver».</li>
+      <li>Arregla los problemas que aparezcan y decide los mods «por decidir»: si van en el servidor o solo en el cliente.</li>
+      <li>Crea un build.</li>
+      <li>En la página del servidor: vincúlalo al modpack (una sola vez), escanéalo y simula la actualización.</li>
+      <li>Si la simulación se ve bien, actualiza.</li>
+      <li>Más adelante, «Buscar actualizaciones de mods», resuelve de nuevo y crea otro build.</li>
+    </ol>
+  </section>
+
+  <section class="space-y-2" aria-labelledby="modpack">
+    <h2 id="modpack" class="{{ H2 }}">Qué es un modpack</h2>
+    <div class="{{ TEXT }}">
+      <p>Un modpack es la lista de mods que quieres para una versión de Minecraft y un loader (Fabric, Forge, NeoForge o Quilt).</p>
+      <p>Lo creas vacío y agregas mods buscándolos en Modrinth, o lo importas desde un .mrpack, el zip de una instancia de Prism, un pack publicado en Modrinth o uno de CurseForge. Al importar, cada mod queda fijado a la versión que trae el pack. Lo que agregas a mano se queda aunque reemplaces el contenido del pack.</p>
+    </div>
+  </section>
+
+  <section class="space-y-2" aria-labelledby="resolver">
+    <h2 id="resolver" class="{{ H2 }}">Qué es resolver</h2>
+    <div class="{{ TEXT }}">
+      <p>Resolver es elegir una versión para cada mod y traer sus dependencias. Se elige la más estable y nueva que sirva para la versión de Minecraft y el loader del pack, dentro de sus canales: release, beta o alpha.</p>
+      <p>Nunca baja un mod: si un build o un servidor ya usa una versión, no elige una anterior.</p>
+      <p>Lo que no se puede resolver aparece como problema, con las acciones que lo arreglan. Algunos mods quedan «por decidir»: tú eliges si van en el servidor o solo en el cliente. Resolver solo calcula: no cambia ningún servidor.</p>
+    </div>
+  </section>
+
+  <section class="space-y-2" aria-labelledby="fijar">
+    <h2 id="fijar" class="{{ H2 }}">Qué es fijar una versión</h2>
+    <div class="{{ TEXT }}">
+      <p>Fijar un mod es pedirle a la resolución que use siempre una versión exacta. Sirve cuando una versión nueva da problemas.</p>
+      <p>Un mod fijado no se actualiza solo: «Buscar actualizaciones de mods» lo muestra aparte. Fijar una versión más vieja que la que ya corre es bajar de versión: el panel avisa y pide confirmar, porque puede romper mundos y configs.</p>
+    </div>
+  </section>
+
+  <section class="space-y-2" aria-labelledby="origenes">
+    <h2 id="origenes" class="{{ H2 }}">Los orígenes de una versión fijada</h2>
+    <div class="{{ TEXT }}">
+      <p>Una versión fijada guarda de dónde salió:</p>
+      <ul class="list-inside list-disc">
+        <li><strong>versión del pack</strong>: la que trae el pack importado;</li>
+        <li><strong>elegida a mano</strong>: la que fijaste tú;</li>
+        <li><strong>resolución</strong>: la que elegiría la resolución sin fijar nada.</li>
+      </ul>
+      <p>Cada una dice si pasa la validación del pack: versión de Minecraft, loader y canales. La marcada «en uso» es la que se instala; en la tarjeta del mod puedes usar otra.</p>
+      <p>Una versión del pack que Modrinth no marca para tu versión o tu loader se usa igual, con la marca «versión del pack, fuera de las etiquetas de Modrinth». Elegir «resolución» deja el mod sin fijar.</p>
+    </div>
+  </section>
+
+  <section class="space-y-2" aria-labelledby="build">
+    <h2 id="build" class="{{ H2 }}">Qué es un build</h2>
+    <div class="{{ TEXT }}">
+      <p>Un build es una resolución congelada y numerada (build 1, build 2…). Es lo que se instala en un servidor y lo que se exporta como .mrpack.</p>
+      <p>Un build no cambia nunca: para cambiar algo, resuelves de nuevo y creas otro. El recomendado es el que se ofrece al actualizar; volver atrás es recomendar uno anterior.</p>
+    </div>
+  </section>
+
+  <section class="space-y-2" aria-labelledby="puente">
+    <h2 id="puente" class="{{ H2 }}">Qué es un puente</h2>
+    <div class="{{ TEXT }}">
+      <p>Un puente, como Sinytra Connector, deja usar en Forge o NeoForge mods hechos para Fabric. Se activa en «Loaders secundarios».</p>
+      <p>Un mod que solo existe para el otro loader se agrega con el puente y sus compañeros. No todos los mods funcionan así, sobre todo en un servidor dedicado: simula antes de instalar. Pasar un mod del puente a su versión nativa, o al revés, pide confirmación.</p>
+    </div>
+  </section>
+
+  <section class="space-y-2" aria-labelledby="vincular">
+    <h2 id="vincular" class="{{ H2 }}">Vincular un servidor</h2>
+    <div class="{{ TEXT }}">
+      <p>Los servidores vienen de tu panel de Pterodactyl: primero lo registras aquí y después, desde su página, lo vinculas a un modpack.</p>
+      <p>Vincularlo no instala nada: dice con qué pack compararlo y qué builds ofrecerle. Si el servidor ya tiene mods, «Importar el servidor» arma el modpack con lo que tiene.</p>
+    </div>
+  </section>
+
+  <section class="space-y-2" aria-labelledby="escanear">
+    <h2 id="escanear" class="{{ H2 }}">Qué es escanear</h2>
+    <div class="{{ TEXT }}">
+      <p>Escanear lee los archivos de la carpeta de mods del servidor y los identifica en Modrinth. Solo lee: no cambia nada.</p>
+      <p>Con el escaneo, el panel compara el servidor con el build: qué sobra, qué falta y qué cambió de versión. Lo que no está en Modrinth queda como archivo local: se mantiene en el servidor y nunca se exporta.</p>
+    </div>
+  </section>
+
+  <section class="space-y-2" aria-labelledby="actualizar">
+    <h2 id="actualizar" class="{{ H2 }}">Qué es actualizar</h2>
+    <div class="{{ TEXT }}">
+      <p>Actualizar instala un build en un servidor. Primero conviene «Simular actualización»: muestra qué mods se agregan, se quitan o cambian, sin tocar nada.</p>
+      <p>Actualizar de verdad apaga el servidor, hace un respaldo, cambia los mods y lo vuelve a encender. Solo un operador puede hacerlo.</p>
+    </div>
+  </section>
+
+  <section class="space-y-2" aria-labelledby="rollback">
+    <h2 id="rollback" class="{{ H2 }}">Qué es un rollback</h2>
+    <div class="{{ TEXT }}">
+      <p>Si una actualización falla, el servidor queda detenido y el panel avisa. Nada se deshace solo: una persona elige el rollback.</p>
+      <p>El rollback A devuelve los mods de antes; el mundo puede guardar datos de los mods nuevos. El B restaura el respaldo hecho al empezar; se pierde lo jugado desde entonces. Solo un operador puede hacerlo.</p>
+    </div>
+  </section>
+</div>
+{% endblock %}

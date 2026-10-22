@@ -29,6 +29,7 @@ from src.library.logging import request_id as current_request_id
 from src.model.users import Actor
 from src.services.users import OIDC_OPERATOR_GROUPS
 from src.web import audit_labels
+from src.web.help import HELP
 
 WEB_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = WEB_DIR / "templates"
@@ -154,6 +155,8 @@ def active_bridge(bundle: Any) -> Optional[Bridge]:
 templates.env.filters["ago"] = ago
 templates.env.globals["active_bridge"] = active_bridge
 templates.env.globals["AUDIT_ACTIONS"] = audit_labels.ACTIONS
+# The «?» of each section (O3): its text and the anchor of «Cómo funciona».
+templates.env.globals["HELP"] = HELP
 templates.env.globals["AUDIT_AREAS"] = audit_labels.AREAS
 templates.env.globals["AUDIT_DETAILS"] = audit_labels.DETAILS
 templates.env.globals["audit_detail"] = audit_labels.detail_text

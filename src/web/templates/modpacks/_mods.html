@@ -150,7 +150,10 @@
                  in use from here, and an older one asks first, as any pin. #}
               {% if row.pin_origins %}
               <div class="space-y-1 text-xs" data-pin-origins>
-                <p class="font-medium">De dónde sale la versión</p>
+                <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <p class="font-medium">De dónde sale la versión</p>
+                  {{ ui.help_toggle("De dónde sale la versión", "origenes") }}
+                </div>
                 <ul class="space-y-1">
                   {% for origin in row.pin_origins %}
                   <li class="flex flex-wrap items-center gap-2">

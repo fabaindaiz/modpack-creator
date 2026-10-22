@@ -85,3 +85,9 @@ async def home(
     last_check = max((as_utc(check.checked_at) for check in checks.values()), default=None)
     return render(request, "home.html", actor, servers=servers, builds=builds, jobs=jobs, update_counts=update_counts,
                   server_names=server_names, attention=items, visible=VISIBLE, last_check=last_check)
+
+@router.get("/como-funciona")
+async def how_it_works(request: Request, actor: Actor = Depends(get_web_actor)):
+    """«Cómo funciona» (O3, owner 2026-10-21): what each concept of the panel is and the usual order
+    of a session, the page every «?» points to. Static: it reads nothing."""
+    return render(request, "help.html", actor)

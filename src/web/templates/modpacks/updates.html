@@ -12,7 +12,7 @@
 <div id="check-job" class="space-y-2" aria-live="polite"></div>
 
 <div id="updates-main" class="space-y-6" hx-get="/modpacks/{{ bundle_id }}/actualizaciones" hx-select="#updates-main" hx-trigger="job-finished from:body" hx-swap="outerHTML" hx-disinherit="*">
-  {% call ui.section("Revisión", id="revision") %}
+  {% call ui.section("Revisión", id="revision", help="revision") %}
   <div class="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
     {% if (bundle.recommended_build or bundle.latest_build) is none %}
     <p class="text-zinc-600 dark:text-zinc-400">Este modpack todavía no tiene build: crea uno para poder buscar actualizaciones.</p>
@@ -35,7 +35,7 @@
   {% endcall %}
 
   {% if preview is not none %}
-  {% call ui.section("Con versión nueva (" ~ (preview.changes.changed | length) ~ ")", id="actualizaciones") %}
+  {% call ui.section("Con versión nueva (" ~ (preview.changes.changed | length) ~ ")", id="actualizaciones", help="con-version-nueva", topic="Con versión nueva") %}
   {% set updates_only = true %}
   {% include "modpacks/_changes.html" %}
   <div class="space-y-2 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -46,7 +46,7 @@
   {% endif %}
 
   {% if pinned %}
-  {% call ui.section("Fijadas (" ~ (pinned | length) ~ ")", id="fijadas") %}
+  {% call ui.section("Fijadas (" ~ (pinned | length) ~ ")", id="fijadas", help="fijadas", topic="Fijadas") %}
   <p class="text-xs text-zinc-500 dark:text-zinc-400">Estas versiones están fijadas: hay una más nueva, pero no se cuentan ni se avisan.</p>
   <ul class="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
     {% for u in pinned %}

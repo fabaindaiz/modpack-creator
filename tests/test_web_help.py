@@ -1,0 +1,90 @@
+"""La ayuda del panel (O3; docs/research/2026-10-21-observaciones-ronda-3.md).
+
+Un «?» junto al título de cada sección de los flujos despliega su explicación en el lugar: un
+`<details>` con su `<summary>`, que se abre tocándolo (sirve en el teléfono, sin hover y sin
+JavaScript; la CSP no deja scripts ni estilos inline, d-7985ee-491c83). Y una página «Cómo funciona»,
+enlazada desde la navegación, que explica cada concepto y el orden de una sesión. Los tests miran el
+HTML.
+"""
+import re
+
+import pytest
+
+from src.web.help import HELP
+from tests import test_web_modpacks as modpacks_page
+from tests import test_web_servers as servers_page
+from tests import test_web_updates as updates_page
+from tests._actors import EDITOR
+from tests.test_web_base import client as base_client
+from tests.test_web_modpacks import BUNDLE_ID, visible
+
+HELP_BLOCK = re.compile(r'<details[^>]*data-help[^>]*>\s*<summary[^>]*aria-label="Ayuda: (?P<topic>[^"]+)"[^>]*>\?</summary>'
+                        r'(?P<body>.*?)</details>', re.S)
+
+
+def helps(text: str) -> dict[str, str]:
+    """Each «?» of a page: its topic and the text it opens, as shown."""
+    return {m.group("topic"): " ".join(visible(m.group("body")).split()) for m in HELP_BLOCK.finditer(text)}
+
+
+def test_every_section_of_a_modpack_page_has_its_help() -> None:
+    client, _, _ = modpacks_page.setup()
+    found = helps(client.get(f"/modpacks/{BUNDLE_ID}").text)
+    for topic in ("Mods", "Builds", "Contenido del pack", "Canales", "Loaders secundarios", "Archivos locales"):
+        assert topic in found, topic
+    assert found["Builds"].startswith(HELP["builds"][0])
+
+
+def test_the_modpack_list_and_the_updates_page_have_their_help() -> None:
+    client, _, _ = modpacks_page.setup()
+    assert {"Modpacks", "Nuevo modpack"} <= set(helps(client.get("/modpacks").text))
+    client, _, checks = updates_page.setup()
+    checks.latest_check = updates_page.check([updates_page.update("A", "Sodium"),
+                                             updates_page.update("C", "Lithium", pinned=True)])
+    found = helps(client.get(f"/modpacks/{BUNDLE_ID}/actualizaciones").text)
+    assert {"Revisión", "Con versión nueva", "Fijadas"} <= set(found)
+
+
+def test_the_server_pages_have_their_help() -> None:
+    client, _ = servers_page.setup()
+    assert {"Servidores", "En el panel de Pterodactyl"} <= set(helps(client.get("/servers").text))
+    found = helps(client.get(f"/servers/{servers_page.SERVER_ID}").text)
+    for topic in ("Modpack", "Actualizar", "Último escaneo", "Comparación con el build"):
+        assert topic in found, topic
+
+
+def test_a_help_opens_in_place_and_points_to_how_it_works() -> None:
+    client, _, _ = modpacks_page.setup()
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    block = next(m for m in HELP_BLOCK.finditer(text) if m.group("topic") == "Mods")
+    # Closed until touched: no `open`, and no script to open it.
+    assert not re.search(r"\sopen(?=[\s>=])", block.group(0).split(">", 1)[0])
+    assert f'href="/como-funciona#{HELP["mods"][1]}"' in block.group("body")
+
+
+def test_every_help_names_an_anchor_of_the_how_it_works_page() -> None:
+    text = base_client(EDITOR).get("/como-funciona").text
+    for key, (_, anchor) in HELP.items():
+        assert f'id="{anchor}"' in text, key
+
+
+@pytest.mark.parametrize("title", [
+    "Qué es un modpack", "Qué es un build", "Qué es resolver", "Qué es fijar una versión", "Los orígenes de una versión fijada",
+    "Qué es un puente", "Vincular un servidor", "Qué es escanear", "Qué es actualizar", "Qué es un rollback",
+    "Una sesión típica"])
+def test_how_it_works_explains_each_concept(title: str) -> None:
+    response = base_client(EDITOR).get("/como-funciona")
+    assert response.status_code == 200
+    assert re.search(rf"<h2[^>]*>{re.escape(title)}</h2>", response.text), title
+
+
+def test_how_it_works_is_in_the_navigation_and_marked_when_open() -> None:
+    home = base_client(EDITOR).get("/").text
+    assert re.search(r'<a href="/como-funciona"[^>]*>.*?Cómo funciona</a>', home, re.S)
+    page = base_client(EDITOR).get("/como-funciona").text
+    assert re.search(r'<a href="/como-funciona"\s+aria-current="page"', page)
+
+
+def test_how_it_works_needs_a_session() -> None:
+    response = base_client(None).get("/como-funciona")
+    assert response.status_code in (302, 303, 307) and "login" in response.headers["location"]

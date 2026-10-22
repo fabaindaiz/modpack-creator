@@ -24,7 +24,7 @@
 {# Mods wide on the left and a side column (spec §5); below xl, one column in the same order. #}
 <div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
   <div class="min-w-0 space-y-6 xl:col-span-2">
-    {% call ui.section("Mods", id="mods-section") %}
+    {% call ui.section("Mods", id="mods-section", help="mods") %}
     <div class="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
       <div>
         <label for="search-q" class="text-sm font-medium">Buscar en Modrinth</label>
@@ -47,12 +47,12 @@
   </div>
 
   <div class="min-w-0 space-y-6">
-    {% call ui.section("Builds", id="builds-section") %}
+    {% call ui.section("Builds", id="builds-section", help="builds") %}
     {% include "modpacks/_builds.html" %}
     {% endcall %}
 
     {% if servers %}
-    {% call ui.section("Servidores vinculados", id="servers-section") %}
+    {% call ui.section("Servidores vinculados", id="servers-section", help="servidores-vinculados") %}
     <ul class="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
       {% for server in servers %}
       <li class="flex flex-wrap items-center gap-2 px-3 py-2">
@@ -67,7 +67,7 @@
     <p id="servers-section" class="text-sm text-zinc-500 dark:text-zinc-400">Servidores vinculados: ninguno. Se vincula desde la página de cada <a href="/servers" class="font-medium text-emerald-700 hover:underline dark:text-emerald-300">servidor</a>.</p>
     {% endif %}
 
-    {% call ui.section("Contenido del pack", id="import-section") %}
+    {% call ui.section("Contenido del pack", id="import-section", help="contenido") %}
     <details class="space-y-3">
       <summary class="cursor-pointer text-sm font-medium">Reemplazar con un .mrpack o un zip de Prism…</summary>
       <p class="mt-2 text-sm text-zinc-600 dark:text-zinc-400">Los mods del pack se reemplazan con los del archivo; lo que agregaste a mano se queda.</p>
@@ -75,13 +75,13 @@
     </details>
     {% endcall %}
 
-    {% call ui.section("Canales", id="channels-section") %}
+    {% call ui.section("Canales", id="channels-section", help="canales") %}
     {% include "modpacks/_channels.html" %}
     {% include "modpacks/_bridges.html" %}
     {% endcall %}
 
     {% if bundle.local_files %}
-    {% call ui.section("Archivos locales", id="local-files-section") %}
+    {% call ui.section("Archivos locales", id="local-files-section", help="archivos-locales") %}
     {% include "modpacks/_local_files.html" %}
     {% endcall %}
     {% else %}

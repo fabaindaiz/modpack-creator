@@ -16,3 +16,4 @@ external-link
 search
 circle-check
 bell
+circle-help

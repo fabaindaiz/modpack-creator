@@ -5,7 +5,7 @@
 {% block content %}
 {{ ui.page_header("Servidores", "Los servidores de juego que administra el panel, y los que Pterodactyl tiene y aquí faltan.") }}
 
-{% call ui.section("Servidores", id="servidores") %}
+{% call ui.section("Servidores", id="servidores", help="servidores") %}
 {% call ui.table(["Servidor", "Nodo", "Modpack"], empty="Todavía no hay servidores.", caption="Servidores") %}
 {% for server in servers %}
 <tr>
@@ -21,7 +21,7 @@
 {% endcall %}
 {% endcall %}
 
-{% call ui.section("En el panel de Pterodactyl", id="altas") %}
+{% call ui.section("En el panel de Pterodactyl", id="altas", help="panel-pterodactyl") %}
 {% if panel.fetched_at %}
 <div class="flex flex-wrap items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
   {% if panel.failed %}{{ ui.notice("El panel no respondió; lista de " ~ (panel.fetched_at | ago), "warning") }}

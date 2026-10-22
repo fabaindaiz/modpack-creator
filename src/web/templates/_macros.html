@@ -224,11 +224,32 @@
 {% endmacro %}
 
 {# A titled section of a page. #}
-{% macro section(title, id=None) %}
+{% macro section(title, id=None, help=None, topic=None) %}
 <section class="space-y-2"{% if id %} id="{{ id }}"{% endif %}>
+  {% if help %}
+  <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+    <h2 class="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{{ title }}</h2>
+    {{ help_toggle(topic or title, help) }}
+  </div>
+  {% else %}
   <h2 class="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{{ title }}</h2>
+  {% endif %}
   {{ caller() }}
 </section>
+{% endmacro %}
+
+{#
+  The «?» next to a title (O3, owner 2026-10-21): touching it opens the explanation in place, below
+  the title, and touching it again closes it. A <details>, so it works on a phone and without
+  JavaScript (no hover, nothing inline: the CSP, d-7985ee-491c83). `key` is an entry of HELP
+  (src/web/help.py): its text, and the anchor of «Cómo funciona» that says more.
+#}
+{% macro help_toggle(topic, key) %}
+{% set text, anchor = HELP[key] %}
+<details class="text-xs open:basis-full" data-help>
+  <summary aria-label="Ayuda: {{ topic }}" title="Ayuda" class="inline-flex size-6 cursor-pointer list-none items-center justify-center rounded-full text-xs font-semibold text-zinc-600 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-emerald-600 dark:text-zinc-300 dark:ring-zinc-600 dark:hover:bg-zinc-800 [&::-webkit-details-marker]:hidden">?</summary>
+  <p class="mt-1 max-w-prose rounded-lg bg-zinc-50 p-2 text-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300">{{ text }} <a href="/como-funciona#{{ anchor }}" class="font-medium text-emerald-700 hover:underline dark:text-emerald-300">Más en «Cómo funciona»</a></p>
+</details>
 {% endmacro %}
 
 {# A date as people read it, in UTC; a dash when there is none. #}
