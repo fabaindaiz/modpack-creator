@@ -25,6 +25,18 @@ pierde si MongoDB está caído (el archivo lo cuenta); (5) un zip en cola no sob
 Reborn, KotlinLangForge), si el proxy bufferiza la descarga en streaming, y el aspecto de «Cómo funciona», un
 «?» abierto y el bloque de orígenes (el barrido no los captura todavía).
 
+**2026-10-21, grupo 2 (pendientes viejos sin decisión abierta), decidido por el dueño una a una:** el
+escaneo completo guarda su motivo y la ficha del servidor lo muestra; un pack vacío que quedó porque el
+servidor se borró a mitad de «Crear modpack desde este servidor» se borra y el trabajo lo dice (con mods,
+no se toca); el tablero nombra la simulación fallida («Falló la simulación de X: el servidor no cambió.»)
+y el pack borrado («El modpack de X se borró: vincula otro.», nivel ordenar); las plantillas migran a los
+tokens semánticos con las esquinas y los colores de la paleta; el origen «servidor» de un pin aparece al
+escanear un servidor vinculado cuando su versión instalada difiere de la fijada, nunca en uso solo.
+Decidido sin consulta (técnico): un cambio de nodo fuerza el escaneo completo; `project_remove` devuelve
+los dependientes que usó; la fila de una importación cuenta sus pendientes al leerla; `LICENSES.html`
+nombra Feather y Tailwind (MIT); el chequeo de autoría ve los commits en CI; `test-mongo.sh` y el barrido
+avisan si ya hay otro mongod; el tablero no cuenta resoluciones viejas y lee menos.
+
 **2026-10-13, tanda C (loaders secundarios) hecha en la rama `feat/loaders-secundarios`** (sobre
 `main` = `fcf3a86`; sin merge ni push). Spec `docs/superpowers/specs/2026-10-13-loaders-secundarios-design.md`,
 plan `docs/superpowers/plans/2026-10-13-loaders-secundarios.md`, decisiones d-7985ee-45c2ba … d-7985ee-b7bddf
