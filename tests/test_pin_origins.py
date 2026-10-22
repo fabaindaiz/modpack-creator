@@ -7,7 +7,8 @@ resolvedor y las reglas de `src/library/pins.py`, sin base ni red.
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
-from src.library.pins import (ORIGIN_LABEL, OUTSIDE_TAGS, PinView, import_selects, pin_view, resolution_inputs,
+from src.library.changes import VersionFacts
+from src.library.pins import (ORIGIN_LABEL, OUTSIDE_TAGS, PinView, import_is_safe, import_selects, pin_view, resolution_inputs,
                               server_origins, server_origins_dropped, version_problem)
 from src.library.resolution import (Candidate, CandidateFile, Catalog, ResolveRequest, Target, request_digest,
                                     resolve)
@@ -162,21 +163,45 @@ def test_the_resolver_takes_unchecked_only_the_pack_or_server_versions_in_use() 
 
 
 def test_importing_selects_the_pack_version_when_nothing_else_is_chosen() -> None:
-    assert import_selects(current=None, downgrade=False) is True
-    assert import_selects(current=PinRecord(origins=[origin(PinSource.pack, "old")], selected=PinSource.pack),
-                          downgrade=False) is True
+    assert import_selects(view=None, safe=True) is True
+    pack_in_use = bundle({MOD: "old"}, {MOD: PinRecord(origins=[origin(PinSource.pack, "old")], selected=PinSource.pack)})
+    assert import_selects(view=viewed(pack_in_use, MOD), safe=True) is True
 
 
 def test_importing_never_replaces_a_choice_nor_goes_back() -> None:
-    chosen = PinRecord(origins=[origin(PinSource.admin, "a-1")], selected=PinSource.admin)
-    assert import_selects(current=chosen, downgrade=False) is False
-    freed = PinRecord(origins=[origin(PinSource.pack, "p-1")], selected=PinSource.resolution)
-    assert import_selects(current=freed, downgrade=False) is False
-    assert import_selects(current=None, downgrade=True) is False
+    chosen = bundle({MOD: "a-1"}, {MOD: PinRecord(origins=[origin(PinSource.admin, "a-1")], selected=PinSource.admin)})
+    assert import_selects(view=viewed(chosen, MOD), safe=True) is False
+    freed = bundle({}, {MOD: PinRecord(origins=[origin(PinSource.pack, "p-1")], selected=PinSource.resolution)})
+    assert import_selects(view=viewed(freed, MOD), safe=True) is False
+    assert import_selects(view=None, safe=False) is False
 
 
 def test_a_legacy_pin_is_a_choice_importing_keeps() -> None:
-    assert import_selects(current=None, downgrade=False, pinned=True) is False
+    assert import_selects(view=viewed(bundle({MOD: "a-1"}), MOD), safe=True) is False
+
+
+def test_a_pin_changed_or_removed_through_v1_is_a_choice_importing_keeps() -> None:
+    """Review, 2026-10-22: /v1 changes `pins` and not the origins; the record still says «pack»."""
+    record = PinRecord(origins=[origin(PinSource.pack, "p-1")], selected=PinSource.pack)
+    assert import_selects(view=viewed(bundle({MOD: "a-9"}, {MOD: record}), MOD), safe=True) is False
+    assert import_selects(view=viewed(bundle({}, {MOD: record}), MOD), safe=True) is False
+
+
+def facts(day: int, game: str = "1.20.1", loader: str = "forge") -> VersionFacts:
+    return VersionFacts(published=EPOCH + timedelta(days=day), game_versions=(game,), loaders=(loader,))
+
+
+def test_importing_selects_only_what_is_known_not_to_go_back() -> None:
+    """Review, 2026-10-22: a step back is not only an older date. A pack version for another game
+    version («branch»), or one the catalog cannot tell (the version or a floor missing), is offered,
+    never put in use alone (d-7985ee-6dc34c)."""
+    assert import_is_safe(facts(5), "p", {}) is True
+    assert import_is_safe(facts(5), "p", {"f": facts(3)}) is True
+    assert import_is_safe(facts(3), "f", {"f": facts(3)}) is True
+    assert import_is_safe(facts(1), "p", {"f": facts(3)}) is False
+    assert import_is_safe(facts(9, game="1.20"), "p", {"f": facts(3)}) is False
+    assert import_is_safe(None, "p", {"f": facts(3)}) is False
+    assert import_is_safe(facts(9), "p", {"f": facts(3), "g": None}) is False
 
 
 def test_every_origin_has_a_label() -> None:
@@ -290,3 +315,15 @@ def test_unlinking_a_server_drops_its_origins_except_the_one_in_use() -> None:
     dropped = server_origins_dropped(pack, "s1", "Survival")
     assert set(dropped) == {MOD}
     assert [o.source for o in dropped[MOD].origins] == [PinSource.admin]
+
+
+def test_offering_an_origin_keeps_which_servers_origin_is_in_use() -> None:
+    """Review, 2026-10-22: an import that only offers its version left B's origin, in use, reading as A's."""
+    from src.services.modpack import _with_origin
+    record = PinRecord(origins=[served("A", "Survival", "mt-2"), served("B", "Creativo", "mt-3")],
+                       selected=PinSource.server, selected_key="server:B")
+    offered = _with_origin(record, origin(PinSource.pack, "mt-4"), select=False)
+    used = offered.in_use()
+    assert used is not None and used.server_id == "B"
+    chosen = _with_origin(record, origin(PinSource.pack, "mt-4"), select=True)
+    assert (chosen.selected, chosen.selected_key) == (PinSource.pack, "pack")

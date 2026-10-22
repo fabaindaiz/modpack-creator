@@ -20,7 +20,7 @@ from src.model.jobs import Job
 from src.library.bridges import BRIDGES, REPLACES, VIA_RISK, bridge as find_bridge, companions, guest_of
 from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Candidate, Catalog, Lock, LockEntry, ResolveRequest, Target, free_request, merge_replacements, request_digest, resolve
 from src.model.modpack import BUNDLE_KEYED_FIELDS, AvailableUpdate, LoaderVersion, UpdateCheck, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, PinOrigin, PinRecord, PinSource, ProjectOrigin
-from src.library.pins import ORIGIN_LABEL, PinView, import_selects, pack_target, pin_view, resolution_inputs, version_problem
+from src.library.pins import ORIGIN_LABEL, PinView, import_is_safe, import_selects, pack_target, pin_view, resolution_inputs, version_problem
 from src.model.modrinth import ModrinthProject, ModrinthVersion, ModrinthVersionList, VersionBrief
 from src.model.modrinth.version import ModrinthDependencyType
 from src.model.pterodactyl import PterodactylServer, ServerScan
@@ -126,12 +126,21 @@ class PackPins:
     kept: list[str] = field(default_factory=list)
 
 
+def _version_facts(found: ModrinthVersion) -> VersionFacts:
+    """What tells whether a version comes after another (`direction`)."""
+    return VersionFacts(published=found.date_published, game_versions=tuple(found.game_versions),
+                        loaders=tuple(found.loaders))
+
+
 def _with_origin(record: PinRecord, origin: PinOrigin, select: bool) -> PinRecord:
-    """`record` with `origin` in place of the one of its source; in use if `select`."""
+    """`record` with `origin` in place of the one of its source; in use if `select`, and otherwise the
+    one in use stays, which server's included (review, 2026-10-22)."""
     origins = [origin if o.source == origin.source else o for o in record.origins]
     if not any(o.source == origin.source for o in record.origins):
         origins.append(origin)
-    return PinRecord(origins=origins, selected=origin.source if select else record.selected)
+    if select:
+        return PinRecord(origins=origins, selected=origin.source, selected_key=origin.key)
+    return PinRecord(origins=origins, selected=record.selected, selected_key=record.selected_key)
 
 
 @dataclass(frozen=True)
@@ -620,14 +629,15 @@ class ModpackService():
         Pin each mod of an imported pack to the pack's own version (O2): its «versión del pack»
         origin, checked as the resolver checks the pack (`version_problem`) and kept with that
         result. A version that does not pass is still used, and marked. It is put in use only where
-        nothing else was chosen (no pin, or the pack's version already in use) and never when it
-        goes back (d-7985ee-6dc34c): there it is only offered on the mod's card. A pin someone sets
-        meanwhile is left alone. `versions` must be keyed by plain Modrinth ids.
+        nothing else was chosen (no pin, or the pack's version already in use) and only where it is
+        known not to go back (d-7985ee-6dc34c, `import_is_safe`): elsewhere it is only offered on the
+        mod's card. A pin someone sets meanwhile is left alone. `versions` must be keyed by plain
+        Modrinth ids.
         """
         bundle = await self.modpackDB.bundle_get(bundle_id)
         target = self._target(bundle)
         wanted = {p: v for p, v in versions.items() if MODRINTH_ID.fullmatch(p)}
-        back = await self.pin_downgrades(bundle, {p: v.version_id for p, v in wanted.items()}, fetch=False)
+        unsafe = await self._import_unsafe(bundle, wanted)
         result = PackPins()
         for project_id, version in wanted.items():
             problem = version_problem(candidate(version), target, bundle.channel_exceptions.get(project_id))
@@ -640,7 +650,7 @@ class ModpackService():
             if base is None and pinned is not None:
                 # A pin stored before O2 is the admin's: kept, and in use.
                 base = PinRecord(origins=[PinOrigin(source=PinSource.admin, version_id=pinned)], selected=PinSource.admin)
-            selects = import_selects(current, project_id in back, pinned=pinned is not None)
+            selects = import_selects(pin_view(bundle, project_id), safe=project_id not in unsafe)
             if selects:
                 record = _with_origin(base or PinRecord(), origin, select=True)
                 written = await self.modpackDB.bundle_pin_record_set(bundle_id, project_id, record, version.version_id,
@@ -1580,6 +1590,33 @@ class ModpackService():
             origins={p.project_id: p.origin.value for p in bundle.projects},
             pins=bundle.pins, server_decisions=bundle.server_decisions, channel_exceptions=bundle.channel_exceptions,
             replacements=merge_replacements(global_rules, bundle.replacements), floors=floors)
+
+    async def _import_unsafe(self, bundle: ModpackBundle, wanted: Mapping[str, ModrinthVersion]) -> set[str]:
+        """The mods whose imported version is not known to keep them from going back
+        (`import_is_safe`; review, 2026-10-22): against every floor that fits the pack, with a floor
+        the catalog lacks counted as unknown, not as none. Reads only MongoDB."""
+        sources = await self._floor_sources(bundle)
+        floors_of = {p: list(sources[p]) for p in wanted if sources.get(p)}
+        if not floors_of:
+            return set()
+        ids = sorted({v for versions in floors_of.values() for v in versions})
+        known = {v.version_id: v for v in await self.modrinthDB.version_find_by_version_ids(ids)}
+        projects = {p.project_id: p for p in await self.modrinthDB.project_find_by_modrinth_id(sorted(floors_of))}
+        target = self._target(bundle)
+        unsafe: set[str] = set()
+        for project_id, version in wanted.items():
+            kind = projects[project_id].project_type.value if project_id in projects else "mod"
+            floors: dict[str, Optional[VersionFacts]] = {}
+            for floor_id in floors_of.get(project_id, []):
+                found = known.get(floor_id)
+                if found is None:
+                    floors[floor_id] = None
+                elif (bundle.version in found.game_versions and bool(target.loaders(kind) & set(found.loaders))
+                      and str(found.status.value) == "listed"):
+                    floors[floor_id] = _version_facts(found)
+            if not import_is_safe(_version_facts(version), version.version_id, floors):
+                unsafe.add(project_id)
+        return unsafe
 
     async def _floor_sources(self, bundle: ModpackBundle,
                              read: Optional[Mapping[int, ModpackBuild]] = None) -> dict[str, dict[str, list[str]]]:

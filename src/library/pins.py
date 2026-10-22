@@ -16,10 +16,11 @@ from datetime import datetime
 from typing import Optional
 
 from src.library.bridges import bridge as find_bridge
+from src.library.changes import VersionFacts, direction
 from src.library.resolution import CHANNEL_RANK, OUTSIDE_TAGS, Candidate, Target
 from src.model.modpack import ModpackBundle, PinOrigin, PinRecord, PinSource
 
-__all__ = ["ORIGIN_LABEL", "OUTSIDE_TAGS", "PinView", "import_selects", "pin_view", "resolution_inputs",
+__all__ = ["ORIGIN_LABEL", "OUTSIDE_TAGS", "PinView", "import_is_safe", "import_selects", "pin_view", "resolution_inputs",
            "pack_target", "server_origins", "server_origins_dropped", "version_problem"]
 
 # How the panel names each origin.
@@ -124,15 +125,34 @@ def resolution_inputs(bundle: ModpackBundle) -> tuple[set[str], set[str]]:
     return unchecked, free
 
 
-def import_selects(current: Optional[PinRecord], downgrade: bool, pinned: bool = False) -> bool:
+def import_selects(view: Optional[PinView], safe: bool) -> bool:
     """Whether importing a pack puts its version of a mod in use: only where nothing else was chosen
-    (no pin, or the pack's own version in use) and never going back (d-7985ee-6dc34c: a step back
-    is the person's choice, from the mod's card)."""
-    if downgrade:
+    (no pin and no origins, or the pack's own version in use) and only where it is known not to go
+    back (`import_is_safe`; d-7985ee-6dc34c: a step back is the person's choice, from the mod's
+    card). Read from what is in use, not from the stored record: a pin changed or removed through
+    /v1 leaves the record saying «pack» (review, 2026-10-22)."""
+    if not safe:
         return False
-    if current is None:
-        return not pinned
-    return current.selected == PinSource.pack
+    return view is None or view.selected == PinSource.pack
+
+
+def import_is_safe(pack: Optional[VersionFacts], pack_id: str, floors: Mapping[str, Optional[VersionFacts]]) -> bool:
+    """Whether putting the pack's version in use is known not to take the mod back (review,
+    2026-10-22): with no floor, yes; with a floor the catalog lacks, or the pack's version unknown,
+    no (missing evidence is not «not a step back»); otherwise only if it is the newest floor or comes
+    after it on the same branch. A version for another game version or loader («branch») is offered,
+    never put in use alone.
+
+    :param floors: Version id → its facts, for the floors that fit the pack; None where the catalog
+        lacks the version.
+    """
+    if not floors:
+        return True
+    if pack is None or any(f is None for f in floors.values()):
+        return False
+    known = {v: f for v, f in floors.items() if f is not None}
+    newest_id, newest = max(known.items(), key=lambda item: item[1].published)
+    return newest_id == pack_id or direction(newest, pack) == "up"
 
 
 def _this_server(origin: PinOrigin, server_id: str, server_name: str) -> bool:
