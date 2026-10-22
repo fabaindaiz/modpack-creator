@@ -254,6 +254,28 @@ def test_a_resolution_is_kept_once_per_bundle_and_replaced(mongo: MongoRunner) -
     assert missing is None and digests == ["b"] and count == 2
 
 
+def test_the_resolutions_of_many_bundles_are_read_together(mongo: MongoRunner) -> None:
+    """The dashboard reads every pack's resolution in one query (review of batch B, minor 4)."""
+    from beanie import PydanticObjectId
+    from src.database.modpack import ModpackDatabase
+    from src.library.resolution import Lock
+    from src.model.modpack import ModpackResolution
+
+    async def scenario() -> tuple[set[str], list[Any]]:
+        database = ModpackDatabase()
+        one, other, never = PydanticObjectId(), PydanticObjectId(), PydanticObjectId()
+        for bundle_id, digest in ((one, "a"), (other, "b")):
+            await database.resolution_save(ModpackResolution(
+                bundle_id=bundle_id, resolved_at=datetime.now(timezone.utc), request_digest=digest,
+                lock=Lock(entries=[], problems=[], suggestions=[], needs_projects=set(), needs_types=set(),
+                          needs_versions=set())))
+        found = await database.resolution_find_many([one, never, one])
+        return {r.request_digest for r in found}, await database.resolution_find_many([])
+
+    digests, empty = mongo(scenario)
+    assert digests == {"a"} and empty == []
+
+
 def test_every_collection_is_named_after_its_class(mongo: MongoRunner) -> None:
     """Las colecciones de producción se llaman como la clase (i-7985ee-c1de10): Beanie 2 ignora
     `Settings.collection`. Un `name` nuevo en un modelo dejaría sus datos huérfanos sin migrar."""

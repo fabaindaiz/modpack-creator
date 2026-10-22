@@ -414,9 +414,13 @@ def test_the_simulated_build_is_that_of_the_newest_finished_update_of_the_same_p
         await s.run()  # a dry run of build 1
         seen.append(await jobs.simulated_build(s.server_id, bundle_id))
         seen.append(await jobs.simulated_build(s.server_id, str(PydanticObjectId())))
+        # The pack's page asks it of every linked server at once (review of batch B, minor 5).
+        together = await jobs.simulated_builds([s.server_id, str(PydanticObjectId())], bundle_id)
+        seen.append(together.get(s.server_id))
+        seen.append(len(together))
         return seen
 
-    assert mongo(scenario) == [None, 1, None]
+    assert mongo(scenario) == [None, 1, None, 1, 1]
 
 
 # Lo que sale mal con el servidor.

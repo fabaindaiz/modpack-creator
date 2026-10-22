@@ -84,6 +84,19 @@ class JobDatabase():
         return await Job.find({"key": key, "$or": [{"kind": "server_rollback"}, real]}
                               ).sort([("created_at", SortDirection.DESCENDING), ("_id", SortDirection.DESCENDING)]).first_or_none()
 
+    async def last_done_update_builds(self, server_ids: list[str], bundle_id: str) -> dict[str, Any]:
+        """The build of each server's newest finished update (a simulation or a real one) of this
+        pack, by server id, in one query; a server without one is absent."""
+        if not server_ids:
+            return {}
+        rows = await Job.get_pymongo_collection().aggregate([
+            {"$match": {"kind": "server_update", "status": "done", "payload.bundle_id": bundle_id,
+                        "key": {"$in": [f"server:{s}" for s in server_ids]}}},
+            {"$sort": {"created_at": -1, "_id": -1}},
+            {"$group": {"_id": "$key", "build": {"$first": "$payload.build"}}},
+        ])
+        return {row["_id"][len("server:"):]: row["build"] async for row in rows}
+
     async def rollbacks_of(self, update_id: str) -> list[Job]:
         """The rollbacks of an update, whatever their status, the newest first."""
         return await Job.find({"kind": "server_rollback", "payload.update_id": update_id}

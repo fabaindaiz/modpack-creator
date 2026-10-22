@@ -115,6 +115,8 @@ class FakeModpack:
         self.saved: Optional[ModpackResolution] = None
         self.stale = False
         self.checks_seen: list[Optional[UpdateCheck]] = []
+        # The bundle each mod_list was handed (the page's own, so the list does not read it again).
+        self.bundles_given: list[Optional[ModpackBundle]] = []
         # What project_dependents answers (a read, not recorded): who needs a mod being removed.
         self.dependents: Optional[list[str]] = []
         # What bridge_idle answers: the bridge mods left when no mod runs through a bridge.
@@ -239,8 +241,10 @@ class FakeModpack:
         self.saved = resolution(self.lock)
         return self.lock
 
-    async def mod_list(self, bundle_id: str, check: Optional[UpdateCheck]) -> ModList:
+    async def mod_list(self, bundle_id: str, check: Optional[UpdateCheck],
+                       bundle: Optional[ModpackBundle] = None) -> ModList:
         self.checks_seen.append(check)
+        self.bundles_given.append(bundle)
         rows = self.rows
         if rows is None:
             entries = {e.project_id: e for e in self.saved.lock.entries} if self.saved else {}
@@ -353,12 +357,18 @@ class FakeChecks:
 
 
 class FakeJobs:
-    """What the pack page asks of the jobs (B1): the build each server last simulated."""
+    """What the pack page asks of the jobs (B1): the build each server last simulated, counted."""
     def __init__(self) -> None:
         self.simulated: dict[str, int] = {}
+        self.reads: list[str] = []
 
     async def simulated_build(self, server_id: str, bundle_id: str) -> Optional[int]:
+        self.reads.append("simulated_build")
         return self.simulated.get(server_id)
+
+    async def simulated_builds(self, server_ids: list[str], bundle_id: str) -> dict[str, int]:
+        self.reads.append("simulated_builds")
+        return {s: self.simulated[s] for s in server_ids if s in self.simulated}
 
 
 class FakePtero:
@@ -1183,6 +1193,23 @@ def test_a_new_build_offers_simulating_on_linked_servers() -> None:
     assert "Simular en Survival" in text and 'href="/servers/srv1#actualizar"' in text and "Otro" not in text
     modpack.builds[0].created_at = datetime.now(timezone.utc) - timedelta(minutes=10)
     assert "Simular en Survival" not in client.get(f"/modpacks/{BUNDLE_ID}").text
+
+
+def test_the_pack_page_reads_its_servers_simulations_together_and_its_pack_once() -> None:
+    """Review of batch B, minor 5: one read of the simulations for every linked server, and the mod
+    list takes the pack the page already read."""
+    import main
+
+    client, modpack, _, _, ptero = setup_all(OPERATOR)
+    jobs = FakeJobs()
+    jobs.simulated = {"srv2": 2}
+    main.container.jobService.override(providers.Object(jobs))
+    ptero.servers = [PterodactylServer.model_construct(id=f"srv{n}", name=f"S{n}", bundle_id=str(BUNDLE_ID),
+                                                       is_suspended=False, status=None) for n in (1, 2, 3)]
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert jobs.reads == ["simulated_builds"]
+    assert modpack.bundles_given == [modpack.bundle]
+    assert "data-onboarding" in text
 
 
 def test_recommend_build_with_the_actor() -> None:

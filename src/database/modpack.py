@@ -360,6 +360,13 @@ class ModpackDatabase():
         """A bundle's latest resolution; None if it was never resolved."""
         return await ModpackResolution.find_one(ModpackResolution.bundle_id == bundle_id)
 
+    async def resolution_find_many(self, bundle_ids: Iterable[PydanticObjectId]) -> list[ModpackResolution]:
+        """The saved resolutions of these bundles, in one query; a bundle never resolved is absent."""
+        wanted = list(dict.fromkeys(bundle_ids))
+        if not wanted:
+            return []
+        return await ModpackResolution.find(In(ModpackResolution.bundle_id, wanted)).to_list()
+
     async def resolution_find_with_dependency(self, project_id: str) -> list[ModpackResolution]:
         """The saved resolutions that brought this project in as a dependency: an entry of it without
         an origin (one with an origin was asked for by the pack), or a problem about it (a dependency

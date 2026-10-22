@@ -165,15 +165,17 @@ async def server_detail(
     versions = await pterodactylService.compare_names(comparison) if comparison else {}
     # What importing would bring: the jars the bundle itself does not explain (F26's rule).
     to_import = unexplained_for(comparison, bundle) if comparison and bundle else None
-    installed_build = await jobService.installed_build(server_id) if bundle else None
+    # One read of the last real update for both (review of batch B, minor 5).
+    update_state = await jobService.update_state(server_id)
+    installed_build = update_state.installed if bundle else None
     active = await jobService.active_for_server(server_id)
-    rollback = await jobService.rollback_state(server_id)
+    rollback = update_state.rollback
     build_number = (bundle.recommended_build or bundle.latest_build) if bundle else None
     builds = sorted(await modpackService.build_find(str(bundle.id)), key=lambda b: b.number, reverse=True) \
         if bundle is not None else []
     deduction = await pterodactylService.deduction(server_id) if server.bundle_id is None else None
     link_notice = next((text for flag, text in LINK_NOTICES.items() if request.query_params.get(flag) == "1"), None)
-    saved = await fact(modpackService.resolution(str(bundle.id)), None) if bundle is not None else None
+    saved = await fact(modpackService.resolution(str(bundle.id), bundle=bundle), None) if bundle is not None else None
     onboarding = server_steps(server_id, ServerFacts(
         scanned=scan is not None, identified=sum(1 for f in scan.files if f.status == "identified") if scan else 0,
         bundle_id=str(bundle.id) if bundle is not None else None, bundle_name=bundle.name if bundle is not None else None,

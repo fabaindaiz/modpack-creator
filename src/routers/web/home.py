@@ -64,7 +64,8 @@ async def home(
     # One query for every modpack; the pinned updates are shown on their page, never counted here.
     checks = await updateCheckService.latest_many(bundle_ids)
     update_counts = {str(bundle_id): sum(1 for u in check.updates if not u.pinned) for bundle_id, check in checks.items()}
-    resolutions = await modpackService.resolution_many(bundle_ids)
+    # Only a resolution of the pack as it is now counts, as in the set-up (review of batch B, minor 4).
+    resolutions = await modpackService.current_resolutions([bundle for bundle, _ in builds])
     failed = await jobService.find(server_id=None, kind=None, status="failed", before_id=None, limit=FAILED_LOOKUP)
     # A failure a later success of the same job fixed is no longer news (final review of batch B).
     done = await jobService.find(server_id=None, kind=None, status="done", before_id=None, limit=DONE_LOOKUP)

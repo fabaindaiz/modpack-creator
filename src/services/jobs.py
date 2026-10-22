@@ -9,7 +9,7 @@ from uuid import uuid4
 from src.database.jobs import JobDatabase
 from src.database.pterodactyl import PterodactylDatabase
 from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
-from src.model.jobs import Job, JobProgress, RollbackState, is_real_update
+from src.model.jobs import Job, JobProgress, RollbackState, UpdateState, is_real_update
 from src.library.api.limiter import ON_WAIT
 from src.model.audit import AuditTarget
 from src.model.users import Actor
@@ -21,12 +21,16 @@ from src.services.pterodactyl import SCAN_DIRECTORY, PterodactylService
 # the server's activity sees a restored backup, but not a move between nodes, a reinstall from the
 # admin panel or activity pruned early; a weekly full scan bounds those.
 FULL_SCAN_DEFAULT_DAYS = 7
-# How many of a server's finished updates are read to find the newest of its pack (B1).
-SIMULATED_LOOKUP = 20
-
 Clock = Callable[[], datetime]
 Handler = Callable[[Job, "JobContext"], Awaitable[None]]
 logger = logging.getLogger("modpack.jobs")
+
+def _installed(last: Optional[Job]) -> Optional[int]:
+    """The build of a server's last real update (`last_real_update`) if it ended done; None otherwise."""
+    if last is None or last.kind != "server_update" or last.status != "done":
+        return None
+    build = last.payload.get("build")
+    return build if isinstance(build, int) else None
 
 def done_rollback(rollbacks: list[Job], mode: str) -> Optional[Job]:
     """The newest rollback of this mode that ended done: a failed one closes nothing (D1 of
@@ -238,21 +242,26 @@ class JobService():
         """The build the panel last installed on the server: that of its newest real update, if it
         ended done. None when the newest is not (it failed, is running, or was rolled back), or
         when the panel never updated it: what was installed by hand is not known."""
+        return _installed(await self.jobDB.last_real_update(f"server:{server_id}"))
+
+    async def update_state(self, server_id: str) -> UpdateState:
+        """`installed_build` and `rollback_state` from one read of the server's last real update
+        (review of batch B, minor 5): what its page shows."""
         last = await self.jobDB.last_real_update(f"server:{server_id}")
-        if last is None or last.kind != "server_update" or last.status != "done":
-            return None
-        build = last.payload.get("build")
-        return build if isinstance(build, int) else None
+        return UpdateState(installed=_installed(last), rollback=await self._rollback_from(server_id, last))
+
+    async def simulated_builds(self, server_ids: list[str], bundle_id: str) -> dict[str, int]:
+        """`simulated_build` of each of these servers, in one query (review of batch B, minor 5): the
+        pack's set-up asks it of every linked server. A server that never finished one is absent."""
+        found = await self.jobDB.last_done_update_builds(server_ids, bundle_id)
+        return {s: b for s, b in found.items() if isinstance(b, int)}
 
     async def simulated_build(self, server_id: str, bundle_id: str) -> Optional[int]:
         """The build of the server's newest finished update of this pack, a simulation or a real
         one: the set-up's last step (B1, d-7985ee-20935c). Only the pack's own: a server that
         changed pack does not count the other pack's build of the same number (final review of
         batch B). None when it never finished one."""
-        done = await self.jobDB.find(server_id=server_id, kind="server_update", status="done", before_id=None,
-                                     limit=SIMULATED_LOOKUP)
-        build = next((j.payload.get("build") for j in done if j.payload.get("bundle_id") == bundle_id), None)
-        return build if isinstance(build, int) else None
+        return (await self.simulated_builds([server_id], bundle_id)).get(server_id)
 
     async def rollback_state(self, server_id: str) -> Optional[RollbackState]:
         """What the panel offers to undo the server's last real update, if it failed
@@ -260,7 +269,10 @@ class JobService():
         of the server decides: a rollback points back to the update it undoes, and any later real
         update supersedes it (R17). After a done B nothing is left; after a done A only B. A
         failed rollback closes nothing. UpdateService.enqueue_rollback checks it all again."""
-        update = await self.jobDB.last_real_update(f"server:{server_id}")
+        return await self._rollback_from(server_id, await self.jobDB.last_real_update(f"server:{server_id}"))
+
+    async def _rollback_from(self, server_id: str, update: Optional[Job]) -> Optional[RollbackState]:
+        """`rollback_state` from the server's last real update or rollback, already read."""
         if update is not None and update.kind == "server_rollback":
             try:
                 update = await self.jobDB.get(str(update.payload.get("update_id")))

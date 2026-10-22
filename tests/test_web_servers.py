@@ -19,7 +19,7 @@ from src.exceptions import HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND, HTTP_409_CONF
 from src.library.deduce import Deduction
 from src.library.jarmeta import ModMetadata
 from src.library.scan import Comparison, ExpectedEntry, ScanFile
-from src.model.jobs import Job, RollbackState
+from src.model.jobs import Job, RollbackState, UpdateState
 from src.model.modpack import ModpackBuild, ModpackBundle, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject
 from src.model.pterodactyl import BundleForServer, PanelServers, ImportCandidate, ImportResult, ProjectCandidate, PterodactylServer, ServerScan
@@ -198,9 +198,16 @@ class FakeJobs:
         self.installed: Optional[int] = None
         self.simulated: Optional[int] = None
         self.calls: list[tuple[Any, ...]] = []
+        # The reads of the server's last real update, counted.
+        self.reads: list[str] = []
 
     async def installed_build(self, server_id: str) -> Optional[int]:
+        self.reads.append("installed_build")
         return self.installed
+
+    async def update_state(self, server_id: str) -> UpdateState:
+        self.reads.append("update_state")
+        return UpdateState(installed=self.installed, rollback=self.state)
 
     async def simulated_build(self, server_id: str, bundle_id: str) -> Optional[int]:
         return self.simulated
@@ -222,6 +229,7 @@ class FakeJobs:
         return next((j for j in self.jobs if j.active and j.key == f"server:{server_id}"), None)
 
     async def rollback_state(self, server_id: str) -> Optional[RollbackState]:
+        self.reads.append("rollback_state")
         return self.state
 
 
@@ -263,6 +271,8 @@ class FakeModpack:
         # The pack's saved resolution and whether it is stale (B1's facts); None: never resolved.
         self.saved: Optional[tuple[Any, bool]] = None
         self.resolution_error: Optional[Exception] = None
+        # The bundle each resolution call was handed: the page's own, so it is not read again.
+        self.resolution_given: list[Optional[ModpackBundle]] = []
         self.preview: Any = change_preview()
         self.preview_error: Optional[Exception] = None
         self.calls: list[tuple[Any, ...]] = []
@@ -276,7 +286,8 @@ class FakeModpack:
     async def bundle_find(self) -> list[ModpackBundle]:
         return [bundle(5, self.recommended) if self.builds else bundle(None, None)]
 
-    async def resolution(self, bundle_id: str) -> Optional[tuple[Any, bool]]:
+    async def resolution(self, bundle_id: str, bundle: Optional[ModpackBundle] = None) -> Optional[tuple[Any, bool]]:
+        self.resolution_given.append(bundle)
         if self.resolution_error is not None:
             raise self.resolution_error
         return self.saved
@@ -1594,6 +1605,16 @@ def test_a_long_server_name_prefills_the_new_modpack_within_its_limit() -> None:
 def onboarding(text: str) -> str:
     start = text.index("data-onboarding")
     return text[start:text.index("</section>", start)]
+
+
+def test_the_server_page_hands_its_pack_on_and_reads_its_last_update_once() -> None:
+    """Review of batch B, minor 5: the set-up's resolution takes the pack the page read, and the
+    installed build and the rollback on offer come from one read of the last real update."""
+    client, fakes = setup(OPERATOR)
+    fakes.modpack.saved = (SimpleNamespace(lock=SimpleNamespace(undecided=[], problems=[])), False)
+    assert client.get(f"/servers/{SERVER_ID}").status_code == 200
+    assert [str(b.id) if b else None for b in fakes.modpack.resolution_given] == [str(BUNDLE_ID)]
+    assert fakes.jobs.reads == ["update_state"]
 
 
 def test_the_server_page_lists_what_is_left_to_set_up_with_each_action() -> None:

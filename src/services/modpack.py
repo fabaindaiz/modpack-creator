@@ -23,7 +23,7 @@ from src.model.modpack import BUNDLE_KEYED_FIELDS, AvailableUpdate, LoaderVersio
 from src.library.pins import ORIGIN_LABEL, PinView, import_selects, pin_view, resolution_inputs, version_problem
 from src.model.modrinth import ModrinthProject, ModrinthVersion, ModrinthVersionList, VersionBrief
 from src.model.modrinth.version import ModrinthDependencyType
-from src.model.pterodactyl import PterodactylServer
+from src.model.pterodactyl import PterodactylServer, ServerScan
 from src.model.audit import AuditTarget
 from src.model.users import Actor
 from src.services.audit import AuditSink
@@ -387,6 +387,32 @@ def outside_channel(target: Target, project_type: str, versions: Sequence[Modrin
     if not fitting or any(channel in target.channels for channel in fitting):
         return None
     return min(fitting, key=lambda channel: CHANNEL_RANK.get(channel, 99))
+
+
+def _floor_sources_of(in_force: Optional[int], build: Optional[ModpackBuild],
+                      linked: Iterable[tuple[str, Optional[ServerScan]]]) -> dict[str, dict[str, list[str]]]:
+    """Who runs each version of each project, from the build in force (`in_force`, its number, and
+    `build`) and the latest scan of each linked server (`linked`: its name and scan, or None):
+    project id -> version id -> ["el build 7", "el servidor «Survival»"]. Pure."""
+    seen: dict[str, dict[str, list[str]]] = {}
+    if build is not None:
+        for entry in build.lock.entries:
+            seen.setdefault(entry.project_id, {}).setdefault(entry.version_id, []).append(f"el build {in_force}")
+    for name, scan in linked:
+        for file in scan.files if scan is not None else []:
+            if file.project_id and file.version_id:
+                users = seen.setdefault(file.project_id, {}).setdefault(file.version_id, [])
+                if f"el servidor «{name}»" not in users:
+                    users.append(f"el servidor «{name}»")
+    return seen
+
+
+def _floors_of(sources: Mapping[str, Mapping[str, list[str]]]) -> dict[str, list[str]]:
+    """A mod never goes back (owner, 2026-10-12, d-7985ee-6dc34c): each project's versions in the
+    build in force and in the last scan of every server linked to the pack (`_floor_sources_of`).
+    Which of them is the floor (the newest that fits the target) the resolver decides, fetching
+    through its usual path any version the catalog lacks."""
+    return {project: sorted(versions) for project, versions in sources.items()}
 
 
 class ModpackService():
@@ -938,7 +964,8 @@ class ModpackService():
             raise HTTP_404_NOT_FOUND(f"Modrinth has no project {', '.join(missing)}")
         return await self.modrinthDB.project_upsert_many(found)
 
-    async def mod_list(self, bundle_id: str, check: Optional[UpdateCheck]) -> ModList:
+    async def mod_list(self, bundle_id: str, check: Optional[UpdateCheck],
+                       bundle: Optional[ModpackBundle] = None) -> ModList:
         """
         The pack's mods as one list: its projects in order, then the dependencies of the latest
         saved resolution (its entries without an origin) by title, each with its card data. Without a
@@ -950,15 +977,25 @@ class ModpackService():
         Writes the catalog.
 
         :param check: The latest update check, for the newer versions; None shows none.
+        :param bundle: The bundle, when the page already read it.
+
+        The bundle, its latest build and the floors' sources (the build in force, the linked servers'
+        scans) are read once, for the resolution's staleness and the pins (review of batch B, minor 5).
         """
-        bundle = await self.modpackDB.bundle_get(bundle_id)
-        saved = await self.resolution(bundle_id)
-        resolution, stale = saved if saved else (None, False)
+        bundle = bundle if bundle is not None else await self.modpackDB.bundle_get(bundle_id)
+        read: dict[int, ModpackBuild] = {}
+        if bundle.latest_build is not None:
+            read[bundle.latest_build] = await self.modpackDB.build_get(bundle_id, bundle.latest_build)
+        resolution = await self.modpackDB.resolution_get(bundle.id)  # type: ignore[arg-type]
+        # Read only when something asks: the resolution's staleness, the pins, the mods moved to native.
+        sources = await self._floor_sources(bundle, read) \
+            if resolution is not None or bundle.pins or bundle.native_only else {}
+        stale = resolution is not None and \
+            resolution.request_digest != request_digest(await self._request(bundle, sources=sources))
         entries = {e.project_id: e for e in resolution.lock.entries} if resolution else {}
         in_build: dict[str, str] = {}
         if bundle.latest_build is not None:
-            build = await self.modpackDB.build_get(bundle_id, bundle.latest_build)
-            in_build = {e.project_id: e.version_number for e in build.lock.entries}
+            in_build = {e.project_id: e.version_number for e in read[bundle.latest_build].lock.entries}
         pack = {p.project_id: p.origin.value for p in bundle.projects}
         # Only what the resolution brought in itself: an entry with an origin was asked for by the
         # pack, and one no longer in it was removed or replaced since (that does not resolve again).
@@ -988,8 +1025,7 @@ class ModpackService():
         for found_version in await self.modrinthDB.version_find_for_game_version([*pack, *dependencies], bundle.version):
             for_version.setdefault(found_version.project_id, []).append(found_version)
         # A pin can go back after it was set, when the floor rises; the page never asks Modrinth.
-        # The build in force and the servers, read once for the pins and the mods moved to native.
-        sources = await self._floor_sources(bundle) if bundle.pins or bundle.native_only else {}
+        # The build in force and the servers, read once above, for the pins and the mods moved to native.
         pins_back = await self.pin_downgrades(bundle, bundle.pins, fetch=False, sources=sources) if bundle.pins else {}
         # What each row's pin select offers (A3): the catalog's list for each row's target and its
         # versions, as briefs, in two queries for the whole page, never Modrinth. Only the list of
@@ -1451,42 +1487,71 @@ class ModpackService():
             await self.modpackDB.bundle_checked_at_set(str(bundle.id), self.clock())
         return lock
 
-    async def resolution(self, bundle_id: str) -> Optional[tuple[ModpackResolution, bool]]:
+    async def resolution(self, bundle_id: str, bundle: Optional[ModpackBundle] = None,
+                         sources: Optional[dict[str, dict[str, list[str]]]] = None,
+                         ) -> Optional[tuple[ModpackResolution, bool]]:
         """
         The bundle's latest saved resolution and whether it is stale, or None if there is none.
 
         Stale: the bundle's request now has another digest than the one that produced it. For
-        display only: no build reads it.
+        display only: no build reads it. `bundle` and `sources` (`_floor_sources`), when the page
+        already read them: neither is read again (review of batch B, minor 5).
         """
-        bundle = await self.modpackDB.bundle_get(bundle_id)
+        bundle = bundle if bundle is not None else await self.modpackDB.bundle_get(bundle_id)
         saved = await self.modpackDB.resolution_get(bundle.id)  # type: ignore[arg-type]
         if saved is None:
             return None
-        return saved, saved.request_digest != request_digest(await self._request(bundle))
+        return saved, saved.request_digest != request_digest(await self._request(bundle, sources=sources))
 
-    async def resolution_many(self, bundle_ids: Sequence[str]) -> dict[str, ModpackResolution]:
+    async def current_resolutions(self, bundles: Sequence[ModpackBundle]) -> dict[str, ModpackResolution]:
         """
-        The saved resolution of each bundle that has one, by bundle id, for the dashboard (B2): what
-        it leaves undecided or unresolved. Read only, never resolved again here, and without the
-        staleness of `resolution` (which would read every pack's request); an invalid id is skipped.
+        The saved resolution of each bundle whose request has not changed since, by bundle id, for the
+        dashboard (B2): what it leaves undecided or unresolved. A stale one is left out, as the
+        set-up leaves it out (`resolution`; review of batch B, minor 4). Read only, never resolved
+        again, in one query each for every bundle (the resolutions, the replacement rules, the builds
+        in force, the servers) and then the latest scan of each server linked to a resolved bundle.
+        A bundle whose build in force is gone has no current resolution.
         """
-        found: dict[str, ModpackResolution] = {}
-        for bundle_id in bundle_ids:
-            if not PydanticObjectId.is_valid(bundle_id):
+        by_id = {b.id: b for b in bundles if b.id is not None}
+        saved = await self.modpackDB.resolution_find_many(list(by_id))
+        if not saved:
+            return {}
+        global_rules = {r.project_id: r.replacement for r in await self.modpackDB.replacement_find()}
+        resolved = [by_id[s.bundle_id] for s in saved if s.bundle_id in by_id]
+        in_force = {b.id: b.recommended_build or b.latest_build for b in resolved}
+        builds = {(b.bundle_id, b.number): b for b in await self.modpackDB.build_find_numbers(
+            [(i, n) for i, n in in_force.items() if i is not None and n is not None])}
+        linked = {str(b.id) for b in resolved}
+        servers = [s for s in await self.pterodactylDB.server_find().to_list() if s.bundle_id in linked]
+        scans = {str(s.id): await self.pterodactylDB.scan_latest(str(s.id), SCAN_DIRECTORY) for s in servers}
+        current: dict[str, ModpackResolution] = {}
+        for found in saved:
+            bundle = by_id.get(found.bundle_id)
+            if bundle is None:
                 continue
-            saved = await self.modpackDB.resolution_get(PydanticObjectId(bundle_id))
-            if saved is not None:
-                found[bundle_id] = saved
-        return found
+            number = in_force[bundle.id]
+            build = builds.get((bundle.id, number)) if number is not None else None  # type: ignore[arg-type]
+            if number is not None and build is None:
+                continue
+            sources = _floor_sources_of(number, build, [(s.name, scans[str(s.id)]) for s in servers
+                                                        if s.bundle_id == str(bundle.id)])
+            request = await self._request(bundle, global_rules=global_rules, sources=sources)
+            if found.request_digest == request_digest(request):
+                current[str(bundle.id)] = found
+        return current
 
     async def _resolution_save(self, bundle: ModpackBundle, request: ResolveRequest, lock: Lock) -> None:
         await self.modpackDB.resolution_save(ModpackResolution(
             bundle_id=bundle.id, resolved_at=datetime.now(timezone.utc),  # type: ignore[arg-type]
             request_digest=request_digest(request), lock=lock))
 
-    async def _request(self, bundle: ModpackBundle) -> ResolveRequest:
-        global_rules = {r.project_id: r.replacement for r in await self.modpackDB.replacement_find()}
-        floors = await self._floors(bundle)
+    async def _request(self, bundle: ModpackBundle, global_rules: Optional[Mapping[str, Optional[str]]] = None,
+                       sources: Optional[dict[str, dict[str, list[str]]]] = None) -> ResolveRequest:
+        """What resolving the bundle asks now. `global_rules` (the replacement rules) and `sources`
+        (`_floor_sources`), when the caller already read them."""
+        if global_rules is None:
+            global_rules = {r.project_id: r.replacement for r in await self.modpackDB.replacement_find()}
+        floors = _floors_of(sources if sources is not None else await self._floor_sources(bundle))
         unchecked, free = resolution_inputs(bundle)
         return ResolveRequest(
             unchecked=unchecked, free=free,
@@ -1500,29 +1565,19 @@ class ModpackService():
             pins=bundle.pins, server_decisions=bundle.server_decisions, channel_exceptions=bundle.channel_exceptions,
             replacements=merge_replacements(global_rules, bundle.replacements), floors=floors)
 
-    async def _floors(self, bundle: ModpackBundle) -> dict[str, list[str]]:
-        """A mod never goes back (owner, 2026-10-12, d-7985ee-6dc34c): each project's versions in the
-        build in force and in the last scan of every server linked to the pack. Only MongoDB is
-        read: which of them is the floor (the newest that fits the target) the resolver decides,
-        fetching through its usual path any version the catalog lacks."""
-        return {project: sorted(versions) for project, versions in (await self._floor_sources(bundle)).items()}
-
-    async def _floor_sources(self, bundle: ModpackBundle) -> dict[str, dict[str, list[str]]]:
-        """`_floors` with who runs each version: project id -> version id -> ["el build 7",
-        "el servidor «Survival»"]. Only MongoDB is read."""
-        seen: dict[str, dict[str, list[str]]] = {}
+    async def _floor_sources(self, bundle: ModpackBundle,
+                             read: Optional[Mapping[int, ModpackBuild]] = None) -> dict[str, dict[str, list[str]]]:
+        """The floors' sources (`_floor_sources_of`): the build in force and the latest scan of every
+        server linked to the pack. Only MongoDB is read; `read` holds builds of the bundle the caller
+        already has, by number, so the one in force is not read again."""
         in_force = bundle.recommended_build or bundle.latest_build
+        build = None
         if in_force is not None:
-            for entry in (await self.modpackDB.build_get(str(bundle.id), in_force)).lock.entries:
-                seen.setdefault(entry.project_id, {}).setdefault(entry.version_id, []).append(f"el build {in_force}")
-        for server in await self.pterodactylDB.server_find_by_bundle(str(bundle.id)):
-            scan = await self.pterodactylDB.scan_latest(str(server.id), SCAN_DIRECTORY)
-            for file in scan.files if scan is not None else []:
-                if file.project_id and file.version_id:
-                    users = seen.setdefault(file.project_id, {}).setdefault(file.version_id, [])
-                    if f"el servidor «{server.name}»" not in users:
-                        users.append(f"el servidor «{server.name}»")
-        return seen
+            build = read[in_force] if read is not None and in_force in read \
+                else await self.modpackDB.build_get(str(bundle.id), in_force)
+        linked = [(server.name, await self.pterodactylDB.scan_latest(str(server.id), SCAN_DIRECTORY))
+                  for server in await self.pterodactylDB.server_find_by_bundle(str(bundle.id))]
+        return _floor_sources_of(in_force, build, linked)
 
     async def _versions_known(self, version_ids: Sequence[str]) -> dict[str, ModrinthVersion]:
         """These versions from the catalog, and the ones it lacks from Modrinth in one request (then

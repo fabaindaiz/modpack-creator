@@ -62,8 +62,9 @@ class FakeModpack:
     async def latest_builds(self) -> list[tuple[ModpackBundle, Optional[ModpackBuild]]]:
         return self.rows
 
-    async def resolution_many(self, bundle_ids: list[str]) -> dict[str, Any]:
-        return {b: self.resolutions[b] for b in bundle_ids if b in self.resolutions}
+    async def current_resolutions(self, bundles: list[ModpackBundle]) -> dict[str, Any]:
+        """`resolutions` holds the current ones: the service leaves a stale one out."""
+        return {str(b.id): self.resolutions[str(b.id)] for b in bundles if str(b.id) in self.resolutions}
 
 
 class FakeChecks:

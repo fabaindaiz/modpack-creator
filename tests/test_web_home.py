@@ -1,6 +1,5 @@
 """El tablero (B2, d-7985ee-c96727): la franja «Necesita atención» arriba y, debajo, servidores,
 builds y trabajos como tarjetas. Los servicios son los dobles de `tests/test_web_base.py`."""
-import asyncio
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
@@ -13,7 +12,6 @@ from src.model.modpack import ModpackBuild, ModpackBundle
 from src.model.modpack.project import ModpackResolution
 from src.model.modpack.update_check import AvailableUpdate, UpdateCheck
 from src.model.utils import MinecraftLoaders
-from src.services.modpack import ModpackService
 from tests._actors import EDITOR, OPERATOR
 from tests.test_web_base import (BUNDLE_ID, T0, FakeChecks, FakeJobs, FakeModpack, FakePterodactyl, client,
                                  default_fakes, server)
@@ -148,27 +146,6 @@ def test_an_empty_dashboard_says_so_in_each_list() -> None:
     text = client(EDITOR, (FakePterodactyl([], {}), FakeModpack([]), FakeJobs([]))).get("/").text
     assert "No hay servidores registrados." in text and "No hay modpacks." in text
     assert "Todavía no hay trabajos." in text and "Todo en orden" in text
-
-
-class FakeModpackDB:
-    def __init__(self, saved: dict[PydanticObjectId, ModpackResolution]) -> None:
-        self.saved = saved
-        self.asked: list[PydanticObjectId] = []
-
-    async def resolution_get(self, bundle_id: PydanticObjectId) -> ModpackResolution | None:
-        self.asked.append(bundle_id)
-        return self.saved.get(bundle_id)
-
-
-def test_resolution_many_reads_each_saved_resolution_and_skips_the_rest() -> None:
-    saved = resolution(undecided=1)
-    database = FakeModpackDB({BUNDLE_ID: saved})
-    service = ModpackService(modpackDB=cast(Any, database), modrinthDB=cast(Any, None), modrinthAPI=cast(Any, None),
-                             loaderAPI=cast(Any, None), audit=cast(Any, None))
-    other = str(PydanticObjectId())
-    found = asyncio.run(service.resolution_many([str(BUNDLE_ID), other, "not-an-id"]))
-    assert found == {str(BUNDLE_ID): saved}
-    assert database.asked == [BUNDLE_ID, PydanticObjectId(other)]
 
 
 def test_bundle_rows_keep_name_and_version() -> None:

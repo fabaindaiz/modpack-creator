@@ -176,7 +176,7 @@ async def _mods_context(modpackService: ModpackService, updateCheckService: Upda
     and every problem's mod; `origins` is the pack's project ids → origin. `shown` are the rows the
     filters keep, and `filter_counts` what each filter option would show (A6, A12)."""
     bundle = await modpackService.bundle_get(bundle_id)
-    mods = await modpackService.mod_list(bundle_id, await updateCheckService.latest(bundle_id))
+    mods = await modpackService.mod_list(bundle_id, await updateCheckService.latest(bundle_id), bundle=bundle)
     exceptions = bundle.channel_exceptions
     loader = str(bundle.loader.value)
     # Batch C: each bridge of the pack's loader by key, for the rows' labels.
@@ -492,7 +492,9 @@ async def modpack_detail(
     # A build made a moment ago (by its job, E9) offers to simulate it on the linked servers.
     fresh = bool(builds) and as_utc(builds[0].created_at) > datetime.now(timezone.utc) - FRESH_BUILD
     bundle = context["bundle"]
-    simulated = [await fact(jobService.simulated_build(str(s.id), bundle_id), None) for s in servers]
+    # Every linked server's simulations in one read (review of batch B, minor 5).
+    simulated = list((await fact(jobService.simulated_builds([str(s.id) for s in servers], bundle_id), {})).values()) \
+        if servers else []
     onboarding = pack_steps(bundle_id, PackFacts(
         projects=len(bundle.projects), resolved=saved is not None and not context["mods"].stale,
         pending=pending_count((saved, context["mods"].stale) if saved else None), latest_build=bundle.latest_build,

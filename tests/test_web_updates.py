@@ -56,7 +56,7 @@ class FakeModpack:
     async def build_find(self, bundle_id: str) -> list[ModpackBuild]:
         return []
 
-    async def resolution_many(self, bundle_ids: list[str]) -> dict[str, Any]:
+    async def current_resolutions(self, bundles: list[ModpackBundle]) -> dict[str, Any]:
         return {}
 
     async def build_request(self, bundle_id: str, actor: Actor) -> Any:
@@ -79,7 +79,7 @@ class FakeModpack:
     async def latest_builds(self) -> list[tuple[ModpackBundle, Optional[ModpackBuild]]]:
         return [(self.bundle, None)]
 
-    async def mod_list(self, bundle_id: str, check: Optional[UpdateCheck]) -> ModList:
+    async def mod_list(self, bundle_id: str, check: Optional[UpdateCheck], bundle: Any = None) -> ModList:
         return ModList(rows=[], resolution=None, stale=False, icons_missing=0)
 
 

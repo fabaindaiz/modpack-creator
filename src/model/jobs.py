@@ -76,3 +76,10 @@ class RollbackState(BaseModel):
     reverted_with_a: Optional[Job] = None
     failed_b: Optional[Job] = None
     last_failed: Optional[Job] = None
+
+class UpdateState(BaseModel):
+    """What a server's page shows of its last real update, from one read of it (review of batch B,
+    minor 5): the build the panel installed (`JobService.installed_build`) and the rollback on offer
+    (`JobService.rollback_state`)."""
+    installed: Optional[int] = None
+    rollback: Optional[RollbackState] = None
