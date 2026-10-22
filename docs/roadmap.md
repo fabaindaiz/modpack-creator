@@ -10,28 +10,29 @@ y tokens, con en qué se apoya (bundle 0.0.30); `close` la compara después con 
 
 ## Dónde estamos
 
-**2026-10-22, cierre: ronda 3 y grupo 2 hechos en `feat/ronda-3`** (30 commits sobre `main`, cada uno
-sobre el gate; la rama se sube a `origin` sin merge: falta la revisión). Del grupo 2 está todo lo de
-abajo, más los textos de motivo de los tres escaneos que faltaban (el dueño, 2026-10-22). Medido: con
-MongoDB, 1703 tests verdes antes de la migración de estilo y los dos últimos commits (sin MongoDB después:
-1246); barrido visual con 242 capturas, 0 problemas. **Para seguir, en orden:**
-1. **La barra en segunda fila** por debajo de 1280 px (el dueño, 2026-10-22): las secciones bajan a una
-   fila de ancho completo, como en el teléfono, y «Cómo funciona» vuelve a ella con texto; deshace el
-   ícono junto al nombre de `a2e2887`. A 768 px la barra ya no cabía desde la tanda B: el diagnóstico de
-   que la causaba «Cómo funciona» estaba mal (lo mostró el barrido).
-2. **Un origen «servidor» por servidor vinculado** (el dueño, 2026-10-22): una línea por servidor que
-   difiere, cada una con «Usar esta»; desaparece cuando ese servidor vuelve a la versión fijada o se
-   desvincula. Hoy hay uno por mod y gana el último escaneado (d-7985ee-da27e6, a enmendar).
-3. `./scripts/test-mongo.sh` y `./scripts/visual-sweep.sh` (el barrido pasa los 10 min: correrlo en
-   segundo plano).
-4. **Para el dueño:** revisar los textos de ayuda, el de `LICENSES.html`, y las decisiones de los agentes
-   del párrafo de la ronda 3; al abrir un «?» el ícono baja a la línea siguiente del título (un `<details>`
-   que ocupa la fila; arreglarlo sin JavaScript no es directo); la revisión de la rama en contexto limpio
-   antes del merge (toca datos guardados: pins, escaneos).
-5. Después: O9 (user-walk de los flujos), la spec de O8, y O1 y O4 con el log del servidor.
+**2026-10-22, ronda 3 y grupo 2 hechos y revisados en `feat/ronda-3`** (en `origin`, sin merge). Del grupo 2
+está todo lo de abajo, más los textos de motivo de los tres escaneos que faltaban, **la barra en segunda
+fila** por debajo de 1280 px (`d5428db`; a 768 px no cabía desde la tanda B) y **un origen «servidor» por
+servidor vinculado** (`6de1aa0`, d-7985ee-da27e6 enmendada). **Revisión en contexto limpio** de toda la
+rama (knowledge-reviewer, 2026-10-22): 1 crítico y 3 importantes, arreglados con su test visto fallar
+(`6ef9bf5`): importar podía poner en uso una versión de otra rama de Minecraft (más vieja) porque «rama»
+no contaba como baja; un pin puesto o quitado por `/v1` se pisaba al reimportar; un piso que el catálogo
+no tiene contaba como «sin piso»; ofrecer un origen perdía cuál servidor estaba en uso. Diferidos (menores):
+las escrituras de `pin_origins.<id>` son del registro entero, así que dos escaneos de servidores del mismo
+pack a la vez, o una elección contra un escaneo, pueden perder un origen o el `selected_key` (arreglo:
+escribir por origen con `$set`/`$pull`, o una versión en el registro); y `stored_bytes` recorre la carpeta
+de subidas en el bucle de eventos (a lo sumo un archivo por importación en curso). **Para seguir, en orden:**
+1. `./scripts/test-mongo.sh` y `./scripts/visual-sweep.sh` (el barrido pasa los 10 min: en segundo plano).
+   Sin MongoDB desde la migración de estilo: 1260 tests verdes; el último con MongoDB, 1703. Los tests de base
+   nuevos sin correr: `tests/test_pin_origins_service.py::test_the_card_puts_one_servers_origin_*`.
+2. **Para el dueño:** revisar los textos de ayuda, el de `LICENSES.html`, y las decisiones de los agentes del
+   párrafo de la ronda 3; al abrir un «?» el ícono baja a la línea siguiente del título (un `<details>` que
+   ocupa la fila; arreglarlo sin JavaScript no es directo). Después, el merge a `main` si lo pide.
+3. Después: O9 (user-walk de los flujos), la spec de O8, y O1 y O4 con el log del servidor.
 Sin verificar: Modrinth y Pterodactyl reales (el nodo, la key sin `activity.read`), el streaming del
-diagnóstico tras el proxy, un teléfono real. Otra máquina necesita lo de siempre (podman con su VM,
-hatch y Python 3.12, `npm ci`, Chromium de Playwright, su `.env.yaml`).
+diagnóstico tras el proxy, un teléfono real, CI con el rango nuevo (corre en la pull request o en `main`).
+Otra máquina necesita lo de siempre (podman con su VM, hatch y Python 3.12, `npm ci`, Chromium de
+Playwright, su `.env.yaml`).
 
 **2026-10-21, ronda 3 (O2, O3, O6, O7) hecha en la rama `feat/ronda-3`** (sobre `chore/bundle-0.0.32`; sin
 merge ni push), por tres agentes en paralelo e integrada aquí, cada commit sobre el gate: los zips se leen
@@ -1309,7 +1310,8 @@ Fricción vista al menos dos veces, con su costo.
   vez en 2026-10-13 (tanda A: dos heredocs vacíos, contados en s-7985ee-1602e4): tres sesiones seguidas
   con al menos un incidente, siempre del agente principal, que conoce la regla. La cosecha del
   2026-10-21 cuenta 5 de 5 sesiones del 2026-10-12 al 2026-10-14 (las tandas B y C suman dos). La sesión
-  del 2026-10-21/22 suma tres heredocs vacíos de delegados a los que el prompt se lo prohibía. Ninguno
+  del 2026-10-21/22 suma tres heredocs vacíos de delegados a los que el prompt se lo prohibía, y una docena
+  del agente principal (scripts hacia `cat` y `python3`, hasta que lo notó). Ninguno
   colgó, pero es disciplina sin nada que la haga cumplir (peldaño 1). **Propuesta, decisión del dueño:**
   un hook `PreToolUse` sobre Bash en `.claude/settings.json` que rechace un comando con `<<` y diga
   «escribe el script a un archivo». Costo: un script de ~15 líneas, su test y una fila de decisión;
