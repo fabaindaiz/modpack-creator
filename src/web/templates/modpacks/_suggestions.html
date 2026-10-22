@@ -3,19 +3,19 @@
    project, and each opens its card from this pack. #}
 {% import "_macros.html" as ui %}
 {% if not current %}
-<p class="text-sm text-zinc-600 dark:text-zinc-400">Resuelve para ver lo pendiente: {{ "todavía no se resolvió." if saved is none else "el pack cambió desde la última resolución." }}</p>
+<p class="text-sm text-muted">Resuelve para ver lo pendiente: {{ "todavía no se resolvió." if saved is none else "el pack cambió desde la última resolución." }}</p>
 {% elif not saved.suggestions %}
-<p class="text-sm text-zinc-600 dark:text-zinc-400">No hay sugerencias en la resolución vigente.</p>
+<p class="text-sm text-muted">No hay sugerencias en la resolución vigente.</p>
 {% else %}
 {# Iris is suggested for the shaders without it, not as an optional dependency (resolution.py). #}
 {% set shaders = saved.entries | selectattr("project_type", "equalto", "shader") | map(attribute="project_id") | list %}
-<p class="text-xs text-zinc-600 dark:text-zinc-400">Mods que otros del pack declaran como dependencia opcional en Modrinth, e Iris si el pack tiene shaders sin él. No se agregan solos.</p>
-<ul class="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+<p class="text-xs text-muted">Mods que otros del pack declaran como dependencia opcional en Modrinth, e Iris si el pack tiene shaders sin él. No se agregan solos.</p>
+<ul class="divide-y divide-line-soft rounded-xl border border-line bg-raised text-sm">
   {% for suggestion in saved.suggestions %}
   <li class="flex flex-wrap items-center gap-2 px-3 py-2">
     <div class="min-w-0 flex-1 break-words">
       <span class="font-medium">{{ ui.mod_link(suggestion.project_id, titles.get(suggestion.project_id, suggestion.project_id), pack=bundle_id) }}</span>
-      {% if suggestion.requested_by %}<span class="text-xs text-zinc-600 dark:text-zinc-400">— {{ "necesario para" if suggestion.requested_by | reject("in", shaders) | list | length == 0 else "opcional para" }} {% for requester in suggestion.requested_by %}{{ ui.mod_link(requester, titles.get(requester, requester), pack=bundle_id) }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
+      {% if suggestion.requested_by %}<span class="text-xs text-muted">— {{ "necesario para" if suggestion.requested_by | reject("in", shaders) | list | length == 0 else "opcional para" }} {% for requester in suggestion.requested_by %}{{ ui.mod_link(requester, titles.get(requester, requester), pack=bundle_id) }}{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}
     </div>
     <form hx-post="/modpacks/{{ bundle_id }}/projects" hx-target="#mods" hx-swap="outerHTML">
       <input type="hidden" name="ref" value="{{ suggestion.project_id }}">

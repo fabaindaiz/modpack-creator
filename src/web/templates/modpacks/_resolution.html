@@ -6,7 +6,7 @@
 {% set resolution = mods.resolution %}
 <div class="space-y-3">
   <div class="flex flex-wrap items-center justify-between gap-2">
-    <p class="text-sm text-zinc-600 dark:text-zinc-400">
+    <p class="text-sm text-muted">
       {% if resolution is none %}
       Todavía no se resolvió. Resolver consulta Modrinth y guarda el resultado para verlo aquí; un build vuelve a resolver y congela ese lock.
       {% else %}
@@ -21,7 +21,7 @@
         "hx-post": "/modpacks/" ~ bundle_id ~ "/catalogo", "hx-swap": "none"}) }}
     </div>
   </div>
-  <p class="text-xs text-zinc-500 dark:text-zinc-400">
+  <p class="text-xs text-muted">
     {%- if busy %}En curso… {% endif -%}
     {%- if bundle.modrinth_checked_at %}Revisado en Modrinth {{ bundle.modrinth_checked_at | ago }}{% else %}Todavía no se revisa en Modrinth{% endif -%}
   </p>
@@ -38,9 +38,9 @@
   {# What is pending, counted, with links to its tab: the tabs list it (spec §3). Only from the
      current resolution: a stale one says so above. #}
   {% set pending = [] %}
-  {% if saved.undecided %}{% set _ = pending.append(("decidir", saved.undecided | length ~ " por decidir", "text-amber-800 underline-offset-2 hover:underline dark:text-amber-300")) %}{% endif %}
-  {% if saved.problems %}{% set _ = pending.append(("problemas", saved.problems | length ~ " con problemas", "text-red-700 underline-offset-2 hover:underline dark:text-red-300")) %}{% endif %}
-  {% if saved.suggestions %}{% set _ = pending.append(("sugerencias", saved.suggestions | length ~ (" sugerencia" if saved.suggestions | length == 1 else " sugerencias"), "text-sky-800 underline-offset-2 hover:underline dark:text-sky-300")) %}{% endif %}
+  {% if saved.undecided %}{% set _ = pending.append(("decidir", saved.undecided | length ~ " por decidir", "text-warning underline-offset-2 hover:underline")) %}{% endif %}
+  {% if saved.problems %}{% set _ = pending.append(("problemas", saved.problems | length ~ " con problemas", "text-danger underline-offset-2 hover:underline")) %}{% endif %}
+  {% if saved.suggestions %}{% set _ = pending.append(("sugerencias", saved.suggestions | length ~ (" sugerencia" if saved.suggestions | length == 1 else " sugerencias"), "text-info underline-offset-2 hover:underline")) %}{% endif %}
   {% if not mods.stale and pending %}
   <p data-pending-summary class="text-sm font-medium">
     {%- for name, label, classes in pending %}{% if not loop.first %} · {% endif %}{% call ui.mods_view_link(bundle_id, name, classes) %}{{ label }}{% endcall %}{% endfor -%}

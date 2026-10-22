@@ -2,11 +2,11 @@
    otherwise. The route sends `job-finished` when the last one ends, and the pack reloads. #}
 {% if jobs %}
 <div hx-get="/modpacks/{{ bundle_id }}/trabajo?activo=1" hx-trigger="every 2s" hx-swap="outerHTML"
-  class="space-y-3 rounded-xl border border-sky-300 bg-sky-50 p-4 text-sm text-sky-950 dark:border-sky-500/40 dark:bg-sky-950/40 dark:text-sky-100"
+  class="space-y-3 rounded-xl border border-info-line bg-info-soft p-4 text-sm text-info-ink"
   role="status" aria-live="polite">
   {% for job in jobs %}{% include "_job_progress.html" %}{% endfor %}
 </div>
 {% elif failed is defined and failed %}
 {% import "_macros.html" as ui %}
-<p class="break-words rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-800 dark:border-red-500/40 dark:bg-red-950/40 dark:text-red-200" role="alert">{{ ui.JOB_KIND.get(failed.kind, failed.kind) }} falló: {{ failed.error or "sin detalle" }}</p>
+<p class="break-words rounded-xl border border-danger-line bg-danger-soft p-4 text-sm text-danger-ink" role="alert">{{ ui.JOB_KIND.get(failed.kind, failed.kind) }} falló: {{ failed.error or "sin detalle" }}</p>
 {% endif %}

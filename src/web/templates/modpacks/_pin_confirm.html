@@ -8,14 +8,14 @@
 {% set by_origin = origin is defined and origin %}
 {% set action = "/modpacks/" ~ bundle_id ~ "/pins/" ~ downgrade.project_id ~ "/origen" if by_origin else "/modpacks/" ~ bundle_id ~ "/pins" %}
 <dialog data-autoopen aria-labelledby="pin-confirm-title"
-  class="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-zinc-950/50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+  class="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-xl border border-line bg-raised p-0 text-ink shadow-xl backdrop:bg-scrim/50">
   <form class="space-y-4 p-5" hx-post="{{ action }}" hx-target="{{ target }}" hx-swap="{{ swap }}">
     <h2 id="pin-confirm-title" class="text-base font-semibold" autofocus tabindex="-1">Baja de versión</h2>
-    <div class="space-y-2 text-sm text-zinc-700 dark:text-zinc-300">
+    <div class="space-y-2 text-sm text-ink-soft">
       <p class="font-medium tabular-nums">{{ downgrade.title }} {{ downgrade.floor_number }} → {{ downgrade.pin_number }}</p>
       {% set users = downgrade.used_by | join(" y ") %}
       <p>{{ users[:1] | upper }}{{ users[1:] }} {{ "usan" if downgrade.used_by | length > 1 else "usa" }} {{ downgrade.floor_number }}, publicada después.</p>
-      <p class="text-amber-800 dark:text-amber-300">Bajar un mod puede romper mundos y configs.</p>
+      <p class="text-warning">Bajar un mod puede romper mundos y configs.</p>
     </div>
     {% if by_origin %}
     <input type="hidden" name="origin" value="{{ origin }}">

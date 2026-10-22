@@ -3,11 +3,11 @@
    why it matters. With every step done, one folded line. #}
 {% import "_macros.html" as ui %}
 {% set done = steps | selectattr("done") | list | length %}
-<section data-onboarding class="rounded-xl border border-zinc-200 bg-white text-sm dark:border-zinc-800 dark:bg-zinc-900">
+<section data-onboarding class="rounded-xl border border-line bg-raised text-sm">
   {% if done == steps | length %}
   <details class="group">
-    <summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-2 text-zinc-600 dark:text-zinc-400 [&::-webkit-details-marker]:hidden">
-      {{ ui.icon("circle-check", "size-4 text-emerald-600 dark:text-emerald-400") }}<span>Alta completa</span>
+    <summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-2 text-muted [&::-webkit-details-marker]:hidden">
+      {{ ui.icon("circle-check", "size-4 text-accent") }}<span>Alta completa</span>
     </summary>
   {% else %}
   <div>
@@ -16,21 +16,21 @@
     <ol class="space-y-2 px-4 py-3">
       {% for step in steps %}
       <li class="flex items-start gap-3">
-        {% if step.done %}{{ ui.icon("circle-check", "mt-0.5 size-4 text-emerald-600 dark:text-emerald-400") }}
-        {% else %}{{ ui.icon("circle", "mt-0.5 size-4 text-zinc-400 dark:text-zinc-500") }}{% endif %}
+        {% if step.done %}{{ ui.icon("circle-check", "mt-0.5 size-4 text-accent") }}
+        {% else %}{{ ui.icon("circle", "mt-0.5 size-4 text-faint") }}{% endif %}
         <div class="min-w-0 flex-1">
           <p class="flex flex-wrap items-baseline gap-x-2">
-            <span class="font-medium{% if step.done %} text-zinc-600 dark:text-zinc-400{% endif %}">{{ step.label }}</span>
-            {% if step.detail %}<span class="text-xs text-zinc-500 dark:text-zinc-400 break-words">{{ step.detail }}</span>{% endif %}
+            <span class="font-medium{% if step.done %} text-muted{% endif %}">{{ step.label }}</span>
+            {% if step.detail %}<span class="text-xs text-muted break-words">{{ step.detail }}</span>{% endif %}
           </p>
-          {% if not step.done %}<p class="text-xs text-zinc-500 dark:text-zinc-400">{{ step.why }}</p>{% endif %}
+          {% if not step.done %}<p class="text-xs text-muted">{{ step.why }}</p>{% endif %}
         </div>
         {% if step.action %}
         {{ ui.link_button(step.action[0], step.action[1], small=True) }}
         {% elif step.note %}
-        <span class="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">{{ step.note }}</span>
+        <span class="shrink-0 text-xs text-muted">{{ step.note }}</span>
         {% elif step.waits_for %}
-        <span class="shrink-0 text-xs text-zinc-500 dark:text-zinc-400">después de «{{ step.waits_for }}»</span>
+        <span class="shrink-0 text-xs text-muted">después de «{{ step.waits_for }}»</span>
         {% endif %}
       </li>
       {% endfor %}

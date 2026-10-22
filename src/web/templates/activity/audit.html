@@ -10,8 +10,8 @@
 {% call ui.page_header("Auditoría", AUDIT_SUBTITLE) %}
 <form method="get" action="/audit/diagnostico" class="flex flex-wrap items-end gap-2">
   <div>
-    <label for="diag-days" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Diagnóstico</label>
-    <select id="diag-days" name="dias" class="mt-1 block rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 focus-visible:outline-2 focus-visible:outline-emerald-600 dark:bg-zinc-900 dark:ring-zinc-700">
+    <label for="diag-days" class="block text-xs font-medium text-muted">Diagnóstico</label>
+    <select id="diag-days" name="dias" class="mt-1 block rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control focus-visible:outline-2 focus-visible:outline-accent">
       {% for days in export_days %}
       <option value="{{ days }}"{% if days == default_export_days %} selected{% endif %}>{{ "Último día" if days == 1 else "Últimos " ~ days ~ " días" }}</option>
       {% endfor %}
@@ -27,8 +27,8 @@
 {# The filters, the list and «Ver anteriores» are one region: a filter that changes asks for the
    page and keeps only this, so the counts follow (A12). Without JS, «Filtrar» submits it. #}
 <div id="audit-list" class="space-y-4">
-{% set FIELD_CLASS = "mt-1 block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 focus-visible:outline-2 focus-visible:outline-emerald-600 dark:bg-zinc-900 dark:ring-zinc-700" %}
-{% set LABEL_CLASS = "block text-xs font-medium text-zinc-600 dark:text-zinc-400" %}
+{% set FIELD_CLASS = "mt-1 block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control focus-visible:outline-2 focus-visible:outline-accent" %}
+{% set LABEL_CLASS = "block text-xs font-medium text-muted" %}
 <form method="get" action="/audit" hx-get="/audit" hx-trigger="change" hx-select="#audit-list" hx-target="#audit-list" hx-swap="outerHTML" hx-push-url="true"
   class="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:items-end lg:grid-cols-5">
   <div class="min-w-0">
@@ -37,7 +37,7 @@
       <option value="">Todas</option>
       {% set listed = page.actors | map(attribute="value") | list %}
       {% if filters.actor and filters.actor not in listed %}
-      <option value="{{ filters.actor }}" selected class="text-zinc-400">{{ filters.actor }} (0)</option>
+      <option value="{{ filters.actor }}" selected class="text-faint">{{ filters.actor }} (0)</option>
       {% endif %}
       {% for facet in page.actors %}
       <option value="{{ facet.value }}"{% if filters.actor == facet.value %} selected{% endif %}>{{ facet.label }} ({{ facet.count }})</option>
@@ -52,7 +52,7 @@
       <optgroup label="{{ area }}">
         {% for value, (text, in_area) in AUDIT_ACTIONS.items() if in_area == area %}
         {% set count = action_counts.get(value, 0) %}
-        <option value="{{ value }}"{% if filters.action == value %} selected{% endif %}{% if not count %} class="text-zinc-400"{% endif %}>{{ text }} ({{ count }})</option>
+        <option value="{{ value }}"{% if filters.action == value %} selected{% endif %}{% if not count %} class="text-faint"{% endif %}>{{ text }} ({{ count }})</option>
         {% endfor %}
       </optgroup>
       {% endfor %}
@@ -85,22 +85,22 @@
 {% for event in events %}
 {% call(part) ui.card("event-" ~ event.id, AUDIT_COLS, attrs={"data-audit": event.id | string}) %}
 {% if part == "summary" %}
-<span class="text-xs text-zinc-600 dark:text-zinc-400">{{ ui.when(event.at) }}</span>
+<span class="text-xs text-muted">{{ ui.when(event.at) }}</span>
 <span class="min-w-0 font-medium">{{ event.actor.name }}</span>
 <span class="min-w-0">{{ AUDIT_ACTIONS[event.action][0] if event.action in AUDIT_ACTIONS else event.action }}</span>
-<span class="min-w-0 text-zinc-700 dark:text-zinc-300">{{ audit_target(event.target.kind, event.target.id, event.target.name) }}</span>
+<span class="min-w-0 text-ink-soft">{{ audit_target(event.target.kind, event.target.id, event.target.name) }}</span>
 {% else %}
 {% if event.details %}
 <dl class="grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-[minmax(0,10rem)_minmax(0,1fr)]">
   {% for key, value in event.details.items() %}
-  <dt class="font-medium text-zinc-500 dark:text-zinc-400">{{ AUDIT_DETAILS.get(key, key) }}</dt>
+  <dt class="font-medium text-muted">{{ AUDIT_DETAILS.get(key, key) }}</dt>
   <dd class="min-w-0 break-words">{{ audit_detail(key, value, names) }}</dd>
   {% endfor %}
 </dl>
 {% else %}
-<p class="text-zinc-500 dark:text-zinc-400">Sin detalles.</p>
+<p class="text-muted">Sin detalles.</p>
 {% endif %}
-<p class="font-mono text-xs break-all text-zinc-400 dark:text-zinc-500">{{ event.action }} · objetivo {{ event.target.kind }}:{{ event.target.id }} · persona {{ event.actor.sub }}{% if event.request_id %} · petición {{ event.request_id }}{% endif %}</p>
+<p class="font-mono text-xs break-all text-faint">{{ event.action }} · objetivo {{ event.target.kind }}:{{ event.target.id }} · persona {{ event.actor.sub }}{% if event.request_id %} · petición {{ event.request_id }}{% endif %}</p>
 {% endif %}
 {% endcall %}
 {% endfor %}
@@ -109,7 +109,7 @@
 {% if older %}
 <p>
   <a href="/audit?{{ older }}{% for name, value in filters.items() if value %}&amp;{{ name }}={{ value | urlencode }}{% endfor %}"
-    class="text-sm font-medium text-emerald-700 hover:underline dark:text-emerald-300">Ver anteriores</a>
+    class="text-sm font-medium text-link hover:underline">Ver anteriores</a>
 </p>
 {% endif %}
 </div>

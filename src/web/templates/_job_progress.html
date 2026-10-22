@@ -10,12 +10,12 @@
   </p>
   {% if job.progress %}
   <p class="break-words">{{ job.progress.label }}{% if job.progress.total > 1 %}: {{ job.progress.done }} de {{ job.progress.total }}{% endif %}</p>
-  {% if job.progress.total > 1 %}<progress value="{{ job.progress.done }}" max="{{ job.progress.total }}" class="h-2 w-full max-w-sm accent-emerald-600"></progress>{% endif %}
+  {% if job.progress.total > 1 %}<progress value="{{ job.progress.done }}" max="{{ job.progress.total }}" class="h-2 w-full max-w-sm accent-accent"></progress>{% endif %}
   {% elif job.status == "queued" %}
-  <p class="text-zinc-600 dark:text-zinc-400">Esperando a que termine el trabajo anterior.</p>
+  <p class="text-muted">Esperando a que termine el trabajo anterior.</p>
   {% endif %}
-  {% if wait %}<p class="text-amber-800 dark:text-amber-300">Esperando turno: {{ wait }} s (límite de Modrinth)</p>{% endif %}
-  <p class="text-xs text-zinc-500 dark:text-zinc-400">
+  {% if wait %}<p class="text-warning">Esperando turno: {{ wait }} s (límite de Modrinth)</p>{% endif %}
+  <p class="text-xs text-muted">
     {%- if job.requested_by %}pedido por {{ job.requested_by.name }} · {% endif -%}
     {%- if job.updated_at %}actualizado {{ job.updated_at | ago }}{% else %}en cola {{ job.created_at | ago }}{% endif -%}
   </p>

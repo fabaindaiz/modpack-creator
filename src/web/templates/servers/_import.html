@@ -10,14 +10,14 @@
   {% else %}
   <ul class="space-y-1 text-sm">
     <li>Mods agregados: <strong>{{ result.added | length }}</strong>
-      {% if result.added %}<span class="text-zinc-600 dark:text-zinc-400">({% for id in result.added %}{{ ui.mod_link(id, titles.get(id, id)) }}{{ ", " if not loop.last }}{% endfor %})</span>{% endif %}</li>
+      {% if result.added %}<span class="text-muted">({% for id in result.added %}{{ ui.mod_link(id, titles.get(id, id)) }}{{ ", " if not loop.last }}{% endfor %})</span>{% endif %}</li>
     <li>Archivos locales registrados: <strong>{{ result.local | length }}</strong>
-      {% if result.local %}<span class="text-zinc-600 dark:text-zinc-400">(Modrinth no los conoce: quedan en el pack tal cual)</span>{% endif %}</li>
+      {% if result.local %}<span class="text-muted">(Modrinth no los conoce: quedan en el pack tal cual)</span>{% endif %}</li>
     <li>Pendientes de tu decisión (<strong>{{ result.candidates | length }}</strong>)</li>
   </ul>
   <div class="text-sm">{{ ui.running_counts(result.on_server | length, result.channel_exceptions) }}</div>
   {% if result.local %}
-  <ul class="space-y-0.5 text-xs break-all text-zinc-600 dark:text-zinc-400">{% for path in result.local %}<li>Archivo local: <span class="font-mono">{{ path }}</span></li>{% endfor %}</ul>
+  <ul class="space-y-0.5 text-xs break-all text-muted">{% for path in result.local %}<li>Archivo local: <span class="font-mono">{{ path }}</span></li>{% endfor %}</ul>
   {% endif %}
   {% if result.too_large %}
   {{ ui.notice("Estos archivos son demasiado grandes para leerlos y no se importaron: " ~ (result.too_large | join(", ")), "warning") }}
@@ -26,21 +26,21 @@
   {% if result.candidates and not (report_only | default(false)) %}
   <ul class="space-y-3">
     {% for item in result.candidates %}
-    <li class="space-y-2 rounded-md border border-zinc-200 p-3 text-sm dark:border-zinc-700" data-candidate="{{ item.path }}">
+    <li class="space-y-2 rounded-md border border-line p-3 text-sm" data-candidate="{{ item.path }}">
       <div>
         <span class="font-mono text-xs break-all">{{ item.path }}</span>
-        {% if item.metadata %}<div class="text-xs text-zinc-500 dark:text-zinc-400">{{ item.metadata.name or item.metadata.mod_id }} · {{ item.metadata.loader }}</div>{% endif %}
+        {% if item.metadata %}<div class="text-xs text-muted">{{ item.metadata.name or item.metadata.mod_id }} · {{ item.metadata.loader }}</div>{% endif %}
       </div>
-      <p class="text-xs text-zinc-600 dark:text-zinc-400">Modrinth no lo conoce por hash. Puede ser uno de estos proyectos; confirma solo si lo es.</p>
+      <p class="text-xs text-muted">Modrinth no lo conoce por hash. Puede ser uno de estos proyectos; confirma solo si lo es.</p>
       <div class="flex flex-wrap gap-2">
         {% for candidate in item.candidates %}
         {# The catalog's title when it has one; an unknown id maps to itself there, so the search's own title wins then. #}
         {% set known = titles.get(candidate.project_id) %}
         {% set title = known if known and known != candidate.project_id else candidate.title %}
-        <form hx-post="/servers/{{ server_id }}/import/confirm" hx-target="closest li" hx-swap="outerHTML" class="inline-flex flex-wrap items-center gap-1.5 rounded-md border border-zinc-200 px-2 py-1 dark:border-zinc-700">
+        <form hx-post="/servers/{{ server_id }}/import/confirm" hx-target="closest li" hx-swap="outerHTML" class="inline-flex flex-wrap items-center gap-1.5 rounded-md border border-line px-2 py-1">
           <input type="hidden" name="path" value="{{ item.path }}">
           <input type="hidden" name="project_id" value="{{ candidate.project_id }}">
-          <span class="break-words">{{ ui.mod_link(candidate.project_id, title) }} <span class="text-xs text-zinc-500 dark:text-zinc-400">({{ candidate.slug }})</span></span>
+          <span class="break-words">{{ ui.mod_link(candidate.project_id, title) }} <span class="text-xs text-muted">({{ candidate.slug }})</span></span>
           {{ ui.button("Es este", kind="secondary", type="submit", small=True, attrs={"aria-label": "Es " ~ title}) }}
         </form>
         {% endfor %}

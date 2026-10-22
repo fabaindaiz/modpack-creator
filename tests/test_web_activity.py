@@ -623,7 +623,7 @@ def test_person_and_action_are_selects_with_counts() -> None:
         assert f'<optgroup label="{area}">' in action
     assert "Fijó una versión (2)" in action
     zero = action[action.rindex("<option", 0, action.index("Creó un pack (0)")):action.index("Creó un pack (0)")]
-    assert 'value="bundle.create"' in zero and "text-zinc-400" in zero and "disabled" not in zero
+    assert 'value="bundle.create"' in zero and "text-faint" in zero and "disabled" not in zero
 
 
 def test_target_is_an_input_with_a_datalist_of_names_kinds_and_counts() -> None:

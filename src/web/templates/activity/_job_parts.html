@@ -19,13 +19,13 @@
 <span class="font-medium">{{ ui.JOB_KIND.get(job.kind, job.kind) }}{% if dry_run %} (simulación){% endif %}</span>
 <span class="min-w-0">
   {% if server_id %}<a href="/servers/{{ server_id }}" class="hover:underline">{{ server_names.get(server_id, "Servidor desconocido") }}</a>
-  {% else %}<span class="text-zinc-400 dark:text-zinc-500">—</span>{% endif %}
+  {% else %}<span class="text-faint">—</span>{% endif %}
 </span>
 <span class="min-w-0">
   {{ ui.badge(label, tone, title=job.status) }}
-  {% if job.status == "failed" and job.error %}<span class="mt-1 block text-xs break-words text-red-700 dark:text-red-300">{{ job.error }}</span>{% endif %}
+  {% if job.status == "failed" and job.error %}<span class="mt-1 block text-xs break-words text-danger">{{ job.error }}</span>{% endif %}
 </span>
-<span class="text-xs text-zinc-600 dark:text-zinc-400">{{ ui.JOB_STEP.get(job.step, job.step) if job.step else "—" }}</span>
-<span class="min-w-0 text-xs text-zinc-600 dark:text-zinc-400">{{ job.requested_by.name if job.requested_by else "programado" }}</span>
-<span class="text-xs text-zinc-600 dark:text-zinc-400">{{ ui.when(job.created_at) }}</span>
+<span class="text-xs text-muted">{{ ui.JOB_STEP.get(job.step, job.step) if job.step else "—" }}</span>
+<span class="min-w-0 text-xs text-muted">{{ job.requested_by.name if job.requested_by else "programado" }}</span>
+<span class="text-xs text-muted">{{ ui.when(job.created_at) }}</span>
 {% endmacro %}

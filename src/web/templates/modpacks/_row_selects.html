@@ -3,13 +3,13 @@
    `data-saved`: app.js puts it back when the change fails. Without a state a select is grey. Part of
    _mods.html, inside one row (`row`, `saved`, `current`, `bundle`, `bundle_id`). #}
 {% import "_macros.html" as ui %}
-{% set SELECT = "rounded-md border-0 py-0.5 pr-7 pl-2 text-xs ring-1 ring-inset focus-visible:outline-2 focus-visible:outline-emerald-600 bg-white dark:bg-zinc-900 " %}
-{% set GREY = "text-zinc-500 ring-zinc-200 dark:text-zinc-400 dark:ring-zinc-700" %}
+{% set SELECT = "rounded-md border-0 py-0.5 pr-7 pl-2 text-xs ring-1 ring-inset focus-visible:outline-2 focus-visible:outline-accent bg-raised " %}
+{% set GREY = "text-muted ring-line" %}
 {% set side_value = {"include": "yes", "exclude": "no"}.get(row.side, "") %}
 {% set side_tone = {
-  "include": "text-emerald-800 ring-emerald-300 dark:text-emerald-200 dark:ring-emerald-500/50",
-  "exclude": "text-zinc-700 ring-zinc-300 dark:text-zinc-300 dark:ring-zinc-600",
-  "admin": "text-amber-900 ring-amber-300 dark:text-amber-200 dark:ring-amber-500/50",
+  "include": "text-success-ink ring-success-line",
+  "exclude": "text-ink-soft ring-control",
+  "admin": "text-warning-ink ring-warning-line",
 }.get(row.side, GREY) %}
 {% set exception = bundle.channel_exceptions.get(row.project_id, "") %}
 <div class="flex flex-wrap items-center gap-2 px-3 pb-2 sm:pl-[4.75rem]">
@@ -24,7 +24,7 @@
   </form>
   <form hx-post="/modpacks/{{ bundle_id }}/channel-exceptions" hx-trigger="change" hx-target="#mods" hx-swap="outerHTML">
     <input type="hidden" name="project_id" value="{{ row.project_id }}">
-    <select name="channel" data-saved="{{ exception }}" aria-label="Canal de {{ row.title }}" class="{{ SELECT ~ ('text-amber-900 ring-amber-300 dark:text-amber-200 dark:ring-amber-500/50' if exception else GREY) }}">
+    <select name="channel" data-saved="{{ exception }}" aria-label="Canal de {{ row.title }}" class="{{ SELECT ~ ('text-warning-ink ring-warning-line' if exception else GREY) }}">
       <option value=""{% if not exception %} selected{% endif %}>canal del pack</option>
       <option value="beta"{% if exception == "beta" %} selected{% endif %}>acepta beta</option>
       <option value="alpha"{% if exception == "alpha" %} selected{% endif %}>acepta alpha</option>
@@ -36,7 +36,7 @@
     <input type="hidden" name="project_id" value="{{ row.project_id }}">
     <input type="hidden" name="from" value="fila">
     <input type="hidden" name="previous" value="{{ pin }}">
-    <select name="version_id" data-saved="{{ pin }}" aria-label="Versión fijada de {{ row.title }}" class="{{ SELECT ~ ('text-sky-800 ring-sky-300 dark:text-sky-200 dark:ring-sky-500/50' if pin else GREY) }}">
+    <select name="version_id" data-saved="{{ pin }}" aria-label="Versión fijada de {{ row.title }}" class="{{ SELECT ~ ('text-info-ink ring-info-line' if pin else GREY) }}">
       <option value=""{% if not pin %} selected{% endif %}>sin fijar</option>
       {% if row.pin_options is none %}
       {% if pin %}<option value="{{ pin }}" selected>fijado</option>{% endif %}
@@ -51,7 +51,7 @@
   </form>
   {% if row.pin_floor %}{{ ui.badge("baja (piso " ~ row.pin_floor ~ ")", "warning") }}{% endif %}
   {% if exception and current %}
-  {% if row.project_id in saved.excepted %}<span class="text-xs text-amber-800 dark:text-amber-300">en uso: no hay una estable más nueva que la instalada</span>
-  {% elif row.project_id in saved.entries | map(attribute="project_id") | list %}<span class="text-xs text-zinc-500 dark:text-zinc-400">sin efecto: ya hay versión en los canales del pack</span>{% endif %}
+  {% if row.project_id in saved.excepted %}<span class="text-xs text-warning">en uso: no hay una estable más nueva que la instalada</span>
+  {% elif row.project_id in saved.entries | map(attribute="project_id") | list %}<span class="text-xs text-muted">sin efecto: ya hay versión en los canales del pack</span>{% endif %}
   {% endif %}
 </div>

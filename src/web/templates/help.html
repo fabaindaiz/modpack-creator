@@ -6,7 +6,7 @@
 {% block title %}Cómo funciona{% endblock %}
 
 {% set H2 = "scroll-mt-20 text-base font-semibold" %}
-{% set TEXT = "space-y-2 text-sm text-zinc-700 dark:text-zinc-300" %}
+{% set TEXT = "space-y-2 text-sm text-ink-soft" %}
 
 {% block content %}
 {% call ui.page_header("Cómo funciona", "Qué es cada cosa del panel y en qué orden se usan.") %}{% endcall %}
@@ -17,7 +17,7 @@
                                ("fijar", "Fijar"), ("origenes", "Orígenes"), ("build", "Build"), ("puente", "Puente"),
                                ("vincular", "Vincular"), ("escanear", "Escanear"), ("actualizar", "Actualizar"),
                                ("rollback", "Rollback")] %}
-      <li><a href="#{{ anchor }}" class="font-medium text-emerald-700 hover:underline dark:text-emerald-300">{{ label }}</a></li>
+      <li><a href="#{{ anchor }}" class="font-medium text-link hover:underline">{{ label }}</a></li>
       {% endfor %}
     </ul>
   </nav>

@@ -9,8 +9,8 @@
 #}
 {% import "_macros.html" as ui %}
 {% set reason = None if actor.is_operator else "requiere operador" %}
-<div class="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-  <p class="text-zinc-600 dark:text-zinc-400">Simular muestra qué jars cambiarían y qué escribiría en el servidor, sin tocarlo. Actualizar lo cambia de verdad, al build que elijas, sin simular antes.</p>
+<div class="space-y-3 rounded-xl border border-line bg-raised p-4 text-sm">
+  <p class="text-muted">Simular muestra qué jars cambiarían y qué escribiría en el servidor, sin tocarlo. Actualizar lo cambia de verdad, al build que elijas, sin simular antes.</p>
   <div class="flex flex-wrap gap-2">
     {% if actor.is_operator %}
     {{ ui.button("Simular actualización", kind="secondary", attrs={"hx-post": "/servers/" ~ server_id ~ "/update/preview", "hx-target": "#server-job", "hx-swap": "innerHTML"}) }}
@@ -32,7 +32,7 @@
     <label for="{{ direct }}-build" class="block font-medium">Build a instalar</label>
     {# The preview loads when the dialog opens (a closed <dialog> is not displayed, so it does not
        intersect), never with the page: it may wait up to 10 s for Modrinth. #}
-    <select id="{{ direct }}-build" name="build" hx-get="/servers/{{ server_id }}/update/preview" hx-trigger="change" hx-target="#update-preview" hx-include="this" hx-indicator="#update-preview-loading" class="block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 dark:bg-zinc-900 dark:ring-zinc-700">
+    <select id="{{ direct }}-build" name="build" hx-get="/servers/{{ server_id }}/update/preview" hx-trigger="change" hx-target="#update-preview" hx-include="this" hx-indicator="#update-preview-loading" class="block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control">
       {% for b in builds %}
       <option value="{{ b.number }}"{% if b.number == chosen %} selected{% endif %}>
         Build {{ b.number }}{% if b.number == bundle.recommended_build %} (recomendado){% elif b.number == bundle.latest_build %} (último){% endif %}
@@ -40,27 +40,27 @@
       {% endfor %}
     </select>
     {# Another build's preview waits for Modrinth too (O6): shown while its request runs. #}
-    <p id="update-preview-loading" class="htmx-indicator text-sm text-zinc-500 dark:text-zinc-400" role="status">Cargando cambios…</p>
+    <p id="update-preview-loading" class="htmx-indicator text-sm text-muted" role="status">Cargando cambios…</p>
     <div id="update-preview" class="space-y-2" aria-live="polite" hx-get="/servers/{{ server_id }}/update/preview?build={{ chosen }}" hx-trigger="intersect once" hx-target="this" hx-swap="innerHTML">
-      <p class="text-sm text-zinc-500 dark:text-zinc-400">Cargando cambios…</p>
+      <p class="text-sm text-muted">Cargando cambios…</p>
     </div>
-    <label for="{{ direct }}-confirm" class="block font-medium">Escribe el nombre exacto del servidor para confirmar: <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{{ server.name }}</code></label>
+    <label for="{{ direct }}-confirm" class="block font-medium">Escribe el nombre exacto del servidor para confirmar: <code class="rounded bg-subtle px-1">{{ server.name }}</code></label>
     <input id="{{ direct }}-confirm" name="confirm" type="text" required autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200"
-      class="block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 focus-visible:outline-2 focus-visible:outline-red-600 dark:bg-zinc-900 dark:ring-zinc-700">
+      class="block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control focus-visible:outline-2 focus-visible:outline-danger-solid">
     {% endcall %}
     {% endif %}
   </div>
-  <p class="text-xs text-zinc-500 dark:text-zinc-400">Cuando una simulación termine sin errores y haya cambios, su resultado también ofrece ejecutarla de verdad, con ese mismo build.</p>
+  <p class="text-xs text-muted">Cuando una simulación termine sin errores y haya cambios, su resultado también ofrece ejecutarla de verdad, con ese mismo build.</p>
 
   {% if rollback %}
   {% set update = rollback.update %}
-  <div class="space-y-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-    <p class="font-medium text-red-700 dark:text-red-300">La última actualización falló{% if update.error %}: {{ update.error }}{% endif %}</p>
+  <div class="space-y-2 border-t border-line-soft pt-3">
+    <p class="font-medium text-danger">La última actualización falló{% if update.error %}: {{ update.error }}{% endif %}</p>
     {% if rollback.reverted_with_a %}
     {% set reverted = rollback.reverted_with_a %}
-    <p class="text-xs text-zinc-600 dark:text-zinc-400">Revertido con A el {{ ui.when(reverted.finished_at or reverted.created_at) }}. Restaurar el backup previo pierde lo jugado desde entonces.</p>
+    <p class="text-xs text-muted">Revertido con A el {{ ui.when(reverted.finished_at or reverted.created_at) }}. Restaurar el backup previo pierde lo jugado desde entonces.</p>
     {% if rollback.failed_b %}
-    <p class="text-xs text-red-700 dark:text-red-300">El último intento de B falló el {{ ui.when(rollback.failed_b.finished_at or rollback.failed_b.created_at) }}{% if rollback.failed_b.error %}: {{ rollback.failed_b.error }}{% endif %}</p>
+    <p class="text-xs text-danger">El último intento de B falló el {{ ui.when(rollback.failed_b.finished_at or rollback.failed_b.created_at) }}{% if rollback.failed_b.error %}: {{ rollback.failed_b.error }}{% endif %}</p>
     {% endif %}
     <div class="flex flex-wrap gap-2">
       {% if actor.is_operator %}
@@ -71,19 +71,19 @@
       <p>Esto apaga el servidor de juego y restaura el backup hecho antes de la actualización. Se pierde todo lo jugado desde ese backup, también lo jugado después del rollback A. Los jugadores serán desconectados.</p>
       <input type="hidden" name="update_id" value="{{ update.id }}">
       <input type="hidden" name="mode" value="B">
-      <label for="{{ dialog }}-confirm" class="block font-medium">Escribe el nombre exacto del servidor para confirmar: <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{{ server.name }}</code></label>
+      <label for="{{ dialog }}-confirm" class="block font-medium">Escribe el nombre exacto del servidor para confirmar: <code class="rounded bg-subtle px-1">{{ server.name }}</code></label>
       <input id="{{ dialog }}-confirm" name="confirm" type="text" required autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200"
-        class="block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 focus-visible:outline-2 focus-visible:outline-red-600 dark:bg-zinc-900 dark:ring-zinc-700">
+        class="block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control focus-visible:outline-2 focus-visible:outline-danger-solid">
       {% endcall %}
       {% else %}
       {{ ui.button("Rollback B: restaurar el backup…", kind="danger", small=True, disabled_reason=reason) }}
       {% endif %}
     </div>
     {% else %}
-    <p class="text-xs text-zinc-600 dark:text-zinc-400">A devuelve los jars anteriores; B restaura el backup previo a la actualización.</p>
+    <p class="text-xs text-muted">A devuelve los jars anteriores; B restaura el backup previo a la actualización.</p>
     {% if rollback.last_failed %}
     {% set attempt = rollback.last_failed %}
-    <p class="text-xs text-red-700 dark:text-red-300">El último intento de {{ attempt.payload.get("mode", "?") }} falló el {{ ui.when(attempt.finished_at or attempt.created_at) }}{% if attempt.error %}: {{ attempt.error }}{% endif %}</p>
+    <p class="text-xs text-danger">El último intento de {{ attempt.payload.get("mode", "?") }} falló el {{ ui.when(attempt.finished_at or attempt.created_at) }}{% if attempt.error %}: {{ attempt.error }}{% endif %}</p>
     {% endif %}
     <div class="flex flex-wrap gap-2">
       {% for mode, label in [("A", "Rollback A: devolver los jars"), ("B", "Rollback B: restaurar el backup")] %}

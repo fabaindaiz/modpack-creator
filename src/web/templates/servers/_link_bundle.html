@@ -7,16 +7,16 @@
   bundles, server_id, actor, oob.
 #}
 {% import "_macros.html" as ui %}
-{% set FIELD = "block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm text-zinc-900 shadow-xs ring-1 ring-inset ring-zinc-300 placeholder:text-zinc-400 focus-visible:outline-2 focus-visible:outline-emerald-600 disabled:opacity-50 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-700" %}
+{% set FIELD = "block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm text-ink shadow-xs ring-1 ring-inset ring-control placeholder:text-placeholder focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50" %}
 <div id="modpack-link" class="space-y-3"{% if oob %} hx-swap-oob="true"{% endif %}>
   {% if linked %}
   <p><a href="/modpacks/{{ linked.id }}" class="font-medium hover:underline">{{ linked.name }}</a>
-    <span class="text-zinc-500 dark:text-zinc-400">{{ linked.version }} · {{ linked.loader.value }}</span></p>
-  <p class="text-zinc-600 dark:text-zinc-400">Build comparado: {% if build_number is not none %}<span class="tabular-nums">#{{ build_number }}</span>{% else %}ninguno{% endif %}</p>
+    <span class="text-muted">{{ linked.version }} · {{ linked.loader.value }}</span></p>
+  <p class="text-muted">Build comparado: {% if build_number is not none %}<span class="tabular-nums">#{{ build_number }}</span>{% else %}ninguno{% endif %}</p>
   {% elif linked_id %}
-  <p class="text-zinc-500 dark:text-zinc-400">Modpack desconocido.</p>
+  <p class="text-muted">Modpack desconocido.</p>
   {% else %}
-  <p class="text-zinc-500 dark:text-zinc-400">Sin modpack.</p>
+  <p class="text-muted">Sin modpack.</p>
   {% endif %}
   <form id="link-bundle-form" class="space-y-2"{% if actor.is_operator %} hx-put="/servers/{{ server_id }}/bundle"{% endif %}>
     <label for="link-bundle" class="font-medium">Vincular a un modpack</label>

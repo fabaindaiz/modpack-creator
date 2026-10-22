@@ -5,21 +5,21 @@
    `pack` is the pack the card was opened from (page.pack marks its version and loader), kept in its
    links. #}
 {% import "_macros.html" as ui %}
-{% set LINK = "font-medium text-emerald-700 hover:underline dark:text-emerald-300" %}
+{% set LINK = "font-medium text-link hover:underline" %}
 {% set TYPES = {"mod": "Mod", "modpack": "Modpack", "resourcepack": "Paquete de recursos", "shader": "Shader"} %}
 {% set project = page.project %}
 {% set image = icon(project.icon_url) %}
 {% set side = side_label(project.environment) %}
 {% set back = project.project_id if compact else None %}
 {% set mark = page.pack %}
-{% set OK = "text-emerald-700 dark:text-emerald-300" %}
-{% set NO = "text-red-700 dark:text-red-300" %}
+{% set OK = "text-success" %}
+{% set NO = "text-danger" %}
 <article class="space-y-4" data-mod-card="{{ project.project_id }}">
   <header class="flex items-start gap-3">
     {% if image %}
-    <img src="{{ image }}" alt="" width="64" height="64" class="{{ 'size-12' if compact else 'size-16' }} shrink-0 rounded-lg bg-zinc-100 object-cover dark:bg-zinc-800">
+    <img src="{{ image }}" alt="" width="64" height="64" class="{{ 'size-12' if compact else 'size-16' }} shrink-0 rounded-lg bg-subtle object-cover">
     {% else %}
-    <div class="{{ 'size-12' if compact else 'size-16' }} shrink-0 rounded-lg bg-zinc-100 dark:bg-zinc-800" aria-hidden="true"></div>
+    <div class="{{ 'size-12' if compact else 'size-16' }} shrink-0 rounded-lg bg-subtle" aria-hidden="true"></div>
     {% endif %}
     <div class="min-w-0 flex-1 space-y-1">
       {% if compact %}
@@ -34,7 +34,7 @@
     </div>
   </header>
 
-  {% if project.description %}<p class="text-sm break-words text-zinc-700 dark:text-zinc-300">{{ project.description }}</p>{% endif %}
+  {% if project.description %}<p class="text-sm break-words text-ink-soft">{{ project.description }}</p>{% endif %}
   {% if project.categories %}
   <div class="flex flex-wrap gap-1">{% for category in project.categories %}{{ ui.badge(category) }}{% endfor %}</div>
   {% endif %}
@@ -51,7 +51,7 @@
     <dd class="break-words">
       {%- set shown = 8 if compact else 16 %}
       {%- if project.game_versions %}{% if project.game_versions | length > shown %}…, {% endif %}{{ project.game_versions[-shown:] | join(", ") }}{% else %}—{% endif -%}
-      {%- if mark and mark.version_channel %} · <span class="text-amber-800 dark:text-amber-300">{{ mark.game_version }} · solo {{ mark.version_channel }}</span>
+      {%- if mark and mark.version_channel %} · <span class="text-warning">{{ mark.game_version }} · solo {{ mark.version_channel }}</span>
       {%- elif mark %} · <span class="{{ OK if mark.supports_version else NO }}">{{ (mark.game_version ~ " ✓") if mark.supports_version else ("no soporta " ~ mark.game_version) }}</span>{% endif -%}
     </dd>
     {% if mark %}
@@ -73,9 +73,9 @@
   </p>
 
   <section class="space-y-2" aria-labelledby="uses-{{ "panel-" if compact else "" }}{{ project.project_id }}">
-    <h3 id="uses-{{ "panel-" if compact else "" }}{{ project.project_id }}" class="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Dónde se usa</h3>
+    <h3 id="uses-{{ "panel-" if compact else "" }}{{ project.project_id }}" class="text-sm font-semibold text-ink-soft">Dónde se usa</h3>
     {% if page.uses %}
-    <ul class="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+    <ul class="divide-y divide-line-soft rounded-xl border border-line bg-raised text-sm">
       {% for use in page.uses %}
       <li class="space-y-1 px-3 py-2">
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -83,13 +83,13 @@
           {% if use.origin == "admin" %}{{ ui.badge("agregado") }}{% elif use.origin == "pack" %}{{ ui.badge("del .mrpack") }}{% endif %}
         </div>
         {% if use.origin is none %}
-        <p class="text-xs break-words text-zinc-500 dark:text-zinc-400">dependencia de
+        <p class="text-xs break-words text-muted">dependencia de
           {%- for name in use.dependency_of %} {{ ui.mod_link(use.requested_by[loop.index0] if loop.index0 < use.requested_by | length else None, name, desde=back, pack=pack) }}{% if not loop.last %},{% endif %}{% else %} otro mod{% endfor -%}
           {%- if use.problem %}, con problema{% endif %}
         </p>
         {% endif %}
         {% if use.recommended or use.latest %}
-        <p class="text-xs break-words text-zinc-600 dark:text-zinc-400">
+        <p class="text-xs break-words text-muted">
           <a href="/modpacks/{{ use.bundle_id }}#builds-section" class="hover:underline">
           {%- if use.recommended and use.latest and use.recommended == use.latest -%}
             #{{ use.recommended[0] }} recomendado y último, {{ use.recommended[1] }}
@@ -105,21 +105,21 @@
       {% endfor %}
     </ul>
     {% else %}
-    <p class="text-sm text-zinc-500 dark:text-zinc-400">Ningún modpack lo usa.</p>
+    <p class="text-sm text-muted">Ningún modpack lo usa.</p>
     {% endif %}
 
     {% if page.servers %}
-    <ul class="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white text-sm dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+    <ul class="divide-y divide-line-soft rounded-xl border border-line bg-raised text-sm">
       {% for server in page.servers %}
       <li class="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2">
         <a href="/servers/{{ server.server_id }}" class="{{ LINK }} wrap-anywhere">{{ server.server_name }}</a>
-        {% if server.version %}<span class="font-mono text-xs break-all text-zinc-600 dark:text-zinc-400">{{ server.version }}</span>{% endif %}
-        <span class="text-xs text-zinc-500 dark:text-zinc-400">escaneado {{ ui.when(server.scanned_at) }}</span>
+        {% if server.version %}<span class="font-mono text-xs break-all text-muted">{{ server.version }}</span>{% endif %}
+        <span class="text-xs text-muted">escaneado {{ ui.when(server.scanned_at) }}</span>
       </li>
       {% endfor %}
     </ul>
     {% else %}
-    <p class="text-sm text-zinc-500 dark:text-zinc-400">Ningún servidor lo tiene en su último escaneo.</p>
+    <p class="text-sm text-muted">Ningún servidor lo tiene en su último escaneo.</p>
     {% endif %}
   </section>
 </article>

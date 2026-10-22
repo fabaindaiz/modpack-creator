@@ -2,7 +2,7 @@
 {% set nav_active = "modpacks" %}
 {% block title %}Modpacks{% endblock %}
 
-{% set FIELD = "mt-1 block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm text-zinc-900 shadow-xs ring-1 ring-inset ring-zinc-300 placeholder:text-zinc-400 focus-visible:outline-2 focus-visible:outline-emerald-600 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-700" %}
+{% set FIELD = "mt-1 block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm text-ink shadow-xs ring-1 ring-inset ring-control placeholder:text-placeholder focus-visible:outline-2 focus-visible:outline-accent" %}
 
 {% block content %}
 {% call ui.page_header("Modpacks", "Cada modpack define qué se instala; los builds congelan lo resuelto.") %}
@@ -17,13 +17,13 @@
     {% for bundle in bundles %}
     <tr>
       <td data-label="Modpack" class="max-w-[18rem] break-words">
-        <a href="/modpacks/{{ bundle.id }}" class="font-medium hover:text-emerald-700 hover:underline dark:hover:text-emerald-300">{{ bundle.name }}</a>
-        {% if bundle.description %}<div class="line-clamp-2 text-xs text-zinc-500 dark:text-zinc-400">{{ bundle.description }}</div>{% endif %}
+        <a href="/modpacks/{{ bundle.id }}" class="font-medium hover:text-link hover:underline">{{ bundle.name }}</a>
+        {% if bundle.description %}<div class="line-clamp-2 text-xs text-muted">{{ bundle.description }}</div>{% endif %}
       </td>
       <td data-label="Versión" class="whitespace-nowrap">{{ bundle.version }}</td>
       <td data-label="Loader">{{ ui.badge(bundle.loader.value) }}</td>
-      <td data-label="Último build" class="tabular-nums">{% if bundle.latest_build is not none %}#{{ bundle.latest_build }}{% else %}<span class="text-zinc-400 dark:text-zinc-500">—</span>{% endif %}</td>
-      <td data-label="Recomendado">{% if bundle.recommended_build is not none %}{{ ui.badge("#" ~ bundle.recommended_build, "accent") }}{% else %}<span class="text-zinc-400 dark:text-zinc-500">—</span>{% endif %}</td>
+      <td data-label="Último build" class="tabular-nums">{% if bundle.latest_build is not none %}#{{ bundle.latest_build }}{% else %}<span class="text-faint">—</span>{% endif %}</td>
+      <td data-label="Recomendado">{% if bundle.recommended_build is not none %}{{ ui.badge("#" ~ bundle.recommended_build, "accent") }}{% else %}<span class="text-faint">—</span>{% endif %}</td>
     </tr>
     {% endfor %}
     {% endcall %}
@@ -32,7 +32,7 @@
 
   <div>
     {% call ui.section("Nuevo modpack", id="nuevo", help="nuevo-modpack") %}
-    <form method="post" action="/modpacks" class="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+    <form method="post" action="/modpacks" class="space-y-3 rounded-xl border border-line bg-raised p-4">
       <div>
         <label for="new-name" class="text-sm font-medium">Nombre</label>
         <input id="new-name" name="name" type="text" required maxlength="120" class="{{ FIELD }}">
@@ -56,7 +56,7 @@
         </div>
       </div>
       <div>
-        <label for="new-loader-version" class="text-sm font-medium">Versión del loader <span class="font-normal text-zinc-500 dark:text-zinc-400">(opcional)</span></label>
+        <label for="new-loader-version" class="text-sm font-medium">Versión del loader <span class="font-normal text-muted">(opcional)</span></label>
         <input id="new-loader-version" name="loader_version" type="text" maxlength="40" class="{{ FIELD }}">
       </div>
       {{ ui.button("Crear modpack", type="submit") }}

@@ -2,7 +2,7 @@
    (D3: to be put on the server by hand) and the overrides not kept (D4), counted by folder. #}
 {% import "_macros.html" as ui %}
 {% set override_total = report.overrides.values() | sum %}
-<div class="space-y-3 rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-950/40 dark:text-emerald-100" data-import-report>
+<div class="space-y-3 rounded-xl border border-success-line bg-success-soft p-4 text-sm text-success-ink" data-import-report>
   <p class="font-medium">Importado: {{ report.projects | length }} mods de {{ report.source }}</p>
   {{ ui.running_counts(report.decisions.values() | select | list | length, report.channel_exceptions) }}
   {# O2: each mod pinned to the pack's own version; one outside Modrinth's tags is used anyway. #}

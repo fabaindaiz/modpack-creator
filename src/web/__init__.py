@@ -139,7 +139,7 @@ def linkify(text: str) -> Markup:
         end = match.start() + len(url)
         parts.append(str(escape(text[last:match.start()])))
         parts.append(f'<a href="{escape(url)}" rel="noopener noreferrer nofollow" target="_blank" '
-                     f'class="text-emerald-700 underline dark:text-emerald-400">{escape(url)}</a>')
+                     f'class="text-link underline">{escape(url)}</a>')
         last = end
     parts.append(str(escape(text[last:])))
     return Markup("".join(parts))

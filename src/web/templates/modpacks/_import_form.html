@@ -3,39 +3,39 @@
    Without `into` it creates a pack; with it (a bundle id) it replaces that pack's content.
    The report answers into #import-result. #}
 {% import "_macros.html" as ui %}
-{% set FIELD = "mt-1 block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm text-zinc-900 shadow-xs ring-1 ring-inset ring-zinc-300 placeholder:text-zinc-400 focus-visible:outline-2 focus-visible:outline-emerald-600 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-700" %}
+{% set FIELD = "mt-1 block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm text-ink shadow-xs ring-1 ring-inset ring-control placeholder:text-placeholder focus-visible:outline-2 focus-visible:outline-accent" %}
 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
   <form hx-post="/modpacks/importar" hx-encoding="multipart/form-data" hx-target="#import-result" hx-swap="innerHTML"
-    class="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+    class="space-y-3 rounded-xl border border-line bg-raised p-4">
     {% if into %}<input type="hidden" name="into" value="{{ into }}">{% endif %}
     <div>
       <label for="import-file{{ '-' ~ into if into else '' }}" class="text-sm font-medium">Archivo .mrpack{{ ", zip de Prism o de CurseForge" if curseforge else " o zip de Prism" }}</label>
       <input id="import-file{{ '-' ~ into if into else '' }}" name="archivo" type="file" accept=".mrpack,.zip" required
-        class="mt-1 block w-full text-sm text-zinc-700 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5 file:text-sm file:font-medium dark:text-zinc-300 dark:file:bg-zinc-800 dark:file:text-zinc-100">
-      <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">.mrpack hasta 50 MiB. El zip de Prism hasta 1 GiB: los mundos no se leen; exportarlo sin saves/ sube más rápido.</p>
+        class="mt-1 block w-full text-sm text-ink-soft file:mr-3 file:rounded-md file:border-0 file:bg-subtle file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-ink">
+      <p class="mt-1 text-xs text-muted">.mrpack hasta 50 MiB. El zip de Prism hasta 1 GiB: los mundos no se leen; exportarlo sin saves/ sube más rápido.</p>
     </div>
     {{ ui.button("Importar archivo", type="submit") }}
   </form>
   <form hx-post="/modpacks/importar" hx-target="#import-result" hx-swap="innerHTML"
-    class="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+    class="space-y-3 rounded-xl border border-line bg-raised p-4">
     {% if into %}<input type="hidden" name="into" value="{{ into }}">{% endif %}
     <div>
       <label for="import-ref{{ '-' ~ into if into else '' }}" class="text-sm font-medium">Modpack de Modrinth</label>
       <input id="import-ref{{ '-' ~ into if into else '' }}" name="ref" type="text" required maxlength="500"
         placeholder="https://modrinth.com/modpack/…" class="{{ FIELD }}">
-      <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">La URL, el slug o el id. Sin versión, se usa la más nueva.</p>
+      <p class="mt-1 text-xs text-muted">La URL, el slug o el id. Sin versión, se usa la más nueva.</p>
     </div>
     {{ ui.button("Importar de Modrinth", type="submit") }}
   </form>
   {% if curseforge %}
   <form hx-post="/modpacks/importar" hx-target="#import-result" hx-swap="innerHTML"
-    class="space-y-3 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+    class="space-y-3 rounded-xl border border-line bg-raised p-4">
     {% if into %}<input type="hidden" name="into" value="{{ into }}">{% endif %}
     <div>
       <label for="import-code{{ '-' ~ into if into else '' }}" class="text-sm font-medium">Código de perfil de CurseForge</label>
       <input id="import-code{{ '-' ~ into if into else '' }}" name="codigo" type="text" required maxlength="40"
         placeholder="ABCD1234" autocomplete="off" class="{{ FIELD }}">
-      <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Dura 7 días desde que lo compartes.</p>
+      <p class="mt-1 text-xs text-muted">Dura 7 días desde que lo compartes.</p>
     </div>
     {{ ui.button("Importar código", type="submit") }}
   </form>

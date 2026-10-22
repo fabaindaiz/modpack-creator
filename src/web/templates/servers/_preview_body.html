@@ -6,7 +6,7 @@
    warns (the scan may be old, and the update checks again on a fresh one). #}
 {% set jars = preview.unexplained %}
 {% set count = jars.foreign | length + jars.in_pack | length %}
-<div data-unexplained role="status" class="space-y-1 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+<div data-unexplained role="status" class="space-y-1 rounded-xl bg-warning-soft px-3 py-2 text-sm text-warning-ink">
   <p class="font-semibold">La actualización se detendrá antes de tocar el servidor: el escaneo de {{ preview.scanned_at | ago }} tiene {{ count }} {{ "jar" if count == 1 else "jars" }} que el build no explica.</p>
   {% if jars.foreign %}
   <p>Importa el servidor para traer al pack:</p>
@@ -20,17 +20,17 @@
 {% endif %}
 {% if preview.bridged %}
 {# Batch C (C6): the mods that go on the server through a bridge, apart: only starting it says whether they run. #}
-<div data-bridged role="status" class="space-y-1 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+<div data-bridged role="status" class="space-y-1 rounded-xl bg-warning-soft px-3 py-2 text-sm text-warning-ink">
   {% for label, count in preview.bridged | dictsort %}
   <p>{{ count }} {{ "mod va" if count == 1 else "mods van" }} por {{ label }}: si el servidor no arranca, revisa sus logs.</p>
   {% endfor %}
 </div>
 {% endif %}
 <div class="space-y-2">
-  <h3 class="text-sm font-semibold text-zinc-700 dark:text-zinc-300">Qué cambiaría en el servidor</h3>
+  <h3 class="text-sm font-semibold text-ink-soft">Qué cambiaría en el servidor</h3>
   {% set against_server = True %}
   {% include "modpacks/_changes.html" %}
 </div>
 {% elif preview_note is defined and preview_note %}
-<p class="text-sm text-zinc-600 dark:text-zinc-400">{{ preview_note }}</p>
+<p class="text-sm text-muted">{{ preview_note }}</p>
 {% endif %}

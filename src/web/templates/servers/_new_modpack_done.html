@@ -5,7 +5,7 @@
   Needs: server_id, bundle, outcome, titles, bundles (for the link selector, redrawn out of band).
 #}
 {% import "_macros.html" as ui %}
-<div id="new-modpack" class="space-y-3 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+<div id="new-modpack" class="space-y-3 border-t border-line pt-3">
   {% if outcome %}
   <p>Modpack <a href="/modpacks/{{ bundle.id }}" class="font-medium hover:underline">{{ bundle.name }}</a> creado y vinculado a este servidor.</p>
   {% if outcome.imported %}

@@ -6,25 +6,25 @@
 #}
 
 {% set BUTTON_KINDS = {
-  "primary": "bg-emerald-600 text-white hover:bg-emerald-700 focus-visible:outline-emerald-600 dark:bg-emerald-500 dark:text-zinc-950 dark:hover:bg-emerald-400",
-  "secondary": "bg-white text-zinc-800 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50 focus-visible:outline-zinc-400 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-700 dark:hover:bg-zinc-800",
-  "danger": "bg-red-600 text-white hover:bg-red-700 focus-visible:outline-red-600 dark:bg-red-500 dark:hover:bg-red-400",
-  "ghost": "text-zinc-700 hover:bg-zinc-100 focus-visible:outline-zinc-400 dark:text-zinc-300 dark:hover:bg-zinc-800",
+  "primary": "bg-primary text-on-primary hover:bg-primary-hover focus-visible:outline-accent",
+  "secondary": "bg-raised text-ink ring-1 ring-inset ring-control hover:bg-tint focus-visible:outline-faint",
+  "danger": "bg-danger-solid text-on-danger hover:bg-danger-solid-hover focus-visible:outline-danger-solid",
+  "ghost": "text-ink-soft hover:bg-subtle focus-visible:outline-faint",
 } %}
 
 {% set BADGE_TONES = {
-  "neutral": "bg-zinc-100 text-zinc-700 ring-zinc-500/20 dark:bg-zinc-800 dark:text-zinc-300 dark:ring-zinc-400/20",
-  "accent": "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-400/30",
-  "warning": "bg-amber-50 text-amber-800 ring-amber-600/20 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-400/30",
-  "danger": "bg-red-50 text-red-700 ring-red-600/20 dark:bg-red-500/10 dark:text-red-300 dark:ring-red-400/30",
-  "info": "bg-sky-50 text-sky-700 ring-sky-600/20 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-400/30",
+  "neutral": "bg-subtle text-ink-soft ring-muted/20",
+  "accent": "bg-success-soft text-success ring-success/20",
+  "warning": "bg-warning-soft text-warning ring-warning/20",
+  "danger": "bg-danger-soft text-danger ring-danger/20",
+  "info": "bg-info-soft text-info ring-info/20",
 } %}
 
 {% set NOTICE_TONES = {
-  "error": "border-red-300 bg-red-50 text-red-800 dark:border-red-500/40 dark:bg-red-950/60 dark:text-red-200",
-  "warning": "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-950/60 dark:text-amber-200",
-  "success": "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-950/60 dark:text-emerald-200",
-  "info": "border-sky-300 bg-sky-50 text-sky-900 dark:border-sky-500/40 dark:bg-sky-950/60 dark:text-sky-200",
+  "error": "border-danger-line bg-danger-soft text-danger-ink",
+  "warning": "border-warning-line bg-warning-soft text-warning-ink",
+  "success": "border-success-line bg-success-soft text-success-ink",
+  "info": "border-info-line bg-info-soft text-info-ink",
 } %}
 
 {# How a job's status and kind read in Spanish (the badge tone for the status). #}
@@ -114,21 +114,21 @@
 #}
 {% macro table(headers, empty="Nada que mostrar.", caption=None) %}
 {% set rows = caller() %}
-<div class="overflow-x-auto rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-  <table class="min-w-full divide-y divide-zinc-200 text-sm max-sm:block dark:divide-zinc-800">
+<div class="overflow-x-auto rounded-xl border border-line bg-raised">
+  <table class="min-w-full divide-y divide-line text-sm max-sm:block">
     {% if caption %}<caption class="sr-only">{{ caption }}</caption>{% endif %}
-    <thead class="bg-zinc-50 max-sm:sr-only dark:bg-zinc-900/60">
+    <thead class="bg-tint max-sm:sr-only">
       <tr>
         {% for header in headers %}
-        <th scope="col" class="px-3 py-2 text-left text-xs font-semibold tracking-wide whitespace-nowrap text-zinc-500 uppercase dark:text-zinc-400">{{ header }}</th>
+        <th scope="col" class="px-3 py-2 text-left text-xs font-semibold tracking-wide whitespace-nowrap text-muted uppercase">{{ header }}</th>
         {% endfor %}
       </tr>
     </thead>
-    <tbody class="divide-y divide-zinc-100 dark:divide-zinc-800 [&>tr>td]:px-3 [&>tr>td]:py-2 [&>tr>td]:align-top max-sm:block max-sm:[&>tr]:block max-sm:[&>tr]:py-1.5 max-sm:[&>tr>td]:flow-root max-sm:[&>tr>td]:max-w-none max-sm:[&>tr>td]:py-1 max-sm:[&>tr>td]:text-left max-sm:[&>tr>td]:whitespace-normal max-sm:[&>tr>td]:before:float-left max-sm:[&>tr>td]:before:w-28 max-sm:[&>tr>td]:before:pr-2 max-sm:[&>tr>td]:before:text-xs max-sm:[&>tr>td]:before:font-semibold max-sm:[&>tr>td]:before:text-zinc-500 max-sm:[&>tr>td]:before:content-[attr(data-label)] dark:max-sm:[&>tr>td]:before:text-zinc-400 max-sm:[&>tr>td[data-label='']]:before:hidden max-sm:[&>tr>td:not([data-label])]:before:hidden">
+    <tbody class="divide-y divide-line-soft [&>tr>td]:px-3 [&>tr>td]:py-2 [&>tr>td]:align-top max-sm:block max-sm:[&>tr]:block max-sm:[&>tr]:py-1.5 max-sm:[&>tr>td]:flow-root max-sm:[&>tr>td]:max-w-none max-sm:[&>tr>td]:py-1 max-sm:[&>tr>td]:text-left max-sm:[&>tr>td]:whitespace-normal max-sm:[&>tr>td]:before:float-left max-sm:[&>tr>td]:before:w-28 max-sm:[&>tr>td]:before:pr-2 max-sm:[&>tr>td]:before:text-xs max-sm:[&>tr>td]:before:font-semibold max-sm:[&>tr>td]:before:text-muted max-sm:[&>tr>td]:before:content-[attr(data-label)] max-sm:[&>tr>td[data-label='']]:before:hidden max-sm:[&>tr>td:not([data-label])]:before:hidden">
       {% if rows | trim %}
       {{ rows }}
       {% else %}
-      <tr><td colspan="{{ headers | length }}" class="text-center text-zinc-500 dark:text-zinc-400">{{ empty }}</td></tr>
+      <tr><td colspan="{{ headers | length }}" class="text-center text-muted">{{ empty }}</td></tr>
       {% endif %}
     </tbody>
   </table>
@@ -139,7 +139,7 @@
    `autoclose` (only ui.success sets it) makes app.js remove it after a few seconds. #}
 {% macro notice(message, tone="error", detail=None, request_id=None, autoclose=False) %}
 <div data-notice data-notice-tone="{{ tone }}"{% if autoclose %} data-notice-autoclose{% endif %} role="{{ 'alert' if tone == 'error' else 'status' }}"
-  class="flex items-start gap-3 rounded-md border px-3 py-2 text-sm shadow-sm {{ NOTICE_TONES[tone] }}">
+  class="flex items-start gap-3 rounded-xl border px-3 py-2 text-sm shadow-sm {{ NOTICE_TONES[tone] }}">
   <div class="min-w-0 flex-1">
     <p class="break-words whitespace-pre-line">{{ message }}</p>
     {% if detail %}
@@ -165,10 +165,10 @@
 #}
 {% macro confirm_dialog(id, title, confirm_label="Confirmar", kind="danger", form_attrs={}) %}
 <dialog id="{{ id }}" aria-labelledby="{{ id }}-title"
-  class="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-zinc-950/50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+  class="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-xl border border-line bg-raised p-0 text-ink shadow-xl backdrop:bg-scrim/50">
   <form class="space-y-4 p-5" {{- form_attrs | xmlattr }}>
     <h2 id="{{ id }}-title" class="text-base font-semibold">{{ title }}</h2>
-    <div class="space-y-3 text-sm text-zinc-700 dark:text-zinc-300">{{ caller() }}</div>
+    <div class="space-y-3 text-sm text-ink-soft">{{ caller() }}</div>
     <div class="flex justify-end gap-2">
       {{ button("Cancelar", kind="secondary", attrs={"data-dialog-close": ""}) }}
       {{ button(confirm_label, kind=kind, type="submit") }}
@@ -208,7 +208,7 @@
    offered once a later real update runs (R17 of d-7985ee-5445a0), so the dialog says it first. #}
 {% macro discards_rollback(rollback) %}
 {% if rollback %}
-<p role="alert" class="rounded-md border px-3 py-2 font-medium {{ NOTICE_TONES['error'] }}">Hay una actualización fallida sin revertir: si sigues, el rollback A/B deja de ofrecerse y el backup se restaura a mano en Pterodactyl.</p>
+<p role="alert" class="rounded-xl border px-3 py-2 font-medium {{ NOTICE_TONES['error'] }}">Hay una actualización fallida sin revertir: si sigues, el rollback A/B deja de ofrecerse y el backup se restaura a mano en Pterodactyl.</p>
 {% endif %}
 {% endmacro %}
 
@@ -217,7 +217,7 @@
 <div class="flex flex-wrap items-end justify-between gap-3">
   <div class="min-w-0">
     <h1 class="text-xl font-semibold tracking-tight">{{ title }}</h1>
-    {% if subtitle %}<p class="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">{{ subtitle }}</p>{% endif %}
+    {% if subtitle %}<p class="mt-0.5 text-sm text-muted">{{ subtitle }}</p>{% endif %}
   </div>
   {% if caller is defined %}<div class="flex flex-wrap gap-2">{{ caller() }}</div>{% endif %}
 </div>
@@ -228,11 +228,11 @@
 <section class="space-y-2"{% if id %} id="{{ id }}"{% endif %}>
   {% if help %}
   <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-    <h2 class="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{{ title }}</h2>
+    <h2 class="text-sm font-semibold text-ink-soft">{{ title }}</h2>
     {{ help_toggle(topic or title, help) }}
   </div>
   {% else %}
-  <h2 class="text-sm font-semibold text-zinc-700 dark:text-zinc-300">{{ title }}</h2>
+  <h2 class="text-sm font-semibold text-ink-soft">{{ title }}</h2>
   {% endif %}
   {{ caller() }}
 </section>
@@ -247,14 +247,14 @@
 {% macro help_toggle(topic, key) %}
 {% set text, anchor = HELP[key] %}
 <details class="text-xs open:basis-full" data-help>
-  <summary aria-label="Ayuda: {{ topic }}" title="Ayuda" class="inline-flex size-6 cursor-pointer list-none items-center justify-center rounded-full text-xs font-semibold text-zinc-600 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-100 focus-visible:outline-2 focus-visible:outline-emerald-600 dark:text-zinc-300 dark:ring-zinc-600 dark:hover:bg-zinc-800 [&::-webkit-details-marker]:hidden">?</summary>
-  <p class="mt-1 max-w-prose rounded-lg bg-zinc-50 p-2 text-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300">{{ text }} <a href="/como-funciona#{{ anchor }}" class="font-medium text-emerald-700 hover:underline dark:text-emerald-300">Más en «Cómo funciona»</a></p>
+  <summary aria-label="Ayuda: {{ topic }}" title="Ayuda" class="inline-flex size-6 cursor-pointer list-none items-center justify-center rounded-full text-xs font-semibold text-ink-soft ring-1 ring-inset ring-control hover:bg-subtle focus-visible:outline-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">?</summary>
+  <p class="mt-1 max-w-prose rounded-lg bg-tint p-2 text-ink-soft">{{ text }} <a href="/como-funciona#{{ anchor }}" class="font-medium text-link hover:underline">Más en «Cómo funciona»</a></p>
 </details>
 {% endmacro %}
 
 {# A date as people read it, in UTC; a dash when there is none. #}
 {% macro when(value) %}
-{% if value %}<time datetime="{{ value.isoformat() }}" class="whitespace-nowrap tabular-nums">{{ value.strftime("%Y-%m-%d %H:%M") }}</time>{% else %}<span class="text-zinc-400 dark:text-zinc-500">—</span>{% endif %}
+{% if value %}<time datetime="{{ value.isoformat() }}" class="whitespace-nowrap tabular-nums">{{ value.strftime("%Y-%m-%d %H:%M") }}</time>{% else %}<span class="text-faint">—</span>{% endif %}
 {% endmacro %}
 
 {# What an import recorded as running (B5, owner 2026-10-09): `on_server` the mods marked «En el
@@ -272,20 +272,20 @@
 #}
 {% macro card_list(empty="Nada que mostrar.", caption=None, headers=None, cols="") %}
 {% set items = caller() %}
-<ul class="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900"
+<ul class="divide-y divide-line-soft rounded-xl border border-line bg-raised"
   {%- if caption %} aria-label="{{ caption }}"{% endif %}>
   {% if items | trim %}
   {% if headers %}
-  <li aria-hidden="true" class="hidden gap-2 bg-zinc-50 px-3 py-2 sm:flex dark:bg-zinc-900/60">
+  <li aria-hidden="true" class="hidden gap-2 bg-tint px-3 py-2 sm:flex">
     <span class="invisible text-xs">▸</span>
-    <div class="grid min-w-0 flex-1 gap-x-3 text-xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400 {{ cols }}">
+    <div class="grid min-w-0 flex-1 gap-x-3 text-xs font-semibold tracking-wide text-muted uppercase {{ cols }}">
       {% for header in headers %}<span class="truncate">{{ header }}</span>{% endfor %}
     </div>
   </li>
   {% endif %}
   {{ items }}
   {% else %}
-  <li class="px-3 py-2 text-center text-sm text-zinc-500 dark:text-zinc-400">{{ empty }}</li>
+  <li class="px-3 py-2 text-center text-sm text-muted">{{ empty }}</li>
   {% endif %}
 </ul>
 {% endmacro %}
@@ -297,9 +297,9 @@
   answer it alone, to replace the line of an open card without closing it.
 #}
 {% macro card_summary(cols="", attrs={}) %}
-<summary class="flex cursor-pointer list-none items-start gap-2 px-3 py-2 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/40 [&::-webkit-details-marker]:hidden"
+<summary class="flex cursor-pointer list-none items-start gap-2 px-3 py-2 text-sm hover:bg-tint [&::-webkit-details-marker]:hidden"
   {{- attrs | xmlattr }}>
-  <span aria-hidden="true" class="mt-0.5 text-xs text-zinc-400 transition-transform group-open:rotate-90 dark:text-zinc-500">▸</span>
+  <span aria-hidden="true" class="mt-0.5 text-xs text-faint transition-transform group-open:rotate-90">▸</span>
   <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 break-words sm:grid sm:items-start {{ cols }}">{{ caller() }}</div>
 </summary>
 {% endmacro %}
@@ -315,7 +315,7 @@
 <li>
   <details{{ attrs | xmlattr }} id="{{ id }}" class="group">
     {% call card_summary(cols, summary_attrs) %}{{ part_of("summary") }}{% endcall %}
-    <div class="min-w-0 space-y-2 border-t border-zinc-100 py-2 pr-3 pl-8 text-sm break-words dark:border-zinc-800">{{ part_of("body") }}</div>
+    <div class="min-w-0 space-y-2 border-t border-line-soft py-2 pr-3 pl-8 text-sm break-words">{{ part_of("body") }}</div>
   </details>
 </li>
 {% endmacro %}

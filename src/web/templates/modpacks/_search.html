@@ -5,10 +5,10 @@
    known once it is opened (`opened`). Each tab asks for its own results. #}
 {% if searched and bridge is defined and bridge %}
 {% set TAB = "-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-1.5 text-sm font-medium " %}
-{% set ON = "border-emerald-600 text-emerald-800 dark:border-emerald-400 dark:text-emerald-200" %}
-{% set OFF = "border-transparent text-zinc-600 hover:border-zinc-300 hover:text-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:text-zinc-100" %}
+{% set ON = "border-accent text-success-ink" %}
+{% set OFF = "border-transparent text-muted hover:border-control hover:text-ink" %}
 {% set base = "/modpacks/" ~ bundle_id ~ "/search?q=" ~ (q | urlencode) %}
-<div role="tablist" aria-label="Resultados de la búsqueda" class="mb-2 flex flex-wrap gap-x-1 border-b border-zinc-200 dark:border-zinc-800">
+<div role="tablist" aria-label="Resultados de la búsqueda" class="mb-2 flex flex-wrap gap-x-1 border-b border-line">
   <button type="button" role="tab" data-search-tab="nativos" aria-selected="{{ 'false' if opened else 'true' }}" hx-get="{{ base }}" hx-target="#search-results" class="{{ TAB }}{{ OFF if opened else ON }}">Nativos</button>
   <button type="button" role="tab" data-search-tab="puente" aria-selected="{{ 'true' if opened else 'false' }}" hx-get="{{ base }}&amp;via={{ bridge.key }}" hx-target="#search-results" class="{{ TAB }}{{ ON if opened else OFF }}">Vía {{ bridge.label }}{% if opened %} ({{ hits | length }}){% endif %}{% if bridge.experimental %} · experimental{% endif %}</button>
 </div>
@@ -16,15 +16,15 @@
 {% if failed %}
 {{ ui.notice(failed if failed is string else "Modrinth no respondió; intenta de nuevo", "warning") }}
 {% elif searched and not hits %}
-<p class="text-sm text-zinc-500 dark:text-zinc-400">Modrinth no encontró nada para ese texto.</p>
+<p class="text-sm text-muted">Modrinth no encontró nada para ese texto.</p>
 {% elif hits %}
-<ul class="divide-y divide-zinc-100 dark:divide-zinc-800">
+<ul class="divide-y divide-line-soft">
   {% for hit in hits %}
   <li class="flex items-start gap-3 py-2">
     {% if hit.icon %}
-    <img src="{{ hit.icon }}" alt="" width="40" height="40" loading="lazy" class="size-10 shrink-0 rounded-md bg-zinc-100 object-cover dark:bg-zinc-800">
+    <img src="{{ hit.icon }}" alt="" width="40" height="40" loading="lazy" class="size-10 shrink-0 rounded-md bg-subtle object-cover">
     {% else %}
-    <div class="size-10 shrink-0 rounded-md bg-zinc-100 dark:bg-zinc-800" aria-hidden="true"></div>
+    <div class="size-10 shrink-0 rounded-md bg-subtle" aria-hidden="true"></div>
     {% endif %}
     <div class="min-w-0 flex-1">
       <div class="flex flex-wrap items-center gap-x-2 gap-y-0.5">
@@ -33,8 +33,8 @@
         {% if hit.side %}{{ ui.badge(hit.side) }}{% endif %}
         {% if opened is defined and opened %}{{ ui.badge("vía " ~ opened.label ~ " (" ~ (opened.guest | capitalize) ~ ")" ~ (" · experimental" if opened.experimental else ""), "warning") }}{% endif %}
       </div>
-      {% if hit.description %}<p class="line-clamp-2 text-sm break-words text-zinc-600 dark:text-zinc-400">{{ hit.description }}</p>{% endif %}
-      <p class="text-xs text-zinc-500 dark:text-zinc-400">{% if hit.author %}@{{ hit.author }} · {% endif %}{{ hit.downloads }} descargas</p>
+      {% if hit.description %}<p class="line-clamp-2 text-sm break-words text-muted">{{ hit.description }}</p>{% endif %}
+      <p class="text-xs text-muted">{% if hit.author %}@{{ hit.author }} · {% endif %}{{ hit.downloads }} descargas</p>
     </div>
     {# Adding it answers #mods and, out of band, this slot as "Ya está" (the form's id says so). #}
     <div id="hit-{{ hit.project_id }}" class="shrink-0">

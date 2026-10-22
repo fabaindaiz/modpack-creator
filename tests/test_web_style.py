@@ -177,3 +177,80 @@ def test_light_muted_text_reads_on_the_light_surfaces(background: str) -> None:
     for muted in ("--color-zinc-500", "--color-zinc-600"):
         assert contrast(colour(muted), colour(background)) >= 4.5, (muted, background)
     assert contrast(colour("--color-zinc-500"), "#ffffff") >= 4.5
+
+
+# The semantic tokens (owner, 2026-10-21, «Migrar a los tokens»; d-7985ee-cc655d): every template
+# and the Python that writes classes name a role (text-ink, bg-raised, border-line, text-danger...),
+# never a raw scale step, so a colour changes in app.css once, for light and dark together.
+RAW_COLOUR = re.compile(
+    r"(?<![\w-])(?:[\w\[\]&>='().:-]*:)?"
+    r"(?:bg|text|border|ring|divide|outline|accent|fill|stroke|from|via|to|decoration|placeholder|shadow)"
+    r"-(?:white|black|(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue"
+    r"|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3})(?:/\d+)?(?![\w-])")
+# Raw colours that stay on purpose, each with why no token fits: (file relative to src/web, class).
+RAW_COLOUR_KEPT: dict[tuple[str, str], str] = {}
+SOURCES = sorted([*TEMPLATES.rglob("*.html"), *(ROOT / "src/web").glob("*.py")])
+
+
+def test_templates_name_semantic_tokens_not_raw_colours() -> None:
+    found = []
+    for source in SOURCES:
+        for number, line in enumerate(source.read_text().splitlines(), 1):
+            for raw in RAW_COLOUR.findall(line):
+                if (str(source.relative_to(ROOT / "src/web")), raw) not in RAW_COLOUR_KEPT:
+                    found.append(f"{source.relative_to(ROOT)}:{number}: {raw}")
+    assert found == [], "\n".join(found[:40]) + f"\n... {len(found)} in all"
+
+
+def test_the_raw_colour_check_sees_a_raw_class() -> None:
+    for raw in ("text-zinc-900", "dark:text-zinc-100", "hover:bg-emerald-700", "dark:bg-red-950/60", "bg-white",
+                "max-sm:[&>tr>td]:before:text-zinc-500", "focus-visible:outline-emerald-600"):
+        assert RAW_COLOUR.findall(f'class="px-2 {raw} py-1"') == [raw], raw
+    for token in ("text-ink", "bg-raised", "border-line", "text-danger", "bg-danger-soft", "ring-control"):
+        assert RAW_COLOUR.findall(f'class="px-2 {token}"') == [], token
+
+
+def scheme_block(dark: bool) -> dict[str, str]:
+    text = css()
+    start = text.index("@media (prefers-color-scheme: dark)") if dark else text.index(":root {")
+    body = text[text.index("{", text.index(":root", start)) + 1:]
+    body = body[:body.index("}")]
+    return dict(re.findall(r"--([\w-]+):\s*([^;]+);", body))
+
+
+def test_every_semantic_token_has_a_light_and_a_dark_value_and_a_class() -> None:
+    light, dark = scheme_block(False), scheme_block(True)
+    assert set(light) == set(dark), set(light) ^ set(dark)
+    inline = css()[css().index("@theme inline"):]
+    for name in light:
+        assert re.search(rf"--color-{re.escape(name)}:\s*var\(--{re.escape(name)}\);", inline), name
+
+
+def test_body_text_takes_the_palette_s_text_colours() -> None:
+    """Review of batch B, minor 6: the body was zinc-900/100, not the palette's #16181c / #e6e8eb."""
+    assert scheme_block(False)["ink"] == "#16181c"
+    assert scheme_block(True)["ink"] == "#e6e8eb"
+    base = (TEMPLATES / "base.html").read_text()
+    body = re.search(r'<body class="([^"]+)"', base)
+    assert body is not None and {"bg-surface", "text-ink"} <= set(body.group(1).split())
+
+
+@pytest.mark.parametrize("dark", [False, True])
+def test_the_text_tokens_read_on_the_surfaces(dark: bool) -> None:
+    tokens = scheme_block(dark)
+    for text in ("ink", "ink-soft", "muted"):
+        for background in ("surface", "raised"):
+            assert contrast(tokens[text], tokens[background]) >= 4.5, (text, background, dark)
+
+
+def test_notices_and_alerts_take_the_panel_s_corners() -> None:
+    """Review of batch B, minor 6: ui.notice and an alert kept rounded-md (6px) while the panel's
+    boxes are rounder; a tinted box (a notice's tones or a -soft background) is never rounded-md."""
+    found = []
+    for source in TEMPLATES.rglob("*.html"):
+        for classes in re.findall(r'class="([^"]*)"', source.read_text()):
+            tinted = "NOTICE_TONES" in classes or re.search(r"\bbg-[\w-]+-soft\b|\bbg-(?:red|amber|sky|emerald)-50\b",
+                                                             classes)
+            if tinted and "rounded-md" in classes.split():
+                found.append(f"{source.name}: {classes[:80]}")
+    assert found == []

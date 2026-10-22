@@ -15,28 +15,28 @@
   "exclude": ("Desactivado", "neutral"),
   "admin": ("Por decidir", "warning"),
 } %}
-{% set LINK = "font-medium text-emerald-700 hover:underline dark:text-emerald-300" %}
+{% set LINK = "font-medium text-link hover:underline" %}
 {% set saved = mods.resolution.lock if mods.resolution is not none else none %}
 {% set current = saved is not none and not mods.stale %}
 {% set TABS = (
   ("todos", "Todos", mods.rows | length, ""),
-  ("decidir", "Por decidir", (saved.undecided | length) if current else none, "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200"),
-  ("problemas", "Con problemas", (saved.problems | length) if current else none, "bg-red-100 text-red-800 dark:bg-red-500/20 dark:text-red-200"),
-  ("sugerencias", "Sugerencias", (saved.suggestions | length) if current else none, "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200"),
+  ("decidir", "Por decidir", (saved.undecided | length) if current else none, "bg-warning/15 text-warning-ink"),
+  ("problemas", "Con problemas", (saved.problems | length) if current else none, "bg-danger/15 text-danger-ink"),
+  ("sugerencias", "Sugerencias", (saved.suggestions | length) if current else none, "bg-info/15 text-info-ink"),
 ) + ((
-  ("puente", "Vía puente", mods.rows | selectattr("via") | list | length, "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200"),
+  ("puente", "Vía puente", mods.rows | selectattr("via") | list | length, "bg-warning/15 text-warning-ink"),
 ) if bridges_on else ()) %}
 <div id="mods" class="space-y-4"{% if mods_oob is defined and mods_oob %} hx-swap-oob="true"{% endif %}>
   {% include "modpacks/_resolution.html" %}
 
-  <nav aria-label="Vistas de los mods" class="flex flex-wrap items-center gap-x-1 border-b border-zinc-200 dark:border-zinc-800">
+  <nav aria-label="Vistas de los mods" class="flex flex-wrap items-center gap-x-1 border-b border-line">
     {% for name, label, count, highlight in TABS %}
-    {% call ui.mods_view_link(bundle_id, name, "-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium " ~ ("border-emerald-600 text-emerald-800 dark:border-emerald-400 dark:text-emerald-200" if vista == name else "border-transparent text-zinc-600 hover:border-zinc-300 hover:text-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:text-zinc-100"), current=vista == name, attrs={"data-tab": name}) -%}
+    {% call ui.mods_view_link(bundle_id, name, "-mb-px inline-flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium " ~ ("border-accent text-success-ink" if vista == name else "border-transparent text-muted hover:border-control hover:text-ink"), current=vista == name, attrs={"data-tab": name}) -%}
       {{ label }}
-      {%- if count is not none %} <span class="rounded-full px-1.5 text-xs tabular-nums {{ highlight if highlight and count else 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300' }}">{{ count }}</span>{% endif %}
+      {%- if count is not none %} <span class="rounded-full px-1.5 text-xs tabular-nums {{ highlight if highlight and count else 'bg-subtle text-ink-soft' }}">{{ count }}</span>{% endif %}
     {%- endcall %}
     {% endfor %}
-    {% if not current %}<span class="px-2 py-2 text-xs text-zinc-500 dark:text-zinc-400">Resuelve para ver lo pendiente</span>{% endif %}
+    {% if not current %}<span class="px-2 py-2 text-xs text-muted">Resuelve para ver lo pendiente</span>{% endif %}
   </nav>
 
   {% if vista == "decidir" %}
@@ -48,9 +48,9 @@
   {% elif vista == "problemas" %}
   <div data-vista="problemas" class="space-y-3">
     {% if not current %}
-    <p class="text-sm text-zinc-600 dark:text-zinc-400">Resuelve para ver lo pendiente: {{ "todavía no se resolvió." if saved is none else "el pack cambió desde la última resolución." }}</p>
+    <p class="text-sm text-muted">Resuelve para ver lo pendiente: {{ "todavía no se resolvió." if saved is none else "el pack cambió desde la última resolución." }}</p>
     {% elif not saved.problems %}
-    <p class="text-sm text-zinc-600 dark:text-zinc-400">No hay problemas en la resolución vigente.</p>
+    <p class="text-sm text-muted">No hay problemas en la resolución vigente.</p>
     {% else %}
     <ul class="space-y-3">
       {% for problem in saved.problems %}
@@ -62,15 +62,15 @@
   {% else %}
   <div data-vista="todos" class="space-y-2">
     {% if not mods.rows %}
-    <p class="text-sm text-zinc-500 dark:text-zinc-400">El modpack todavía no tiene mods: búscalos arriba o agrégalos por slug.</p>
+    <p class="text-sm text-muted">El modpack todavía no tiene mods: búscalos arriba o agrégalos por slug.</p>
     {% else %}
     {% include "modpacks/_mod_filters.html" %}
     {# What a filter swaps (with the four selects, out of band): never the name being typed. #}
     <div id="mods-list">
     {% if not shown %}
-    <p class="text-sm text-zinc-500 dark:text-zinc-400">Ningún mod coincide con los filtros.</p>
+    <p class="text-sm text-muted">Ningún mod coincide con los filtros.</p>
     {% else %}
-    <ul class="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+    <ul class="divide-y divide-line-soft rounded-xl border border-line bg-raised">
       {% for row in shown %}
       {% set image = icon(row.icon_url) %}
       {% set side = SIDE.get(row.side) %}
@@ -79,12 +79,12 @@
       <li data-project="{{ row.project_id }}" id="mod-row-{{ row.project_id }}">
         <details class="group" hx-disinherit="*"
           {%- if in_pack %} hx-get="/modpacks/{{ bundle_id }}/projects/{{ row.project_id }}/versions" hx-trigger="toggle once" hx-target="#versions-{{ row.project_id }}" hx-swap="innerHTML"{% endif %}>
-          <summary class="flex cursor-pointer items-start gap-3 px-3 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800/60">
-            <span class="mt-3 shrink-0 text-xs text-zinc-400 transition-transform group-open:rotate-90" aria-hidden="true">▸</span>
+          <summary class="flex cursor-pointer items-start gap-3 px-3 py-2 hover:bg-tint">
+            <span class="mt-3 shrink-0 text-xs text-faint transition-transform group-open:rotate-90" aria-hidden="true">▸</span>
             {% if image %}
-            <img src="{{ image }}" alt="" width="40" height="40" loading="lazy" class="size-10 shrink-0 rounded-md bg-zinc-100 object-cover dark:bg-zinc-800">
+            <img src="{{ image }}" alt="" width="40" height="40" loading="lazy" class="size-10 shrink-0 rounded-md bg-subtle object-cover">
             {% else %}
-            <div class="size-10 shrink-0 rounded-md bg-zinc-100 dark:bg-zinc-800" aria-hidden="true"></div>
+            <div class="size-10 shrink-0 rounded-md bg-subtle" aria-hidden="true"></div>
             {% endif %}
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -97,7 +97,7 @@
                 {% if row.server_risky %}{{ ui.badge("servidor: probar antes", "warning", title="Connector tiene fallos conocidos en servidor dedicado: simula antes de instalar") }}{% endif %}
                 {% if row.off_tags %}{{ ui.badge("versión del pack, fuera de las etiquetas de Modrinth", "warning", title="El pack trae esta versión aunque Modrinth no la marca para esta versión de Minecraft o este loader: se usa igual") }}{% endif %}
               </div>
-              <p class="text-xs break-words text-zinc-500 dark:text-zinc-400">
+              <p class="text-xs break-words text-muted">
                 {%- if not in_pack %}dependencia de
                   {%- for name in row.required_by %} {{ ui.mod_link(row.requested_by[loop.index0] if loop.index0 < row.requested_by | length else None, name, pack=bundle_id) }}{% if not loop.last %},{% endif %}{% else %} otro mod{% endfor %}
                   {%- if row.downloads %} · {% endif %}{% endif %}
@@ -105,12 +105,12 @@
               </p>
             </div>
             {% if version %}
-            <span class="inline-block max-w-[10rem] shrink-0 truncate max-sm:max-w-[6rem] font-mono text-xs {{ 'text-emerald-700 dark:text-emerald-300' if row.newer_version else 'text-zinc-600 dark:text-zinc-400' }}" title="{{ version }}">{{ version }}</span>
+            <span class="inline-block max-w-[10rem] shrink-0 truncate max-sm:max-w-[6rem] font-mono text-xs {{ 'text-success' if row.newer_version else 'text-muted' }}" title="{{ version }}">{{ version }}</span>
             {% endif %}
           </summary>
 
-          <div class="space-y-3 border-t border-zinc-100 px-3 py-3 text-sm dark:border-zinc-800">
-            {% if row.description %}<p class="break-words text-zinc-700 dark:text-zinc-300">{{ row.description }}</p>{% endif %}
+          <div class="space-y-3 border-t border-line-soft px-3 py-3 text-sm">
+            {% if row.description %}<p class="break-words text-ink-soft">{{ row.description }}</p>{% endif %}
             {% if row.categories %}
             <div class="flex flex-wrap gap-1">{% for category in row.categories %}{{ ui.badge(category) }}{% endfor %}</div>
             {% endif %}
@@ -118,15 +118,15 @@
               <dt class="font-medium">Loaders</dt>
               <dd class="break-words">
                 {{- row.loaders | join(", ") if row.loaders else "—" }}
-                {%- if row.supports_loader is true %} · <span class="text-emerald-700 dark:text-emerald-300">{{ bundle.loader.value }} ✓</span>
-                {%- elif row.supports_loader is false %} · <span class="text-red-700 dark:text-red-300">no soporta {{ bundle.loader.value }}</span>{% endif -%}
+                {%- if row.supports_loader is true %} · <span class="text-success">{{ bundle.loader.value }} ✓</span>
+                {%- elif row.supports_loader is false %} · <span class="text-danger">no soporta {{ bundle.loader.value }}</span>{% endif -%}
               </dd>
               <dt class="font-medium">Minecraft</dt>
               <dd class="break-words">
                 {%- if row.game_versions %}{% if row.game_versions | length > 8 %}…, {% endif %}{{ row.game_versions[-8:] | join(", ") }}{% else %}—{% endif %}
-                {%- if row.version_channel %} · <span class="text-amber-800 dark:text-amber-300">{{ bundle.version }} · solo {{ row.version_channel }}</span>
-                {%- elif row.supports_version is true %} · <span class="text-emerald-700 dark:text-emerald-300">{{ bundle.version }} ✓</span>
-                {%- elif row.supports_version is false %} · <span class="text-red-700 dark:text-red-300">no soporta {{ bundle.version }}</span>{% endif -%}
+                {%- if row.version_channel %} · <span class="text-warning">{{ bundle.version }} · solo {{ row.version_channel }}</span>
+                {%- elif row.supports_version is true %} · <span class="text-success">{{ bundle.version }} ✓</span>
+                {%- elif row.supports_version is false %} · <span class="text-danger">no soporta {{ bundle.version }}</span>{% endif -%}
               </dd>
             </dl>
             <p class="flex flex-wrap gap-x-3 gap-y-1 text-xs">
@@ -164,8 +164,8 @@
                     <span>{{ origin.label }} {{ origin.version_number or origin.version_id }}{% if origin.named_by %} ({{ origin.named_by }}){% endif %}</span>
                     {% endif %}
                     {% if origin.in_use %}{{ ui.badge("en uso", "accent") }}{% endif %}
-                    {% if origin.valid is false %}<span class="text-amber-800 dark:text-amber-300">{{ origin.problem or "no pasa la validación del pack" }}</span>
-                    {% elif origin.valid %}<span class="text-zinc-500 dark:text-zinc-400">pasa la validación del pack</span>{% endif %}
+                    {% if origin.valid is false %}<span class="text-warning">{{ origin.problem or "no pasa la validación del pack" }}</span>
+                    {% elif origin.valid %}<span class="text-muted">pasa la validación del pack</span>{% endif %}
                     {% if not origin.in_use %}
                     <form hx-post="/modpacks/{{ bundle_id }}/pins/{{ row.project_id }}/origen" hx-target="#mods" hx-swap="outerHTML">
                       <input type="hidden" name="origin" value="{{ origin.source }}">
@@ -179,14 +179,14 @@
               {% endif %}
               {% if in_pack %}
               <div id="versions-{{ row.project_id }}" aria-live="polite">
-                <p class="text-xs text-zinc-500 dark:text-zinc-400">Cargando versiones…</p>
+                <p class="text-xs text-muted">Cargando versiones…</p>
               </div>
               {% endif %}
             </div>
             {% endif %}
 
             {% if row.origin == "admin" %}
-            <div class="border-t border-zinc-100 pt-2 dark:border-zinc-800">
+            <div class="border-t border-line-soft pt-2">
               {{ ui.button("Quitar del modpack", kind="ghost", small=True, attrs={
                 "hx-delete": "/modpacks/" ~ bundle_id ~ "/projects/" ~ row.project_id,
                 "hx-target": "#mods", "hx-swap": "outerHTML",
@@ -204,7 +204,7 @@
     {% endif %}
     {# A pin on a mod that left the pack has no card: listed here, so it can still be removed. #}
     {% if mods.orphan_pins %}
-    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-xs text-zinc-600 dark:text-zinc-400">
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1 text-xs text-muted">
       <span class="font-medium">Fijaciones de mods que ya no están:</span>
       {% for project_id in mods.orphan_pins %}
       {% set name = titles.get(project_id, project_id) %}
@@ -233,7 +233,7 @@
 {% set undo_title = undo_row.title if undo_row else mods.titles.get(undo.project_id, undo.project_id) %}
 {% set undo_number = (undo_row.pin_options or []) | selectattr("version_id", "equalto", undo.version_id) | map(attribute="version_number") | first if undo_row else none %}
 <div id="notices" hx-swap-oob="beforeend">
-<div data-notice data-notice-tone="success" role="status" class="flex items-start gap-3 rounded-md border px-3 py-2 text-sm shadow-sm {{ ui.NOTICE_TONES['success'] }}">
+<div data-notice data-notice-tone="success" role="status" class="flex items-start gap-3 rounded-xl border px-3 py-2 text-sm shadow-sm {{ ui.NOTICE_TONES['success'] }}">
   <p class="min-w-0 flex-1 break-words">{{ undo_title }} {{ ("fijado en " ~ (undo_number or undo.version_id)) if undo.version_id else "sin fijar" }}</p>
   <form hx-post="/modpacks/{{ bundle_id }}/pins" hx-target="#mods" hx-swap="outerHTML" class="shrink-0">
     <input type="hidden" name="project_id" value="{{ undo.project_id }}">

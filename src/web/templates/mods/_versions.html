@@ -4,18 +4,18 @@
 <div id="mod-versions" class="space-y-2" aria-live="polite">
   {% set load_all = {"hx-get": "/mods/" ~ project_id ~ "/versiones", "hx-target": "#mod-versions", "hx-swap": "outerHTML"} %}
   {% if failure %}
-  <div class="flex flex-wrap items-center gap-2 text-sm text-amber-800 dark:text-amber-300" role="alert">
+  <div class="flex flex-wrap items-center gap-2 text-sm text-warning" role="alert">
     <span>{{ failure }}</span>
     {{ ui.button("Reintentar", kind="secondary", small=True, attrs=load_all) }}
   </div>
-  {% if detail %}<p class="font-mono text-xs break-words text-zinc-500 dark:text-zinc-400">{{ detail }}</p>{% endif %}
+  {% if detail %}<p class="font-mono text-xs break-words text-muted">{{ detail }}</p>{% endif %}
   {% else %}
   <div class="flex flex-wrap items-center justify-between gap-2">
     {% if partial %}
-    <p class="text-xs text-zinc-500 dark:text-zinc-400">Lista parcial: las que se bajaron para tus packs, las más nuevas primero (hasta 50).</p>
+    <p class="text-xs text-muted">Lista parcial: las que se bajaron para tus packs, las más nuevas primero (hasta 50).</p>
     {{ ui.button("Cargar todas desde Modrinth", kind="secondary", small=True, attrs=load_all) }}
     {% else %}
-    <p class="text-xs text-zinc-500 dark:text-zinc-400">Todas las de Modrinth: {{ versions | length }} versiones, las más nuevas primero.</p>
+    <p class="text-xs text-muted">Todas las de Modrinth: {{ versions | length }} versiones, las más nuevas primero.</p>
     {% endif %}
   </div>
   {% call ui.table(["Versión", "Canal", "Publicada", "Minecraft", "Loaders"],

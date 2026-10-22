@@ -10,27 +10,27 @@
 {% set plan = job.checkpoint.get("preflight") %}
 {% set lines = job.checkpoint.get("log", {}).get("lines", []) %}
 {% if plan %}
-<div class="space-y-2 border-t border-zinc-100 pt-2 dark:border-zinc-800">
+<div class="space-y-2 border-t border-line-soft pt-2">
   {% if not plan.install and not plan.remove %}
-  <p class="text-zinc-600 dark:text-zinc-400">Nada que cambiar: el servidor ya coincide con el build {{ plan.build }} de {{ plan.bundle }}.</p>
+  <p class="text-muted">Nada que cambiar: el servidor ya coincide con el build {{ plan.build }} de {{ plan.bundle }}.</p>
   {% else %}
-  <p class="text-zinc-700 dark:text-zinc-300">Pasaría al build {{ plan.build }} de {{ plan.bundle }}.</p>
+  <p class="text-ink-soft">Pasaría al build {{ plan.build }} de {{ plan.bundle }}.</p>
   <div id="preview-{{ job.id }}" class="space-y-2" aria-live="polite" hx-get="/jobs/{{ job.id }}/preview" hx-trigger="load" hx-target="this" hx-swap="innerHTML">
-    <p class="text-sm text-zinc-500 dark:text-zinc-400">Cargando cambios…</p>
+    <p class="text-sm text-muted">Cargando cambios…</p>
   </div>
   <details>
-    <summary class="cursor-pointer text-xs text-zinc-600 dark:text-zinc-400">Jars que cambian ({{ plan.install | length }} se instalan, {{ plan.remove | length }} se quitan)</summary>
+    <summary class="cursor-pointer text-xs text-muted">Jars que cambian ({{ plan.install | length }} se instalan, {{ plan.remove | length }} se quitan)</summary>
     <div class="mt-1 grid gap-3 sm:grid-cols-2">
       <div>
-        <h3 class="text-xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">Se instalan ({{ plan.install | length }})</h3>
+        <h3 class="text-xs font-semibold tracking-wide text-muted uppercase">Se instalan ({{ plan.install | length }})</h3>
         <ul class="mt-1 space-y-0.5 font-mono text-xs break-all">
-          {% for item in plan.install %}<li>{{ item.filename }}</li>{% else %}<li class="text-zinc-400">—</li>{% endfor %}
+          {% for item in plan.install %}<li>{{ item.filename }}</li>{% else %}<li class="text-faint">—</li>{% endfor %}
         </ul>
       </div>
       <div>
-        <h3 class="text-xs font-semibold tracking-wide text-zinc-500 uppercase dark:text-zinc-400">Se quitan ({{ plan.remove | length }})</h3>
+        <h3 class="text-xs font-semibold tracking-wide text-muted uppercase">Se quitan ({{ plan.remove | length }})</h3>
         <ul class="mt-1 space-y-0.5 font-mono text-xs break-all">
-          {% for path in plan.remove %}<li>{{ path }}</li>{% else %}<li class="text-zinc-400">—</li>{% endfor %}
+          {% for path in plan.remove %}<li>{{ path }}</li>{% else %}<li class="text-faint">—</li>{% endfor %}
         </ul>
       </div>
     </div>
@@ -38,7 +38,7 @@
   {% endif %}
   {% if lines %}
   <details>
-    <summary class="cursor-pointer text-xs text-zinc-600 dark:text-zinc-400">Qué escribiría en el servidor ({{ lines | length }})</summary>
+    <summary class="cursor-pointer text-xs text-muted">Qué escribiría en el servidor ({{ lines | length }})</summary>
     <ol class="mt-1 list-decimal space-y-0.5 pl-5 font-mono text-xs break-all">
       {% for line in lines %}<li>{{ line }}</li>{% endfor %}
     </ol>
@@ -56,9 +56,9 @@
   {{ ui.discards_rollback(rollback if rollback is defined else None) }}
   <input type="hidden" name="build" value="{{ plan.build }}">
   <input type="hidden" name="bundle_id" value="{{ plan.bundle_id }}">
-  <label for="{{ dialog }}-confirm" class="block font-medium">Escribe el nombre exacto del servidor para confirmar{% if server_name is defined %}: <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{{ server_name }}</code>{% endif %}</label>
+  <label for="{{ dialog }}-confirm" class="block font-medium">Escribe el nombre exacto del servidor para confirmar{% if server_name is defined %}: <code class="rounded bg-subtle px-1">{{ server_name }}</code>{% endif %}</label>
   <input id="{{ dialog }}-confirm" name="confirm" type="text" required autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200"
-    class="block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 focus-visible:outline-2 focus-visible:outline-red-600 dark:bg-zinc-900 dark:ring-zinc-700">
+    class="block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control focus-visible:outline-2 focus-visible:outline-danger-solid">
   {% endcall %}
   {% elif actor is defined %}
   {{ ui.button("Ejecutar de verdad…", kind="danger", disabled_reason="requiere operador") }}

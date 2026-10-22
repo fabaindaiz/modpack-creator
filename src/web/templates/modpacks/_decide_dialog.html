@@ -13,7 +13,7 @@
    Each mod's name opens its card. #}
 {% import "_macros.html" as ui %}
 <dialog id="decide-dialog" aria-labelledby="decide-dialog-title" data-autoopen data-return-focus="build-create"
-  class="m-auto max-h-[calc(100dvh-2rem)] w-[min(40rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-zinc-200 bg-white p-0 text-zinc-900 shadow-xl backdrop:bg-zinc-950/50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100">
+  class="m-auto max-h-[calc(100dvh-2rem)] w-[min(40rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-line bg-raised p-0 text-ink shadow-xl backdrop:bg-scrim/50">
   <div class="space-y-4 p-5">
     <h2 id="decide-dialog-title" tabindex="-1" autofocus class="text-base font-semibold focus:outline-none">{{ "Todo resuelto" if ready else "Antes de crear el build" }}</h2>
     {% if done %}{{ ui.success(done) }}{% endif %}
@@ -21,8 +21,8 @@
 
     {% if problems %}
     <section class="space-y-2" aria-labelledby="decide-dialog-problems">
-      <h3 id="decide-dialog-problems" class="text-sm font-semibold text-red-800 dark:text-red-300">Con problemas ({{ problems | length }})</h3>
-      <p class="text-sm text-zinc-700 dark:text-zinc-300">Cada acción se aplica y el pack se resuelve de nuevo; el build lo creas tú cuando no quede nada.</p>
+      <h3 id="decide-dialog-problems" class="text-sm font-semibold text-danger-ink">Con problemas ({{ problems | length }})</h3>
+      <p class="text-sm text-ink-soft">Cada acción se aplica y el pack se resuelve de nuevo; el build lo creas tú cuando no quede nada.</p>
       <ul class="space-y-2">
         {% for problem in problems %}
         <li>{% include "modpacks/_problem.html" %}</li>
@@ -34,13 +34,13 @@
     {% if undecided %}
     <form class="space-y-3" hx-post="/modpacks/{{ bundle_id }}/builds" hx-target="#builds" hx-swap="outerHTML" aria-labelledby="decide-dialog-pending">
       <input type="hidden" name="dialog" value="1">
-      <h3 id="decide-dialog-pending" class="text-sm font-semibold text-amber-800 dark:text-amber-300">Por decidir ({{ undecided | length }})</h3>
-      <p class="text-sm text-zinc-700 dark:text-zinc-300">Modrinth no dice si estos mods van en el servidor. Al decidirlos se crea el build{{ ", si ya no quedan problemas" if problems else "" }}; los que dejes sin decidir seguirán bloqueándolo.</p>
+      <h3 id="decide-dialog-pending" class="text-sm font-semibold text-warning">Por decidir ({{ undecided | length }})</h3>
+      <p class="text-sm text-ink-soft">Modrinth no dice si estos mods van en el servidor. Al decidirlos se crea el build{{ ", si ya no quedan problemas" if problems else "" }}; los que dejes sin decidir seguirán bloqueándolo.</p>
       <ul class="space-y-2 text-sm">
         {% for entry in undecided %}
         <li class="flex flex-wrap items-center gap-2">
           <label for="build-decide-{{ entry.project_id }}" class="min-w-0 flex-1 font-medium break-words">{{ ui.mod_link(entry.project_id, titles.get(entry.project_id, entry.project_id), pack=bundle_id) }}</label>
-          <select id="build-decide-{{ entry.project_id }}" name="decision.{{ entry.project_id }}" class="rounded-md border-0 bg-white px-2 py-1 text-sm text-zinc-900 ring-1 ring-inset ring-amber-400 dark:bg-zinc-900 dark:text-zinc-100">
+          <select id="build-decide-{{ entry.project_id }}" name="decision.{{ entry.project_id }}" class="rounded-md border-0 bg-raised px-2 py-1 text-sm text-ink ring-1 ring-inset ring-warning-line">
             <option value="" selected>Por decidir</option>
             <option value="si">En el servidor</option>
             <option value="no">Desactivado</option>
@@ -55,7 +55,7 @@
     </form>
     {% elif ready %}
     <form class="space-y-3" hx-post="/modpacks/{{ bundle_id }}/builds" hx-target="#builds" hx-swap="outerHTML">
-      <p class="rounded-xl border border-emerald-300 bg-emerald-50 p-3 text-sm font-medium text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-950/40 dark:text-emerald-200">No quedan problemas ni mods por decidir: ya puedes crear el build.</p>
+      <p class="rounded-xl border border-success-line bg-success-soft p-3 text-sm font-medium text-success-ink">No quedan problemas ni mods por decidir: ya puedes crear el build.</p>
       <div class="flex justify-end gap-2">
         {{ ui.button("Cancelar", kind="secondary", attrs={"data-dialog-close": ""}) }}
         {{ ui.button("Crear build", type="submit") }}

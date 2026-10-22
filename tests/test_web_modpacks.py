@@ -1676,7 +1676,7 @@ def test_a_card_with_only_a_beta_for_the_pack_says_solo_beta_not_a_check() -> No
                         version_channel="beta")]
     sodium = card(client.get(f"/modpacks/{BUNDLE_ID}").text, "P1")
     assert "1.21.1 · solo beta" in sodium and "1.21.1 ✓" not in sodium
-    assert re.search(r'<span class="[^"]*text-amber-[^"]*">1\.21\.1 · solo beta</span>', sodium)
+    assert re.search(r'<span class="[^"]*text-warning[^"]*">1\.21\.1 · solo beta</span>', sodium)
 
 
 def test_card_has_support_links_and_lazy_version_picker() -> None:
@@ -1776,11 +1776,11 @@ def test_suggestions_are_a_fourth_tab_with_their_count() -> None:
         Suggestion(project_id="P7", requested_by=["P1"]), Suggestion(project_id="P8", requested_by=["P1"])]))
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
     link, url = tab(text, "sugerencias"), f"/modpacks/{BUNDLE_ID}?vista=sugerencias"
-    assert f'hx-get="{url}"' in link and said(link) == "Sugerencias 2" and "bg-sky-" in link
+    assert f'hx-get="{url}"' in link and said(link) == "Sugerencias 2" and "bg-info/" in link
     assert text.index('data-tab="problemas"') < text.index('data-tab="sugerencias"')
     modpack.saved = resolution(lock(entry("P1")))
     link = tab(client.get(f"/modpacks/{BUNDLE_ID}").text, "sugerencias")
-    assert said(link) == "Sugerencias 0" and "bg-sky-" not in link
+    assert said(link) == "Sugerencias 0" and "bg-info/" not in link
 
 
 def test_the_blue_box_is_gone_and_the_summary_links_the_suggestions() -> None:
@@ -1789,7 +1789,7 @@ def test_the_blue_box_is_gone_and_the_summary_links_the_suggestions() -> None:
     modpack.saved = resolution(lock(entry("P1"), entry("P2", "admin"),
                                     suggestions=[Suggestion(project_id="P7", requested_by=["P1"])]))
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
-    assert "border-sky-300" not in text and 'name="ref" value="P7"' not in text
+    assert "border-info-line" not in text and 'name="ref" value="P7"' not in text
     summary = text[text.index("data-pending-summary"):]
     summary = summary[:summary.index("</p>")]
     assert said(summary[summary.index(">") + 1:]) == "1 por decidir · 1 sugerencia"
@@ -1866,8 +1866,8 @@ def test_each_row_has_a_channel_select_grey_without_an_exception() -> None:
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
     plain, beta = row_select(text, "P1", "channel"), row_select(text, "P2", "channel")
     assert f'hx-post="/modpacks/{BUNDLE_ID}/channel-exceptions"' in plain and 'hx-trigger="change"' in plain
-    assert selected(plain) == "canal del pack" and "text-zinc-500" in plain and 'data-saved=""' in plain
-    assert selected(beta) == "acepta beta" and "text-zinc-500" not in beta and 'data-saved="beta"' in beta
+    assert selected(plain) == "canal del pack" and "text-muted" in plain and 'data-saved=""' in plain
+    assert selected(beta) == "acepta beta" and "text-muted" not in beta and 'data-saved="beta"' in beta
     assert [o for o in re.findall(r'<option value="([a-z]*)"', plain)] == ["", "beta", "alpha"]
 
 
@@ -1924,8 +1924,8 @@ def test_the_pin_select_marks_the_pinned_version_and_greys_without_a_pin() -> No
     assert 'name="from" value="fila"' in pinned and 'name="previous" value="ver-p1"' in pinned
     assert selected(pinned) == "fijado 0.8.13 (release)" and 'data-saved="ver-p1"' in pinned and "hx-confirm" not in pinned
     assert '<option value="ver-new">0.8.14 (release)</option>' in pinned and '<option value="">sin fijar</option>' in pinned
-    assert selected(free) == "sin fijar" and "text-zinc-500" in free and 'data-saved=""' in free
-    assert "text-zinc-500" not in pinned[:pinned.index("<option")]
+    assert selected(free) == "sin fijar" and "text-muted" in free and 'data-saved=""' in free
+    assert "text-muted" not in pinned[:pinned.index("<option")]
 
 
 def test_without_options_the_select_points_to_the_card() -> None:
@@ -1996,7 +1996,7 @@ def test_the_filter_bar_shows_each_option_with_its_count() -> None:
     assert 'name="vista" value="todos"' in form and 'name="nombre"' in form
     assert ">con excepción (2)</option>" in form and ">acepta alpha (1)</option>" in form
     assert ">Desactivado (1)</option>" in form and ">del .mrpack (1)</option>" in form
-    assert re.search(r'<option value="decidir"[^>]*text-zinc-400[^>]*>Por decidir \(0\)</option>', form)
+    assert re.search(r'<option value="decidir"[^>]*text-faint[^>]*>Por decidir \(0\)</option>', form)
 
 
 def test_filtering_never_replaces_the_name_being_typed() -> None:
@@ -2203,7 +2203,7 @@ def test_tabs_link_to_each_view_with_their_counts_and_colors() -> None:
     assert 'aria-current="page"' in tab(text, "todos") and "aria-current" not in tab(text, "decidir")
     assert said(tab(text, "todos")) == "Todos 2" and said(tab(text, "decidir")) == "Por decidir 1"
     assert said(tab(text, "problemas")) == "Con problemas 2"
-    assert "bg-amber-" in tab(text, "decidir") and "bg-red-" in tab(text, "problemas")
+    assert "bg-warning/" in tab(text, "decidir") and "bg-danger/" in tab(text, "problemas")
     assert 'data-vista="todos"' in text and 'data-project="P1"' in text
     modpack.saved = resolution(lock(entry("P1")))
     text = client.get(f"/modpacks/{BUNDLE_ID}").text

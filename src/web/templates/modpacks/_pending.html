@@ -6,41 +6,41 @@
    with its `saved` and `current`. #}
 {% import "_macros.html" as ui %}
 {% if not current %}
-<p class="text-sm text-zinc-600 dark:text-zinc-400">Resuelve para ver lo pendiente: {{ "todavía no se resolvió." if saved is none else "el pack cambió desde la última resolución." }}</p>
+<p class="text-sm text-muted">Resuelve para ver lo pendiente: {{ "todavía no se resolvió." if saved is none else "el pack cambió desde la última resolución." }}</p>
 {% elif not saved.undecided %}
-<p class="text-sm text-zinc-600 dark:text-zinc-400">No quedan mods por decidir.</p>
+<p class="text-sm text-muted">No quedan mods por decidir.</p>
 {% else %}
 {% set undecided = saved.undecided %}
 <form hx-post="/modpacks/{{ bundle_id }}/decisions/bulk?vista=decidir" hx-target="#mods" hx-swap="outerHTML" class="space-y-3">
   <div class="flex flex-wrap items-center justify-between gap-2">
-    <p class="min-w-0 flex-1 text-sm text-zinc-600 dark:text-zinc-400">Modrinth no dice si estos mods van en el servidor: hasta que lo decidas no se puede crear un build. Los que dejes sin decidir no se guardan.</p>
+    <p class="min-w-0 flex-1 text-sm text-muted">Modrinth no dice si estos mods van en el servidor: hasta que lo decidas no se puede crear un build. Los que dejes sin decidir no se guardan.</p>
     <div class="flex flex-wrap gap-2">
       {{ ui.button("Todos al servidor", kind="secondary", small=True, attrs={"data-set-all": "si"}) }}
       {{ ui.button("Desactivar todos", kind="secondary", small=True, attrs={"data-set-all": "no"}) }}
     </div>
   </div>
-  <ul class="divide-y divide-zinc-100 rounded-xl border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+  <ul class="divide-y divide-line-soft rounded-xl border border-line bg-raised">
     {% for entry in undecided %}
     {% set card = cards.get(entry.project_id) %}
     {% set image = icon(card.icon_url) if card else none %}
     {% set side = environment_label([entry.environment]) %}
     <li data-pending="{{ entry.project_id }}" class="flex flex-wrap items-start gap-3 px-3 py-2">
       {% if image %}
-      <img src="{{ image }}" alt="" width="40" height="40" loading="lazy" class="size-10 shrink-0 rounded-md bg-zinc-100 object-cover dark:bg-zinc-800">
+      <img src="{{ image }}" alt="" width="40" height="40" loading="lazy" class="size-10 shrink-0 rounded-md bg-subtle object-cover">
       {% else %}
-      <div class="size-10 shrink-0 rounded-md bg-zinc-100 dark:bg-zinc-800" aria-hidden="true"></div>
+      <div class="size-10 shrink-0 rounded-md bg-subtle" aria-hidden="true"></div>
       {% endif %}
       <div class="min-w-0 flex-1 space-y-0.5">
         <label for="bulk-{{ entry.project_id }}" class="block font-medium wrap-anywhere">{{ ui.mod_link(entry.project_id, titles.get(entry.project_id, entry.project_id), pack=bundle_id) }}</label>
-        {% if card and card.description %}<p class="truncate text-xs text-zinc-500 dark:text-zinc-400" title="{{ card.description }}">{{ card.description }}</p>{% endif %}
-        <p class="text-xs break-words text-zinc-600 dark:text-zinc-400">
+        {% if card and card.description %}<p class="truncate text-xs text-muted" title="{{ card.description }}">{{ card.description }}</p>{% endif %}
+        <p class="text-xs break-words text-muted">
           {% if side %}Modrinth dice: {{ side }}{% else %}Modrinth no dice de qué lado va{% endif %}
           {%- if entry.requested_by and entry.project_id not in origins %} · dependencia de
             {%- for requester in entry.requested_by %} {{ ui.mod_link(requester, titles.get(requester, requester), pack=bundle_id) }}{% if not loop.last %},{% endif %}{% endfor %}
           {%- endif %} · <span class="font-mono">{{ entry.version_number }}</span>
         </p>
       </div>
-      <select id="bulk-{{ entry.project_id }}" name="decision.{{ entry.project_id }}" class="rounded-md border-0 bg-white px-2 py-1 text-sm text-zinc-900 ring-1 ring-inset ring-amber-400 dark:bg-zinc-900 dark:text-zinc-100">
+      <select id="bulk-{{ entry.project_id }}" name="decision.{{ entry.project_id }}" class="rounded-md border-0 bg-raised px-2 py-1 text-sm text-ink ring-1 ring-inset ring-warning-line">
         <option value="" selected>Por decidir</option>
         <option value="si">En el servidor</option>
         <option value="no">Desactivado</option>

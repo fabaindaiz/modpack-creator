@@ -9,12 +9,12 @@
 {% call ui.table(["Servidor", "Nodo", "Modpack"], empty="Todavía no hay servidores.", caption="Servidores") %}
 {% for server in servers %}
 <tr>
-  <td data-label="Servidor" class="max-w-[18rem] break-words"><a href="/servers/{{ server.id }}" class="font-medium hover:text-emerald-700 hover:underline dark:hover:text-emerald-300">{{ server.name }}</a></td>
+  <td data-label="Servidor" class="max-w-[18rem] break-words"><a href="/servers/{{ server.id }}" class="font-medium hover:text-link hover:underline">{{ server.name }}</a></td>
   <td data-label="Nodo" class="whitespace-nowrap">{{ server.node }}</td>
   <td data-label="Modpack" class="break-words">
     {% if server.bundle_id and bundle_names.get(server.bundle_id) %}<a href="/modpacks/{{ server.bundle_id }}" class="hover:underline">{{ bundle_names[server.bundle_id] }}</a>
-    {% elif server.bundle_id %}<span class="text-zinc-500 dark:text-zinc-400">Modpack desconocido</span>
-    {% else %}<span class="text-zinc-400 dark:text-zinc-500">Sin modpack</span>{% endif %}
+    {% elif server.bundle_id %}<span class="text-muted">Modpack desconocido</span>
+    {% else %}<span class="text-faint">Sin modpack</span>{% endif %}
   </td>
 </tr>
 {% endfor %}
@@ -23,7 +23,7 @@
 
 {% call ui.section("En el panel de Pterodactyl", id="altas", help="panel-pterodactyl") %}
 {% if panel.fetched_at %}
-<div class="flex flex-wrap items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+<div class="flex flex-wrap items-center gap-2 text-sm text-muted">
   {% if panel.failed %}{{ ui.notice("El panel no respondió; lista de " ~ (panel.fetched_at | ago), "warning") }}
   {% else %}<span>Lista del panel de {{ panel.fetched_at | ago }}</span><span aria-hidden="true">·</span>{% endif %}
   {{ ui.button("Actualizar lista", kind="secondary", small=True, attrs={"hx-post": "/servers/lista", "hx-swap": "none"}) }}

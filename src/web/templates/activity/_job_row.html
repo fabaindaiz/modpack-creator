@@ -7,20 +7,20 @@
 {% set label, tone = ui.JOB_STATUS.get(job.status, (job.status, "neutral")) %}
 {% set dry_run = job.kind == "server_update" and job.payload.get("dry_run") is not sameas false %}
 <div id="job-{{ job.id }}" data-job="{{ job.id }}"
-  class="space-y-2 rounded-xl border border-zinc-200 bg-white p-3 text-sm dark:border-zinc-800 dark:bg-zinc-900"
+  class="space-y-2 rounded-xl border border-line bg-raised p-3 text-sm"
   {%- if job.active %} hx-get="/jobs/{{ job.id }}/row" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
   <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
     <span class="font-medium">{{ ui.JOB_KIND.get(job.kind, job.kind) }}{% if dry_run %} (simulación){% endif %}</span>
     {{ ui.badge(label, tone, title=job.status) }}
-    {% if job.step %}<span class="text-xs text-zinc-500 dark:text-zinc-400">{{ ui.JOB_STEP.get(job.step, job.step) }}</span>{% endif %}
-    <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ job.requested_by.name if job.requested_by else "programado" }}</span>
-    <span class="text-xs text-zinc-500 dark:text-zinc-400">{{ ui.when(job.created_at) }}</span>
+    {% if job.step %}<span class="text-xs text-muted">{{ ui.JOB_STEP.get(job.step, job.step) }}</span>{% endif %}
+    <span class="text-xs text-muted">{{ job.requested_by.name if job.requested_by else "programado" }}</span>
+    <span class="text-xs text-muted">{{ ui.when(job.created_at) }}</span>
   </div>
   {% if job.active and job.progress %}
-  <p class="break-words text-xs text-zinc-600 dark:text-zinc-400">{{ job.progress.label }}{% if job.progress.total > 1 %}: {{ job.progress.done }} de {{ job.progress.total }}{% endif %}</p>
+  <p class="break-words text-xs text-muted">{{ job.progress.label }}{% if job.progress.total > 1 %}: {{ job.progress.done }} de {{ job.progress.total }}{% endif %}</p>
   {% endif %}
   {% if job.status == "failed" and job.error %}
-  <p class="break-words text-xs text-red-700 dark:text-red-300">{{ job.error }}</p>
+  <p class="break-words text-xs text-danger">{{ job.error }}</p>
   {% endif %}
   {% if import_result is defined and import_result %}
   {% with result=import_result, result_id="import-report-" ~ job.id, titles=(import_titles if import_titles is defined else {}), server_id=job.payload.get("server_id"), report_only=true %}{% include "servers/_import.html" %}{% endwith %}

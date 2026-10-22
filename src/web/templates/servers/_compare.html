@@ -14,15 +14,15 @@
     <td data-label="Estado">{{ ui.badge("Otra versión", "warning") }}</td>
     <td data-label="Mod" class="break-words">{{ name(file[1].project_id) }}</td>
     <td data-label="Archivo" class="font-mono text-xs break-all">{{ file[0].path }}</td>
-    <td data-label="Detalle" class="text-xs break-words text-zinc-500 dark:text-zinc-400">tiene {{ version(file[0].version_id) }}; el build espera {{ version(file[1].version_id) }}</td>
+    <td data-label="Detalle" class="text-xs break-words text-muted">tiene {{ version(file[0].version_id) }}; el build espera {{ version(file[1].version_id) }}</td>
   </tr>
   {% endfor %}
   {% for entry in comparison.missing %}
   <tr data-category="missing">
     <td data-label="Estado">{{ ui.badge("Falta", "danger") }}</td>
     <td data-label="Mod" class="break-words">{{ name(entry.project_id) }}</td>
-    <td data-label="Archivo" class="text-zinc-400">—</td>
-    <td data-label="Detalle" class="text-xs break-words text-zinc-500 dark:text-zinc-400">versión {{ version(entry.version_id) }}</td>
+    <td data-label="Archivo" class="text-faint">—</td>
+    <td data-label="Detalle" class="text-xs break-words text-muted">versión {{ version(entry.version_id) }}</td>
   </tr>
   {% endfor %}
   {% for file in comparison.extra %}
@@ -30,15 +30,15 @@
     <td data-label="Estado">{{ ui.badge("Sobra", "warning") }}</td>
     <td data-label="Mod" class="break-words">{{ name(file.project_id) }}</td>
     <td data-label="Archivo" class="font-mono text-xs break-all">{{ file.path }}</td>
-    <td data-label="Detalle" class="text-xs text-zinc-500 dark:text-zinc-400">{{ "desactivado: no va en el servidor" if file.project_id in comparison.client_only else "el build no lo incluye" }}</td>
+    <td data-label="Detalle" class="text-xs text-muted">{{ "desactivado: no va en el servidor" if file.project_id in comparison.client_only else "el build no lo incluye" }}</td>
   </tr>
   {% endfor %}
   {% for file in comparison.unknown %}
   <tr data-category="unknown">
     <td data-label="Estado">{{ ui.badge("Desconocido", "neutral") }}</td>
-    <td data-label="Mod" class="text-zinc-400">—</td>
+    <td data-label="Mod" class="text-faint">—</td>
     <td data-label="Archivo" class="font-mono text-xs break-all">{{ file.path }}</td>
-    <td data-label="Detalle" class="text-xs text-zinc-500 dark:text-zinc-400">{{ "demasiado grande para leerlo" if file.status == "too_large" else "Modrinth no lo conoce" }}</td>
+    <td data-label="Detalle" class="text-xs text-muted">{{ "demasiado grande para leerlo" if file.status == "too_large" else "Modrinth no lo conoce" }}</td>
   </tr>
   {% endfor %}
   {% for file in comparison.matching %}

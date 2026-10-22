@@ -4,10 +4,10 @@
 
 {% block content %}
 {{ ui.page_header("Trabajo", "El detalle de un trabajo: su estado, su plan y, si hace falta, la ejecución real.") }}
-<p><a href="/jobs" class="text-sm font-medium text-emerald-700 hover:underline dark:text-emerald-300">Volver a trabajos</a></p>
+<p><a href="/jobs" class="text-sm font-medium text-link hover:underline">Volver a trabajos</a></p>
 
 {% if server_name is defined %}
-<p class="text-sm text-zinc-600 dark:text-zinc-400">Servidor: <a href="/servers/{{ job.payload.server_id }}" class="font-medium hover:underline">{{ server_name }}</a></p>
+<p class="text-sm text-muted">Servidor: <a href="/servers/{{ job.payload.server_id }}" class="font-medium hover:underline">{{ server_name }}</a></p>
 {% endif %}
 {% include "activity/_job_row.html" %}
 {% endblock %}

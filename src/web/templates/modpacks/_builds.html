@@ -5,11 +5,11 @@
 {% import "_macros.html" as ui %}
 {% set ready = ready is defined and ready %}
 <div id="builds" class="space-y-3"{% if oob is defined and oob %} hx-swap-oob="true"{% endif %}>
-  <div class="flex flex-wrap items-center justify-between gap-2{{ ' rounded-xl border border-emerald-300 bg-emerald-50 p-3 dark:border-emerald-500/40 dark:bg-emerald-950/40' if ready else '' }}"{% if ready %} data-ready{% endif %}>
+  <div class="flex flex-wrap items-center justify-between gap-2{{ ' rounded-xl border border-success-line bg-success-soft p-3' if ready else '' }}"{% if ready %} data-ready{% endif %}>
     {% if ready %}
-    <p class="text-sm font-medium text-emerald-800 dark:text-emerald-200">No quedan mods por decidir: ya puedes crear el build.</p>
+    <p class="text-sm font-medium text-success-ink">No quedan mods por decidir: ya puedes crear el build.</p>
     {% else %}
-    <p class="text-sm text-zinc-600 dark:text-zinc-400">Crear build vuelve a resolver y congela ese lock; no cambia después.</p>
+    <p class="text-sm text-muted">Crear build vuelve a resolver y congela ese lock; no cambia después.</p>
     {% endif %}
     {{ ui.button("Decidir y crear build…" if pending else "Crear build", icon_name="hammer", attrs={"id": "build-create",
       "hx-post": "/modpacks/" ~ bundle_id ~ "/builds", "hx-target": "#builds", "hx-swap": "outerHTML"}) }}
@@ -20,7 +20,7 @@
   </div>
   {% endif %}
   {% if not builds %}
-  <p class="text-sm text-zinc-500 dark:text-zinc-400">Todavía no hay builds.</p>
+  <p class="text-sm text-muted">Todavía no hay builds.</p>
   {% else %}
   {% call ui.table(["Build", "Creado", "Archivos", ""], caption="Builds") %}
   {% for build in builds %}
@@ -47,7 +47,7 @@
   {% endif %}
   {% if builds | length > 1 %}
   <form method="get" action="/modpacks/{{ bundle_id }}/builds/compare" class="flex flex-wrap items-end gap-2">
-    {% set SELECT = "mt-1 block rounded-md border-0 bg-white px-2.5 py-1.5 text-sm text-zinc-900 shadow-xs ring-1 ring-inset ring-zinc-300 focus-visible:outline-2 focus-visible:outline-emerald-600 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-700" %}
+    {% set SELECT = "mt-1 block rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm text-ink shadow-xs ring-1 ring-inset ring-control focus-visible:outline-2 focus-visible:outline-accent" %}
     <div>
       <label for="compare-de" class="text-sm font-medium">Comparar el build</label>
       <select id="compare-de" name="de" class="{{ SELECT }}">

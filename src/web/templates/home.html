@@ -11,10 +11,10 @@
 {# How each severity of src/library/attention.py reads: its icon and colour (never colour alone:
    the text says what happens). #}
 {% set SEVERITY = {
-  0: ("triangle-alert", "text-red-600 dark:text-red-400", "primary"),
-  1: ("triangle-alert", "text-amber-600 dark:text-amber-400", "primary"),
-  2: ("bell", "text-sky-600 dark:text-sky-400", "secondary"),
-  3: ("circle", "text-zinc-400 dark:text-zinc-500", "secondary"),
+  0: ("triangle-alert", "text-danger", "primary"),
+  1: ("triangle-alert", "text-warning", "primary"),
+  2: ("bell", "text-info", "secondary"),
+  3: ("circle", "text-faint", "secondary"),
 } %}
 {# The columns of the dashboard's cards (written whole, so the build sees them): the long text takes
    the rest, the short columns (a state, a date, a number) the width of what they hold. #}
@@ -23,11 +23,11 @@
 
 {% macro attention_card(item) %}
 {% set icon_name, color, kind = SEVERITY.get(item.severity, SEVERITY[3]) %}
-<li class="flex items-start gap-3 rounded-xl border border-zinc-200 bg-white p-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+<li class="flex items-start gap-3 rounded-xl border border-line bg-raised p-3 text-sm">
   {{ ui.icon(icon_name, "mt-0.5 size-4 " ~ color) }}
   <div class="min-w-0 flex-1">
     <p class="break-words">{{ item.text }}</p>
-    {% if item.at %}<p class="text-xs text-zinc-500 dark:text-zinc-400">{{ ui.when(item.at) }}</p>{% endif %}
+    {% if item.at %}<p class="text-xs text-muted">{{ ui.when(item.at) }}</p>{% endif %}
   </div>
   {# A pack's updates wait for Modrinth's changelogs (O6): the link says it is loading. #}
   <div class="shrink-0">{{ ui.link_button(item.action_label, item.href, kind=kind, small=True,
@@ -45,18 +45,18 @@
 </ul>
 {% if attention | length > visible %}
 <details class="group">
-  <summary class="cursor-pointer text-sm font-medium text-emerald-700 hover:underline dark:text-emerald-300">Ver todas ({{ attention | length }})</summary>
+  <summary class="cursor-pointer text-sm font-medium text-link hover:underline">Ver todas ({{ attention | length }})</summary>
   <ul class="mt-2 grid gap-2 lg:grid-cols-2" aria-label="El resto de lo que necesita atención">
     {% for item in attention[visible:] %}{{ attention_card(item) }}{% endfor %}
   </ul>
 </details>
 {% endif %}
 {% else %}
-<div class="flex items-start gap-3 rounded-xl border border-zinc-200 bg-white p-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
-  {{ ui.icon("circle-check", "mt-0.5 size-4 text-emerald-600 dark:text-emerald-400") }}
+<div class="flex items-start gap-3 rounded-xl border border-line bg-raised p-3 text-sm">
+  {{ ui.icon("circle-check", "mt-0.5 size-4 text-accent") }}
   <div class="min-w-0">
     <p class="font-medium">Todo en orden</p>
-    {% if last_check %}<p class="text-xs text-zinc-500 dark:text-zinc-400">Última revisión de Modrinth: {{ ui.when(last_check) }}</p>{% endif %}
+    {% if last_check %}<p class="text-xs text-muted">Última revisión de Modrinth: {{ ui.when(last_check) }}</p>{% endif %}
   </div>
 </div>
 {% endif %}
@@ -70,28 +70,28 @@
     {% call(part) ui.card("server-card-" ~ row.server.id, SERVER_COLS) %}
     {% if part == "summary" %}
     <span class="min-w-0">
-      <a href="/servers/{{ row.server.id }}" class="font-medium break-words text-zinc-900 hover:text-emerald-700 hover:underline dark:text-zinc-100 dark:hover:text-emerald-300">{{ row.server.name }}</a>
-      <span class="block text-xs text-zinc-500 dark:text-zinc-400">{{ row.server.node }}</span>
+      <a href="/servers/{{ row.server.id }}" class="font-medium break-words text-ink hover:text-link hover:underline">{{ row.server.name }}</a>
+      <span class="block text-xs text-muted">{{ row.server.node }}</span>
     </span>
     <span class="min-w-0 break-words">
       {% if row.bundle_name %}
       <a href="/modpacks/{{ row.server.bundle_id }}" class="hover:underline">{{ row.bundle_name }}</a>
       {% elif row.server.bundle_id %}
-      <span class="text-zinc-500 dark:text-zinc-400">Modpack desconocido</span>
+      <span class="text-muted">Modpack desconocido</span>
       {% else %}
-      <span class="text-zinc-400 dark:text-zinc-500">Sin modpack</span>
+      <span class="text-faint">Sin modpack</span>
       {% endif %}
     </span>
     {% set label, tone = DRIFT[row.state] %}
     <span>{{ ui.badge(label, tone, title=row.drift) }}</span>
-    <span class="text-xs text-zinc-600 dark:text-zinc-400">{{ ui.when(row.scanned_at) }}</span>
+    <span class="text-xs text-muted">{{ ui.when(row.scanned_at) }}</span>
     {% else %}
     {% if row.drift %}
-    <pre class="overflow-x-auto rounded-sm bg-zinc-50 p-2 font-mono text-xs whitespace-pre-wrap text-zinc-700 dark:bg-zinc-950 dark:text-zinc-300">{{ row.drift }}</pre>
+    <pre class="overflow-x-auto rounded-sm bg-surface p-2 font-mono text-xs whitespace-pre-wrap text-ink-soft">{{ row.drift }}</pre>
     {% elif row.state == "none" %}
-    <p class="text-zinc-500 dark:text-zinc-400">Todavía no se ha escaneado.</p>
+    <p class="text-muted">Todavía no se ha escaneado.</p>
     {% else %}
-    <p class="text-zinc-500 dark:text-zinc-400">Su último escaneo no se comparó con un build.</p>
+    <p class="text-muted">Su último escaneo no se comparó con un build.</p>
     {% endif %}
     <div>{{ ui.link_button("Abrir servidor", "/servers/" ~ row.server.id, small=True) }}</div>
     {% endif %}
@@ -102,7 +102,7 @@
 
     {% call ui.section("Trabajos recientes", id="trabajos") %}
     {% include "activity/_jobs_table.html" %}
-    <p class="mt-2"><a href="/jobs" class="text-sm font-medium text-emerald-700 hover:underline dark:text-emerald-300">Ver todos los trabajos</a></p>
+    <p class="mt-2"><a href="/jobs" class="text-sm font-medium text-link hover:underline">Ver todos los trabajos</a></p>
     {% endcall %}
   </div>
 
@@ -115,21 +115,21 @@
     {% if part == "summary" %}
     <span class="min-w-0 break-words">
       <a href="/modpacks/{{ bundle.id }}" class="font-medium hover:underline">{{ bundle.name }}</a>
-      <span class="block text-xs text-zinc-500 dark:text-zinc-400">{{ bundle.version }} · {{ bundle.loader.value }}</span>
+      <span class="block text-xs text-muted">{{ bundle.version }} · {{ bundle.loader.value }}</span>
     </span>
     <span>
       {% if build %}
       <span class="font-medium tabular-nums">#{{ build.number }}</span>
-      <span class="block text-xs text-zinc-500 dark:text-zinc-400">{{ ui.when(build.created_at) }}</span>
+      <span class="block text-xs text-muted">{{ ui.when(build.created_at) }}</span>
       {% else %}
-      <span class="text-zinc-400 dark:text-zinc-500">Sin builds</span>
+      <span class="text-faint">Sin builds</span>
       {% endif %}
     </span>
     <span>
       {% if bundle.recommended_build is not none %}
       {{ ui.badge("#" ~ bundle.recommended_build, "accent") }}
       {% else %}
-      <span class="text-zinc-400 dark:text-zinc-500">—</span>
+      <span class="text-faint">—</span>
       {% endif %}
     </span>
     {% else %}
