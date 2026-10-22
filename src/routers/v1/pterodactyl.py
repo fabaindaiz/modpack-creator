@@ -153,19 +153,22 @@ async def server_rollback(
     """Queue rollback A or B of a failed update; never automatic."""
     return await updates.enqueue_rollback(id, update, mode, actor=actor)
 
-@router.post("/server/{id}/scan", response_model=ServerScan)
+@router.post("/server/{id}/scan", response_model=Job, status_code=202)
 @inject
 async def server_scan(
         id: str,
         directory: str = Query("/mods"),
         full: bool = Query(False, description="Hash every jar again, trusting no cached hash"),
-        pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
+        jobs: JobService = Depends(Provide[Dependences.jobService]),
         actor: Actor = Depends(get_current_actor)
         ):
     """
-    Scan a server: which jars it has and which Modrinth version each is. Only reads the server.
+    Queue a scan of a server (which jars it has and which Modrinth version each is; it only reads
+    the server), as POST /server/{id}/scan/job does: 202 with the `server_scan` job. Poll
+    /v1/job/{id}, then GET /server/{id}/scan for the result. 409 if the server already has an
+    active job. Until 0.3.2 this answered the scan itself, made inside the request (O6).
     """
-    return await pterodactylService.scan(id, actor=actor, directory=directory, full=full)
+    return await jobs.enqueue_scan(id, actor=actor, full=full, directory=directory)
 
 @router.post("/server/{id}/scan/job", response_model=Job, status_code=202)
 @inject

@@ -193,10 +193,11 @@ def test_two_workers_run_every_job_exactly_once(mongo: MongoRunner) -> None:
 
 class FakeScans:
     def __init__(self) -> None:
-        self.scanned: list[tuple[str, bool]] = []
+        self.scanned: list[tuple[Any, ...]] = []
 
-    async def scan(self, server_id: str, actor: Any, full: bool = False, report: Any = None) -> Any:
-        self.scanned.append((server_id, full))
+    async def scan(self, server_id: str, actor: Any, full: bool = False, report: Any = None,
+                   directory: str = "/mods") -> Any:
+        self.scanned.append((server_id, full) if directory == "/mods" else (server_id, full, directory))
         return type("Scan", (), {"id": "scan-1", "files": [1, 2, 3]})()
 
     async def drift(self, server_id: str) -> None:
@@ -220,6 +221,25 @@ def test_a_scan_job_runs_the_scan_and_is_exclusive_per_server(mongo: MongoRunner
 
     assert mongo(scenario) == ("done", {"scan": {"scan_id": "scan-1", "files": 3}, "drift": {"notified": False}},
                                [("abc", True)], 409)
+
+
+def test_a_scan_job_of_another_directory_scans_it_and_compares_nothing(mongo: MongoRunner) -> None:
+    # O6: POST /v1/server/{id}/scan queues the job and keeps its `directory`; only /mods has a drift.
+    from typing import cast
+
+    from src.services.jobs import JobService
+
+    async def scenario() -> tuple[Any, ...]:
+        scans = FakeScans()
+        service = JobService(jobDB=JobDatabase(), pterodactylService=cast(Any, scans), pterodactylDB=cast(Any, None), audit=RecordingAudit())
+        job = await service.enqueue_scan("abc", actor=EDITOR, directory="/config")
+        await JobWorker(JobDatabase(), service.handlers(), owner="w1", clock=lambda: T0).run_once()
+        stored = await service.get(str(job.id))
+        return stored.status, stored.payload, stored.checkpoint, scans.scanned
+
+    status, payload, checkpoint, scanned = mongo(scenario)
+    assert status == "done" and payload["directory"] == "/config" and "drift" not in checkpoint
+    assert scanned == [("abc", False, "/config")]
 
 
 def test_a_failed_attempt_waits_before_the_next_one(mongo: MongoRunner) -> None:

@@ -154,6 +154,18 @@ bien escrita. Cada entrada dice cuándo se leyó; las que no lo dicen, el 2026-1
 
   **Aplicado en S3:** sin CORS salvo los orígenes de `CORS_ALLOW_ORIGINS`.
 
+- **Starlette 1.7, `formparsers.py` y `datastructures.py`** (el código instalado, leído el 2026-10-21) —
+  `MultiPartParser` guarda cada archivo en un `SpooledTemporaryFile(max_size=1 MiB)`; pasado ese
+  tamaño, `rollover()` lo pasa a `tempfile.TemporaryFile`, que en Linux es un archivo sin nombre
+  (`O_TMPFILE`, o creado y borrado al instante): no hay ruta que mover. `UploadFile.read` y `seek`
+  van a un hilo solo si el archivo ya pasó a disco. `await request.form()` no lo cierra (solo `async
+  with request.form()` o `request.close()`): se libera cuando la petición suelta el formulario y
+  CPython recoge el objeto.
+
+  **Lo que cambió aquí por eso (O6, d-7985ee-4c3f11):** la petición de importar copia la subida, en un
+  hilo, a `/tmp/modpack-imports` y encola; el trabajo `modpack_import` la lee y la borra. Durante la
+  copia existen las dos, y cada una reserva su tamaño contra `IMPORT_TMP_MAX_MIB`.
+
 - **[aiohttp — client quickstart](https://github.com/aio-libs/aiohttp/blob/master/docs/client_quickstart.rst)** —
   "Don't create a session per request… making a session for every request is a **very bad** idea."
 

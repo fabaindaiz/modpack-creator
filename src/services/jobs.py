@@ -15,7 +15,7 @@ from src.model.audit import AuditTarget
 from src.model.users import Actor
 from src.services.audit import AuditSink
 from src.library.utils import as_utc, utcnow
-from src.services.pterodactyl import PterodactylService
+from src.services.pterodactyl import SCAN_DIRECTORY, PterodactylService
 
 # How often a periodic scan is a full one when SCAN_FULL_EVERY_DAYS is not set (owner, 2026-10-12):
 # the server's activity sees a restored backup, but not a move between nodes, a reinstall from the
@@ -213,15 +213,18 @@ class JobService():
         self.audit = audit
         self.notifier = notifier
 
-    async def enqueue_scan(self, server_id: str, actor: Optional[Actor], full: bool = False) -> Job:
-        """Queue a scan of a server; 409 if the server already has an active job. `actor` is None
-        for the scheduler, which is not recorded."""
-        job = await self.jobDB.enqueue("server_scan", key=f"server:{server_id}",
-                                       payload={"server_id": server_id, "full": full},
+    async def enqueue_scan(self, server_id: str, actor: Optional[Actor], full: bool = False,
+                           directory: str = SCAN_DIRECTORY) -> Job:
+        """Queue a scan of a server (of its mods, or of `directory`); 409 if the server already has
+        an active job. `actor` is None for the scheduler, which is not recorded."""
+        payload: dict[str, Any] = {"server_id": server_id, "full": full}
+        details: dict[str, Any] = {"full": full}
+        if directory != SCAN_DIRECTORY:
+            payload["directory"] = details["directory"] = directory
+        job = await self.jobDB.enqueue("server_scan", key=f"server:{server_id}", payload=payload,
                                        requested_by=actor.ref() if actor is not None else None)
         if actor is not None:
-            await self.audit.record(actor, "server.scan.queue", AuditTarget(kind="server", id=server_id),
-                                    {"full": full})
+            await self.audit.record(actor, "server.scan.queue", AuditTarget(kind="server", id=server_id), details)
         return job
 
     async def get(self, job_id: str) -> Job:
@@ -340,12 +343,15 @@ class JobService():
 
     async def _server_scan(self, job: Job, context: JobContext) -> None:
         server_id = job.payload["server_id"]
+        directory = str(job.payload.get("directory") or SCAN_DIRECTORY)
 
         async def scan() -> dict[str, Any]:
             result = await self.pterodactylService.scan(server_id, actor=None, full=bool(job.payload.get("full")),
-                                                        report=context.progress)
+                                                        report=context.progress, directory=directory)
             return {"scan_id": str(result.id), "files": len(result.files)}
         await context.step("scan", scan)
+        if directory != SCAN_DIRECTORY:
+            return  # only the mods compare with the server's build
 
         async def drift() -> dict[str, Any]:
             """Announce a change in how the server compares with its build: drifting, a new

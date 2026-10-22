@@ -205,8 +205,8 @@ class FakeJobs:
     async def simulated_build(self, server_id: str, bundle_id: str) -> Optional[int]:
         return self.simulated
 
-    async def enqueue_scan(self, server_id: str, actor: Actor, full: bool = False) -> Job:
-        self.calls.append(("enqueue_scan", server_id, actor, full))
+    async def enqueue_scan(self, server_id: str, actor: Actor, full: bool = False, directory: str = "/mods") -> Job:
+        self.calls.append(("enqueue_scan", server_id, actor, full) + (() if directory == "/mods" else (directory,)))
         return job("server_scan", requested_by=actor.ref())
 
     async def get(self, job_id: str) -> Job:
@@ -613,7 +613,7 @@ def test_scan_returns_a_polling_job_row_with_the_actor() -> None:
 def test_scan_of_a_busy_server_is_a_conflict_notice() -> None:
     client, fakes = setup()
 
-    async def busy(server_id: str, actor: Actor, full: bool = False) -> Job:
+    async def busy(server_id: str, actor: Actor, full: bool = False, directory: str = "/mods") -> Job:
         raise HTTP_409_CONFLICT(f"There is already an active job for server:{server_id}")
 
     fakes.jobs.enqueue_scan = busy  # type: ignore[method-assign]
@@ -1507,6 +1507,27 @@ def test_v1_import_answers_202_with_the_servers_import_job() -> None:
     response = TestClient(app, base_url="https://testserver").post(f"/v1/server/{SERVER_ID}/import")
     assert response.status_code == 202 and response.json()["kind"] == "server_import"
     assert only(fakes.ptero.calls, "import_request")[1:] == (str(SERVER_ID), OPERATOR)
+
+
+def test_v1_scan_queues_the_scan_job_and_answers_202_with_it() -> None:
+    # O6 (owner, 2026-10-21): the old synchronous scan downloaded and hashed every jar inside the
+    # request; it now queues the same job as POST /v1/server/{id}/scan/job.
+    from fastapi import FastAPI
+    from src.dependences import get_current_actor
+    from src.routers.v1 import include_routers_v1
+
+    _, fakes = setup(EDITOR)
+    app = FastAPI()
+    include_routers_v1(app)
+    app.dependency_overrides[get_current_actor] = lambda: EDITOR
+    client = TestClient(app, base_url="https://testserver")
+    plain = client.post(f"/v1/server/{SERVER_ID}/scan")
+    other = client.post(f"/v1/server/{SERVER_ID}/scan", params={"full": "true", "directory": "/config"})
+    assert plain.status_code == other.status_code == 202, plain.text
+    assert plain.json()["kind"] == "server_scan" and plain.json()["_id"]
+    assert [c[1:] for c in fakes.jobs.calls if c[0] == "enqueue_scan"] == [
+        (str(SERVER_ID), EDITOR, False), (str(SERVER_ID), EDITOR, True, "/config")]
+    assert not [c for c in fakes.ptero.calls if c[0] == "scan"]  # nothing scanned inside the request
 
 
 def test_after_a_reload_the_server_shows_only_what_waits_for_a_decision() -> None:
