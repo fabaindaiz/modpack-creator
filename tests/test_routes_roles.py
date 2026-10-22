@@ -84,6 +84,8 @@ NOT_AUDITED: dict[str, str] = {
     "ModrinthService.project_create_many": "solo escribe proyectos en el catálogo local, copiados de Modrinth",
     "ModrinthService.project_update": "solo refresca un proyecto del catálogo local desde Modrinth",
     "ModrinthService.project_update_many": "solo refresca proyectos del catálogo local desde Modrinth",
+    "DiagnosticsService.export": ("es una lectura (exige operador porque son datos de uso de todos); la descarga "
+                                  "misma queda como evento de petición en el diagnóstico"),
 }
 
 

@@ -4,6 +4,12 @@ load_env(".env.yaml")
 # JSON logs with the request id (i-7985ee-90f944), before anything logs.
 from src.library.logging import RequestIdMiddleware, configure_logging
 configure_logging(getenv("LOG_LEVEL", "INFO"))
+# Usage and error diagnostics (O7, d-7985ee-ea4185): users hashed under a key derived from the session
+# secret; errors logged with their traceback become events too.
+import logging
+from src.library.diagnostics import RECORDER, DiagnosticsLogHandler, derive_key
+RECORDER.configure(derive_key(getenv("SESSION_SECRET")))
+logging.getLogger().addHandler(DiagnosticsLogHandler(RECORDER))
 
 import src.routers.health as health
 from src.routers.v1 import MODULES_V1, include_routers_v1, tags_metadata
@@ -29,6 +35,7 @@ from datetime import timedelta
 from src.services.jobs import FULL_SCAN_DEFAULT_DAYS, Handler, JobWorker
 from src.dependences import Dependences
 from src.services.update_check import schedule_from_env
+from src.services.diagnostics import observed
 
 def job_handlers(container: Dependences) -> dict[str, Handler]:
     """Every kind of job a service queues, with its handler: the worker runs these."""
@@ -48,7 +55,7 @@ async def lifespan(app: FastAPI):
     stop = asyncio.Event()
     worker = None
     if getenv("JOBS_WORKER", "on").strip().lower() != "off":
-        handlers = job_handlers(container)
+        handlers = observed(job_handlers(container), RECORDER)
         container.workerBeat().expect()
         worker = asyncio.create_task(JobWorker(container.jobDatabase(), handlers,
                                                beat=container.workerBeat()).run_forever(stop))
@@ -65,9 +72,11 @@ async def lifespan(app: FastAPI):
     if update_schedule is not None:
         at, tz = update_schedule
         update_scheduler = asyncio.create_task(container.updateCheckService().run_scheduler(stop, at, tz))
+    # The diagnostics' writer: every 2 s, and once more on the way out.
+    diagnostics = asyncio.create_task(RECORDER.run(container.diagnosticsDatabase().insert_many, stop))
     yield
     stop.set()
-    for task in (worker, scheduler, update_scheduler):
+    for task in (worker, scheduler, update_scheduler, diagnostics):
         if task is not None:
             await task
     await dependences.close_clients(container)
@@ -121,4 +130,4 @@ app.add_middleware(
     exempt_prefixes=(DOCS_PATH, "/openapi.json", *([REDOCS_PATH] if REDOCS_PATH else [])))
 
 # Added last, so it runs first: every request, including the session's 401s, gets an id and a line.
-app.add_middleware(RequestIdMiddleware)
+app.add_middleware(RequestIdMiddleware, on_finish=RECORDER.observe_request)

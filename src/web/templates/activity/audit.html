@@ -3,7 +3,26 @@
 {% block title %}Auditoría{% endblock %}
 
 {% block content %}
-{{ ui.page_header("Auditoría", "Quién hizo qué, lo más reciente primero. Cada opción dice cuántos eventos tiene con los demás filtros.") }}
+{% set AUDIT_SUBTITLE = "Quién hizo qué, lo más reciente primero. Cada opción dice cuántos eventos tiene con los demás filtros." %}
+{% if actor.is_operator %}
+{# O7: the diagnostics file, for operators only (the service checks it too). A plain GET form: the
+   browser downloads the attachment and the page stays. #}
+{% call ui.page_header("Auditoría", AUDIT_SUBTITLE) %}
+<form method="get" action="/audit/diagnostico" class="flex flex-wrap items-end gap-2">
+  <div>
+    <label for="diag-days" class="block text-xs font-medium text-zinc-600 dark:text-zinc-400">Diagnóstico</label>
+    <select id="diag-days" name="dias" class="mt-1 block rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 focus-visible:outline-2 focus-visible:outline-emerald-600 dark:bg-zinc-900 dark:ring-zinc-700">
+      {% for days in export_days %}
+      <option value="{{ days }}"{% if days == default_export_days %} selected{% endif %}>{{ "Último día" if days == 1 else "Últimos " ~ days ~ " días" }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {{ ui.button("Descargar diagnóstico (.jsonl)", kind="secondary", type="submit", attrs={"title": "Peticiones, errores y trabajos de esos días, para revisar el uso o pasárselo a un agente. Sin correos ni nombres: cada persona va como un código."}) }}
+</form>
+{% endcall %}
+{% else %}
+{{ ui.page_header("Auditoría", AUDIT_SUBTITLE) }}
+{% endif %}
 
 {# The filters, the list and «Ver anteriores» are one region: a filter that changes asks for the
    page and keeps only this, so the counts follow (A12). Without JS, «Filtrar» submits it. #}

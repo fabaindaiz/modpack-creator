@@ -7,7 +7,7 @@ import time
 import traceback
 from contextvars import ContextVar
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 from uuid import uuid4
 from starlette.responses import PlainTextResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -57,9 +57,13 @@ def configure_logging(level: str = "INFO") -> None:
 class RequestIdMiddleware:
     """Gives every HTTP request an id (the proxy's X-Request-ID if safe, else a new one), returns
     it in the response, and logs one line per request: method, path, status and duration. The
-    query string is left out: it can carry login data."""
-    def __init__(self, app: ASGIApp) -> None:
+    query string is left out: it can carry login data. `on_finish`, when given, is told of every
+    request as it ends (scope, status, duration in ms, the exception the app raised or None): the
+    diagnostics (O7) record it. It must not block; if it raises, the request is not affected."""
+    def __init__(self, app: ASGIApp,
+                 on_finish: Optional[Callable[[Scope, int, float, Optional[BaseException]], None]] = None) -> None:
         self.app = app
+        self.on_finish = on_finish
         self.logger = logging.getLogger("modpack.request")
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
@@ -80,6 +84,7 @@ class RequestIdMiddleware:
             await send(message)
 
         started = False
+        error: Optional[BaseException] = None
 
         async def send_tracked(message: Message) -> None:
             nonlocal started
@@ -88,7 +93,8 @@ class RequestIdMiddleware:
 
         try:
             await self.app(scope, receive, send_tracked)
-        except Exception:
+        except Exception as raised:
+            error = raised
             # Answer the 500 here, with the id, so the panel can show it; Starlette's error
             # middleware, outside this one, sees the response started and only re-raises.
             if not started:
@@ -96,7 +102,13 @@ class RequestIdMiddleware:
                                         headers={"X-Content-Type-Options": "nosniff"})(scope, receive, send_with_id)
             raise
         finally:
+            duration_ms = (time.perf_counter() - start) * 1000
             self.logger.info("request", extra={
                 "method": scope["method"], "path": scope["path"], "status": status,
-                "duration_ms": round((time.perf_counter() - start) * 1000, 2)})
+                "duration_ms": round(duration_ms, 2)})
+            if self.on_finish is not None:
+                try:
+                    self.on_finish(scope, status, duration_ms, error)
+                except Exception:
+                    self.logger.warning("recording the request's diagnostics failed", exc_info=True)
             _request_id.reset(token)

@@ -2,6 +2,7 @@ from beanie import init_beanie
 from pymongo import AsyncMongoClient
 from pymongo.asynchronous.collection import AsyncCollection
 from src.model.audit import AuditEvent
+from src.model.diagnostics import DiagnosticEvent
 from src.model.jobs import Job
 from src.model.modpack import LoaderVersion, ModpackBuild, ModpackBundle, ModpackReplacement, ModpackResolution, UpdateCheck
 from src.model.modrinth import ModrinthGone, ModrinthProject, ModrinthSearch, ModrinthUnknown, ModrinthVersion, ModrinthVersionList
@@ -32,6 +33,7 @@ async def init_databases(client: AsyncMongoClient, prefix: str = "") -> None:
     await init_beanie(database=client[f"{prefix}userdata"], document_models=[UsersInternal])
     await init_beanie(database=client[f"{prefix}jobs"], document_models=[Job])
     await init_beanie(database=client[f"{prefix}audit"], document_models=[AuditEvent])
+    await init_beanie(database=client[f"{prefix}diagnostics"], document_models=[DiagnosticEvent])
 
 async def configure_beanie() -> None:
     client: AsyncMongoClient = AsyncMongoClient(host=MONGODB_URI)

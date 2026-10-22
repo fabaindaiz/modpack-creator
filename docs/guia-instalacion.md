@@ -277,5 +277,24 @@ recién con [`runbooks/primera-actualizacion-real.md`](runbooks/primera-actualiz
 | **Respaldar** MongoDB | `docker exec modpack-mongodb mongodump -u mongoadmin -p "$MONGODB_PASSWORD" --authenticationDatabase admin --archive --gzip > modpack-$(date +%F).archive.gz` |
 | **Mirar la base** | `docker compose -f docker/docker-compose.yaml up -d mongoweb` y un túnel SSH a `127.0.0.1:8081`; `./scripts/stop.sh` lo apaga |
 | **Ver los logs** | `docker logs -f modpack-api`: una línea JSON por petición, con su id. Rotan a 5 × 10 MB |
+| **Juntar uso y errores en un archivo** | En el panel, **Auditoría → Descargar diagnóstico (.jsonl)** (solo operadores), con el último día, los últimos 7 o los últimos 30. Ver «Diagnóstico» abajo |
 | **Detener** | `./scripts/stop.sh`. **Nunca** `docker compose … down -v`: borra el volumen con los datos |
 | **Cortar todas las sesiones** | rotar `SESSION_SECRET` en `.env.yaml` y `./scripts/stop.sh && ./scripts/run.sh` |
+
+### Diagnóstico
+
+La API guarda en MongoDB (base `diagnostics`, colección `DiagnosticEvent`) un evento por cada
+petición (método, plantilla de la ruta, estado, duración e id), por cada error que nadie atendió o que
+se registró con su traceback (tipo, mensaje, traceback, petición o trabajo), y por cada corrida de un
+trabajo (tipo, intento, resultado, duración). Los eventos expiran solos a los 30 días (un índice TTL;
+MongoDB los borra cada minuto). No se guardan correos, nombres, query strings, cuerpos ni cabeceras:
+cada persona va como un código de 16 caracteres (un HMAC de su identidad con una clave derivada de
+`SESSION_SECRET`), que cambia si se rota el secreto. Los mensajes y tracebacks van acotados y sin
+tokens. Las sondas `/health` y los archivos de `/static/` no dejan evento.
+
+El botón **Descargar diagnóstico (.jsonl)** de Auditoría baja un archivo JSON Lines: la primera línea
+describe la versión de la app y qué significa cada campo de cada tipo de evento; después, un evento por
+línea, del más viejo al más nuevo; la última dice cuántos eventos trae y si el archivo está completo.
+Ese archivo es el que se le pasa a un agente para entender qué pasó y qué mejorar. Grabar nunca frena
+una petición: los eventos se juntan en memoria y se escriben en lotes cada 2 s; si MongoDB falla, ese
+lote se pierde y el archivo lo cuenta en `dropped_since_start` (d-7985ee-ea4185).

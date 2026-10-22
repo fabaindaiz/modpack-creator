@@ -1,4 +1,5 @@
 from src.database.audit import AuditDatabase
+from src.database.diagnostics import DiagnosticsDatabase
 from src.database.health import HealthDatabase
 from src.database.jobs import JobDatabase
 from src.database.modpack import ModpackDatabase
@@ -9,6 +10,7 @@ from src.database.users import UsersDatabase
 
 __all__ = [
     "AuditDatabase",
+    "DiagnosticsDatabase",
     "HealthDatabase",
     "JobDatabase",
     "ModrinthDatabase",

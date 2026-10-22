@@ -3,15 +3,17 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any, Optional
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from src.exceptions import HTTP_404_NOT_FOUND, HTTP_422_UNPROCESSABLE_ENTITY
-from src.dependences import AuditService, Dependences, JobService, ModpackService, ModrinthService, PterodactylService
+from src.dependences import AuditService, Dependences, DiagnosticsService, JobService, ModpackService, ModrinthService, PterodactylService
 from src.model.jobs import Job, is_real_update
 from src.model.pterodactyl import ImportResult
 from src.model.users import Actor
 from src.routers.web.servers import preview_context
 from src.web import WebRoute, get_web_actor, render
 from src.web.audit_labels import ACTIONS as AUDIT_ACTIONS, parse_target
+from src.library.diagnostics import DEFAULT_EXPORT_DAYS, EXPORT_DAYS
+from src.library.utils import utcnow
 
 logger = logging.getLogger("modpack.web")
 router = APIRouter(route_class=WebRoute, default_response_class=HTMLResponse)
@@ -232,4 +234,22 @@ async def audit_log(
                "desde": desde or "", "hasta": hasta or ""}
     return render(request, "activity/audit.html", actor, events=events, filters=filters, older=older, page=page,
                   action_counts={facet.value: facet.count for facet in page.actions},
-                  names=await auditService.names_for(events), nav_active="audit")
+                  names=await auditService.names_for(events), nav_active="audit",
+                  export_days=EXPORT_DAYS, default_export_days=DEFAULT_EXPORT_DAYS)
+
+@router.get("/audit/diagnostico")
+@inject
+async def diagnostics_download(
+        request: Request,
+        dias: int = DEFAULT_EXPORT_DAYS,
+        actor: Actor = Depends(get_web_actor),
+        diagnosticsService: DiagnosticsService = Depends(Provide[Dependences.diagnosticsService]),
+        ) -> StreamingResponse:
+    """«Descargar diagnóstico (.jsonl)» (O7): the last `dias` days of requests, errors and job runs,
+    streamed as JSON Lines. Operators only: the service checks the role and the days before
+    anything is read, so a refusal is a notice and never a half file."""
+    lines = await diagnosticsService.export(dias, actor=actor)
+    name = f"diagnostico-{utcnow():%Y%m%d-%H%M}-{dias}d.jsonl"
+    return StreamingResponse(lines, media_type="application/x-ndjson",
+                             headers={"Content-Disposition": f'attachment; filename="{name}"',
+                                      "Cache-Control": "no-store"})

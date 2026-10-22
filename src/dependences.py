@@ -10,6 +10,7 @@ from src.library.api.client import (
 )
 from src.database import (
     AuditDatabase,
+    DiagnosticsDatabase,
     HealthDatabase,
     JobDatabase,
     UsersDatabase,
@@ -20,6 +21,7 @@ from src.database import (
 )
 from src.services.audit import TargetNames
 from src.services.jobs import WorkerBeat
+from src.library.diagnostics import RECORDER
 from src.services.notify import Notifier
 from src.services.update import UpdateService
 from src.services.modpack_import import ModpackImportService
@@ -27,6 +29,7 @@ from src.library.api.client.curseforge import CurseForgeAPI
 from src.library.api.limiter import CURRENT_USER, RateLimiter
 from src.services import (
     AuditService,
+    DiagnosticsService,
     HealthService,
     JobService,
     UsersService,
@@ -58,6 +61,7 @@ class Dependences(containers.DeclarativeContainer):
     healthDatabase = providers.Singleton(HealthDatabase)
     jobDatabase = providers.Singleton(JobDatabase)
     auditDatabase = providers.Singleton(AuditDatabase)
+    diagnosticsDatabase = providers.Singleton(DiagnosticsDatabase)
     notifier = providers.Singleton(Notifier, jobDatabase)
     usersDatabase = providers.Singleton(UsersDatabase)
     modpackDatabase = providers.Singleton(ModpackDatabase)
@@ -71,6 +75,8 @@ class Dependences(containers.DeclarativeContainer):
     modrinthService = providers.Singleton(ModrinthService, modrinthAPI, modrinthDatabase)
     targetNames = providers.Singleton(TargetNames, modpackDatabase, pterodactylDatabase, modrinthDatabase)
     auditService = providers.Singleton(AuditService, auditDatabase, targetNames)
+    # O7: the file of usage and errors; the version is the one the image was built with.
+    diagnosticsService = providers.Singleton(DiagnosticsService, diagnosticsDatabase, version=getenv("VERSION", "dev"), recorder=providers.Object(RECORDER))
     pterodactylService = providers.Singleton(PterodactylService, pterodactylAPI, pterodactylDatabase, modrinthAPI, modrinthDatabase, modpackDatabase, auditService, jobDB=jobDatabase)
     modpackService = providers.Singleton(ModpackService, modpackDatabase, modrinthDatabase, modrinthAPI, loaderAPI, auditService, notifier, pterodactylDatabase, jobDB=jobDatabase)
     jobService = providers.Singleton(JobService, jobDatabase, pterodactylService, pterodactylDatabase, auditService, notifier)
