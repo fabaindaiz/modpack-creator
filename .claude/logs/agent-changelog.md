@@ -17,7 +17,7 @@ está al final del archivo, para que nada entre este párrafo y la primera entra
 
 **Qué salió mal en el camino.** `export --replace` falló dentro del sandbox (escribir `.agents/` está negado) sin dejar nada a medias (`verify` seguía en 0.0.31); lo corrió el dueño, igual que `install-skills`; copiar el agente `researcher` a `.claude/agents/` también está negado. Un `bundle.py ids` sobre más archivos que los del gate dio 7 «definido dos veces»: desde 0.0.32 un ítem con viñeta de `docs/plan-de-trabajo.md` cuenta como definición; el gate no lo lee. Un `sed` armó mal una frase del runbook de deploy y se rehízo a mano. El agente investigador no pudo guardar páginas (el sandbox le negó `curl` a su carpeta) y citó a través de un resumidor: las citas quedan como supuesto.
 
-**Qué quedó sin hacer.** Copiar `.agents/agents/researcher.md` a `.claude/agents/` (lo corre el dueño). Las observaciones O1–O9 siguen abiertas: faltan el log del servidor y la versión desplegada (O1, O4) y el diseño de O6–O9. Los ids duplicados entre `docs/plan-de-trabajo.md` y el roadmap (7, fuera del gate). El hook contra heredocs sigue pendiente de decisión.
+**Qué quedó sin hacer.** Copiar `.agents/agents/researcher.md` a `.claude/agents/` lo corrió el dueño (hecho, en su propio commit). Las observaciones O1–O9 siguen abiertas: faltan el log del servidor y la versión desplegada (O1, O4) y el diseño de O6–O9. Los ids duplicados entre `docs/plan-de-trabajo.md` y el roadmap (7, fuera del gate). El hook contra heredocs sigue pendiente de decisión.
 
 **Desvío del plan.** Ninguno: el dueño aprobó el triage y la poda tal cual; el candidato 5 de la cosecha quedó local, como eligió.
 

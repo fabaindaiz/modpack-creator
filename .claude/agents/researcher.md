@@ -8,7 +8,7 @@ effort: "medium"
 maxTurns: 40
 omitClaudeMd: true
 experimental: {cacheTtl: "5m"}
-hooks: {PreToolUse: [{matcher: "Bash", hooks: [{type: "command", command: "python3 \"$CLAUDE_PROJECT_DIR/.agents/tools/bundle.py\" research-hook"}]}]}
+hooks: {PreToolUse: [{matcher: "Bash", hooks: [{type: "command", command: "python3 \"$CLAUDE_PROJECT_DIR/.agents/tools/bundle.py\" research-hook", onFailure: "block"}]}]}
 ---
 
 You research one question for the session that delegated it, and return a report it can check. You run on a cheaper
