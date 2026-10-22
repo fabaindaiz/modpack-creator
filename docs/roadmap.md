@@ -476,7 +476,7 @@ El trabajo de `wip pterodactyl version`.
 - `version_update` no existe.
 - (Histórico) `PterodactylModpack` no estaba registrado; la clase ya no existe y la baseline está vacía.
 
-### Una versión de Modrinth por fila, muchas por proyecto — Hecha (2026-10-01), sin desplegar · i-7985ee-be55dd
+### Una versión de Modrinth por fila, muchas por proyecto — Hecha (2026-10-01), desplegada en 0.3.1 (2026-10-13) · i-7985ee-be55dd
 - **En qué quedó:**
   - `ModrinthVersion.project_id` es `Indexed()` sin `unique`.
   - En el arranque, `drop_unique_index` (`src/model/__init__.py`) borra el índice viejo si sigue
@@ -504,7 +504,7 @@ proyecto falla al insertar.
   decidir: upsert por la clave natural, o `ordered=False` y reportar los duplicados. El test:
   un lote con un duplicado en el medio, contra el fixture `mongo`.
 
-### Los updates escriben el dato nuevo — Hecha (2026-10-01), sin desplegar · i-7985ee-055362
+### Los updates escriben el dato nuevo — Hecha (2026-10-01), desplegada en 0.3.1 (2026-10-13) · i-7985ee-055362
 - **En qué quedó:** `project_update` y `server_update` guardan lo que devuelve la API, con el `_id`
   del documento guardado (los argumentos de `*_save` estaban al revés). `project_update_many`
   empareja por `project_id`, no por el orden en que contesta Modrinth, que no lo promete. Cinco
@@ -702,7 +702,7 @@ colecciones reales son `ModrinthProject`, `ModrinthVersion`, `UsersInternal`, et
 - **Qué decidir:** borrar el `collection` muerto (lo más barato), o renombrar las colecciones con
   un paso del runbook.
 
-### Los usuarios no se leen de una caché que no se invalida — Hecha (2026-10-01), sin desplegar · i-7985ee-c7b593
+### Los usuarios no se leen de una caché que no se invalida — Hecha (2026-10-01), desplegada en 0.3.1 (2026-10-13) · i-7985ee-c7b593
 - **En qué quedó:** `UsersInternal` sin `use_cache`, el único modelo que lo tenía.
   `test_a_user_read_after_a_change_is_the_changed_user` se vio fallar con la caché (leía el
   nombre viejo) y pasa sin ella.
@@ -741,7 +741,7 @@ duplica usuarios.
 `/health/live` y `/health/ready` (ping a Mongo y latido del worker), healthchecks en Compose y logs
 JSON con `request_id` y `job_id`.
 
-### Panel del dueño con Jinja2 y HTMX — Hecha en código (2026-10-02), sin desplegar · i-7985ee-50d411
+### Panel del dueño con Jinja2 y HTMX — Hecha (2026-10-02), desplegada en 0.3.1 (2026-10-13) · i-7985ee-50d411
 - **En qué quedó:**
   - Páginas en español con Jinja2 y htmx, en el mismo origen y con la misma sesión, sin CORS:
     tablero, modpacks (crear, agregar y quitar proyectos, resolver, decidir qué va al servidor,
@@ -787,7 +787,7 @@ JSON con `request_id` y `job_id`.
 - **Lo que choca:** una acción de operador que se revoca vale hasta que vence la sesión (12 h
   como máximo; rotar `SESSION_SECRET` la corta).
 
-### Vista previa de una actualización y revisión diaria de versiones nuevas — Hecha en código (2026-10-03), sin desplegar · i-7985ee-e69c9d
+### Vista previa de una actualización y revisión diaria de versiones nuevas — Hecha (2026-10-03), desplegada en 0.3.1 (2026-10-13) · i-7985ee-e69c9d
 - **En qué quedó** (diseño `docs/superpowers/specs/2026-10-03-panel-web-next-design.md`, plan
   `docs/superpowers/plans/2026-10-03-panel-web-next.md`). Cierra dos de las "Ideas para más
   adelante" de `docs/plan.md` (la vista previa y la revisión nocturna, esta última diaria y con
@@ -825,7 +825,7 @@ JSON con `request_id` y `job_id`.
 - **Lo que choca:** la revisión depende de que Modrinth responda; un día sin respuesta deja un
   `UpdateCheck` con `error`, sin aviso. Un job viejo sin `dry_run` se ve como simulación.
 
-### Panel: observaciones del dueño al usar la 0.3.1 desplegada — Planeada (2026-10-13) · i-7985ee-44060c
+### Panel: observaciones del dueño al usar la 0.3.1 desplegada — Tandas A, B y C hechas en código (2026-10-13), en 0.3.2; los menores de la B, en el grupo 2 (2026-10-21) · i-7985ee-44060c
 - **Origen:** el dueño, usando el panel 0.3.1 recién desplegado (base vacía), 2026-10-13. Sus
   palabras, una por línea; ninguna decidida todavía (van a brainstorming y revisión de decisiones):
   1. las sugerencias deberían ser una pestaña más del modpack;
@@ -906,7 +906,7 @@ JSON con `request_id` y `job_id`.
   7. `@font-face` sin versión en la URL; `[&_td]` también tomaría celdas de una tabla anidada;
   8. los tokens semánticos existen pero ninguna plantilla los usa todavía (la migración es gradual).
 
-### Panel, usabilidad: la ronda 1 hecha en código, la ronda 2 planeada (2026-10-04), sin desplegar · i-7985ee-1bb2ea
+### Panel, usabilidad: la ronda 1 hecha en código, la ronda 2 absorbida por las tandas A y B (2026-10-13); la ronda 1, desplegada en 0.3.1 (2026-10-13) · i-7985ee-1bb2ea
 - **En qué quedó la ronda 1** (diseño `docs/superpowers/specs/2026-10-04-panel-usabilidad-design.md`, recorrido
   en `docs/research/2026-10-04-usabilidad-panel.md`): la lista única de mods con ficha, el modpack
   nuevo desde la página de un servidor, el diálogo que decide los pendientes al crear un build, los
@@ -972,7 +972,7 @@ JSON con `request_id` y `job_id`.
 - **Lo que choca:** el barrido no ve Modrinth ni Pterodactyl reales ni el login OIDC; la ficha pide
   las versiones de un mod a Modrinth al abrirse (una llamada por ficha, solo al abrirla).
 
-### Panel: acciones para problemas, ficha local de mod y pestañas — Hecha en código (2026-10-05), sin desplegar · i-7985ee-593c92
+### Panel: acciones para problemas, ficha local de mod y pestañas — Hecha (2026-10-05), desplegada en 0.3.1 (2026-10-13) · i-7985ee-593c92
 - **Pedido del dueño (2026-10-05):**
   - una acción sugerida para cada problema del build (usar la beta o quitar);
   - una ficha local para cada mod de la base, con todo nombre clicable;
@@ -1010,7 +1010,7 @@ JSON con `request_id` y `job_id`.
   Arreglado en la Tarea 8 (R4): mongod con `--wiredTigerCacheSizeGB 0.25`, y la limpieza ya no pisa
   el código de salida.
 
-### Observaciones de un tester: estados, beta por mod, ficha y error de actualizaciones — Hecha en código (2026-10-09), sin desplegar · i-7985ee-1a6093
+### Observaciones de un tester: estados, beta por mod, ficha y error de actualizaciones — Hecha (2026-10-09), desplegada en 0.3.1 (2026-10-13) · i-7985ee-1a6093
 - **Origen:** observaciones de un tester del panel (2026-10-08) sobre un pack importado de un
   servidor. Cada una, con lo decidido por el dueño el 2026-10-09:
   - "Buscar actualizaciones" sin build daba un 409 crudo y "build #0": ahora lo explica y no
@@ -1028,7 +1028,7 @@ JSON con `request_id` y `job_id`.
     estable que la anula;
   - el aviso de la importación del servidor no dice cuántas decisiones y excepciones dejó.
 
-### Importar modpacks: .mrpack, Modrinth, Prism y CurseForge — Hecha en código (2026-10-12), sin desplegar; CurseForge sin probar con clave real · i-7985ee-261a79
+### Importar modpacks: .mrpack, Modrinth, Prism y CurseForge — Hecha (2026-10-12), desplegada en 0.3.1 (2026-10-13); CurseForge sin probar con clave real · i-7985ee-261a79
 - **Hecho** (d-7985ee-ec808c; spec `docs/superpowers/specs/2026-10-09-importar-modpacks-design.md`):
   `.mrpack` subido o modpack de Modrinth por URL, slug o id, como pack nuevo o reemplazando el
   contenido; en un trabajo con avance. Lo que no está en Modrinth y los overrides se informan.
@@ -1041,7 +1041,7 @@ JSON con `request_id` y `job_id`.
 - **Hecho después (2026-10-12):** ~~CurseForge~~ con la clave del dueño, zip y código de perfil
   (b5530a0); ~~Prism~~ (43dd259); ~~`/v1`~~ (0e08206, b5530a0).
 
-### Economía de requests: caché, límites y trabajos con avance — Hecha en código (2026-10-12) salvo medirla en real, sin desplegar · i-7985ee-456f19
+### Economía de requests: caché, límites y trabajos con avance — Hecha (2026-10-12), desplegada en 0.3.1 (2026-10-13), salvo medirla en real · i-7985ee-456f19
 - **Pedido del dueño (2026-10-09):** el número de requests es muy importante; limitarlas por
   usuario sin ser estrictos si hay margen, juntarlas, cachear en la base, no recargar un pack más
   de una vez cada 5 minutos salvo a mano, y todo lo que haga varias requests en trabajos con
@@ -1184,7 +1184,7 @@ nuevo cada vez. Es S1 de `plan-de-trabajo.md`.
   usa si está y cae a `httpx` deprecado si no. Un test lo exige sin la advertencia. No verificado:
   el login real con authentik sobre `httpx2`.
 
-### Los datos de MongoDB sobreviven y sus puertos no se publican — A medias (2026-10-01): en `main`, falta desplegar · i-7985ee-e21d5d
+### Los datos de MongoDB sobreviven y sus puertos no se publican — Hecha (2026-10-01), desplegada en 0.3.1 (2026-10-13) · i-7985ee-e21d5d
 - **En qué quedó:** volúmenes con nombre `mongodb-data` y `mongodb-config`; `mongo:${MONGO_VERSION:?}` sin
   default; 27017 y 8081 atados a `127.0.0.1`; healthcheck con `mongosh` y `service_healthy`. El
   despliegue sigue `docs/runbooks/migrar-mongo-a-volumen.md` (respaldo, versión, restaurar).
@@ -1210,7 +1210,7 @@ detectar una restauración (d-7985ee-894b2c); sin él, cada escaneo sería compl
 `services: mongo` con versión fija en `check.yml` y una base descartable por sesión. mongomock-motor
 no sirve con el cliente async de PyMongo que usa Beanie 2 (`research/2026-10-arquitectura.md` §2).
 
-### La imagen Docker arranca: copia main.py y recibe su configuración — A medias (2026-10-01): en `main`, falta desplegar · i-7985ee-a77cdc
+### La imagen Docker arranca: copia main.py y recibe su configuración — Hecha (2026-10-01), desplegada en 0.3.1 (2026-10-13) · i-7985ee-a77cdc
 - **En qué quedó:** el Dockerfile copia `main.py` y `src/`; `.env.yaml` se monta de solo lectura
   (d-7985ee-358aa6); `run.sh` falla si falta. El job `image` de CI construye la imagen, importa
   `main` dentro y valida el compose (también que rechace un `MONGO_VERSION` vacío).
@@ -1220,7 +1220,7 @@ un `env_file`.
 - **Qué decidir primero:** ¿la configuración llega montando `.env.yaml` o con `env_file`?
 - **Chequeo:** construir la imagen en CI e importar `main` dentro de ella.
 
-### Quién puede iniciar sesión — A medias (2026-10-01): en `main`, falta desplegar · i-7985ee-c64e06
+### Quién puede iniciar sesión — Hecha (2026-10-01), desplegada en 0.3.1 (2026-10-13); sin confirmar el login real de editor y de operador · i-7985ee-c64e06
 - **En qué quedó:** `authorize` (grupo de `OIDC_ALLOWED_GROUPS`, o email verificado de
   `OIDC_ALLOWED_EMAILS`; d-7985ee-8befe2); identidad `iss` + `sub` con migración en el primer
   login (d-7985ee-361ed0); sesión `https_only` y 12 h; CORS solo con orígenes nombrados; una sesión
