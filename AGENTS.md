@@ -69,6 +69,8 @@ Decididas, no preferencias. `docs/decisions.md` indexa cada una con lo que la ha
 - **Toda subida de importación reserva su disco temporal antes de leerse**: Starlette escribe el
   archivo en `/tmp` pasado 1 MiB y un zip de Prism llega a 1 GiB. La ruta reserva su
   `Content-Length` contra `IMPORT_TMP_MAX_MIB` y lo que no cabe se rechaza sin escribir nada.
+  La subida aceptada se copia para su trabajo en `/tmp/modpack-imports`, contando contra el mismo
+  límite, y la copia que ningún trabajo sostiene la borra un barrido (d-7985ee-4c3f11).
   `tests/test_upload_budget.py`, `tests/test_web_import.py` (d-7985ee-a40d58).
 - **Contrasta cada llamada externa con su especificación** antes de escribirla: rutas, métodos y
   forma del cuerpo están en `docs/references.md`. `tests/test_api_contracts.py` comprueba método,
