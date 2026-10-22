@@ -73,4 +73,20 @@
     opacity: .6;
     cursor: progress;
   }
+
+  /* htmx's own indicator styles are off (no inline style, CSP): an `hx-indicator` target is
+     hidden until its request runs (O6). */
+  .htmx-indicator {
+    display: none;
+  }
+  .htmx-request .htmx-indicator,
+  .htmx-request.htmx-indicator {
+    display: block;
+  }
+
+  /* A link or button to a page that waits for Modrinth, once clicked (app.js, `data-loading`). */
+  [data-loading][aria-busy="true"] {
+    cursor: progress;
+    opacity: .7;
+  }
 }

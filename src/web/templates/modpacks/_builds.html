@@ -60,7 +60,7 @@
         {% for build in builds | reverse %}<option value="{{ build.number }}"{% if loop.last %} selected{% endif %}>#{{ build.number }}</option>{% endfor %}
       </select>
     </div>
-    {{ ui.button("Comparar", kind="secondary", type="submit") }}
+    {{ ui.button("Comparar", kind="secondary", type="submit", attrs={"data-loading": "Comparando…"}) }}
   </form>
   {% endif %}
 </div>

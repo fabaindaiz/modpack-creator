@@ -29,7 +29,9 @@
     <p class="break-words">{{ item.text }}</p>
     {% if item.at %}<p class="text-xs text-zinc-500 dark:text-zinc-400">{{ ui.when(item.at) }}</p>{% endif %}
   </div>
-  <div class="shrink-0">{{ ui.link_button(item.action_label, item.href, kind=kind, small=True) }}</div>
+  {# A pack's updates wait for Modrinth's changelogs (O6): the link says it is loading. #}
+  <div class="shrink-0">{{ ui.link_button(item.action_label, item.href, kind=kind, small=True,
+                                          loading="Cargando…" if item.href.endswith("/actualizaciones") else None) }}</div>
 </li>
 {% endmacro %}
 
@@ -132,7 +134,7 @@
     </span>
     {% else %}
     {% if pending %}
-    <p><a href="/modpacks/{{ bundle.id }}/actualizaciones" class="hover:underline">{{ ui.badge(pending ~ (" actualización disponible" if pending == 1 else " actualizaciones disponibles"), "warning") }}</a></p>
+    <p><a href="/modpacks/{{ bundle.id }}/actualizaciones" data-loading="Cargando actualizaciones…" class="hover:underline">{{ ui.badge(pending ~ (" actualización disponible" if pending == 1 else " actualizaciones disponibles"), "warning") }}</a></p>
     {% endif %}
     <div>{{ ui.link_button("Abrir modpack", "/modpacks/" ~ bundle.id, small=True) }}</div>
     {% endif %}

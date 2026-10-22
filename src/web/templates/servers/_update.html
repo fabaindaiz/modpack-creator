@@ -32,13 +32,15 @@
     <label for="{{ direct }}-build" class="block font-medium">Build a instalar</label>
     {# The preview loads when the dialog opens (a closed <dialog> is not displayed, so it does not
        intersect), never with the page: it may wait up to 10 s for Modrinth. #}
-    <select id="{{ direct }}-build" name="build" hx-get="/servers/{{ server_id }}/update/preview" hx-trigger="change" hx-target="#update-preview" hx-include="this" class="block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 dark:bg-zinc-900 dark:ring-zinc-700">
+    <select id="{{ direct }}-build" name="build" hx-get="/servers/{{ server_id }}/update/preview" hx-trigger="change" hx-target="#update-preview" hx-include="this" hx-indicator="#update-preview-loading" class="block w-full rounded-md border-0 bg-white px-2.5 py-1.5 text-sm ring-1 ring-inset ring-zinc-300 dark:bg-zinc-900 dark:ring-zinc-700">
       {% for b in builds %}
       <option value="{{ b.number }}"{% if b.number == chosen %} selected{% endif %}>
         Build {{ b.number }}{% if b.number == bundle.recommended_build %} (recomendado){% elif b.number == bundle.latest_build %} (último){% endif %}
       </option>
       {% endfor %}
     </select>
+    {# Another build's preview waits for Modrinth too (O6): shown while its request runs. #}
+    <p id="update-preview-loading" class="htmx-indicator text-sm text-zinc-500 dark:text-zinc-400" role="status">Cargando cambios…</p>
     <div id="update-preview" class="space-y-2" aria-live="polite" hx-get="/servers/{{ server_id }}/update/preview?build={{ chosen }}" hx-trigger="intersect once" hx-target="this" hx-swap="innerHTML">
       <p class="text-sm text-zinc-500 dark:text-zinc-400">Cargando cambios…</p>
     </div>

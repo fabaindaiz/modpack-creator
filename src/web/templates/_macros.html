@@ -81,8 +81,9 @@
 {% endmacro %}
 
 {# A link styled as a button. #}
-{% macro link_button(label, href, kind="secondary", small=False) %}
-<a href="{{ href }}"
+{# `loading`: what the link says once clicked, for a page that waits for Modrinth (O6; app.js). #}
+{% macro link_button(label, href, kind="secondary", small=False, loading=None) %}
+<a href="{{ href }}"{% if loading %} data-loading="{{ loading }}"{% endif %}
   class="inline-flex items-center justify-center gap-1.5 rounded-lg font-medium shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 {{ 'px-2 py-1 text-xs' if small else 'px-3 py-1.5 text-sm' }} {{ BUTTON_KINDS[kind] }}">{{ label }}</a>
 {% endmacro %}
 

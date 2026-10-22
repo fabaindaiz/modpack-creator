@@ -400,6 +400,53 @@
     }, 0);
   });
 
+  // A link or a plain form's button to a page that waits for Modrinth (a pack's updates, comparing
+  // two builds: up to ~15 s) says it is loading once clicked (O6): its `data-loading` text, busy.
+  function showLoading(element) {
+    if (!element.hasAttribute('data-loading-from')) {
+      element.setAttribute('data-loading-from', element.innerHTML);
+    }
+    element.textContent = element.getAttribute('data-loading');
+    element.setAttribute('aria-busy', 'true');
+  }
+  document.addEventListener('click', function (evt) {
+    // A new tab or window (a modifier, another button) leaves this page as it is.
+    if (evt.defaultPrevented || evt.button !== 0 || evt.metaKey || evt.ctrlKey || evt.shiftKey || evt.altKey) {
+      return;
+    }
+    var link = evt.target instanceof Element ? evt.target.closest('a[data-loading]') : null;
+    if (link && !link.hasAttribute('target')) {
+      showLoading(link);
+    }
+  });
+  document.addEventListener('submit', function (evt) {
+    var form = evt.target;
+    if (evt.defaultPrevented || !(form instanceof HTMLFormElement) || form.hasAttribute('hx-post') ||
+        form.hasAttribute('hx-get') || form.hasAttribute('hx-put')) {
+      return;
+    }
+    var button = evt.submitter && evt.submitter.matches('button[data-loading]') ? evt.submitter
+      : form.querySelector('button[data-loading]');
+    if (button) {
+      showLoading(button);
+    }
+  });
+  // Back to this page from the browser's cache: what was loading is shown as it was.
+  window.addEventListener('pageshow', function (evt) {
+    if (!evt.persisted) {
+      return;
+    }
+    document.querySelectorAll('[data-loading-from]').forEach(function (element) {
+      element.innerHTML = element.getAttribute('data-loading-from');
+      element.removeAttribute('data-loading-from');
+      element.removeAttribute('aria-busy');
+    });
+    document.querySelectorAll('button[data-busy]').forEach(function (button) {
+      button.disabled = false;
+      button.removeAttribute('data-busy');
+    });
+  });
+
   // On a narrow screen the section nav scrolls sideways: keep the current section in view.
   var current = document.querySelector('nav[aria-label="Secciones"] [aria-current="page"]');
   if (current) {
