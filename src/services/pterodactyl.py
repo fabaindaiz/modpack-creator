@@ -60,6 +60,8 @@ IMPORT_FAILED = ("El modpack quedó creado y vinculado a este servidor, pero la 
 RACE_LOST = "No se pudo vincular: otro operador vinculó un modpack a este servidor mientras se creaba este."
 RACE_UNDONE = "El modpack «{name}» que se acababa de crear se borró. Vuelve a cargar la página."
 RACE_KEPT = "El modpack «{name}» que se acababa de crear no se pudo borrar: bórralo a mano. Vuelve a cargar la página."
+# The server deleted while its pack was being created (owner, 2026-10-21): the pack, still empty, is deleted.
+SERVER_GONE = "El servidor se borró mientras se creaba su modpack: no quedó nada creado"
 
 def _utc(value: datetime) -> datetime:
     return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
@@ -380,18 +382,24 @@ class PterodactylService():
         return server, bundle, await self.scan_latest(server_id)
 
     @operator_only
-    async def import_request(self, server_id: str, actor: Actor) -> Job:
+    async def import_request(self, server_id: str, actor: Actor, created_bundle_id: Optional[str] = None) -> Job:
         """
         "Importar" (T1): the server's import job, which waits its turn and shows how far it is; one
         per server: asking again gives the running import. 409 now if the server is not linked to a
         bundle, or if another job of the server (a scan, an update) holds its key.
+
+        :param created_bundle_id: The pack «Crear modpack desde este servidor» just made: if the
+            server is deleted before the import ends, the job deletes it while it is still empty.
         """
         server = await self.pterodactylDB.server_get(server_id)
         if server.bundle_id is None:
             raise HTTP_409_CONFLICT(f"Server '{server_id}' is not linked to a bundle: link it before importing")
         key = f"server:{server_id}"
+        payload = {"server_id": server_id}
+        if created_bundle_id is not None:
+            payload["created_bundle_id"] = created_bundle_id
         try:
-            job = await self.jobDB.enqueue("server_import", key=key, payload={"server_id": server_id},
+            job = await self.jobDB.enqueue("server_import", key=key, payload=payload,
                                            requested_by=actor.ref())
         except HTTP_409_CONFLICT:
             # The key is the server's: a scan, an update or a rollback holds it too. Only a running
@@ -419,7 +427,16 @@ class PterodactylService():
             result = await self.import_server(job.payload["server_id"], actor, report=context.progress)
             return result.model_dump(mode="json")
 
-        await context.step("import", run)
+        try:
+            await context.step("import", run)
+        except HTTP_404_NOT_FOUND:
+            # «Crear modpack desde este servidor», and the server deleted meanwhile (owner, 2026-10-21):
+            # its pack goes while still empty; with mods someone added, it stays and the job fails as is.
+            created = job.payload.get("created_bundle_id")
+            if (isinstance(created, str) and await self._server_gone(job.payload["server_id"])
+                    and await self._delete_created(created, AuditTarget(kind="bundle", id=created), actor)):
+                raise JobFailed(SERVER_GONE) from None
+            raise
 
     async def import_pending(self, server_id: str) -> Optional[ImportResult]:
         """What the server's last import job left (S3): its result, with only the candidates the admin
@@ -597,7 +614,14 @@ class PterodactylService():
         bundle = await self.modpackDB.bundle_insert(ModpackBundle(name=name, description="", version=version, loader=loader))
         bundle_target = AuditTarget(kind="bundle", id=str(bundle.id), name=bundle.name)  # it may be deleted below
         await self.audit.record(actor, "bundle.create", bundle_target)
-        if not await self.pterodactylDB.server_link_if_unlinked(server_id, str(bundle.id)):
+        try:
+            linked = await self.pterodactylDB.server_link_if_unlinked(server_id, str(bundle.id))
+        except HTTP_404_NOT_FOUND:
+            # The server was deleted meanwhile (owner, 2026-10-21): the pack, still empty, goes too.
+            if await self._delete_created(str(bundle.id), bundle_target, actor):
+                raise HTTP_404_NOT_FOUND(SERVER_GONE) from None
+            raise
+        if not linked:
             try:
                 deleted = await self.modpackDB.bundle_delete_empty(str(bundle.id))
             except Exception:
@@ -611,13 +635,34 @@ class PterodactylService():
         import_job, import_error = None, None
         if import_mods:
             try:
-                # T1: the server's import job, which shows its progress (never inside this request).
-                import_job = await self.import_request(server_id, actor)
+                # T1: the server's import job, which shows its progress (never inside this request). It
+                # knows the pack is new: if the server is deleted before it ends, the pack goes too.
+                import_job = await self.import_request(server_id, actor, created_bundle_id=str(bundle.id))
             except Exception:
                 logger.warning("queueing the import after creating a bundle for a server failed", exc_info=True,
                                extra={"server_id": server_id, "bundle_id": str(bundle.id)})
                 import_error = IMPORT_FAILED
         return BundleForServer(bundle=bundle, imported=None, import_error=import_error, import_job=import_job)
+
+    async def _delete_created(self, bundle_id: str, target: AuditTarget, actor: Actor) -> bool:
+        """Delete a pack just created for a server that is gone, only while it is still empty (if
+        someone added mods, it stays); recorded. Whether it was deleted: a failure is logged, not raised."""
+        try:
+            deleted = await self.modpackDB.bundle_delete_empty(bundle_id)
+        except Exception:
+            logger.warning("deleting the pack of a server deleted meanwhile failed", exc_info=True,
+                           extra={"bundle_id": bundle_id})
+            return False
+        if deleted:
+            await self.audit.record(actor, "bundle.delete", target, {"reason": "server deleted meanwhile"})
+        return deleted
+
+    async def _server_gone(self, server_id: str) -> bool:
+        try:
+            await self.pterodactylDB.server_get(server_id)
+        except HTTP_404_NOT_FOUND:
+            return True
+        return False
 
     def _scanned(self, scan: ServerScan, path: str) -> ScanFile:
         file = next((f for f in scan.files if f.path == path), None)
