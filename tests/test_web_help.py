@@ -85,6 +85,21 @@ def test_how_it_works_is_in_the_navigation_and_marked_when_open() -> None:
     assert re.search(r'<a href="/como-funciona"\s+aria-current="page"', page)
 
 
+def test_how_it_works_is_an_icon_by_the_name_on_medium_widths_so_the_sections_fit() -> None:
+    """Owner, 2026-10-22: at 768 px the sections no longer fit with «Cómo funciona». From 640 px it
+    sits by the person's name, icon only until 1280 px; on a phone it stays in the sections' row."""
+    home = base_client(EDITOR).get("/").text
+    nav = re.search(r'<nav aria-label="Secciones".*?</nav>', home, re.S)
+    assert nav is not None
+    item = re.search(r'<li class="([^"]*)">\s*<a href="/como-funciona"', nav.group(0))
+    assert item is not None and "sm:hidden" in item.group(1).split()
+    header = home[nav.end():home.index("</header>")]
+    link = re.search(r'<a href="/como-funciona"([^>]*)>(.*?)</a>', header, re.S)
+    assert link is not None
+    assert 'title="Cómo funciona"' in link.group(1) and "hidden" in link.group(1) and "sm:inline-flex" in link.group(1)
+    assert re.search(r'<span class="max-xl:sr-only">Cómo funciona</span>', link.group(2))
+
+
 def test_how_it_works_needs_a_session() -> None:
     response = base_client(None).get("/como-funciona")
     assert response.status_code in (302, 303, 307) and "login" in response.headers["location"]
