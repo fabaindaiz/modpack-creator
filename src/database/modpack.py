@@ -3,6 +3,7 @@ from beanie.operators import In
 from beanie.odm.documents import FindMany, DeleteResult
 from datetime import datetime
 from typing import Any, Iterable, Optional
+from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 from src.library.scan import ClaimedFile, LocalFile
 from src.model.modpack import (
@@ -142,19 +143,22 @@ class ModpackDatabase():
             {"_id": self._bundle_oid(bundle_id), "claimed_files.sha512": {"$ne": claim.sha512}},
             {"$push": {"claimed_files": claim.model_dump()}})
 
-    async def bundle_project_remove(self, bundle_id: str, project_id: str, clear_keys: bool = False) -> list[PackProject]:
+    async def bundle_project_remove(self, bundle_id: str, project_id: str,
+                                    clear_keys: bool = False) -> tuple[list[PackProject], dict[str, Any]]:
         """Remove a project from a bundle; 404 if the bundle does not have it. With `clear_keys`, its
         pin (with its origins, O2), server decision and channel exception go in the same update (d-7985ee-881689);
-        `project_id` must then be a plain Modrinth id: it becomes a key of a dotted path."""
+        `project_id` must then be a plain Modrinth id: it becomes a key of a dotted path. Returns the
+        projects afterwards and the stored document as the update found it: what was cleared is read
+        from there, so a pin set a moment before is named too."""
         oid = self._bundle_oid(bundle_id)
         update: dict[str, Any] = {"$pull": {"projects": {"project_id": project_id}}}
         if clear_keys:
             update["$unset"] = {f"{field}.{project_id}": "" for field in ("pins", "pin_origins", "server_decisions", "channel_exceptions")}
-        result = await ModpackBundle.get_pymongo_collection().update_one(
-            {"_id": oid, "projects.project_id": project_id}, update)
-        if not result.modified_count:
+        before = await ModpackBundle.get_pymongo_collection().find_one_and_update(
+            {"_id": oid, "projects.project_id": project_id}, update, return_document=ReturnDocument.BEFORE)
+        if before is None:
             raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' has no project '{project_id}'")
-        return (await self.bundle_get(bundle_id)).projects
+        return (await self.bundle_get(bundle_id)).projects, before
 
     async def bundle_decision_set(self, bundle_id: str, project_id: str, server: bool) -> ModpackBundle:
         """

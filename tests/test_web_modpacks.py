@@ -23,7 +23,7 @@ from src.model.modrinth import ModrinthProject
 from src.model.pterodactyl import PterodactylServer
 from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
-from src.services.modpack import ModList, ModpackService, ModRow, PinDowngrade, VersionOption
+from src.services.modpack import ModList, ModpackService, ModRow, PinDowngrade, ProjectRemoval, VersionOption
 from src.services.modrinth import ModrinthService
 from tests._actors import EDITOR, OPERATOR, session_for
 from tests._session import session_cookie
@@ -225,13 +225,14 @@ class FakeModpack:
             raise pending
         return list(getattr(self, "missing", []))
 
-    async def project_remove(self, bundle_id: str, project_id: str, actor: Actor) -> list[PackProject]:
+    async def project_remove(self, bundle_id: str, project_id: str, actor: Actor) -> ProjectRemoval:
         self._record("project_remove", bundle_id, project_id, actor)
         self.bundle.projects = [p for p in self.bundle.projects if p.project_id != project_id]
-        return self.bundle.projects
+        return ProjectRemoval(projects=self.bundle.projects, dependents=self.dependents, cleared={})
 
     async def project_dependents(self, bundle_id: str, project_id: str) -> Optional[list[str]]:
-        return self.dependents
+        # The removal says which dependents it used: a second read could contradict it (round 2 review).
+        raise AssertionError("the route reads the dependents the removal used")
 
     async def bridge_idle(self, bundle_id: str) -> list[str]:
         return self.idle

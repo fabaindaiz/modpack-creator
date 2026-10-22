@@ -278,6 +278,16 @@ def exception_channels(channel: Optional[str]) -> set[str]:
 
 
 @dataclass(frozen=True)
+class ProjectRemoval:
+    """What removing a mod did (d-7985ee-881689): the pack's projects afterwards, the dependents the
+    removal decided with (None when nothing could say), and what went with the mod, as stored the
+    moment it went. The panel's notice reads these, never a second read that could contradict them."""
+    projects: list[PackProject]
+    dependents: Optional[list[str]]
+    cleared: dict[str, Any]
+
+
+@dataclass(frozen=True)
 class ModUse:
     """A pack that uses a mod (spec §2, "dónde se usa"): as one of its projects (`origin` "admin" or
     "pack") or as a dependency its saved resolution brought in (`origin` None, `dependency_of` the
@@ -897,23 +907,25 @@ class ModpackService():
         await self.audit.record(actor, "bundle.project.replace", _bundle(bundle_id), {"refs": list(refs)})
         return replaced
 
-    async def project_remove(self, bundle_id: str, project_id: str, actor: Actor) -> list[PackProject]:
+    async def project_remove(self, bundle_id: str, project_id: str, actor: Actor) -> ProjectRemoval:
         """Remove a project from the pack. Its pin, server decision and channel exception go with it,
         in the same write, unless the last saved resolution brings it as a dependency of another mod;
         without a saved resolution they stay, since nothing says nobody needs it (d-7985ee-881689).
-        The event names what was cleared."""
-        bundle = await self.modpackDB.bundle_get(bundle_id)
-        clear = MODRINTH_ID.fullmatch(project_id) is not None and await self.project_dependents(bundle_id, project_id) == []
+        The resolution is read once: the answer carries the dependents it decided with, for the
+        panel's notice. The event names what was cleared, as the write found it (a pin set a moment
+        before is named too)."""
+        dependents = await self.project_dependents(bundle_id, project_id) if MODRINTH_ID.fullmatch(project_id) else None
+        clear = dependents == []
+        remaining, before = await self.modpackDB.bundle_project_remove(bundle_id, project_id, clear_keys=clear)
         cleared: dict[str, Any] = {}
         if clear:
-            for name, values in (("pin", bundle.pins), ("server_decision", bundle.server_decisions),
-                                 ("channel_exception", bundle.channel_exceptions)):
-                if project_id in values:
+            for name, values in (("pin", before.get("pins")), ("server_decision", before.get("server_decisions")),
+                                 ("channel_exception", before.get("channel_exceptions"))):
+                if isinstance(values, dict) and project_id in values:
                     cleared[name] = values[project_id]
-        remaining = await self.modpackDB.bundle_project_remove(bundle_id, project_id, clear_keys=clear)
         await self.audit.record(actor, "bundle.project.remove", _bundle(bundle_id),
                                 {"project_id": project_id, "cleared": cleared})
-        return remaining
+        return ProjectRemoval(projects=remaining, dependents=dependents, cleared=cleared)
 
     async def bridge_idle(self, bundle_id: str) -> list[str]:
         """The bridge mods still in the pack when no mod runs through a bridge any more (d-7985ee-80ee9a),

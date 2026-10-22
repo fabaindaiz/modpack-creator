@@ -132,7 +132,7 @@ async def project_remove(
         modpack: ModpackService = Depends(Provide[Dependences.modpackService]),
         actor: Actor = Depends(get_current_actor)
         ):
-    return await modpack.project_remove(bundle_id=id, project_id=project_id, actor=actor)
+    return (await modpack.project_remove(bundle_id=id, project_id=project_id, actor=actor)).projects
 
 @router.post("/modpack/{id}/build", response_model=Job, status_code=202)
 @inject

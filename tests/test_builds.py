@@ -101,7 +101,7 @@ def test_removing_a_project(mongo: MongoRunner) -> None:
     async def scenario() -> dict[str, str]:
         service, bundle_id = await empty_bundle()
         await service.project_add(bundle_id, ["iris", "fabric-api"], ProjectOrigin.pack, actor=EDITOR)
-        return content(await service.project_remove(bundle_id, IRIS, actor=EDITOR))
+        return content((await service.project_remove(bundle_id, IRIS, actor=EDITOR)).projects)
 
     assert mongo(scenario) == {FABRIC_API: "pack"}
 

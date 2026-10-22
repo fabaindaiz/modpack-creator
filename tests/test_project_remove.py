@@ -37,8 +37,8 @@ async def removed(s: Scenario, resolution: tuple[Any, ...] | None, stale: bool =
             await s.resolved(bundle_id, *resolution)  # its digest ("d") is no request's
         else:
             await fresh(s, bundle_id, *resolution, problems=problems)
-    dependents = await s.service.project_dependents(bundle_id, "P1")
-    await s.service.project_remove(bundle_id, "P1", actor=EDITOR)
+    # The removal says which dependents it decided with (the panel's notice reads them from it).
+    dependents = (await s.service.project_remove(bundle_id, "P1", actor=EDITOR)).dependents
     bundle = await s.modpackDB.bundle_get(bundle_id)
     audit: Any = s.service.audit
     return (dependents, bundle.pins, bundle.server_decisions, bundle.channel_exceptions,
@@ -99,3 +99,28 @@ def test_without_a_saved_resolution_they_are_kept(mongo: MongoRunner) -> None:
     assert dependents is None and projects == ["P2"]
     assert pins == {"P1": "v-P1-1", "P2": "v-P2-1"} and exceptions == {"P1": "beta"}
     assert event[2] == {"project_id": "P1", "cleared": {}}
+
+
+def test_a_pin_set_while_removing_is_named_in_what_was_cleared(mongo: MongoRunner) -> None:
+    """Round 2 review: the event read the pack before the write, so a pin set in between went
+    unnamed. It is read from the document as the write found it."""
+    async def scenario() -> tuple[Any, ...]:
+        s = Scenario(FakeModrinth())
+        bundle_id = await s.bundle([("P1", ProjectOrigin.admin), ("P2", ProjectOrigin.admin)])
+        await fresh(s, bundle_id, entry("P1", "1", origin="admin"), entry("P2", "1", origin="admin"))
+        read = s.service.project_dependents
+
+        async def then_pinned(bundle_id: str, project_id: str) -> Any:
+            found = await read(bundle_id, project_id)
+            await s.modpackDB.bundle_pin_set(bundle_id, "P1", "v-P1-1")
+            return found
+
+        s.service.project_dependents = then_pinned  # type: ignore[method-assign]
+        removal = await s.service.project_remove(bundle_id, "P1", actor=EDITOR)
+        bundle = await s.modpackDB.bundle_get(bundle_id)
+        audit: Any = s.service.audit
+        return removal.dependents, removal.cleared, bundle.pins, audit.events[-1][2]
+
+    dependents, cleared, pins, details = mongo(scenario)
+    assert dependents == [] and pins == {}
+    assert cleared == {"pin": "v-P1-1"} and details == {"project_id": "P1", "cleared": {"pin": "v-P1-1"}}

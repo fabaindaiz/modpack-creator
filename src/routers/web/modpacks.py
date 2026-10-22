@@ -627,8 +627,8 @@ async def project_remove(
     """Remove a project from the pack; from a problem's card (`contexto`), resolve again too. When
     another mod still brings it, its pin, decision and exception stay, and the notice says so
     (d-7985ee-881689)."""
-    dependents = await modpackService.project_dependents(bundle_id, project_id)
-    await modpackService.project_remove(bundle_id, project_id, actor)
+    # The dependents the removal decided with: a second read could contradict what it kept.
+    dependents = (await modpackService.project_remove(bundle_id, project_id, actor)).dependents
     success = "Quitado del modpack"
     if dependents:
         titles = await _titles(modrinthService, dependents)
