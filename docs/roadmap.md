@@ -1351,7 +1351,7 @@ Fricción vista al menos dos veces, con su costo.
   lista como un argumento (2026-10-21). Primera vez; pasar los argumentos escritos.
 - **El barrido visual en paralelo con la suite da timeouts** (2026-10-14): se corre solo.
 - **Los datos de uso no se guardan:** `bundle.py usage` escribe en una carpeta que el sandbox niega
-  (2 cierres); propuesto al bundle en la cosecha del 2026-10-21.
+  (3 cierres, el último el 2026-10-22); propuesto al bundle en la cosecha del 2026-10-21.
 
 ## Decisiones pendientes del dueño
 
