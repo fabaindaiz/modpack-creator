@@ -28,9 +28,9 @@ from pymongo import AsyncMongoClient
 from src.model import init_databases
 from src.model.audit import AuditEvent, AuditTarget
 from src.model.jobs import Job
-from src.library.scan import LocalFile, ScanFile
+from src.library.scan import LocalFile, ScanFile, full_reason_text
 from src.library.resolution import Lock, LockEntry, ResolveRequest, Target
-from src.model.modpack import AvailableUpdate, ModpackBuild, ModpackBundle, ModpackReplacement, ModpackResolution, PackProject, ProjectOrigin, UpdateCheck
+from src.model.modpack import AvailableUpdate, ModpackBuild, ModpackBundle, ModpackReplacement, ModpackResolution, PackProject, PinOrigin, PinRecord, PinSource, ProjectOrigin, UpdateCheck
 from src.model.modrinth import ModrinthProject, ModrinthVersion
 from src.model.pterodactyl import PterodactylServer, ServerScan
 from src.model.users.actor import ActorRef
@@ -68,6 +68,20 @@ PNG = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001
 # fits (an `unresolvable` dependency with an alternative: "Usar la beta …"); PINNED_GONE is pinned
 # to GONE_VERSION, which Modrinth no longer has (the pin's problem: "Quitar la fijación", "Fijar otra").
 NEEDS_BETA, BETA_DEP, PINNED_GONE, GONE_VERSION = "needs-beta", "beta-dep", "pinned-gone", "pg-old"
+
+# The token migration (d-7985ee-cc655d): the big pack's second mod is pinned to its imported pack's
+# version, with a scanned server's version that does not pass, so its card shows «De dónde sale la
+# versión» with two origins; the first server's last scan was full, for a reason the page says.
+PIN_ORIGINS_MOD, PIN_ORIGINS_VERSION = "mod-001-x", "v4PSXean"
+SCAN_FULL_REASON = "restored"
+
+
+def pin_origins_record() -> PinRecord:
+    return PinRecord(selected=PinSource.pack, origins=[
+        PinOrigin(source=PinSource.pack, version_id=PIN_ORIGINS_VERSION, version_number="mc26.3-0.6.0",
+                  label="Survival Plus 1.2.0", valid=True),
+        PinOrigin(source=PinSource.server, version_id="sod-1", version_number="sod-1", label="Survival", valid=False,
+                  problem="Modrinth no la marca para 26.3")])
 
 
 def _made_up(project: dict[str, Any], version: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -258,7 +272,8 @@ async def seed(mongo_uri: str) -> dict[str, str]:
         projects=[PackProject(project_id=f"mod-{i:03d}-{'x' * (i % 40)}", origin=ProjectOrigin.admin if i % 7 == 0 else ProjectOrigin.pack)
                   for i in range(300)],
         server_decisions={"mod-001-x": True},
-        pins={"mod-001-x": "v4PSXean"},
+        pins={PIN_ORIGINS_MOD: PIN_ORIGINS_VERSION},
+        pin_origins={PIN_ORIGINS_MOD: pin_origins_record()},
         local_files=[LocalFile(filename="custom-datapack-helper-con-un-nombre-largo.jar", sha512="d" * 128, sha1="e" * 40, size=2_621_440)])
     small = ModpackBundle(name="Creativo", description="", version="26.2", loader=MinecraftLoaders.neoforge)
     # Two packs for the interactions: one with a mod whose side Modrinth leaves open (the build
@@ -348,7 +363,8 @@ async def seed(mongo_uri: str) -> dict[str, str]:
                           project_id=known[j][0] if j in known else f"mod-{j:03d}" if j % 5 else None,
                           version_id=known[j][1] if j in known else "v1" if j % 5 else None)
                  for j in range(12)]
-        await ServerScan(server_id=server.id, directory="/mods", scanned_at=now - timedelta(hours=i), full=False,
+        await ServerScan(server_id=server.id, directory="/mods", scanned_at=now - timedelta(hours=i), full=i == 0,
+                         full_reason=SCAN_FULL_REASON if i == 0 else None,
                          files=files, drift="2 jars de más y 1 versión distinta" if i == 0 else None).insert()
     # A server without a pack whose scan identified jars of the catalog (fabric, 26.3): the form of
     # "Nuevo modpack para este servidor" deduces the loader and the version from them.
@@ -427,11 +443,9 @@ def wait_ready(base: str, app: "subprocess.Popen[bytes]") -> None:
     raise RuntimeError("la app no respondió a /health/live")
 
 
-def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) -> dict[str, dict[str, Any]]:
-    # Imported here: playwright lives only in the `visual` hatch env, not in the gate's.
-    from playwright.sync_api import sync_playwright
-
-    pages = {"home": "/", "modpacks": "/modpacks", "modpack": f"/modpacks/{ids['bundle']}",
+def pages(ids: dict[str, str]) -> dict[str, str]:
+    """Every page the sweep shoots whole, in every context: its name in the capture, and its path."""
+    return {"home": "/", "modpacks": "/modpacks", "modpack": f"/modpacks/{ids['bundle']}",
              "compare": f"/modpacks/{ids['bundle']}/builds/compare?de=1&a=2",
              "updates": f"/modpacks/{ids['bundle']}/actualizaciones",
              "modpack-pending": f"/modpacks/{ids['pending']}", "modpack-downgrade": f"/modpacks/{ids['downgrade']}",
@@ -443,7 +457,15 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
              "replacements": "/replacements", "servers": "/servers", "server": f"/servers/{ids['server']}",
              "server-new": f"/servers/{ids['server_new']}",
              "jobs": "/jobs", "job": f"/jobs/{ids['job']}", "dryrun": f"/jobs/{ids['dryrun']}", "audit": "/audit",
-             "import": "/modpacks/importar", "import-job": f"/jobs/{ids['import_job']}"}
+             "import": "/modpacks/importar", "import-job": f"/jobs/{ids['import_job']}",
+             # The token migration (d-7985ee-cc655d): the help page the «?» link to.
+             "help": "/como-funciona"}
+
+
+def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) -> dict[str, dict[str, Any]]:
+    # Imported here: playwright lives only in the `visual` hatch env, not in the gate's.
+    from playwright.sync_api import sync_playwright
+
     report: dict[str, dict[str, Any]] = {}
     chromium = os.environ.get("PLAYWRIGHT_CHROMIUM") or None
     with sync_playwright() as p:
@@ -463,7 +485,7 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
                         page = ctx.new_page()
                         errors: list[str] = []
                         page.on("console", lambda m, errors=errors: errors.append(m.text) if m.type == "error" else None)
-                        for name, path in pages.items():
+                        for name, path in pages(ids).items():
                             response = page.goto(base + path)
                             if not page.url.split("?")[0].endswith(path.split("?")[0]):
                                 raise RuntimeError(f"{path} terminó en {page.url}: una redirección no es una página revisada")
@@ -485,6 +507,8 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
                         report.update(shoot_open_card(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                         report.update(shoot_open_cards(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                         report.update(check_live_refresh(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
+                        for shot in TOKEN_SHOTS.values():
+                            report.update(shot(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                         if who == "operator":
                             report.update(shoot_update_dialog(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                             report.update(shoot_build_dialog(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
@@ -554,6 +578,66 @@ def shoot_open_cards(page: Any, base: str, out: Path, ids: dict[str, str], prefi
                                      ("la página desborda", _overflow(page) > 0)) if bad]
         found[key] = _report(response, errors, problems)
     return found
+
+
+def shoot_help_open(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
+                    errors: list[str]) -> dict[str, dict[str, Any]]:
+    """A section's «?» opened (a <details data-help>, no JS of ours): the Mods section of the big
+    pack, its explanation under the title and the link to «Cómo funciona»."""
+    response = page.goto(base + f"/modpacks/{ids['bundle']}")
+    page.wait_for_load_state("networkidle")
+    toggle = page.locator("#mods-section > div > details[data-help]").first
+    toggle.locator("summary").click()
+    page.wait_for_selector("#mods-section > div > details[data-help][open] a[href^='/como-funciona#']", timeout=10_000)
+    toggle.scroll_into_view_if_needed()
+    page.wait_for_timeout(200)
+    key = f"{prefix}-help-open"
+    page.screenshot(path=str(out / f"{key}.png"))
+    problems = [p for p, bad in (("el «?» no se abrió", not toggle.evaluate("d => d.open")),
+                                 ("la página desborda", _overflow(page) > 0)) if bad]
+    return {key: _report(response, errors, problems)}
+
+
+def shoot_pin_origins(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
+                      errors: list[str]) -> dict[str, dict[str, Any]]:
+    """The card of a mod whose pin has origins (O2): «De dónde sale la versión», each origin, the one
+    in use marked, and why the server's does not pass. Only the mod's row is shot (the pack is long)."""
+    response = page.goto(base + f"/modpacks/{ids['bundle']}")
+    page.wait_for_load_state("networkidle")
+    row = page.locator(f"#mod-row-{PIN_ORIGINS_MOD}")
+    # On the summary's own padding: its middle may be the mod's link, which opens the side panel.
+    row.locator("details > summary").first.click(position={"x": 6, "y": 6})
+    page.wait_for_selector(f"#mod-row-{PIN_ORIGINS_MOD} details[open] [data-pin-origins]", timeout=10_000)
+    page.wait_for_load_state("networkidle")  # the version picker loads on open
+    page.wait_for_timeout(300)
+    key = f"{prefix}-pin-origins"
+    row.screenshot(path=str(out / f"{key}.png"))
+    origins = row.locator("[data-pin-origins] li")
+    problems = [p for p, bad in (("la ficha no dice «De dónde sale la versión»",
+                                  "De dónde sale la versión" not in row.inner_text()),
+                                 ("la ficha no muestra dos orígenes", origins.count() < 2),
+                                 ("la página desborda", _overflow(page) > 0)) if bad]
+    return {key: _report(response, errors, problems)}
+
+
+def shoot_scan_reason(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
+                      errors: list[str]) -> dict[str, dict[str, Any]]:
+    """The server's «Último escaneo» after a full scan: the line that says why it was full."""
+    response = page.goto(base + f"/servers/{ids['server']}")
+    page.wait_for_load_state("networkidle")
+    section = page.locator("#escaneo")
+    section.scroll_into_view_if_needed()
+    page.wait_for_timeout(200)
+    key = f"{prefix}-server-scan-reason"
+    section.screenshot(path=str(out / f"{key}.png"))
+    reason = full_reason_text(SCAN_FULL_REASON) or ""
+    problems = [p for p, bad in (("«Último escaneo» no dice por qué fue completo", reason not in section.inner_text()),
+                                 ("la página desborda", _overflow(page) > 0)) if bad]
+    return {key: _report(response, errors, problems)}
+
+
+# Shot in every context (both people, every width and scheme), after the whole pages.
+TOKEN_SHOTS = {"help-open": shoot_help_open, "pin-origins": shoot_pin_origins, "server-scan-reason": shoot_scan_reason}
 
 
 def check_row_selects(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
