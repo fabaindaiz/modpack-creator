@@ -8,9 +8,7 @@ from fastapi import Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from src.exceptions import HTTP_422_UNPROCESSABLE_ENTITY, CatalogPending
-from src.routers.web.modpacks import IMPORT_MAX_BYTES, _upload_room
-from src.library.cf_import import is_curseforge
-from src.library.prism_import import is_prism
+from src.routers.web.modpacks import _copy_room, _upload_room
 from src.web import BUNDLE_REF
 from src.model.jobs import Job
 from src.model.users import Actor
@@ -234,19 +232,18 @@ async def modpack_import_mrpack(
         actor: Actor = Depends(get_current_actor),
         ):
     """Import an uploaded .mrpack, Prism instance zip or CurseForge zip (field `archivo`; the last
-    needs the owner's key), as the panel does: read now,
-    identified in a job. A .mrpack past 50 MiB is a 422; any upload past 1 GiB, 413; past the
-    temporary disk the uploads in flight may take, 429 (the form is read only after reserving it)."""
+    needs the owner's key), as the panel does: the file is kept and the `modpack_import` job reads
+    it (O6), so a file that is not a pack, a .mrpack past 50 MiB or a pack for another target than
+    `into` fails the job, naming why (poll /v1/job/{id}). Any upload past 1 GiB is a 413; past the
+    temporary disk the uploads in flight and the files kept for their jobs may take, 429 (the form
+    is read only after reserving it)."""
     with _upload_room(request):
         form = await request.form(max_files=1, max_fields=1)
         archivo = form.get("archivo")
         if not isinstance(archivo, UploadFile):
             raise HTTP_422_UNPROCESSABLE_ENTITY("Falta el archivo (campo «archivo»)")
-        if is_prism(archivo.file):
-            return await importer.import_prism(archivo.file, actor, into=_into(into))
-        if is_curseforge(archivo.file):
-            return await importer.import_curseforge(await archivo.read(IMPORT_MAX_BYTES + 1), actor, into=_into(into))
-        return await importer.import_mrpack(await archivo.read(IMPORT_MAX_BYTES + 1), actor, into=_into(into))
+        with _copy_room(archivo):
+            return await importer.import_upload(archivo.file, archivo.filename or "", actor, into=_into(into))
 
 @router.post("/modpack/import/curseforge", response_model=Job, status_code=202)
 @inject

@@ -33,28 +33,17 @@ class FakeImport:
             progress=None, waiting_until=None, updated_at=None, created_at=datetime.now(timezone.utc), attempts=0,
             max_attempts=1, error=None, requested_by=EDITOR.ref(), checkpoint={}, step=None)
 
-    async def import_mrpack(self, data: bytes, actor: Actor, into: Optional[str] = None) -> Job:
-        self.calls.append(("import_mrpack", data, actor, into))
+    async def import_upload(self, file: Any, filename: str, actor: Actor, into: Optional[str] = None) -> Job:
+        # O6: the route hands over the file as it came, unread; the job tells what it is.
+        self.calls.append(("import_upload", file.read(), filename, actor, into))
         if self.error:
             raise self.error
         return self.job
 
     curseforge_enabled = False
 
-    async def import_curseforge(self, data: bytes, actor: Actor, into: Optional[str] = None) -> Job:
-        self.calls.append(("import_curseforge", data, actor, into))
-        if not self.curseforge_enabled:
-            raise HTTP_422_UNPROCESSABLE_ENTITY("Esta instalación no tiene clave de CurseForge: exporta el pack como .mrpack desde Prism.")
-        return self.job
-
     async def import_curseforge_code(self, code: str, actor: Actor, into: Optional[str] = None) -> Job:
         self.calls.append(("import_curseforge_code", code, actor, into))
-        return self.job
-
-    async def import_prism(self, file: Any, actor: Actor, into: Optional[str] = None) -> Job:
-        self.calls.append(("import_prism", file.read(), actor, into))
-        if self.error:
-            raise self.error
         return self.job
 
     async def import_modrinth(self, ref: str, actor: Actor, into: Optional[str] = None) -> Job:
@@ -107,7 +96,7 @@ def test_an_uploaded_mrpack_queues_its_import_and_shows_it_until_the_report() ->
     client, fake = setup()
     response = client.post("/modpacks/importar", headers=HTMX, files={"archivo": ("pack.mrpack", b"PK data", "application/zip")})
     assert response.status_code == 200 and response.headers["HX-Trigger"] == "job-started"
-    assert fake.calls == [("import_mrpack", b"PK data", EDITOR, None)]
+    assert fake.calls == [("import_upload", b"PK data", "pack.mrpack", EDITOR, None)]
     assert "Importación de modpack" in response.text and 'hx-trigger="every 2s"' in response.text
     assert f'hx-get="/modpacks/importar/{fake.job.id}"' in response.text
     fake.job.status, fake.job.active = "done", False
@@ -185,7 +174,8 @@ def test_v1_imports_a_modrinth_modpack_or_an_mrpack_as_a_job() -> None:
     by_file = client.post("/v1/modpack/import/mrpack", files={"archivo": ("pack.mrpack", b"PK data", "application/zip")})
     assert by_ref.status_code == by_file.status_code == 202, (by_ref.text, by_file.text)
     assert by_ref.json()["kind"] == "modpack_import"
-    assert fake.calls == [("import_modrinth", "aventura", EDITOR, str(BUNDLE_ID)), ("import_mrpack", b"PK data", EDITOR, None)]
+    assert fake.calls == [("import_modrinth", "aventura", EDITOR, str(BUNDLE_ID)),
+                          ("import_upload", b"PK data", "pack.mrpack", EDITOR, None)]
 
 
 def test_v1_refuses_an_mrpack_past_the_limit_before_reading_it() -> None:
@@ -204,12 +194,13 @@ def prism_bytes() -> bytes:
     return buffer.getvalue()
 
 
-def test_a_prism_zip_in_the_same_field_goes_to_the_prism_import() -> None:
-    # T6 (owner, 2026-10-12): one field takes a .mrpack or a Prism instance, told apart by content.
+def test_a_prism_zip_in_the_same_field_is_queued_like_any_upload() -> None:
+    # T6 (owner, 2026-10-12): one field takes a .mrpack or a Prism instance, told apart by content;
+    # since O6 (owner, 2026-10-21) the job tells them apart, never the request.
     client, fake = setup()
     data = prism_bytes()
     response = client.post("/modpacks/importar", headers=HTMX, files={"archivo": ("Aventura.zip", data, "application/zip")})
-    assert response.status_code == 200 and fake.calls == [("import_prism", data, EDITOR, None)]
+    assert response.status_code == 200 and fake.calls == [("import_upload", data, "Aventura.zip", EDITOR, None)]
 
 
 def test_the_form_and_the_report_speak_of_prism() -> None:
@@ -241,6 +232,18 @@ def test_an_upload_that_does_not_fit_the_temporary_disk_is_refused_before_readin
     assert fake.calls == []
 
 
+def test_an_upload_whose_kept_copy_does_not_fit_the_temporary_disk_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    # O6: the file is kept for its job while Starlette's own copy still exists: both must fit.
+    from src.library.upload_budget import UploadBudget
+    from src.routers.web import modpacks as web
+
+    client, fake = setup()
+    data = b"PK" + b"x" * 100_000
+    monkeypatch.setattr(web, "UPLOADS", UploadBudget(150_000))  # the request fits; it and its copy do not
+    response = client.post("/modpacks/importar", headers=HTMX, files={"archivo": ("pack.mrpack", data, "application/zip")})
+    assert response.status_code == 429 and fake.calls == []
+
+
 def cf_bytes() -> bytes:
     import zipfile
     buffer = io.BytesIO()
@@ -261,16 +264,20 @@ def test_with_the_key_the_form_takes_a_curseforge_zip_and_a_profile_code() -> No
     zipped = client.post("/modpacks/importar", headers=HTMX, files={"archivo": ("pack.zip", data, "application/zip")})
     coded = client.post("/modpacks/importar", headers=HTMX, data={"codigo": " ABCD1234 "})
     assert zipped.status_code == coded.status_code == 200
-    assert fake.calls == [("import_curseforge", data, EDITOR, None), ("import_curseforge_code", "ABCD1234", EDITOR, None)]
+    assert fake.calls == [("import_upload", data, "pack.zip", EDITOR, None), ("import_curseforge_code", "ABCD1234", EDITOR, None)]
 
 
-def test_without_the_key_there_is_no_code_and_a_curseforge_zip_says_to_export_it() -> None:
+def test_without_the_key_there_is_no_code_and_a_curseforge_zip_is_queued_for_its_job_to_say_why() -> None:
+    # O6: the job reads the zip and fails saying to export it as .mrpack (tests/test_import_job_upload.py).
     client, fake = setup()
     shown = " ".join(visible(client.get("/modpacks/importar").text).split())
     assert "Archivo .mrpack o zip de Prism" in shown and "Código de perfil de CurseForge" not in shown
     response = client.post("/modpacks/importar", headers=HTMX, files={"archivo": ("pack.zip", cf_bytes(), "application/zip")})
-    assert response.status_code == 422
-    assert "Esta instalación no tiene clave de CurseForge: exporta el pack como .mrpack desde Prism." in response.text
+    assert response.status_code == 200 and [c[0] for c in fake.calls] == ["import_upload"]
+    fake.job.status, fake.job.active = "failed", False
+    fake.job.error = "Esta instalación no tiene clave de CurseForge: exporta el pack como .mrpack desde Prism."
+    failed = " ".join(visible(client.get(f"/modpacks/importar/{fake.job.id}", headers=HTMX).text).split())
+    assert "No se pudo importar: Esta instalación no tiene clave de CurseForge" in failed
 
 
 def test_the_report_lists_what_is_only_on_curseforge_by_its_ids() -> None:
@@ -291,4 +298,4 @@ def test_v1_takes_a_curseforge_zip_and_a_profile_code_as_jobs() -> None:
     zipped = client.post("/v1/modpack/import/mrpack", files={"archivo": ("pack.zip", data, "application/zip")})
     coded = client.post("/v1/modpack/import/curseforge", params={"code": "ABCD1234"})
     assert zipped.status_code == coded.status_code == 202
-    assert fake.calls == [("import_curseforge", data, EDITOR, None), ("import_curseforge_code", "ABCD1234", EDITOR, None)]
+    assert fake.calls == [("import_upload", data, "pack.zip", EDITOR, None), ("import_curseforge_code", "ABCD1234", EDITOR, None)]

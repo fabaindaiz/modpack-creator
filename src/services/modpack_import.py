@@ -11,19 +11,21 @@ import logging
 import hashlib
 import re
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import IO, Any, Optional
 from urllib.parse import urlparse
 from fastapi import HTTPException
 from src.database import ModpackDatabase, ModrinthDatabase
 from src.library.api.client.download import Downloader, TooLarge
 from src.library.api.client.modrinth import ModrinthAPI
+from src.library.import_uploads import UploadStore, read_upload, remove_quietly
 from src.library.mrpack_import import IndexFile, MrpackContent, MrpackError, MrpackLimits, OverrideJar, read_mrpack
-from src.library.prism_import import PrismLimits, read_prism
+from src.library.prism_import import PrismLimits
 from src.library.cf_import import CfContent, CfFile, read_cf_zip
 from src.library.api.client.curseforge import CurseForgeAPI
 from src.database.jobs import JobDatabase
 from src.model.jobs import Job
-from src.services.jobs import Handler, JobContext, JobFailed
+from src.services.jobs import Handler, JobContext, JobFailed, LeaseLost
 from src.library.resolution import EXCEPTION_CHANNELS
 from src.model.audit import AuditTarget
 from src.model.modpack import ModpackBundle
@@ -43,6 +45,10 @@ CF_CODE_FAILED = "CurseForge no respondió al código; expórtalo como .zip"
 # A CurseForge profile code: letters and digits (8 in the ones seen; the format is not documented).
 CF_CODE = re.compile(r"[A-Za-z0-9]{4,32}")
 PRISM_LIMITS = PrismLimits()
+UPLOAD_GONE = "El archivo subido ya no está en el servidor (se reinició antes de leerlo): súbelo de nuevo"
+# A stored upload no active job holds is removed once untouched this long: a request between storing
+# its file and queuing its job is never caught.
+UPLOAD_GRACE = timedelta(minutes=30)
 # A published modpack's file is only fetched from Modrinth's CDN.
 DOWNLOAD_HOST = "cdn.modrinth.com"
 MODRINTH_URL = re.compile(r"/(?:modpack|project)/([A-Za-z0-9_.-]+)(?:/version/([A-Za-z0-9_.+-]+))?/?")
@@ -78,8 +84,11 @@ class ModpackImportService():
             audit: AuditSink,
             jobDB: Optional[JobDatabase] = None,
             curseforge: Optional[CurseForgeAPI] = None,
+            uploads: Optional[UploadStore] = None,
             ) -> None:
         self.jobDB = jobDB or JobDatabase()
+        # Uploaded files waiting for their import job (O6).
+        self.uploads = uploads or UploadStore()
         # Off without the owner's key (C1): nothing calls CurseForge then.
         self.curseforge = curseforge
         self.modpackService = modpackService
@@ -89,63 +98,52 @@ class ModpackImportService():
         self.downloader = downloader
         self.audit = audit
 
-    async def import_mrpack(self, data: bytes, actor: Actor, into: Optional[str] = None) -> Job:
+    async def import_upload(self, file: IO[bytes], filename: str, actor: Actor, into: Optional[str] = None) -> Job:
         """
-        Import an uploaded .mrpack (spec 2026-10-09-economia-de-requests, E7): read now, with no
-        request, and identified on Modrinth by the person's import job (one at a time: asking again
-        gives the running one). 422 naming why if the file is not a valid .mrpack; 409 if `into` is
-        for another Minecraft version or loader. Either way, no job.
+        Import an uploaded .mrpack, Prism instance zip (T6) or CurseForge zip (T5) in the person's
+        import job (O6, owner 2026-10-21): the request only stores the file, in a thread, and queues
+        the job, which reads it, tells which of the three it is, and identifies it on Modrinth. One
+        at a time: asking again gives the running one, and the second file is not kept. A file that
+        is not a pack, a pack for another Minecraft version or loader than `into`, or a CurseForge
+        zip without the owner's key (C1) fail the job, naming why.
         """
-        content = _read(data)
-        if into is not None:
-            _same_target(await self.modpackDB.bundle_get(into), content)
-        job, new = await self._job(actor, {"content": asdict(content), "into": into, "source": _label(content)})
-        if new:
-            await self.audit.record(actor, "bundle.import.request", _target(into),
-                                    {"source": _label(content), "job_id": str(job.id)})
+        name = await asyncio.to_thread(self.uploads.save, file)
+        try:
+            job, new = await self._job(actor, {"upload": name, "into": into})
+            if new:
+                source = filename[:200]
+                await self.audit.record(actor, "bundle.import.request", _target(into),
+                                        {"source": source, "job_id": str(job.id)})
+        except BaseException:
+            await asyncio.to_thread(self.uploads.remove, name)
+            raise
+        if not new:
+            await asyncio.to_thread(self.uploads.remove, name)
         return job
 
-    async def import_prism(self, file: IO[bytes], actor: Actor, into: Optional[str] = None) -> Job:
-        """
-        Import the zip of a Prism instance (T6): read now from the upload's file (its worlds never
-        opened, P1), in a thread since it hashes every jar, and identified on Modrinth by the
-        person's import job, as an .mrpack. 422 naming why if it is not an instance; 409 for another
-        Minecraft version or loader.
-        """
-        try:
-            content = await asyncio.to_thread(read_prism, file, PRISM_LIMITS)
-        except MrpackError as error:
-            raise HTTP_422_UNPROCESSABLE_ENTITY(str(error)) from error
-        if into is not None:
-            _same_target(await self.modpackDB.bundle_get(into), content)
-        job, new = await self._job(actor, {"content": asdict(content), "into": into, "source": _label(content)})
-        if new:
-            await self.audit.record(actor, "bundle.import.request", _target(into),
-                                    {"source": _label(content), "job_id": str(job.id)})
-        return job
+    async def uploads_sweep(self, now: datetime) -> list[str]:
+        """Remove the stored uploads no active import holds (a restart, a job that died), past a
+        grace that covers a request between storing its file and queuing its job."""
+        held = {str(j.payload.get("upload")) for j in await self.jobDB.active_of_kind("modpack_import")}
+        return await asyncio.to_thread(self.uploads.sweep, held, now, UPLOAD_GRACE)
+
+    async def run_sweeper(self, stop: asyncio.Event, every: float = 3600.0) -> None:
+        """Call uploads_sweep now and every `every` seconds until `stop` is set."""
+        while not stop.is_set():
+            try:
+                removed = await self.uploads_sweep(datetime.now(timezone.utc))
+                if removed:
+                    logger.info("removed %d import uploads no job holds", len(removed))
+            except Exception:
+                logger.exception("import upload sweep error")
+            try:
+                await asyncio.wait_for(stop.wait(), every)
+            except asyncio.TimeoutError:
+                pass
 
     @property
     def curseforge_enabled(self) -> bool:
         return self.curseforge is not None and self.curseforge.enabled
-
-    async def import_curseforge(self, data: bytes, actor: Actor, into: Optional[str] = None) -> Job:
-        """
-        Import an uploaded CurseForge modpack zip (T5): read now, with no request; the job turns its
-        file ids into sha1 (one CurseForge request) and those into Modrinth versions. 422 without
-        the owner's key (C1) or if the zip is not valid; 409 for another Minecraft version or loader.
-        """
-        self._need_curseforge()
-        try:
-            content = read_cf_zip(data, LIMITS)
-        except MrpackError as error:
-            raise HTTP_422_UNPROCESSABLE_ENTITY(str(error)) from error
-        if into is not None:
-            _same_target(await self.modpackDB.bundle_get(into), content)
-        source = f"{content.name} {content.version_id}".strip()
-        job, new = await self._job(actor, {"cf": asdict(content), "into": into, "source": source})
-        if new:
-            await self.audit.record(actor, "bundle.import.request", _target(into), {"source": source, "job_id": str(job.id)})
-        return job
 
     async def import_curseforge_code(self, code: str, actor: Actor, into: Optional[str] = None) -> Job:
         """
@@ -210,7 +208,9 @@ class ModpackImportService():
 
         async def run() -> dict[str, Any]:
             try:
-                if "ref" in payload:
+                if "upload" in payload:
+                    report = await self._run_upload(str(payload["upload"]), actor, payload.get("into"), context)
+                elif "ref" in payload:
                     await context.progress("Buscando el modpack en Modrinth", 0, 1)
                     report = await self.run_modrinth(payload["ref"], actor, payload.get("into"))
                 elif "cf_code" in payload:
@@ -229,7 +229,40 @@ class ModpackImportService():
                 raise JobFailed(str(error.detail)) from error
             return asdict(report)
 
-        await context.step("import", run)
+        upload = payload.get("upload")
+        try:
+            await context.step("import", run)
+        except LeaseLost:
+            raise  # another worker holds the job now, and reads the file
+        except BaseException:
+            await self._drop_upload(upload)
+            raise
+        await self._drop_upload(upload)
+
+    async def _drop_upload(self, name: Any) -> None:
+        """The job ended, done or failed (it has one attempt): its stored file goes."""
+        if isinstance(name, str):
+            await asyncio.to_thread(remove_quietly, self.uploads, name)
+
+    async def _run_upload(self, name: str, actor: Actor, into: Optional[str], context: JobContext) -> ImportReport:
+        """The job's part of an uploaded file: read it in a thread (it hashes every jar), then
+        identify it as an .mrpack, a Prism instance or a CurseForge zip would be."""
+        try:
+            path = self.uploads.path_of(name)
+        except ValueError as error:
+            raise JobFailed(UPLOAD_GONE) from error
+        if not await asyncio.to_thread(path.is_file):
+            raise JobFailed(UPLOAD_GONE)
+        await context.progress("Leyendo el archivo", 0, 1)
+        try:
+            _, content = await asyncio.to_thread(read_upload, path, LIMITS, PRISM_LIMITS)
+        except MrpackError as error:
+            raise JobFailed(str(error)) from error
+        await context.progress("Identificando los archivos en Modrinth", 0, 1)
+        if isinstance(content, CfContent):
+            self._need_curseforge()
+            return await self.run_curseforge(content, actor, into, f"{content.name} {content.version_id}".strip())
+        return await self.run_content(content, actor, into, _label(content))
 
     async def run_mrpack(self, data: bytes, actor: Actor, into: Optional[str] = None) -> ImportReport:
         """Import an uploaded .mrpack now (the job's work; tests call it directly)."""

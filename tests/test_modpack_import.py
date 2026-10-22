@@ -4,7 +4,9 @@ Modrinth y el CDN son dobles que anotan cada llamada (el dueño cuenta cada requ
 import hashlib
 import io
 import json
+import tempfile
 import zipfile
+from pathlib import Path
 from typing import Any, Optional, Sequence, cast
 
 import pytest
@@ -13,6 +15,7 @@ from fastapi import HTTPException
 from src.database.modpack import ModpackDatabase
 from src.database.modrinth import ModrinthDatabase
 from src.library.api.client.download import TooLarge
+from src.library.import_uploads import UploadStore
 from src.model.modpack import ModpackBundle, PackProject, ProjectOrigin
 from src.model.modrinth import ModrinthProject, ModrinthVersion
 from src.model.utils import MinecraftLoaders
@@ -141,7 +144,8 @@ class Scenario:
                                  loaderAPI=cast(Any, FakeLoaders()), audit=self.audit)
         self.service = ModpackImportService(modpackService=modpack, modpackDB=self.modpackDB, modrinthDB=ModrinthDatabase(),
                                             modrinthAPI=cast(Any, self.api), downloader=cast(Any, self.downloader),
-                                            audit=self.audit)
+                                            audit=self.audit,
+                                            uploads=UploadStore(Path(tempfile.mkdtemp(prefix="imports-"))))
 
     async def bundle(self, version: str = "1.20.1", loader: MinecraftLoaders = MinecraftLoaders.fabric) -> str:
         created = await self.modpackDB.bundle_insert(ModpackBundle(
@@ -319,11 +323,12 @@ async def run_jobs(s: Scenario) -> None:
         pass
 
 
-def test_an_upload_is_read_at_once_and_identified_in_a_job_with_its_report(mongo: MongoRunner) -> None:
+def test_an_upload_is_read_and_identified_in_a_job_with_its_report(mongo: MongoRunner) -> None:
+    # O6 (owner, 2026-10-21): the request only stores the file; the job reads it too.
     async def scenario() -> tuple[Any, ...]:
         s = Scenario()
-        job = await s.service.import_mrpack(mrpack(), EDITOR)
-        again = await s.service.import_mrpack(mrpack(), EDITOR)
+        job = await s.service.import_upload(io.BytesIO(mrpack()), "pack.mrpack", EDITOR)
+        again = await s.service.import_upload(io.BytesIO(mrpack()), "pack.mrpack", EDITOR)
         before = list(s.api.calls)
         await run_jobs(s)
         done, report = await s.service.import_status(str(job.id))
@@ -337,18 +342,21 @@ def test_an_upload_is_read_at_once_and_identified_in_a_job_with_its_report(mongo
     assert report.unknown == ["mods/private.jar", "overrides/mods/own.jar"] and len(report.projects) == 3
 
 
-@pytest.mark.parametrize("data, into_other, status", [(b"not a zip", False, 422), (None, True, 409)])
-def test_a_refusal_known_without_modrinth_comes_at_once_without_a_job(
-        mongo: MongoRunner, data: Optional[bytes], into_other: bool, status: int) -> None:
-    async def scenario() -> tuple[int, int]:
+@pytest.mark.parametrize("data, into_other, reason", [(b"not a zip", False, "no es un zip"),
+                                                      (None, True, "No se cambió nada")])
+def test_a_refusal_known_without_modrinth_fails_the_job_naming_why_and_asks_modrinth_nothing(
+        mongo: MongoRunner, data: Optional[bytes], into_other: bool, reason: str) -> None:
+    async def scenario() -> tuple[Any, ...]:
         s = Scenario()
         into = await s.bundle(version="1.21.1") if into_other else None
-        with pytest.raises(HTTPException) as refused:
-            await s.service.import_mrpack(data if data is not None else mrpack(), EDITOR, into=into)
-        from src.model.jobs import Job
-        return refused.value.status_code, await Job.find().count()
+        job = await s.service.import_upload(io.BytesIO(data if data is not None else mrpack()), "p.mrpack", EDITOR, into=into)
+        await run_jobs(s)
+        done, report = await s.service.import_status(str(job.id))
+        return done, report, s.api.calls, s.service.uploads.names()
 
-    assert mongo(scenario) == (status, 0)
+    done, report, calls, left = mongo(scenario)
+    assert done.status == "failed" and reason in (done.error or "") and report is None
+    assert calls == [] and left == []  # the job removed its file
 
 
 def test_a_modrinth_reference_is_imported_by_a_job(mongo: MongoRunner) -> None:
@@ -402,7 +410,7 @@ def test_a_prism_instance_imports_as_a_job_with_its_disabled_mods_off_and_its_hi
     async def scenario() -> tuple[Any, ...]:
         s = Scenario()
         s.api.versions.append(version("libb", LIB[0], "lib jar 2", kind="beta"))
-        job = await s.service.import_prism(prism_zip(), EDITOR)
+        job = await s.service.import_upload(prism_zip(), "Aventura.zip", EDITOR)
         await run_jobs(s)
         done, report = await s.service.import_status(str(job.id))
         bundle = await s.modpackDB.bundle_get(report.bundle_id) if report else None
@@ -459,7 +467,7 @@ def test_a_curseforge_zip_is_identified_by_sha1_in_a_job_and_reports_what_is_onl
     async def scenario() -> tuple[Any, ...]:
         s, cf = Scenario(), FakeCurseForge()
         with_curseforge(s, cf)
-        job = await s.service.import_curseforge(cf_pack(), EDITOR)
+        job = await s.service.import_upload(io.BytesIO(cf_pack()), "pack.zip", EDITOR)
         before = list(s.api.calls) + list(cf.calls)
         await run_jobs(s)
         done, report = await s.service.import_status(str(job.id))
@@ -482,13 +490,14 @@ def test_without_a_key_a_curseforge_zip_says_to_export_it_as_mrpack(mongo: Mongo
     async def scenario() -> Any:
         s = Scenario()
         with_curseforge(s, FakeCurseForge(enabled=False))
-        with pytest.raises(HTTPException) as refused:
-            await s.service.import_curseforge(cf_pack(), EDITOR)
-        return refused.value
+        job = await s.service.import_upload(io.BytesIO(cf_pack()), "pack.zip", EDITOR)
+        await run_jobs(s)
+        done, _ = await s.service.import_status(str(job.id))
+        return done
 
-    refused = mongo(scenario)
-    assert refused.status_code == 422
-    assert refused.detail == "Esta instalación no tiene clave de CurseForge: exporta el pack como .mrpack desde Prism."
+    done = mongo(scenario)
+    assert done.status == "failed"
+    assert done.error == "Esta instalación no tiene clave de CurseForge: exporta el pack como .mrpack desde Prism."
 
 
 def test_a_profile_code_is_downloaded_by_the_job_and_one_that_fails_says_so(mongo: MongoRunner) -> None:

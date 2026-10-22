@@ -39,6 +39,10 @@ class JobDatabase():
         """The active jobs this person asked for, oldest first, for the bar."""
         return await self._polled({"active": True, "requested_by.iss": iss, "requested_by.sub": sub})
 
+    async def active_of_kind(self, kind: str) -> list[Job]:
+        """The queued or running jobs of this kind, oldest first, without their read content."""
+        return await self._polled({"kind": kind, "active": True})
+
     @staticmethod
     async def _polled(query: dict[str, Any]) -> list[Job]:
         """Jobs for a page that polls every few seconds: without the read file an import carries

@@ -1,7 +1,7 @@
 import logging
 import re
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Optional
@@ -21,8 +21,7 @@ from src.model.modrinth.project import ModrinthEnvironment
 from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
 from src.library.utils import as_utc, getenv
-from src.library.cf_import import is_curseforge
-from src.library.prism_import import is_prism
+from src.library.import_uploads import UploadStore
 from src.library.upload_budget import UploadBudget, UploadBusy
 from src.web import BUNDLE_REF, JOB_STARTED, MODRINTH_REF, WebRoute, active_bridge, get_web_actor, render
 
@@ -376,14 +375,14 @@ async def modpack_create(
 
 # An upload is refused by its declared size before the form is read: Starlette 1.7 caps the form's
 # text fields, not its files, which it would spool whole. The margin is the form around the file.
-IMPORT_MAX_BYTES = 50 * 1024 * 1024
-# A Prism instance's zip may be much bigger (T6/P1): read from the upload's temporary file, its
-# worlds never opened. A .mrpack is still refused past IMPORT_MAX_BYTES once read.
+# A Prism instance's zip may be 1 GiB (T6/P1), its worlds never opened; a .mrpack or a CurseForge zip
+# is refused past 50 MiB by its job, which reads it (O6).
 PRISM_MAX_BYTES = 1024 * 1024 * 1024
 IMPORT_MAX_REQUEST = PRISM_MAX_BYTES + 1024 * 1024
 # The temporary disk the imports being uploaded may take together (owner, 2026-10-12): each holds its
-# Content-Length from before its body is read until its answer, when Starlette deletes the file.
-UPLOADS = UploadBudget(int(getenv("IMPORT_TMP_MAX_MIB", "4096")) * 1024 * 1024)
+# Content-Length from before its body is read until its answer, when Starlette deletes the file, and
+# the files kept for their import jobs count too, from the disk (O6).
+UPLOADS = UploadBudget(int(getenv("IMPORT_TMP_MAX_MIB", "4096")) * 1024 * 1024, stored=UploadStore().stored_bytes)
 UPLOAD_BUSY = "Hay otra importación subiendo; intenta en un momento"
 
 @contextmanager
@@ -392,11 +391,25 @@ def _upload_room(request: Request) -> Iterator[None]:
     declared = request.headers.get("content-length", "")
     if not declared.isdigit() or int(declared) > IMPORT_MAX_REQUEST:
         raise HTTP_413_CONTENT_TOO_LARGE("El archivo pesa más de 1 GiB")
+    with _reserved(int(declared)):
+        yield
+
+@contextmanager
+def _reserved(size: int) -> Iterator[None]:
+    """Hold `size` bytes of the temporary disk; 429 if the uploads in flight leave no room."""
     try:
-        with UPLOADS.reserve(int(declared)):
+        with UPLOADS.reserve(size):
             yield
     except UploadBusy as busy:
         raise QuotaExceeded(UPLOAD_BUSY, 30.0) from busy
+
+def _copy_room(upload: UploadFile) -> AbstractContextManager[None]:
+    """
+    Room for the copy of an upload kept for its import job (O6, owner 2026-10-21): the request only
+    stores the file and the job reads it. The copy holds its size while Starlette's own still exists
+    (until the answer); once written, the budget counts it from the disk until the job removes it.
+    """
+    return _reserved(upload.size if upload.size is not None else IMPORT_MAX_REQUEST)
 
 @router.get("/modpacks/importar")
 @inject
@@ -427,12 +440,8 @@ async def modpack_import(
         upload, ref = form.get("archivo"), str(form.get("ref") or "").strip()
         code = str(form.get("codigo") or "").strip()
         if isinstance(upload, UploadFile) and upload.filename:
-            if is_prism(upload.file):
-                job = await importService.import_prism(upload.file, actor, into=into)
-            elif is_curseforge(upload.file):
-                job = await importService.import_curseforge(await upload.read(IMPORT_MAX_BYTES + 1), actor, into=into)
-            else:
-                job = await importService.import_mrpack(await upload.read(IMPORT_MAX_BYTES + 1), actor, into=into)
+            with _copy_room(upload):
+                job = await importService.import_upload(upload.file, upload.filename, actor, into=into)
         elif code:
             job = await importService.import_curseforge_code(code[:40], actor, into=into)
         elif ref:

@@ -60,6 +60,9 @@ async def lifespan(app: FastAPI):
         worker = asyncio.create_task(JobWorker(container.jobDatabase(), handlers,
                                                beat=container.workerBeat()).run_forever(stop))
         worker.add_done_callback(lambda _: container.workerBeat().stop())
+    # The uploaded import files no active job holds (a restart, a job that died; O6): removed at
+    # start and every hour. A file a job holds stays, whichever process runs that job.
+    sweeper = asyncio.create_task(container.modpackImportService().run_sweeper(stop))
     # Periodic scans, only if SCAN_EVERY_HOURS is set; a full one every SCAN_FULL_EVERY_DAYS.
     scheduler = None
     scan_every = getenv_opt("SCAN_EVERY_HOURS")
@@ -76,7 +79,7 @@ async def lifespan(app: FastAPI):
     diagnostics = asyncio.create_task(RECORDER.run(container.diagnosticsDatabase().insert_many, stop))
     yield
     stop.set()
-    for task in (worker, scheduler, update_scheduler, diagnostics):
+    for task in (worker, scheduler, update_scheduler, diagnostics, sweeper):
         if task is not None:
             await task
     await dependences.close_clients(container)
