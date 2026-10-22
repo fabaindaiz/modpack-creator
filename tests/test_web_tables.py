@@ -60,9 +60,19 @@ def test_the_table_stacks_below_sm_and_is_a_table_from_sm() -> None:
     assert re.search(r'<thead class="[^"]*max-sm:sr-only', html)
     # Only below sm: nothing of the stacking applies from sm on.
     body = re.search(r'<tbody class="([^"]*)"', html)
-    assert body and "max-sm:[&_tr]:block" in body.group(1)
-    assert all(c.startswith(("max-sm:", "dark:max-sm:", "divide-", "dark:divide-", "[&_td]:"))
+    assert body and "max-sm:[&>tr]:block" in body.group(1)
+    assert all(c.startswith(("max-sm:", "dark:max-sm:", "divide-", "dark:divide-", "[&>tr>td]:"))
                for c in body.group(1).split())
+
+
+def test_the_table_styles_only_its_own_rows_and_cells() -> None:
+    """Review of batch B, minor 7: `[&_td]` reached the cells of a table nested in a cell too; the
+    body's variants name its own rows and their cells (`>`), never every descendant."""
+    macros = (Path(__file__).resolve().parent.parent / "src/web/templates/_macros.html").read_text()
+    body = re.search(r'<tbody class="([^"]*)"', macros)
+    assert body
+    assert "[&_td" not in body.group(1) and "[&_tr" not in body.group(1)
+    assert "[&>tr>td]:px-3" in body.group(1)
 
 
 def test_an_empty_table_has_no_labelled_cell_but_still_stacks() -> None:

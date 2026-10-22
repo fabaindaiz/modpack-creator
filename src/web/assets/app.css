@@ -1,10 +1,11 @@
 @import "tailwindcss";
 @source "../templates";
 
-/* Inter, served by the panel (OFL; its license at /static/fonts/LICENSE-Inter.txt). */
+/* Inter, served by the panel (OFL; its license at /static/fonts/LICENSE-Inter.txt). `?v=` is the
+   first 12 hex of the font's sha256, so a new font is a new URL (tests/test_web_style.py checks it). */
 @font-face {
   font-family: "Inter";
-  src: url("/static/fonts/InterVariable.woff2") format("woff2");
+  src: url("/static/fonts/InterVariable.woff2?v=693b77d4f32e") format("woff2");
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;

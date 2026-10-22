@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from html.parser import HTMLParser
 
 # What stacks a table below `sm:` (src/web/templates/_macros.html, `ui.table`).
-STACKS = "max-sm:[&_td]:before:content-[attr(data-label)]"
+STACKS = "max-sm:[&>tr>td]:before:content-[attr(data-label)]"
 
 
 @dataclass

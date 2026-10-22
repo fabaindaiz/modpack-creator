@@ -44,8 +44,18 @@ def test_inter_is_served_by_the_panel_with_its_license() -> None:
     assert font.read_bytes()[:4] == b"wOF2"
     assert "SIL OPEN FONT LICENSE" in (web.STATIC_DIR / "fonts/LICENSE-Inter.txt").read_text().upper()
     text = css()
-    assert re.search(r'@font-face\s*{[^}]*font-family:\s*"Inter"[^}]*url\("/static/fonts/InterVariable\.woff2"\)', text)
+    assert re.search(r'@font-face\s*{[^}]*font-family:\s*"Inter"[^}]*url\("/static/fonts/InterVariable\.woff2\?v=[0-9a-f]+"\)', text)
     assert re.search(r'--font-sans:\s*"Inter"', text)
+
+
+def test_the_font_url_changes_with_the_font() -> None:
+    """Review of batch B, minor 7: the stylesheet's URL carries its hash, the font's did not, so a
+    browser could keep an old font after it changed. The version is the font's own hash: a new font
+    without a new version fails here."""
+    import hashlib
+
+    digest = hashlib.sha256((web.STATIC_DIR / "fonts/InterVariable.woff2").read_bytes()).hexdigest()[:12]
+    assert f'url("/static/fonts/InterVariable.woff2?v={digest}")' in css()
 
 
 def used_icons() -> set[str]:
