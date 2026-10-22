@@ -77,6 +77,8 @@ NOT_AUDITED: dict[str, str] = {
     "ModpackService.project_versions": "es una lectura que solo guarda en el catálogo las versiones que trae de Modrinth",
     "ModpackService.bridge_companions_missing": ("es una lectura que solo guarda en el catálogo los proyectos y "
                                                  "versiones que trae de Modrinth; no agrega nada al pack"),
+    "ModpackService.bridge_companions_now": ("como bridge_companions_missing, desde el catálogo; si le falta algo encola "
+                                             "el trabajo de catálogo del pack, como resolve, sin cambiar ningún bundle"),
     "ModpackService.mod_page": "es una lectura que solo guarda en el catálogo los proyectos que trae de Modrinth",
     "ModpackService.mod_versions_all": "es una lectura que solo guarda en el catálogo las versiones que trae de Modrinth",
     "ModrinthService.projects_filled": "es una lectura que solo guarda en el catálogo los proyectos que trae de Modrinth",

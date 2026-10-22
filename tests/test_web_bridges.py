@@ -140,6 +140,27 @@ def test_adding_a_bridged_mod_answers_a_dialog_with_what_enters_and_adds_nothing
     assert "Cancelar" in said(text) and "Agregar todo" in said(form) and "data-dialog-close" in text
 
 
+def test_adding_a_bridged_mod_the_catalog_lacks_queues_the_catalog_job_and_says_to_add_it_again() -> None:
+    # O6 (owner, 2026-10-21): no resolution on Modrinth inside the request; the pack's catalog job
+    # brings what it takes, shown like any pending job.
+    from src.exceptions import BRIDGE_PENDING, CatalogPending
+    from tests.test_web_jobs import job
+
+    client, modpack, _ = setup()
+    bridged(modpack)
+    queued = job(status="queued", payload={"bundle_id": str(BUNDLE_ID), "candidates": ["FM"]})
+    modpack.pending = CatalogPending(queued, BRIDGE_PENDING)  # type: ignore[attr-defined]
+    response = client.post(f"/modpacks/{BUNDLE_ID}/projects", headers={**HTMX, "HX-Trigger": "hit-add-FM"},
+                           data={"ref": "FM"})
+    assert response.status_code == 200 and response.headers.get("HX-Reswap") == "none"
+    assert response.headers.get("HX-Trigger") == "job-started"
+    assert call(modpack, "bridge_companions_now")[1:] == (str(BUNDLE_ID), "FM", EDITOR)
+    assert not [c for c in modpack.calls if c[0] == "project_add"]
+    assert BRIDGE_PENDING in said(response.text)
+    assert BRIDGE_PENDING == "Buscando en Modrinth cómo corre este mod con el puente: agrégalo de nuevo cuando termine."
+    assert 'id="job-banner" hx-swap-oob="innerHTML"' in response.text and "Catálogo de Modrinth" in response.text
+
+
 def test_agregar_todo_adds_the_mod_and_its_companions_and_answers_the_mods() -> None:
     client, modpack, _ = setup()
     bridged(modpack)

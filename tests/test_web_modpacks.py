@@ -206,9 +206,13 @@ class FakeModpack:
         self.bundle.projects = self.bundle.projects + [PackProject(project_id=r, origin=origin) for r in refs if r not in owned]
         return self.bundle.projects
 
-    async def bridge_companions_missing(self, bundle_id: str, project_id: str) -> list[tuple[str, str]]:
-        """A read: what `missing` says a bridged mod needs (batch C); nothing by default."""
-        self.calls.append(("bridge_companions_missing", bundle_id, project_id))
+    async def bridge_companions_now(self, bundle_id: str, project_id: str, actor: Actor) -> list[tuple[str, str]]:
+        """What `missing` says a bridged mod needs (batch C); nothing by default. With `pending`, the
+        catalog lacks what it takes and its job is queued (O6): that CatalogPending."""
+        self.calls.append(("bridge_companions_now", bundle_id, project_id, actor))
+        pending = getattr(self, "pending", None)
+        if pending is not None:
+            raise pending
         return list(getattr(self, "missing", []))
 
     async def project_remove(self, bundle_id: str, project_id: str, actor: Actor) -> list[PackProject]:

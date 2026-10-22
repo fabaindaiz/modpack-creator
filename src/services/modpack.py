@@ -652,7 +652,27 @@ class ModpackService():
         project runs natively, is already in the pack, or the pack has no bridge on (then Modrinth is
         not asked at all). The project resolves alone, with the pack's target, floors and rules, so
         its way is the one the resolution would take (native first, C3). `project_id` may be a slug.
-        Writes only the catalog (what it fetched); adds nothing."""
+        Writes only the catalog (what it fetched); adds nothing. Up to RESOLVE_ROUNDS of Modrinth
+        calls: the catalog job's work (O6); a request asks `bridge_companions_now`."""
+        return await self._bridge_companions(bundle_id, project_id, local_only=False)
+
+    async def bridge_companions_now(self, bundle_id: str, project_id: str, actor: Actor) -> list[tuple[str, str]]:
+        """
+        `bridge_companions_missing` inside a request (O6, owner 2026-10-21): the project's way is
+        resolved from the catalog only. When the catalog lacks what it takes, the pack's catalog job
+        is queued with the project as a candidate (or the queued one takes it) and CatalogPending
+        names it: asking again once it ends answers. Fetching the project itself, and the titles of
+        the companions, are one batch call each, as any add.
+        """
+        try:
+            return await self._bridge_companions(bundle_id, project_id, local_only=True)
+        except _NeedsModrinth:
+            stored = await self.modrinthDB.project_find_by_modrinth_id([project_id])
+            candidate = stored[0].project_id if stored else project_id
+            job = await self._catalog_job(bundle_id, actor, force=False, candidates=[candidate])
+            raise CatalogPending(job, BRIDGE_PENDING)
+
+    async def _bridge_companions(self, bundle_id: str, project_id: str, local_only: bool) -> list[tuple[str, str]]:
         bundle = await self.modpackDB.bundle_get(bundle_id)
         request = await self._request(bundle)
         if not request.target.bridges:
@@ -670,7 +690,7 @@ class ModpackService():
         if used is None:
             alone = request.model_copy(update={"projects": [found.project_id],
                                                "origins": {found.project_id: ProjectOrigin.admin.value}})
-            lock = await self._resolve(alone)
+            lock = await self._resolve(alone, local_only=local_only)
             way = next((e.via for e in lock.entries if e.project_id == found.project_id), None)
             used = find_bridge(way, request.target.loader, game_version) if way else None
         if used is None:
@@ -1144,16 +1164,25 @@ class ModpackService():
         await self.audit.record(actor, "bundle.catalog_refresh", _bundle(bundle_id), {"job_id": str(job.id)})
         return job
 
-    async def _catalog_job(self, bundle_id: str, actor: Optional[Actor], force: bool) -> Job:
-        """The pack's catalog job: a new one, or the one already queued or running (never two)."""
+    async def _catalog_job(self, bundle_id: str, actor: Optional[Actor], force: bool,
+                           candidates: Sequence[str] = ()) -> Job:
+        """The pack's catalog job: a new one, or the one already queued or running (never two).
+        `candidates` are mods about to be added whose way through a bridge it looks up too (O6); a
+        queued job takes them, a running one does not (asking again after it queues another)."""
         key = _catalog_key(bundle_id)
+        payload: dict[str, Any] = {"bundle_id": bundle_id, "force": force}
+        if candidates:
+            payload["candidates"] = list(candidates)
         try:
-            return await self.jobDB.enqueue("catalog_refresh", key=key, payload={"bundle_id": bundle_id, "force": force},
+            return await self.jobDB.enqueue("catalog_refresh", key=key, payload=payload,
                                             requested_by=actor.ref() if actor is not None else None)
         except HTTP_409_CONFLICT:
             active = await self.jobDB.active_for(key)
             if active is None:
                 raise
+            if candidates and await self.jobDB.candidates_add_if_queued(active.id, list(candidates)):
+                known = list(active.payload.get("candidates") or [])
+                active.payload["candidates"] = known + [c for c in candidates if c not in known]
             return active
 
     async def active_jobs(self, bundle_id: str) -> list[Job]:
@@ -1183,6 +1212,23 @@ class ModpackService():
             return {"entries": len(lock.entries), "problems": len(lock.problems), "undecided": len(lock.undecided)}
 
         await context.step("resolve", run)
+        candidates = [str(c) for c in job.payload.get("candidates") or []]
+        if candidates:
+
+            async def look_up() -> dict[str, Any]:
+                """The way of each mod about to be added through a bridge (O6): what the add asks
+                from the catalog when it is clicked again."""
+                for done, candidate in enumerate(candidates):
+                    await context.progress("Buscando cómo corre el mod con el puente", done, len(candidates))
+                    try:
+                        await self.bridge_companions_missing(bundle_id, candidate)
+                    except HTTPException:
+                        # Refused for a reason the add says itself when clicked again (a replaced
+                        # mod, one Modrinth does not know): the pack's catalog job still ends well.
+                        logger.info("bridge candidate %s of %s refused", candidate, bundle_id, exc_info=True)
+                return {"candidates": len(candidates)}
+
+            await context.step("candidates", look_up)
 
     async def _loader_version(self, loader: str, game_version: str, force: bool = False) -> Optional[str]:
         """The loader version for this Minecraft version (U4/M4): the kept one while it is younger than

@@ -71,9 +71,12 @@ class ViaChangeRefused(HTTP_409_CONFLICT):
 class CatalogPending(HTTP_409_CONFLICT):
     """The pack needs information from Modrinth the catalog lacks: a job brings it (spec
     2026-10-09-economia-de-requests, E6) and the pack resolves when it ends. `job` is that job."""
-    def __init__(self, job: Any):
-        super().__init__("Preparando el catálogo de Modrinth para este pack: se resuelve solo al terminar.")
+    def __init__(self, job: Any, detail: str = "Preparando el catálogo de Modrinth para este pack: se resuelve solo al terminar."):
+        super().__init__(detail)
         self.job = job
+
+# Adding a mod through a bridge the catalog cannot place yet (O6): the catalog job looks it up.
+BRIDGE_PENDING = "Buscando en Modrinth cómo corre este mod con el puente: agrégalo de nuevo cuando termine."
 
 class HTTP_413_CONTENT_TOO_LARGE(HTTPException):
     """Used when a request body is larger than the route accepts"""

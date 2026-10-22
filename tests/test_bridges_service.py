@@ -105,6 +105,55 @@ def test_a_mod_that_only_runs_through_the_bridge_names_the_companions_the_pack_l
     assert "M" not in [p.project_id for p in projects]  # a read: nothing is added
 
 
+def test_adding_through_a_bridge_never_resolves_on_modrinth_in_the_request_but_queues_the_catalog_job(
+        mongo: MongoRunner) -> None:
+    # O6 (owner, 2026-10-21): the request reads only the catalog; what it lacks, the pack's catalog
+    # job brings (with the mod to add), and asking again once it ends names the companions.
+    from src.exceptions import CatalogPending
+    from src.library.bridges import CONNECTOR, FORGIFIED_FABRIC_API
+    from tests.test_catalog_jobs import run_jobs
+
+    async def scenario() -> Any:
+        fake = companions_api()
+        s = Scenario(fake)
+        bundle_id = await neoforge_pack(s, bridges=("connector",))
+        with pytest.raises(CatalogPending) as pending:
+            await s.service.bridge_companions_now(bundle_id, "M", EDITOR)
+        listed_in_request = [name for name, _ in fake.calls if name == "project_versions"]
+        job = pending.value.job
+        await run_jobs(s.service)
+        after = await s.service.bridge_companions_now(bundle_id, "M", EDITOR)
+        return job, listed_in_request, after
+
+    job, listed_in_request, after = mongo(scenario)
+    assert job.kind == "catalog_refresh" and job.payload["candidates"] == ["M"] and job.requested_by == EDITOR.ref()
+    assert listed_in_request == []  # no version list asked of Modrinth inside the request
+    assert after == [(CONNECTOR, "Connector"), (FORGIFIED_FABRIC_API, "Forgified Fabric API")]
+
+
+def test_a_second_mod_added_while_the_catalog_job_waits_joins_that_job(mongo: MongoRunner) -> None:
+    from src.exceptions import CatalogPending
+
+    async def scenario() -> Any:
+        fake = companions_api()
+        fake.projects |= {"M2": project("M2", "FabricHud", loaders=("fabric",), game_versions=("1.21.1",))}
+        fake.versions += [version("m2", "M2", "1.0", 1, loaders=("fabric",), game_versions=("1.21.1",))]
+        s = Scenario(fake)
+        bundle_id = await neoforge_pack(s, bridges=("connector",))
+        jobs = []
+        for mod in ("M", "M2"):
+            with pytest.raises(CatalogPending) as pending:
+                await s.service.bridge_companions_now(bundle_id, mod, EDITOR)
+            jobs.append(pending.value.job)
+        from src.model.jobs import Job
+        stored = await Job.get(jobs[0].id)
+        return jobs, stored
+
+    jobs, stored = mongo(scenario)
+    assert jobs[0].id == jobs[1].id and jobs[1].payload["candidates"] == ["M", "M2"]
+    assert stored is not None and stored.payload["candidates"] == ["M", "M2"]
+
+
 def test_a_native_mod_or_a_pack_without_a_bridge_needs_nothing(mongo: MongoRunner) -> None:
     async def scenario() -> Any:
         fake = companions_api()

@@ -65,6 +65,12 @@ class JobDatabase():
             {"_id": job_id, "status": "queued"}, {"$set": {"payload.force": True}})
         return result.modified_count == 1
 
+    async def candidates_add_if_queued(self, job_id: Any, candidates: list[str]) -> bool:
+        """Add to `payload.candidates` of a job still queued; False if it is already running or done."""
+        result = await Job.get_pymongo_collection().update_one(
+            {"_id": job_id, "status": "queued"}, {"$addToSet": {"payload.candidates": {"$each": candidates}}})
+        return result.matched_count == 1
+
     async def active_for(self, key: str) -> Optional[Job]:
         """The active job holding this key, if any."""
         return await Job.find_one(Job.key == key, Job.active == True)  # noqa: E712

@@ -582,7 +582,8 @@ async def project_add(
     main = refs[0]
     bundle = await modpackService.bundle_get(bundle_id)
     if not confirm_bridge:
-        missing = await modpackService.bridge_companions_missing(bundle_id, main)
+        # From the catalog only: what it lacks, the catalog job brings (CatalogPending, O6).
+        missing = await modpackService.bridge_companions_now(bundle_id, main, actor)
         used = active_bridge(bundle)
         if missing and used is not None:
             titles = await _titles(modrinthService, [main])
