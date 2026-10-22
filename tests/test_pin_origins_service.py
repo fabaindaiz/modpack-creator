@@ -14,7 +14,7 @@ from fastapi import HTTPException
 
 from src.database.modrinth import ModrinthDatabase
 from src.library.resolution import Lock, LockEntry, ResolveRequest, Target
-from src.model.modpack import ModpackBuild, ModpackBundle, PinSource
+from src.model.modpack import ModpackBuild, ModpackBundle, PinOrigin, PinRecord, PinSource
 from src.model.modrinth import ModrinthVersion
 from tests._actors import EDITOR
 from tests.conftest import MongoRunner
@@ -122,6 +122,31 @@ def test_the_card_puts_another_origin_in_use_and_going_back_asks_first(mongo: Mo
     assert SODIUM[0] not in freed.pins and freed.pin_origins[SODIUM[0]].selected == PinSource.resolution
     assert [o.source for o in freed.pin_origins[SODIUM[0]].origins] == [PinSource.pack]
     assert events[0][2]["downgrade"] == {"from": "sod-2", "to": "sod-1"} and events[0][2]["origin"] == "pack"
+
+
+def test_the_card_puts_one_servers_origin_in_use_by_its_server(mongo: MongoRunner) -> None:
+    """One «servidor» origin per linked server (owner, 2026-10-22): choosing names the server."""
+    async def scenario() -> tuple[Any, ...]:
+        s = Scenario()
+        bundle_id = await s.bundle()
+        await s.modpackDB.bundle_pin_set(bundle_id, SODIUM[0], "sod-1")
+        record = PinRecord(origins=[PinOrigin(source=PinSource.admin, version_id="sod-1"),
+                                    PinOrigin(source=PinSource.server, version_id="sod-1", label="Survival", server_id="s1"),
+                                    PinOrigin(source=PinSource.server, version_id="sod-1", label="Creativo", server_id="s2")],
+                           selected=PinSource.admin)
+        await s.modpackDB.bundle_pin_record_set(bundle_id, SODIUM[0], record, "sod-1")
+        service = s.service.modpackService
+        await service.pin_origin_select(bundle_id, SODIUM[0], PinSource.server, EDITOR, server_id="s2")
+        chosen = await s.modpackDB.bundle_get(bundle_id)
+        with pytest.raises(HTTPException) as unknown:
+            await service.pin_origin_select(bundle_id, SODIUM[0], PinSource.server, EDITOR, server_id="s9")
+        return chosen, unknown.value.status_code
+
+    chosen, status = mongo(scenario)
+    record = chosen.pin_origins[SODIUM[0]]
+    assert (record.selected, record.selected_key) == (PinSource.server, "server:s2")
+    assert [o.server_id for o in record.origins if o.source == PinSource.server] == ["s1", "s2"]
+    assert status == 422
 
 
 def test_a_pack_version_outside_the_tags_resolves_marked_instead_of_a_problem(mongo: MongoRunner) -> None:

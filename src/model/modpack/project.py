@@ -35,6 +35,14 @@ class PinOrigin(BaseModel):
     # What named it: the imported pack and its version, a server.
     label: Optional[str] = None
     at: Optional[datetime] = None
+    # The server whose scan offered it: one «servidor» origin per linked server (owner, 2026-10-22).
+    # None for the other sources, and for a server's origin stored before (it is known by its label).
+    server_id: Optional[str] = None
+
+    @property
+    def key(self) -> str:
+        """What tells it from the others of the mod: its source, and a server's id."""
+        return f"{self.source.value}:{self.server_id}" if self.server_id is not None else self.source.value
 
 class PinRecord(BaseModel):
     """A mod's pin with its origins (O2): one per source, and the one the pack uses. `selected` is
@@ -42,9 +50,23 @@ class PinRecord(BaseModel):
     keeps the version in use, so everything that reads pins reads it as before."""
     origins: list[PinOrigin] = Field(default_factory=list)
     selected: Optional[PinSource] = None
+    # Which origin of `selected` is in use, by its key, where a source has several (a server each);
+    # None reads as the first of the source.
+    selected_key: Optional[str] = None
 
     def origin(self, source: PinSource) -> Optional[PinOrigin]:
         return next((o for o in self.origins if o.source == source), None)
+
+    def by_key(self, key: str) -> Optional[PinOrigin]:
+        return next((o for o in self.origins if o.key == key), None)
+
+    def in_use(self) -> Optional[PinOrigin]:
+        """The origin the pack uses; None when nothing is pinned."""
+        if self.selected is None:
+            return None
+        if self.selected_key is not None:
+            return self.by_key(self.selected_key)
+        return self.origin(self.selected)
 
 class PackProject(BaseModel):
     """A Modrinth project in a bundle, by its Modrinth id: a reference, not a copy of the project

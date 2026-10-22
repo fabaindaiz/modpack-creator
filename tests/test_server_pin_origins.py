@@ -12,13 +12,15 @@ from typing import Any, Optional, cast
 from beanie import PydanticObjectId
 
 from src.library.scan import ScanFile
-from src.model.modpack import ModpackBundle, PinRecord, PinSource
+from src.model.modpack import ModpackBundle, PinOrigin, PinRecord, PinSource
 from src.model.pterodactyl import PterodactylServer, ServerScan
 from src.model.utils import MinecraftLoaders
 from src.services.pterodactyl import PterodactylService
+from tests._actors import OPERATOR
 
 NOW = datetime(2026, 10, 21, 12, tzinfo=timezone.utc)
 BUNDLE_ID = PydanticObjectId()
+SERVER_ID = str(PydanticObjectId())
 
 
 def jar(name: str, project_id: Optional[str], version_id: Optional[str]) -> ScanFile:
@@ -50,7 +52,7 @@ def offered(bundle: ModpackBundle, files: list[ScanFile]) -> list[tuple[str, Pin
     service = PterodactylService(pterodactylAPI=cast(Any, None), PterodactylDB=cast(Any, None),
                                  modrinthAPI=cast(Any, None), modrinthDB=cast(Any, Catalog()), modpackDB=cast(Any, packs),
                                  audit=cast(Any, None), jobDB=cast(Any, object()), clock=lambda: NOW)
-    server = PterodactylServer.model_construct(id=PydanticObjectId(), identifier="1a2b3c4d", uuid="u", name="Survival",
+    server = PterodactylServer.model_construct(id=PydanticObjectId(SERVER_ID), identifier="1a2b3c4d", uuid="u", name="Survival",
                                                node="n1", bundle_id=str(BUNDLE_ID))
     scan = ServerScan.model_construct(id=PydanticObjectId(), server_id=server.id, directory="/mods", scanned_at=NOW,
                                       full=False, files=files)
@@ -77,3 +79,66 @@ def test_a_scan_offers_the_servers_version_of_a_pinned_mod_without_putting_it_in
 
 def test_a_pack_without_pins_gets_nothing() -> None:
     assert offered(pack({}), [jar("a", "AAAAAAAA", "va-2")]) == []
+
+
+# Uno por servidor (dueño, 2026-10-22).
+
+def served(server_id: str, name: str, version: str) -> PinOrigin:
+    return PinOrigin(source=PinSource.server, version_id=version, label=name, server_id=server_id)
+
+
+def test_the_scanned_server_offers_under_its_own_id() -> None:
+    [(_, record, _, _)] = offered(pack({"AAAAAAAA": "va-1"}), [jar("a", "AAAAAAAA", "va-2")])
+    assert [(o.source, o.server_id, o.label) for o in record.origins][-1] == (PinSource.server, SERVER_ID, "Survival")
+
+
+def test_a_server_back_on_the_pinned_version_loses_its_origin() -> None:
+    bundle = pack({"AAAAAAAA": "va-1"})
+    bundle.pin_origins = {"AAAAAAAA": PinRecord(origins=[PinOrigin(source=PinSource.admin, version_id="va-1"),
+                                                         served(SERVER_ID, "Survival", "va-2")],
+                                                selected=PinSource.admin)}
+    [(project_id, record, pin, _)] = offered(bundle, [jar("a", "AAAAAAAA", "va-1")])
+    assert (project_id, pin) == ("AAAAAAAA", "va-1")
+    assert [o.source for o in record.origins] == [PinSource.admin]
+
+
+class Servers:
+    def __init__(self, bundle_id: Optional[str]) -> None:
+        self.server = PterodactylServer.model_construct(id=PydanticObjectId(SERVER_ID), identifier="1a2b3c4d", uuid="u",
+                                                        name="Survival", node="n1", bundle_id=bundle_id)
+
+    async def server_get(self, server_id: str) -> PterodactylServer:
+        return self.server
+
+    async def server_set_bundle(self, server_id: str, bundle_id: Optional[str]) -> PterodactylServer:
+        self.server = self.server.model_copy(update={"bundle_id": bundle_id})
+        return self.server
+
+
+class Audit:
+    async def record(self, *args: object, **kwargs: object) -> None:
+        return None
+
+
+def linked(bundle: ModpackBundle, to: Optional[str]) -> list[tuple[str, PinRecord, Optional[str], object]]:
+    packs = Packs(bundle)
+    service = PterodactylService(pterodactylAPI=cast(Any, None), PterodactylDB=cast(Any, Servers(str(BUNDLE_ID))),
+                                 modrinthAPI=cast(Any, None), modrinthDB=cast(Any, Catalog()), modpackDB=cast(Any, packs),
+                                 audit=cast(Any, Audit()), jobDB=cast(Any, object()), clock=lambda: NOW)
+    asyncio.run(service.server_link_bundle(SERVER_ID, to, OPERATOR))
+    return packs.writes
+
+
+def test_unlinking_a_server_takes_its_origins_from_its_old_pack_but_not_one_in_use() -> None:
+    bundle = pack({"AAAAAAAA": "va-1", "BBBBBBBB": "vb-2"})
+    bundle.pin_origins = {
+        "AAAAAAAA": PinRecord(origins=[PinOrigin(source=PinSource.admin, version_id="va-1"),
+                                       served(SERVER_ID, "Survival", "va-2")], selected=PinSource.admin),
+        "BBBBBBBB": PinRecord(origins=[served(SERVER_ID, "Survival", "vb-2")], selected=PinSource.server,
+                              selected_key=f"server:{SERVER_ID}")}
+    for to in (None, str(PydanticObjectId())):
+        [(project_id, record, pin, when_pin)] = linked(bundle, to)
+        assert (project_id, pin, when_pin) == ("AAAAAAAA", "va-1", "va-1")
+        assert [o.source for o in record.origins] == [PinSource.admin]
+    # Relinking to the same pack takes nothing.
+    assert linked(bundle, str(BUNDLE_ID)) == []

@@ -819,18 +819,22 @@ async def pin_origin(
         request: Request,
         origin: Annotated[PinSource, Form()],
         confirm_downgrade: Annotated[bool, Form()] = False,
+        server: Annotated[Optional[str], Form()] = None,
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         ):
-    """Put one of a mod's pin origins in use, from its card (O2). An older version than the mod's
-    floor is not saved: the answer is the pin dialog, into #pin-dialog, that sends the same choice
-    again with `confirm_downgrade` (d-7985ee-c62c61)."""
+    """Put one of a mod's pin origins in use, from its card (O2); a server's names its server, one
+    origin per linked server (2026-10-22). An older version than the mod's floor is not saved: the
+    answer is the pin dialog, into #pin-dialog, that sends the same choice again with
+    `confirm_downgrade` (d-7985ee-c62c61)."""
     try:
-        await modpackService.pin_origin_select(bundle_id, project_id, origin, actor, confirm_downgrade=confirm_downgrade)
+        await modpackService.pin_origin_select(bundle_id, project_id, origin, actor, confirm_downgrade=confirm_downgrade,
+                                               server_id=server or None)
     except DowngradeRefused as refused:
         response = render(request, "modpacks/_pin_confirm.html", actor, bundle_id=bundle_id, downgrade=refused.downgrade,
-                          version_id=refused.downgrade.pin_version, contexto=None, origin=origin.value)
+                          version_id=refused.downgrade.pin_version, contexto=None, origin=origin.value,
+                          origin_server=server or None)
         response.headers["HX-Retarget"] = "#pin-dialog"
         response.headers["HX-Reswap"] = "innerHTML"
         return response

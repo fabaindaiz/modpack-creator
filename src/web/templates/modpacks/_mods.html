@@ -169,6 +169,7 @@
                     {% if not origin.in_use %}
                     <form hx-post="/modpacks/{{ bundle_id }}/pins/{{ row.project_id }}/origen" hx-target="#mods" hx-swap="outerHTML">
                       <input type="hidden" name="origin" value="{{ origin.source }}">
+                      {% if origin.server_id %}<input type="hidden" name="server" value="{{ origin.server_id }}">{% endif %}
                       {{ ui.button("Usar esta", kind="ghost", small=True, type="submit") }}
                     </form>
                     {% endif %}

@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from src.library.pins import (ORIGIN_LABEL, OUTSIDE_TAGS, PinView, import_selects, pin_view, resolution_inputs,
-                              server_origins, version_problem)
+                              server_origins, server_origins_dropped, version_problem)
 from src.library.resolution import (Candidate, CandidateFile, Catalog, ResolveRequest, Target, request_digest,
                                     resolve)
 from src.model.modpack import ModpackBundle, PinOrigin, PinRecord, PinSource
@@ -197,7 +197,7 @@ def test_a_pinned_mod_the_server_runs_at_another_version_gets_a_server_origin_no
     pack = bundle({MOD: "mt-1", "SAME": "s-1"},
                   {MOD: PinRecord(origins=[origin(PinSource.pack, "mt-1")], selected=PinSource.pack)})
     found = server_origins(pack, {MOD: "mt-2", "SAME": "s-1", "FREE": "f-9"},
-                           {"mt-2": cand("mt-2", game="1.20")}, FORGE, "Survival", AT)
+                           {"mt-2": cand("mt-2", game="1.20")}, FORGE, "s1", "Survival", AT)
     # The mod on its pinned version and the mod with no pin get nothing.
     assert set(found) == {MOD}
     record = found[MOD]
@@ -208,7 +208,7 @@ def test_a_pinned_mod_the_server_runs_at_another_version_gets_a_server_origin_no
 
 
 def test_a_legacy_pin_keeps_the_admins_version_in_use_and_an_unknown_version_is_unchecked() -> None:
-    found = server_origins(bundle({MOD: "mt-1"}), {MOD: "mt-2"}, {}, FORGE, "Survival", AT)
+    found = server_origins(bundle({MOD: "mt-1"}), {MOD: "mt-2"}, {}, FORGE, "s1", "Survival", AT)
     record = found[MOD]
     assert record.selected == PinSource.admin
     assert [(o.source, o.version_id, o.valid) for o in record.origins] == [(PinSource.admin, "mt-1", None),
@@ -217,12 +217,76 @@ def test_a_legacy_pin_keeps_the_admins_version_in_use_and_an_unknown_version_is_
 
 def test_a_server_origin_is_updated_but_never_one_in_use_nor_rewritten_when_unchanged() -> None:
     known = PinRecord(origins=[origin(PinSource.admin, "mt-1"),
-                               PinOrigin(source=PinSource.server, version_id="mt-2", label="Survival")],
+                               PinOrigin(source=PinSource.server, version_id="mt-2", label="Survival", server_id="s1")],
                       selected=PinSource.admin)
     pack = bundle({MOD: "mt-1"}, {MOD: known})
-    assert server_origins(pack, {MOD: "mt-2"}, {}, FORGE, "Survival", AT) == {}
-    moved = server_origins(pack, {MOD: "mt-3"}, {"mt-3": cand("mt-3")}, FORGE, "Creativo", AT)[MOD]
-    assert [(o.source, o.version_id, o.label) for o in moved.origins] == [(PinSource.admin, "mt-1", None),
-                                                                          (PinSource.server, "mt-3", "Creativo")]
-    in_use = PinRecord(origins=[origin(PinSource.server, "mt-1")], selected=PinSource.server)
-    assert server_origins(bundle({MOD: "mt-1"}, {MOD: in_use}), {MOD: "mt-2"}, {}, FORGE, "Survival", AT) == {}
+    assert server_origins(pack, {MOD: "mt-2"}, {}, FORGE, "s1", "Survival", AT) == {}
+    moved = server_origins(pack, {MOD: "mt-3"}, {"mt-3": cand("mt-3")}, FORGE, "s1", "Survival", AT)[MOD]
+    assert [(o.source, o.version_id, o.label, o.server_id) for o in moved.origins] == [
+        (PinSource.admin, "mt-1", None, None), (PinSource.server, "mt-3", "Survival", "s1")]
+    in_use = PinRecord(origins=[PinOrigin(source=PinSource.server, version_id="mt-1", label="Survival")],
+                       selected=PinSource.server)
+    assert server_origins(bundle({MOD: "mt-1"}, {MOD: in_use}), {MOD: "mt-2"}, {}, FORGE, "s1", "Survival", AT) == {}
+
+
+# Uno por servidor (dueño, 2026-10-22): cada servidor vinculado que difiere tiene su línea, y la pierde
+# cuando vuelve a la versión fijada, deja de tener el mod o se desvincula.
+
+def served(server_id: str, name: str, version: str) -> PinOrigin:
+    return PinOrigin(source=PinSource.server, version_id=version, label=name, server_id=server_id)
+
+
+def test_each_linked_server_keeps_its_own_origin() -> None:
+    known = PinRecord(origins=[origin(PinSource.admin, "mt-1"), served("s1", "Survival", "mt-2")],
+                      selected=PinSource.admin)
+    found = server_origins(bundle({MOD: "mt-1"}, {MOD: known}), {MOD: "mt-3"}, {}, FORGE, "s2", "Creativo", AT)[MOD]
+    assert [(o.source, o.server_id, o.version_id) for o in found.origins] == [
+        (PinSource.admin, None, "mt-1"), (PinSource.server, "s1", "mt-2"), (PinSource.server, "s2", "mt-3")]
+    assert found.selected == PinSource.admin
+
+
+def test_a_servers_origin_goes_when_it_runs_the_pinned_version_again_or_no_longer_has_the_mod() -> None:
+    known = PinRecord(origins=[origin(PinSource.admin, "mt-1"), served("s1", "Survival", "mt-2"),
+                               served("s2", "Creativo", "mt-3")], selected=PinSource.admin)
+    pack = bundle({MOD: "mt-1"}, {MOD: known})
+    for installed in ({MOD: "mt-1"}, {}):
+        found = server_origins(pack, installed, {}, FORGE, "s1", "Survival", AT)[MOD]
+        assert [(o.source, o.server_id) for o in found.origins] == [(PinSource.admin, None), (PinSource.server, "s2")]
+
+
+def test_the_servers_origin_in_use_is_left_while_another_server_still_adds_its_own() -> None:
+    in_use = PinRecord(origins=[served("s1", "Survival", "mt-1"), served("s2", "Creativo", "mt-4")],
+                       selected=PinSource.server, selected_key="server:s1")
+    pack = bundle({MOD: "mt-1"}, {MOD: in_use})
+    assert server_origins(pack, {MOD: "mt-3"}, {}, FORGE, "s1", "Survival", AT) == {}
+    found = server_origins(pack, {MOD: "mt-5"}, {}, FORGE, "s2", "Creativo", AT)[MOD]
+    assert [(o.server_id, o.version_id) for o in found.origins] == [("s1", "mt-1"), ("s2", "mt-5")]
+    assert (found.selected, found.selected_key) == (PinSource.server, "server:s1")
+
+
+def test_a_server_origin_stored_without_its_id_is_that_servers_by_name() -> None:
+    # Escrito antes de guardar el id del servidor (2026-10-21): se reconoce por el nombre y lo toma.
+    known = PinRecord(origins=[origin(PinSource.admin, "mt-1"),
+                               PinOrigin(source=PinSource.server, version_id="mt-2", label="Survival")],
+                      selected=PinSource.admin)
+    found = server_origins(bundle({MOD: "mt-1"}, {MOD: known}), {MOD: "mt-2"}, {}, FORGE, "s1", "Survival", AT)[MOD]
+    assert [(o.source, o.server_id, o.version_id) for o in found.origins] == [
+        (PinSource.admin, None, "mt-1"), (PinSource.server, "s1", "mt-2")]
+
+
+def test_the_card_shows_which_server_origin_is_in_use() -> None:
+    record = PinRecord(origins=[origin(PinSource.admin, "mt-1"), served("s1", "Survival", "mt-2"),
+                                served("s2", "Creativo", "mt-3")], selected=PinSource.server, selected_key="server:s2")
+    view = viewed(bundle({MOD: "mt-3"}, {MOD: record}), MOD)
+    assert (view.selected, view.selected_key) == (PinSource.server, "server:s2")
+    assert [o.key for o in view.origins] == ["admin", "server:s1", "server:s2"]
+
+
+def test_unlinking_a_server_drops_its_origins_except_the_one_in_use() -> None:
+    offered = PinRecord(origins=[origin(PinSource.admin, "mt-1"), served("s1", "Survival", "mt-2")],
+                        selected=PinSource.admin)
+    used = PinRecord(origins=[served("s1", "Survival", "o-1")], selected=PinSource.server, selected_key="server:s1")
+    pack = bundle({MOD: "mt-1", "OTHER": "o-1"}, {MOD: offered, "OTHER": used})
+    dropped = server_origins_dropped(pack, "s1", "Survival")
+    assert set(dropped) == {MOD}
+    assert [o.source for o in dropped[MOD].origins] == [PinSource.admin]

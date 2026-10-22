@@ -13,7 +13,7 @@ from src.library.api.client.pterodactyl import PterodactylAPI
 from fastapi import HTTPException
 from src.library.deduce import Deduction, deduce_target
 from src.library.jarmeta import ModMetadata, read_mod_metadata
-from src.library.pins import pack_target, server_origins
+from src.library.pins import pack_target, server_origins, server_origins_dropped
 from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Candidate
 from src.library.utils import MODRINTH_ID
 from src.library.scan import ClaimedFile, Comparison, ListedFile, LocalFile, ScanFile, compare, drift_message, plan_scan
@@ -161,9 +161,25 @@ class PterodactylService():
         Operators only: the bundle decides what an update writes to the server."""
         if bundle_id is not None:
             await self.modpackDB.bundle_get(bundle_id)
+        before = await self.pterodactylDB.server_get(server_id)
         server = await self.pterodactylDB.server_set_bundle(server_id, bundle_id)
         await self.audit.record(actor, "server.bundle", _target(server_id), {"bundle_id": bundle_id})
+        if before.bundle_id is not None and str(before.bundle_id) != str(bundle_id):
+            await self._drop_server_pin_origins(before)
         return server
+
+    async def _drop_server_pin_origins(self, server: PterodactylServer) -> None:
+        """Take an unlinked server's «servidor» origins from its old pack (owner, 2026-10-22;
+        `server_origins_dropped`): never the one in use, and written only while the pin is still the
+        one read. A nicety of unlinking: if it fails, the link stays changed."""
+        try:
+            bundle = await self.modpackDB.bundle_get(str(server.bundle_id))
+            for project_id, record in server_origins_dropped(bundle, str(server.id), server.name).items():
+                pinned = bundle.pins.get(project_id)
+                await self.modpackDB.bundle_pin_record_set(str(bundle.id), project_id, record, pinned, when_pin=pinned)
+        except Exception:
+            logger.warning("taking an unlinked server's pin origins from its pack failed", exc_info=True,
+                           extra={"server_id": str(server.id)})
     
     async def server_files(self, server_id: str, directory: str) -> list[PterodactylFile]:
         """
@@ -292,12 +308,12 @@ class PterodactylService():
             installed = {f.project_id: f.version_id for f in scan.files
                          if f.status == "identified" and f.project_id and f.version_id and MODRINTH_ID.fullmatch(f.project_id)}
             differing = sorted({v for p, v in installed.items() if p in bundle.pins and bundle.pins[p] != v})
-            if not differing:
-                return []
             versions = {v.version_id: Candidate.from_modrinth({**v.model_dump(mode="json"), "id": v.version_id})
-                        for v in await self.modrinthDB.version_find_by_version_ids(differing)}
+                        for v in await self.modrinthDB.version_find_by_version_ids(differing)} if differing else {}
             offered = []
-            records = server_origins(bundle, installed, versions, pack_target(bundle), server.name, self.clock())
+            # Also with nothing differing: this server's origins go where it runs the pinned version again.
+            records = server_origins(bundle, installed, versions, pack_target(bundle), str(server.id), server.name,
+                                     self.clock())
             for project_id, record in records.items():
                 pinned = bundle.pins[project_id]
                 if await self.modpackDB.bundle_pin_record_set(str(bundle.id), project_id, record, pinned, when_pin=pinned):

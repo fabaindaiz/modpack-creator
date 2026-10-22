@@ -126,6 +126,8 @@ class FakeModpack:
         # A pin pin_set refuses as a step back unless confirmed (F27), and each call's confirmation.
         self.downgrade: Optional[PinDowngrade] = None
         self.confirmed: list[bool] = []
+        # The server each origin choice named (one «servidor» origin per server, 2026-10-22).
+        self.origin_servers: list[Optional[str]] = []
         self.versions = [VersionOption("ver-new", "0.8.14", "release", datetime(2026, 10, 1, tzinfo=timezone.utc)),
                          VersionOption("ver-beta", "0.9.0-beta.1", "beta", datetime(2026, 10, 2, tzinfo=timezone.utc))]
         self.versions_error: Optional[Exception] = None
@@ -179,9 +181,10 @@ class FakeModpack:
         return self.bundle
 
     async def pin_origin_select(self, bundle_id: str, project_id: str, source: Any, actor: Actor,
-                                confirm_downgrade: bool = False) -> ModpackBundle:
+                                confirm_downgrade: bool = False, server_id: Optional[str] = None) -> ModpackBundle:
         self._record("pin_origin_select", bundle_id, project_id, source, actor)
         self.confirmed.append(confirm_downgrade)
+        self.origin_servers.append(server_id)
         if self.downgrade is not None and not confirm_downgrade:
             raise DowngradeRefused(self.downgrade.text, self.downgrade)
         return self.bundle

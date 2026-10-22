@@ -221,6 +221,8 @@ class OriginRow:
     # What named it: the imported pack and its version.
     named_by: Optional[str]
     in_use: bool
+    # The server a «servidor» origin is from: one per linked server (2026-10-22).
+    server_id: Optional[str] = None
 
 
 @dataclass
@@ -574,14 +576,15 @@ class ModpackService():
         return pack_target(bundle)
 
     async def pin_origin_select(self, bundle_id: str, project_id: str, source: PinSource, actor: Actor,
-                                confirm_downgrade: bool = False) -> ModpackBundle:
+                                confirm_downgrade: bool = False, server_id: Optional[str] = None) -> ModpackBundle:
         """
         Put one of a pinned mod's origins in use (O2), from its card: the pack's version, the one
         chosen by hand, a server's, or «resolución» (unpinned: the resolver chooses freely, never
         going back). The same checks as pin_set: a version before the mod's floor is a
         DowngradeRefused (409) unless `confirm_downgrade` (going back is only ever this explicit
         choice, d-7985ee-6dc34c), and one of the other way is a 422. 422 too for an origin the mod
-        does not have. Only that mod's pin and origins change, in one write.
+        does not have. Only that mod's pin and origins change, in one write. A server's origin is
+        named by `server_id` too, one per linked server (2026-10-22); without it, the first.
         """
         if not MODRINTH_ID.fullmatch(project_id):
             raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{project_id}' no es un id de Modrinth")
@@ -596,13 +599,16 @@ class ModpackService():
                 bundle_id, project_id, PinRecord(origins=stored, selected=PinSource.resolution), None)
             details["version_id"] = None
         else:
-            chosen = view.origin(source)
+            chosen = view.by_key(f"{source.value}:{server_id}") if server_id is not None else view.origin(source)
             if chosen is None:
                 raise HTTP_422_UNPROCESSABLE_ENTITY(f"Ese mod no tiene la versión de origen «{ORIGIN_LABEL[source]}»")
             _, downgrade = await self._pin_checked(bundle, project_id, chosen.version_id, confirm_downgrade)
             await self.modpackDB.bundle_pin_record_set(
-                bundle_id, project_id, PinRecord(origins=stored, selected=source), chosen.version_id)
+                bundle_id, project_id, PinRecord(origins=stored, selected=source, selected_key=chosen.key),
+                chosen.version_id)
             details["version_id"] = chosen.version_id
+            if chosen.server_id is not None:
+                details["server_id"] = chosen.server_id
             if downgrade is not None:
                 details["downgrade"] = {"from": downgrade.floor_number, "to": downgrade.pin_number}
         await self.audit.record(actor, "bundle.pin", _bundle(bundle_id), details)
@@ -1081,7 +1087,7 @@ class ModpackService():
 
             return [OriginRow(source=o.source.value, label=ORIGIN_LABEL[o.source], version_id=o.version_id,
                               version_number=number(o), valid=o.valid, problem=o.problem, named_by=o.label,
-                              in_use=o.source == view.selected) for o in view.origins]
+                              in_use=o.key == view.selected_key, server_id=o.server_id) for o in view.origins]
 
         def pin_options(project_id: str) -> Optional[list[VersionOption]]:
             loaders = way_loaders(project_id)

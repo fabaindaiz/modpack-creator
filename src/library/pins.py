@@ -20,7 +20,7 @@ from src.library.resolution import CHANNEL_RANK, OUTSIDE_TAGS, Candidate, Target
 from src.model.modpack import ModpackBundle, PinOrigin, PinRecord, PinSource
 
 __all__ = ["ORIGIN_LABEL", "OUTSIDE_TAGS", "PinView", "import_selects", "pin_view", "resolution_inputs",
-           "pack_target", "server_origins", "version_problem"]
+           "pack_target", "server_origins", "server_origins_dropped", "version_problem"]
 
 # How the panel names each origin.
 ORIGIN_LABEL = {PinSource.pack: "versión del pack", PinSource.admin: "elegida a mano",
@@ -31,12 +31,21 @@ UNCHECKED_SOURCES = (PinSource.pack, PinSource.server)
 
 @dataclass(frozen=True)
 class PinView:
-    """A mod's pin as the panel shows it: its origins, and the one in use."""
+    """A mod's pin as the panel shows it: its origins, and the one in use (by its key: a source has
+    one origin per server)."""
     origins: list[PinOrigin]
     selected: PinSource
+    selected_key: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if self.selected_key is None:
+            object.__setattr__(self, "selected_key", self.selected.value)
 
     def origin(self, source: PinSource) -> Optional[PinOrigin]:
         return next((o for o in self.origins if o.source == source), None)
+
+    def by_key(self, key: str) -> Optional[PinOrigin]:
+        return next((o for o in self.origins if o.key == key), None)
 
 
 def pack_target(bundle: ModpackBundle) -> Target:
@@ -78,9 +87,9 @@ def pin_view(bundle: ModpackBundle, project_id: str, resolved: Optional[str] = N
     origins = [o.model_copy() for o in record.origins] if record is not None else []
     if pinned is not None:
         source = record.selected if record is not None else None
-        chosen = record.origin(source) if record is not None and source is not None else None
+        chosen = record.in_use() if record is not None else None
         if source is not None and source != PinSource.resolution and chosen is not None and chosen.version_id == pinned:
-            return PinView(origins=origins, selected=source)
+            return PinView(origins=origins, selected=source, selected_key=chosen.key)
         _put(origins, PinOrigin(source=PinSource.admin, version_id=pinned))
         return PinView(origins=origins, selected=PinSource.admin)
     if resolved is not None:
@@ -126,16 +135,24 @@ def import_selects(current: Optional[PinRecord], downgrade: bool, pinned: bool =
     return current.selected == PinSource.pack
 
 
+def _this_server(origin: PinOrigin, server_id: str, server_name: str) -> bool:
+    """Whether `origin` is the server's: by its id, or by its name for one stored without an id."""
+    if origin.source != PinSource.server:
+        return False
+    return origin.server_id == server_id if origin.server_id is not None else origin.label == server_name
+
+
 def server_origins(bundle: ModpackBundle, installed: Mapping[str, str], versions: Mapping[str, Candidate],
-                   target: Target, server_name: str, at: datetime) -> dict[str, PinRecord]:
+                   target: Target, server_id: str, server_name: str, at: datetime) -> dict[str, PinRecord]:
     """
     What scanning a linked server offers (owner, 2026-10-21): each pinned mod whose installed version
-    differs from the pinned one gets (or updates) its «servidor» origin, labelled with the server's
-    name and checked as the resolver checks the pack. Never put in use: the pin, and the origin in use,
-    stay; the person picks it with «Usar esta», which asks before going back (d-7985ee-6dc34c,
-    d-7985ee-56a529). Nothing for a mod without a pin, nor where nothing changes. A «servidor» origin
-    that is the one in use is left as it is: replacing its version would leave the pin reading as
-    another's choice.
+    differs from the pinned one gets (or updates) this server's «servidor» origin, labelled with its
+    name and checked as the resolver checks the pack. One per linked server (owner, 2026-10-22): the
+    others' stay, and this one goes when the server runs the pinned version again or no longer has
+    the mod. Never put in use: the pin, and the origin in use, stay; the person picks it with «Usar
+    esta», which asks before going back (d-7985ee-6dc34c, d-7985ee-56a529). Nothing for a mod
+    without a pin, nor where nothing changes. This server's origin in use is left as it is: replacing
+    its version would leave the pin reading as another's choice.
 
     :param installed: Project id → the version id the server runs (identified jars of the scan).
     :param versions: Version id → the version, from the catalog; one missing is offered unchecked.
@@ -143,25 +160,46 @@ def server_origins(bundle: ModpackBundle, installed: Mapping[str, str], versions
     """
     found: dict[str, PinRecord] = {}
     for project_id, pinned in bundle.pins.items():
-        running = installed.get(project_id)
-        if running is None or running == pinned:
-            continue
         record = bundle.pin_origins.get(project_id)
         if record is None:
             # A pin stored before O2 is the admin's: kept, and in use.
             record = PinRecord(origins=[PinOrigin(source=PinSource.admin, version_id=pinned)], selected=PinSource.admin)
-        if record.selected == PinSource.server:
+        mine = next((o for o in record.origins if _this_server(o, server_id, server_name)), None)
+        if mine is not None and record.in_use() is mine:
             continue
-        known = record.origin(PinSource.server)
-        if known is not None and known.version_id == running and known.label == server_name:
+        running = installed.get(project_id)
+        if running is None or running == pinned:
+            if mine is not None:
+                found[project_id] = record.model_copy(update={"origins": [o for o in record.origins if o is not mine]})
+            continue
+        if mine is not None and (mine.version_id, mine.server_id, mine.label) == (running, server_id, server_name):
             continue
         version = versions.get(running)
         problem = version_problem(version, target, bundle.channel_exceptions.get(project_id)) if version else None
         origin = PinOrigin(source=PinSource.server, version_id=running,
                            version_number=version.version_number if version else None,
-                           valid=(problem is None) if version else None, problem=problem, label=server_name, at=at)
-        origins = [origin if o.source == PinSource.server else o for o in record.origins]
-        if known is None:
+                           valid=(problem is None) if version else None, problem=problem, label=server_name, at=at,
+                           server_id=server_id)
+        if mine is not None and mine.version_id == running:
+            # Stored without its id: the same offer, now with it.
+            origin = mine.model_copy(update={"server_id": server_id, "label": server_name})
+        origins = [origin if o is mine else o for o in record.origins]
+        if mine is None:
             origins.append(origin)
-        found[project_id] = PinRecord(origins=origins, selected=record.selected)
+        found[project_id] = record.model_copy(update={"origins": origins})
+    return found
+
+
+def server_origins_dropped(bundle: ModpackBundle, server_id: str, server_name: str) -> dict[str, PinRecord]:
+    """What unlinking a server takes from its old pack (owner, 2026-10-22): its «servidor» origins,
+    except one in use, which is the pin itself and stays until the person changes it.
+
+    :return: Project id → its record to write, only for the mods that change.
+    """
+    found: dict[str, PinRecord] = {}
+    for project_id, record in bundle.pin_origins.items():
+        used = record.in_use()
+        kept = [o for o in record.origins if o is used or not _this_server(o, server_id, server_name)]
+        if len(kept) != len(record.origins):
+            found[project_id] = record.model_copy(update={"origins": kept})
     return found

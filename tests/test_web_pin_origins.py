@@ -49,6 +49,31 @@ def test_a_servers_origin_is_named_after_the_server_and_offered() -> None:
     assert 'name="origin" value="server"' in text
 
 
+def test_each_servers_origin_is_its_own_line_offered_by_its_server() -> None:
+    """Owner, 2026-10-22: one «servidor» line per linked server that differs, each with «Usar esta»."""
+    client, modpack, _ = setup()
+    servers = [OriginRow(source="server", label="servidor", version_id=v, version_number=n, valid=True, problem=None,
+                         named_by=name, in_use=False, server_id=sid)
+               for v, n, name, sid in (("mt-3", "1.2.0", "Survival", "s1"), ("mt-4", "1.3.0", "Creativo", "s2"))]
+    modpack.rows = [row("P1", "MixinTrace Reborn", pinned=True, pinned_version="mt-pack",
+                        pin_origins=[*origins(), *servers]), row("P2", "Sodium")]
+    text = card(client.get(f"/modpacks/{BUNDLE_ID}").text, "P1")
+    shown = " ".join(visible(text).split())
+    assert "servidor: Survival 1.2.0" in shown and "servidor: Creativo 1.3.0" in shown
+    forms = re.findall(r'<form[^>]*/origen"[^>]*>(.*?)</form>', text, re.S)
+    assert [re.findall(r'name="server" value="([^"]*)"', f) for f in forms] == [[], ["s1"], ["s2"]]
+
+
+def test_choosing_a_servers_origin_names_the_server_and_a_step_back_asks_again_with_it() -> None:
+    client, modpack, _ = setup()
+    client.post(f"/modpacks/{BUNDLE_ID}/pins/P1/origen", data={"origin": "server", "server": "s2"}, headers=HTMX)
+    assert modpack.origin_servers == ["s2"]
+    modpack.downgrade = JEI_DOWN
+    text = client.post(f"/modpacks/{BUNDLE_ID}/pins/P2/origen", data={"origin": "server", "server": "s1"},
+                       headers=HTMX).text
+    assert 'name="origin" value="server"' in text and 'name="server" value="s1"' in text
+
+
 def test_a_mod_without_origins_shows_no_origin_list() -> None:
     client, modpack, _ = setup()
     modpack.rows = [row("P1", "Sodium", pinned=True, pinned_version="ver-p1"), row("P2", "Lithium")]

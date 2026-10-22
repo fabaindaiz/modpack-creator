@@ -19,6 +19,7 @@
     </div>
     {% if by_origin %}
     <input type="hidden" name="origin" value="{{ origin }}">
+    {% if origin_server is defined and origin_server %}<input type="hidden" name="server" value="{{ origin_server }}">{% endif %}
     {% else %}
     <input type="hidden" name="project_id" value="{{ downgrade.project_id }}">
     <input type="hidden" name="version_id" value="{{ version_id }}">
