@@ -26,6 +26,32 @@ jobs:
       TEST_MONGODB_URI: mongodb://127.0.0.1:27017
     steps:
       - uses: actions/checkout@v4
+        with:
+          # `bundle.py trailers` and the audit's identity check read the commits a push publishes. The
+          # default clone is one commit deep and that commit is the remote's, so they read none:
+          # fetch-depth 0 brings every branch's history (actions/checkout README). A pull request is
+          # checked at its head, not GitHub's merge commit, whose committer is not the owner.
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Make the branch's base its upstream
+        # Both checks read `@{u}..HEAD` when there is an upstream: here it is the base of what this run
+        # checks. A pull request's base; on main, the commit before the push; on any other branch,
+        # where it leaves main. A new main (no commit before) reads nothing.
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          git switch -q -C ci-head
+          if [ -n "$PR_BASE" ]; then
+            base="$PR_BASE"
+          elif [ "$GITHUB_REF" = refs/heads/main ]; then
+            if [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then base="$BEFORE"; else base=HEAD; fi
+          else
+            base="$(git merge-base origin/main HEAD)"
+          fi
+          git branch -f ci-base "$base"
+          git branch -q --set-upstream-to=ci-base
+          echo "commits checked: $(git rev-list --count ci-base..HEAD)"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

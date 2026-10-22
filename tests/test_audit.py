@@ -87,3 +87,32 @@ def test_an_unpublished_commit_by_another_identity_fails() -> None:
         "commit 0123abc: committer Asistente <bot@example.org>, que no es el dueño del repositorio"]
     assert not audit.commit_identities(log[:1], {owner})
     assert not audit.commit_identities([], {owner})
+
+
+def _git(repo: Path, *args: str) -> str:
+    import subprocess
+    return subprocess.run(["git", "-C", str(repo), "-c", "user.name=Dueño", "-c", "user.email=dueno@example.org",
+                           "-c", "commit.gpgsign=false", *args], capture_output=True, text=True, check=True).stdout
+
+
+def _commit(repo: Path, subject: str) -> None:
+    _git(repo, "commit", "--allow-empty", "-q", "-m", subject)
+
+
+def test_the_identity_check_reads_the_branch_against_its_upstream(tmp_path: Path) -> None:
+    """In CI the clone has no commit off a remote (the checkout is the remote's branch): the workflow
+    makes the branch's base its upstream, and the check reads `@{u}..HEAD`, as `bundle.py trailers`
+    does. Without an upstream, the commits on no remote, as before."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    _commit(repo, "on main")
+    _git(repo, "branch", "ci-base")
+    _git(repo, "switch", "-q", "-c", "work")
+    _commit(repo, "on the branch")
+    # No upstream and no remote: every commit is unpublished.
+    assert [line.split("\t")[0] for line in audit.unpublished_log(repo)] == [
+        _git(repo, "rev-parse", "--short", "HEAD").strip(), _git(repo, "rev-parse", "--short", "HEAD~1").strip()]
+    _git(repo, "branch", "--set-upstream-to=ci-base")
+    assert [line.split("\t")[0] for line in audit.unpublished_log(repo)] == [
+        _git(repo, "rev-parse", "--short", "HEAD").strip()]

@@ -210,10 +210,14 @@ def commit_identities(log: list[str], allowed: set[str]) -> list[str]:
     return failures
 
 
-def unpublished_log() -> list[str]:
-    """Los commits que ninguna rama remota tiene todavía (en CI, ninguno)."""
-    found = subprocess.run(["git", "log", "--format=%h%x09%an <%ae>%x09%cn <%ce>", "HEAD", "--not", "--remotes"],
-                           cwd=ROOT, capture_output=True, text=True, check=True)
+def unpublished_log(root: Path = ROOT) -> list[str]:
+    """Los commits que un push publicaría, con el mismo rango que `bundle.py trailers`: con upstream,
+    `@{u}..HEAD`; sin él, los que ninguna rama remota tiene. En CI el workflow pone como upstream la
+    base de la rama (`.github/workflows/check.yml`): el clon no tiene commits fuera del remoto."""
+    upstream = subprocess.run(["git", "rev-parse", "--verify", "--quiet", "@{u}"], cwd=root, capture_output=True, text=True)
+    commits = ["@{u}..HEAD"] if upstream.returncode == 0 else ["HEAD", "--not", "--remotes"]
+    found = subprocess.run(["git", "log", "--format=%h%x09%an <%ae>%x09%cn <%ce>", *commits],
+                           cwd=root, capture_output=True, text=True, check=True)
     return [line for line in found.stdout.splitlines() if line]
 
 
