@@ -85,19 +85,19 @@ def test_how_it_works_is_in_the_navigation_and_marked_when_open() -> None:
     assert re.search(r'<a href="/como-funciona"\s+aria-current="page"', page)
 
 
-def test_how_it_works_is_an_icon_by_the_name_on_medium_widths_so_the_sections_fit() -> None:
-    """Owner, 2026-10-22: at 768 px the sections no longer fit with «Cómo funciona». From 640 px it
-    sits by the person's name, icon only until 1280 px; on a phone it stays in the sections' row."""
+def test_below_1280_px_the_sections_take_a_row_of_their_own_with_how_it_works_in_it() -> None:
+    """Owner, 2026-10-22: at 768 px the sections did not fit beside the name (since batch B). Below
+    1280 px they drop to a full-width row, as on a phone; from 1280 px, one row. «Cómo funciona» is
+    one more section, with its text, and nothing else in the header links to it."""
     home = base_client(EDITOR).get("/").text
-    nav = re.search(r'<nav aria-label="Secciones".*?</nav>', home, re.S)
+    nav = re.search(r'<nav aria-label="Secciones" class="([^"]*)".*?</nav>', home, re.S)
     assert nav is not None
-    item = re.search(r'<li class="([^"]*)">\s*<a href="/como-funciona"', nav.group(0))
-    assert item is not None and "sm:hidden" in item.group(1).split()
-    header = home[nav.end():home.index("</header>")]
-    link = re.search(r'<a href="/como-funciona"([^>]*)>(.*?)</a>', header, re.S)
-    assert link is not None
-    assert 'title="Cómo funciona"' in link.group(1) and "hidden" in link.group(1) and "sm:inline-flex" in link.group(1)
-    assert re.search(r'<span class="max-xl:sr-only">Cómo funciona</span>', link.group(2))
+    classes = nav.group(1).split()
+    assert {"order-last", "w-full", "xl:order-none", "xl:w-auto", "xl:flex-1"} <= set(classes)
+    assert not [c for c in classes if c.startswith("md:")]
+    assert re.search(r'<li>\s*<a href="/como-funciona"[^>]*>.*?Cómo funciona</a>', nav.group(0), re.S)
+    header = home[home.index("<header"):home.index("</header>")]
+    assert header.count('href="/como-funciona"') == 1
 
 
 def test_how_it_works_needs_a_session() -> None:

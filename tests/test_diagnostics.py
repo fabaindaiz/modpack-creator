@@ -170,11 +170,12 @@ def app_with(recorder: DiagnosticsRecorder, on_finish: Any = None) -> TestClient
 
 def test_every_request_leaves_an_event_with_its_route_and_id() -> None:
     recorder = DiagnosticsRecorder(KEY)
-    response = app_with(recorder).get("/items/42?token=abc")
+    response = app_with(recorder).get("/items/42?token=zq-secret")
     [event] = recorder.drain(10)
     assert (event["kind"], event["route"], event["status"], event["method"]) == ("request", "/items/{item_id}", 200, "GET")
     assert event["request_id"] == response.headers["X-Request-ID"]
-    assert "abc" not in json.dumps(event, default=str) and "42" not in event["route"]
+    # Not hex, so a random request id cannot contain it.
+    assert "zq-secret" not in json.dumps(event, default=str) and "42" not in event["route"]
 
 
 def test_a_handled_error_is_only_a_request() -> None:

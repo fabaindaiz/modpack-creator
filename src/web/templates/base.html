@@ -28,11 +28,11 @@
         <span class="inline-block size-3 rounded-sm bg-accent" aria-hidden="true"></span>
         Modpack Creator
       </a>
-      <nav aria-label="Secciones" class="order-last -mx-1 w-full overflow-x-auto md:order-none md:mx-0 md:w-auto md:flex-1">
+      <nav aria-label="Secciones" class="order-last -mx-1 w-full overflow-x-auto xl:order-none xl:mx-0 xl:w-auto xl:flex-1">
         <ul class="flex gap-1 text-sm whitespace-nowrap">
+          {# Below 1280 px this is a row of its own, as on a phone: beside the name it did not fit at 768 px (owner, 2026-10-22). #}
           {% for key, href, label, icon in NAV %}
-          {# «Cómo funciona» stays in this row only on a phone; from 640 px it sits by the name (owner, 2026-10-22). #}
-          <li{% if key == "help" %} class="sm:hidden"{% endif %}>
+          <li>
             <a href="{{ href }}"
               {%- if key == nav_active %} aria-current="page"{% endif %}
               class="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-medium {{ 'bg-subtle text-ink' if key == nav_active else 'text-muted hover:bg-subtle hover:text-ink' }}">{{ ui.icon(icon) }}{{ label }}</a>
@@ -43,10 +43,6 @@
       <div class="ml-auto flex min-w-0 items-center gap-2 text-sm">
         {# The person's open jobs (E8): loaded with the page, and again when an action starts or the last one ends. #}
         <div id="my-jobs" hx-get="/trabajos/mios" hx-trigger="load, job-started from:body, my-jobs-done from:body" hx-swap="innerHTML"></div>
-        {# Icon only until 1280 px, where the sections leave room for its name. #}
-        <a href="/como-funciona" title="Cómo funciona"
-          {%- if nav_active == "help" %} aria-current="page"{% endif %}
-          class="hidden items-center gap-1.5 rounded-lg px-2 py-1 font-medium sm:inline-flex {{ 'bg-subtle text-ink' if nav_active == 'help' else 'text-muted hover:bg-subtle hover:text-ink' }}">{{ ui.icon("circle-help") }}<span class="max-xl:sr-only">Cómo funciona</span></a>
         <span class="max-w-[12rem] truncate text-ink-soft" title="{{ actor.name }}">{{ actor.name }}</span>
         {% if actor.is_operator %}
         {{ ui.badge("Operador", "accent", title="Puede escribir en los servidores") }}
