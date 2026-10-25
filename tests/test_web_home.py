@@ -1,5 +1,6 @@
 """El tablero (B2, d-7985ee-c96727): la franja «Necesita atención» arriba y, debajo, servidores,
 builds y trabajos como tarjetas. Los servicios son los dobles de `tests/test_web_base.py`."""
+import asyncio
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, cast
@@ -181,3 +182,21 @@ def test_a_pack_whose_bridged_mods_have_a_native_version_says_so() -> None:
     section = strip(client(EDITOR, (pterodactyl, modpack, jobs)).get("/").text)
     assert "Pack Uno: 2 mods ya tienen versión nativa." in section
     assert f'href="/modpacks/{BUNDLE_ID}?vista=puente"' in section
+
+
+class Waiting(FakePterodactyl):
+    """Each server's scan answers only once every server's scan was asked for: read one after another,
+    the first never answers."""
+    async def scan_latest(self, server_id: str, directory: str = "/mods") -> Any:
+        self.asked = getattr(self, "asked", 0) + 1
+        for _ in range(50):
+            if self.asked >= len(self.servers):
+                return await super().scan_latest(server_id, directory)
+            await asyncio.sleep(0.001)
+        raise AssertionError("the scans were read one after another")
+
+
+def test_the_dashboard_reads_its_servers_scans_together() -> None:
+    pterodactyl, modpack, jobs = default_fakes()
+    waiting = Waiting(pterodactyl.servers, pterodactyl.drifts)
+    assert client(OPERATOR, (waiting, modpack, jobs)).get("/").status_code == 200

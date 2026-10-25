@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
@@ -57,8 +58,9 @@ async def home(
     each bundle's latest build, and the most recent jobs."""
     builds = await modpackService.latest_builds()
     bundle_names = {str(bundle.id): bundle.name for bundle, _ in builds}
-    servers = [await _server_row(pterodactylService, server, bundle_names)
-               for server in await pterodactylService.server_find()]
+    # Each server's latest scan, read together: one after another, a dozen servers add up.
+    servers = list(await asyncio.gather(*[_server_row(pterodactylService, server, bundle_names)
+                                          for server in await pterodactylService.server_find()]))
     jobs = await jobService.recent(RECENT_JOBS)
     bundle_ids = [str(bundle.id) for bundle, _ in builds]
     # One query for every modpack; the pinned updates are shown on their page, never counted here.

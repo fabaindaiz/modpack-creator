@@ -141,6 +141,15 @@ def test_the_bar_shows_the_users_open_jobs_with_their_progress_and_a_shortcut() 
     assert 'hx-trigger="every 3s"' in response.text and jobs.asked == [EDITOR]
 
 
+def test_a_job_of_no_pack_or_server_links_to_its_own_page() -> None:
+    """An import of a new pack names neither yet (O9 user-walk, A1): the link went to a page that does not exist."""
+    client, _, jobs = setup()
+    importing = job(kind="modpack_import", payload={"upload": "x.upload"})
+    jobs.mine = [importing]
+    response = client.get("/trabajos/mios", headers=HTMX)
+    assert f'href="/jobs/{importing.id}"' in response.text and "/actividad" not in response.text
+
+
 def test_the_bar_is_empty_and_quiet_without_open_jobs() -> None:
     client, _, jobs = setup()
     response = client.get("/trabajos/mios", headers=HTMX)
