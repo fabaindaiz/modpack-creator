@@ -15,13 +15,13 @@ está al final del archivo, para que nada entre este párrafo y la primera entra
 
 **Arquitectura.** ✅ Cumple: las rutas solo inyectan servicios (`ImportReport` es un modelo del servicio); ninguna escritura externa nueva. La revisión del registro de orígenes no reescribe datos: un registro guardado antes se lee como revisión 0.
 
-**Qué salió mal en el camino.** El test del 2026-10-22 que nunca había corrido con MongoDB estaba mal: elegía un origen en un pack que no tenía el mod (422); lo atrapó la primera corrida. Edité rutas y servicios mientras corría test-mongo (para ver el rojo con la implementación guardada en un stash): las plantillas se leen al vuelo y 16 tests de importación y 4 de diagnóstico fallaron por el cambio a medio aplicar, no por el código; la corrida siguiente, sin tocar nada, dio verde. El user-walk de O9 lo hizo un agente leyendo plantillas, sin abrir el panel.
+**Qué salió mal en el camino.** El test del 2026-10-22 que nunca había corrido con MongoDB estaba mal: elegía un origen en un pack que no tenía el mod (422); lo atrapó la primera corrida. Edité rutas y servicios mientras corría test-mongo (para ver el rojo con la implementación guardada en un stash): las plantillas se leen al vuelo y 16 tests de importación y 4 de diagnóstico fallaron por el cambio a medio aplicar, no por el código; la corrida siguiente, sin tocar nada, dio verde. El primer barrido visual no arrancó: lo lancé dentro de un `cd …;`, así que no quedó fuera del sandbox (`mktemp` rechazado); escrito tal cual, pasó. El user-walk de O9 lo hizo un agente leyendo plantillas, sin abrir el panel.
 
 **Qué quedó sin hacer.** De O9: A2 en la página «Importar» (la importación en curso o la última), A3 (pide primero un test de navegador), A6, A7 y A8 (textos del dueño), A11 y A12 (indicadores de O6), y sus 13 decisiones. O8: sus 14 decisiones antes de un plan. El «?» que baja de línea al abrirse (cómo se ve: del dueño). O1 y O4 siguen esperando el log del servidor (producción: solo si el dueño lo pide). `delegate-gate.sh` no se corrió en un worktree real.
 
 **Desvío del plan.** Ninguno: no había plan; lo que se hizo es lo que el roadmap listaba sin decisión abierta.
 
-**No verificado.** El aspecto de «Ver» en la lista de servidores del pack y el desplazamiento de `data-reveal` (barrido visual; el desplazamiento solo en un navegador real). La carrera de los orígenes se probó con dos escrituras desde la misma lectura, no con dos escaneos reales a la vez.
+**No verificado.** El desplazamiento de `data-reveal` (solo en un navegador real; el barrido, 242 capturas y 0 problemas, muestra «Ver» bien a 1280 px). La carrera de los orígenes se probó con dos escrituras desde la misma lectura, no con dos escaneos reales a la vez.
 
 **Medido.** test-mongo: 1729 verdes y 1 rojo al empezar; 1738 verdes con la carrera y la reserva; 1745 verdes al final, con todos los commits de la sesión (2 min 43 s). Sin MongoDB: 1271 verdes y 473 saltados.
 

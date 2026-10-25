@@ -17,7 +17,7 @@ armado y se arregló); los dos menores diferidos de la revisión (la revisión d
 los scripts para delegados; el **user-walk de O9** (`docs/research/2026-10-25-user-walk-flujos-o9.md`) y
 siete de sus defectos (A1, A2 en parte, A4, A5, A9, A10, A13); el **borrador de la spec de O8**
 (`docs/superpowers/specs/2026-10-25-o8-versiones-con-historia-design.md`). **Para seguir, en orden:**
-1. El barrido visual sobre lo último (`./scripts/visual-sweep.sh`, en segundo plano, solo).
+1. Hecho: test-mongo con 1745 verdes y el barrido visual con 242 capturas y 0 problemas (2026-10-25).
 2. **Para el dueño, una a una:** las 13 decisiones de O9 (D1–D13 del user-walk) y los textos A6–A8; las 14
    de O8 (D1–D14 del borrador), antes de su plan; lo que ya esperaba del 2026-10-22 (abajo: los textos de
    ayuda, `LICENSES.html`, las decisiones de los agentes de la ronda 3, el «?» que baja de línea). Después,
