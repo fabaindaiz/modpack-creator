@@ -58,7 +58,7 @@ def test_a_pack_s_steps_end_on_a_linked_server_s_simulation() -> None:
     steps = pack_steps("b1", empty)
     assert keys_done(steps) == [("mods", False), ("resolve", False), ("build", False), ("server", False),
                                 ("simulate", False)]
-    assert steps[0].action == ("Buscar mods", "/modpacks/b1#mods")
+    assert steps[0].action == ("Buscar mods", "/modpacks/b1#mods-section")
     built = empty._replace(projects=4, resolved=True, latest_build=2, linked_servers=(("s1", "Survival"),))
     steps = pack_steps("b1", built)
     assert steps[3].done and steps[3].detail == "Survival"
@@ -95,3 +95,19 @@ def test_an_editor_is_told_an_operator_does_the_operator_steps() -> None:
                                       linked_servers=(("s1", "Survival"),), simulated=False), operator=False)
     assert pack[3].done and pack[4].action is None and pack[4].note == "Lo hace un operador."
     assert server_steps("s1", NEW)[1].note is None  # an operator gets the action
+
+
+def test_a_resolved_pack_with_problems_points_to_its_problems_first() -> None:
+    """As the dashboard does (O9 user-walk, A4): with only problems, «Decidir» on the undecided tab
+    reads «No quedan mods por decidir»."""
+    facts = NEW._replace(scanned=True, bundle_id="b1", resolved=True, pending=2, problems=1)
+    assert server_steps("s1", facts)[2].action == ("Decidir", "/modpacks/b1?vista=problemas")
+    pack = PackFacts(projects=3, resolved=True, pending=1, latest_build=None, linked_servers=(), simulated=False,
+                     problems=1)
+    assert pack_steps("b1", pack)[1].action == ("Decidir", "/modpacks/b1?vista=problemas")
+
+
+def test_searching_for_mods_leads_to_the_search_field() -> None:
+    """The step lands on the search, not below it (O9 user-walk, A5)."""
+    pack = PackFacts(projects=0, resolved=False, pending=0, latest_build=None, linked_servers=(), simulated=False)
+    assert pack_steps("b1", pack)[0].action == ("Buscar mods", "/modpacks/b1#mods-section")

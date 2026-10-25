@@ -61,6 +61,8 @@ class ServerFacts(NamedTuple):
     latest_build: Optional[int]
     # The build of the newest finished simulation (or real update) on this server.
     simulated_build: Optional[int]
+    # Of `pending`, the problems: «Decidir» leads to them first (O9 user-walk, A4).
+    problems: int = 0
 
 
 class PackFacts(NamedTuple):
@@ -72,6 +74,8 @@ class PackFacts(NamedTuple):
     linked_servers: tuple[tuple[str, str], ...]
     # A linked server simulated (or installed) the latest build.
     simulated: bool
+    # Of `pending`, the problems: «Decidir» leads to them first (O9 user-walk, A4).
+    problems: int = 0
 
 
 # What each step needs done first; a step not listed (the scan, linking) never waits.
@@ -106,11 +110,14 @@ def _chain(steps: list[tuple[str, str, bool, str, tuple[str, str]]], needs: dict
     return list(built.values())
 
 
-def _resolve_step(bundle_id: Optional[str], resolved: bool, pending: int) -> tuple[str, str, bool, str, tuple[str, str]]:
+def _resolve_step(bundle_id: Optional[str], resolved: bool, pending: int,
+                  problems: int = 0) -> tuple[str, str, bool, str, tuple[str, str]]:
     done = resolved and pending == 0
     detail = f"{pending} por decidir o con problemas" if resolved and pending else ""
     # The resolve button heads the pack's mods (user walk, 2026-10-13: the bare page left it out of sight).
-    action = ("Decidir", f"/modpacks/{bundle_id}?vista=decidir") if resolved else ("Resolver", f"/modpacks/{bundle_id}#mods")
+    # The tab with what is pending, problems first, as the dashboard (O9 user-walk, A4).
+    vista = "problemas" if problems else "decidir"
+    action = ("Decidir", f"/modpacks/{bundle_id}?vista={vista}") if resolved else ("Resolver", f"/modpacks/{bundle_id}#mods")
     return "resolve", "Pack resuelto", done, detail, action
 
 
@@ -123,7 +130,7 @@ def server_steps(server_id: str, facts: ServerFacts, operator: bool = True) -> l
          ("Escanear", f"/servers/{server_id}#escaneo")),
         ("pack", "Pack vinculado", facts.bundle_id is not None, facts.bundle_name or "",
          ("Crear o vincular", f"/servers/{server_id}#modpack")),
-        _resolve_step(facts.bundle_id, facts.resolved, facts.pending),
+        _resolve_step(facts.bundle_id, facts.resolved, facts.pending, facts.problems),
         ("build", "Build creado", facts.latest_build is not None,
          f"Build {facts.latest_build}" if facts.latest_build is not None else "",
          ("Crear build", f"/modpacks/{facts.bundle_id}#builds")),
@@ -138,8 +145,9 @@ def pack_steps(bundle_id: str, facts: PackFacts, operator: bool = True) -> list[
     first = facts.linked_servers[0][0] if facts.linked_servers else None
     return _chain([
         ("mods", "Con mods", facts.projects > 0, f"{facts.projects} mods" if facts.projects else "",
-         ("Buscar mods", f"/modpacks/{bundle_id}#mods")),
-        _resolve_step(bundle_id, facts.resolved, facts.pending),
+         # The search heads the section; #mods starts below it (O9 user-walk, A5).
+         ("Buscar mods", f"/modpacks/{bundle_id}#mods-section")),
+        _resolve_step(bundle_id, facts.resolved, facts.pending, facts.problems),
         ("build", "Build creado", facts.latest_build is not None,
          f"Build {facts.latest_build}" if facts.latest_build is not None else "",
          ("Crear build", f"/modpacks/{bundle_id}#builds")),
@@ -156,3 +164,8 @@ def pending_count(saved: Optional[tuple[Any, bool]]) -> int:
         return 0
     lock = saved[0].lock
     return len(lock.undecided) + len(lock.problems)
+
+
+def problem_count(saved: Optional[tuple[Any, bool]]) -> int:
+    """The problems in a saved resolution (`(resolution, stale)`), 0 without one."""
+    return len(saved[0].lock.problems) if saved is not None else 0

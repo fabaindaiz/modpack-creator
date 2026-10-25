@@ -1188,7 +1188,7 @@ def test_the_page_does_not_highlight_crear_build_by_itself() -> None:
 
 
 def test_a_new_build_offers_simulating_on_linked_servers() -> None:
-    client, modpack, _, _, ptero = setup_all()
+    client, modpack, _, _, ptero = setup_all(OPERATOR)
     ptero.servers = [PterodactylServer.model_construct(id="srv1", name="Survival", bundle_id=str(BUNDLE_ID),
                                                        is_suspended=False, status=None),
                      PterodactylServer.model_construct(id="srv2", name="Otro", bundle_id="x", is_suspended=False, status=None)]
@@ -2058,7 +2058,7 @@ def test_the_channels_section_has_no_exception_list() -> None:
 
 
 def test_detail_layout_has_linked_servers_and_renamed_updates_link() -> None:
-    client, _, _, _, ptero = setup_all()
+    client, _, _, _, ptero = setup_all(OPERATOR)
     linked = PterodactylServer.model_construct(id=PydanticObjectId(), name="Survival", node="n1", status=None,
                                                is_suspended=False, bundle_id=str(BUNDLE_ID))
     other = PterodactylServer.model_construct(id=PydanticObjectId(), name="Creativo", node="n1", status=None,
@@ -2873,3 +2873,16 @@ def test_v1_moves_a_mod_s_way_only_with_the_confirmation() -> None:
     done = v1.post(f"/v1/modpack/{BUNDLE_ID}/via", params={"confirm_via": "true"}, json={"project_id": "F", "native": True})
     assert done.status_code == 200
     assert [c[5] for c in modpack.calls if c[0] == "via_set"] == [False, True]
+
+
+def test_an_editor_is_never_offered_a_simulation_on_the_pack_page() -> None:
+    """Simulating is an operator's (O9 user-walk, A10; the class K2 of 2026-10-13): an editor reads «Ver»."""
+    client, modpack, _, _, ptero = setup_all(EDITOR)
+    ptero.servers = [PterodactylServer.model_construct(id="srv1", name="Survival", bundle_id=str(BUNDLE_ID),
+                                                       is_suspended=False, status=None)]
+    modpack.builds[0].created_at = datetime.now(timezone.utc) - timedelta(seconds=20)
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    servers = text[text.index('id="servers-section"'):]
+    servers = servers[:servers.index("</section>")]
+    assert "Simular" not in servers and ">Ver<" in servers and 'href="/servers/srv1"' in servers
+    assert "Simular en Survival" not in text

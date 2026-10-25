@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from src.dependences import Dependences, JobService, ModpackService, ModrinthService, PterodactylService, UpdateService
 from src.exceptions import HTTP_403_FORBIDDEN, HTTP_409_CONFLICT, HTTP_422_UNPROCESSABLE_ENTITY
-from src.library.onboarding import ServerFacts, fact, pending_count, server_steps
+from src.library.onboarding import ServerFacts, fact, pending_count, problem_count, server_steps
 from src.library.scan import Comparison, full_reason_text, unexplained_for
 from src.model.jobs import Job
 from src.model.modpack import ModpackBundle
@@ -179,7 +179,7 @@ async def server_detail(
     onboarding = server_steps(server_id, ServerFacts(
         scanned=scan is not None, identified=sum(1 for f in scan.files if f.status == "identified") if scan else 0,
         bundle_id=str(bundle.id) if bundle is not None else None, bundle_name=bundle.name if bundle is not None else None,
-        resolved=saved is not None and not saved[1], pending=pending_count(saved),
+        resolved=saved is not None and not saved[1], pending=pending_count(saved), problems=problem_count(saved),
         latest_build=bundle.latest_build if bundle is not None else None,
         simulated_build=await fact(jobService.simulated_build(server_id, str(bundle.id)), None) if bundle is not None else None),
         operator=actor.is_operator)

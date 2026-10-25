@@ -58,7 +58,8 @@
       <li class="flex flex-wrap items-center gap-2 px-3 py-2">
         <a href="/servers/{{ server.id }}" class="min-w-0 flex-1 font-medium break-words hover:text-link hover:underline">{{ server.name }}</a>
         {% if server.is_suspended %}{{ ui.badge("suspendido", "danger") }}{% elif server.status %}{{ ui.badge(server.status, "warning") }}{% else %}{{ ui.badge("sin estado especial") }}{% endif %}
-        {{ ui.link_button("Simular", "/servers/" ~ server.id ~ "#actualizar", small=True) }}
+        {# Simulating is an operator's (O9 user-walk, A10): an editor reads the server, as on the dashboard. #}
+        {% if actor.is_operator %}{{ ui.link_button("Simular", "/servers/" ~ server.id ~ "#actualizar", small=True) }}{% else %}{{ ui.link_button("Ver", "/servers/" ~ server.id, small=True) }}{% endif %}
       </li>
       {% endfor %}
     </ul>

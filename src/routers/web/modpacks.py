@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from src.exceptions import BuildBlocked, DowngradeRefused, HTTP_404_NOT_FOUND, HTTP_413_CONTENT_TOO_LARGE, HTTP_422_UNPROCESSABLE_ENTITY, QuotaExceeded, UpstreamError, ViaChangeRefused
 from src.library.bridges import BRIDGES, FABRIC_API, REPLACES, VIA_RISK, bridges_for
 from src.library.mod_filters import ModFilters, apply as filter_rows, counts as filter_counts
-from src.library.onboarding import PackFacts, fact, pack_steps, pending_count
+from src.library.onboarding import PackFacts, fact, pack_steps, pending_count, problem_count
 from src.library.resolution import ADMIN, Lock
 from src.dependences import Dependences, JobService, ModpackImportService, ModpackService, ModrinthService, PterodactylService, UpdateCheckService
 from src.model.modpack import ModpackBundle, ModpackBundleCreate, ModpackBundlePatch, PinSource, ProjectOrigin
@@ -497,12 +497,14 @@ async def modpack_detail(
         if servers else []
     onboarding = pack_steps(bundle_id, PackFacts(
         projects=len(bundle.projects), resolved=saved is not None and not context["mods"].stale,
-        pending=pending_count((saved, context["mods"].stale) if saved else None), latest_build=bundle.latest_build,
+        pending=pending_count((saved, context["mods"].stale) if saved else None),
+        problems=problem_count((saved, context["mods"].stale) if saved else None), latest_build=bundle.latest_build,
         linked_servers=tuple((str(s.id), s.name) for s in servers),
         simulated=bundle.latest_build is not None and bundle.latest_build in simulated), operator=actor.is_operator)
     return render(request, "modpacks/detail.html", actor, onboarding=onboarding, **_bridges_context(bundle), builds=builds, servers=servers, channel_names=CHANNELS,
                   pending=_has_pending((saved, context["mods"].stale) if saved else None),
-                  next_servers=servers if fresh else None, human_size=human_size, nav_active="modpacks",
+                  # Simulating is an operator's (O9 user-walk, A10).
+                  next_servers=servers if fresh and actor.is_operator else None, human_size=human_size, nav_active="modpacks",
                   curseforge=importService.curseforge_enabled, **context)
 
 @router.get("/modpacks/{bundle_id}/search")
