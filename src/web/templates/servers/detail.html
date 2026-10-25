@@ -15,7 +15,7 @@
 {{ ui.button("Refrescar desde el panel", kind="secondary", attrs={"hx-post": "/servers/" ~ server_id ~ "/refresh"}) }}
 {% endcall %}
 
-<div id="server-job" class="space-y-2" aria-live="polite">
+<div id="server-job" class="space-y-2" aria-live="polite" data-reveal>
   {% if active_job %}{% set job = active_job %}{% set server_name = server.name %}{% include "activity/_job_row.html" %}{% endif %}
 </div>
 

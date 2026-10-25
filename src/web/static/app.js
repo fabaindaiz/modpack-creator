@@ -293,6 +293,16 @@
     });
   });
 
+  // A place marked data-reveal is scrolled into view when an answer is swapped into it: a server's
+  // job answers at the top of the page, far from the button that asked (O9 user-walk, A13). Only
+  // the place itself: its polling row swaps itself, and the page does not jump every 2 s.
+  document.addEventListener('htmx:afterSwap', function (evt) {
+    var target = evt.detail.target;
+    if (target instanceof Element && target.matches('[data-reveal]') && typeof target.scrollIntoView === 'function') {
+      target.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  });
+
   // A form inside a dialog closes it once its request is answered, also on an error: the modal
   // would otherwise hide the notice that explains it. Any other element closes it only when a
   // write it sent fails (a problem's "Quitar", hx-delete, in the build dialog); a read leaves it
