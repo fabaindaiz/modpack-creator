@@ -1,7 +1,7 @@
 import logging
 import re
-from collections.abc import Iterator
-from contextlib import AbstractContextManager, contextmanager
+from collections.abc import AsyncIterator
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Optional
@@ -385,25 +385,25 @@ IMPORT_MAX_REQUEST = PRISM_MAX_BYTES + 1024 * 1024
 UPLOADS = UploadBudget(int(getenv("IMPORT_TMP_MAX_MIB", "4096")) * 1024 * 1024, stored=UploadStore().stored_bytes)
 UPLOAD_BUSY = "Hay otra importación subiendo; intenta en un momento"
 
-@contextmanager
-def _upload_room(request: Request) -> Iterator[None]:
+@asynccontextmanager
+async def _upload_room(request: Request) -> AsyncIterator[None]:
     """413 past the size an import may have; 429 if the uploads in flight leave no room for it."""
     declared = request.headers.get("content-length", "")
     if not declared.isdigit() or int(declared) > IMPORT_MAX_REQUEST:
         raise HTTP_413_CONTENT_TOO_LARGE("El archivo pesa más de 1 GiB")
-    with _reserved(int(declared)):
+    async with _reserved(int(declared)):
         yield
 
-@contextmanager
-def _reserved(size: int) -> Iterator[None]:
+@asynccontextmanager
+async def _reserved(size: int) -> AsyncIterator[None]:
     """Hold `size` bytes of the temporary disk; 429 if the uploads in flight leave no room."""
     try:
-        with UPLOADS.reserve(size):
+        async with UPLOADS.reserve(size):
             yield
     except UploadBusy as busy:
         raise QuotaExceeded(UPLOAD_BUSY, 30.0) from busy
 
-def _copy_room(upload: UploadFile) -> AbstractContextManager[None]:
+def _copy_room(upload: UploadFile) -> AbstractAsyncContextManager[None]:
     """
     Room for the copy of an upload kept for its import job (O6, owner 2026-10-21): the request only
     stores the file and the job reads it. The copy holds its size while Starlette's own still exists
@@ -432,7 +432,7 @@ async def modpack_import(
         ):
     """Import an uploaded .mrpack (`archivo`) or a Modrinth reference (`ref`): as a new pack, or as the
     content of `into`. The answer is the report, into the form's #import-result."""
-    with _upload_room(request):
+    async with _upload_room(request):
         form = await request.form(max_files=1, max_fields=4)
         into = str(form.get("into") or "") or None
         if into is not None and not re.fullmatch(BUNDLE_REF, into):
@@ -440,7 +440,7 @@ async def modpack_import(
         upload, ref = form.get("archivo"), str(form.get("ref") or "").strip()
         code = str(form.get("codigo") or "").strip()
         if isinstance(upload, UploadFile) and upload.filename:
-            with _copy_room(upload):
+            async with _copy_room(upload):
                 job = await importService.import_upload(upload.file, upload.filename, actor, into=into)
         elif code:
             job = await importService.import_curseforge_code(code[:40], actor, into=into)

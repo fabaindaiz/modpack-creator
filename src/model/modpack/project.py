@@ -53,6 +53,9 @@ class PinRecord(BaseModel):
     # Which origin of `selected` is in use, by its key, where a source has several (a server each);
     # None reads as the first of the source.
     selected_key: Optional[str] = None
+    # How many times it was written: a write carries the revision it read, and is refused if another
+    # wrote meanwhile (review, 2026-10-22). 0 for a record stored before, or none at all.
+    rev: int = 0
 
     def origin(self, source: PinSource) -> Optional[PinOrigin]:
         return next((o for o in self.origins if o.source == source), None)

@@ -20,7 +20,7 @@ from src.library.changes import VersionFacts, direction
 from src.library.resolution import CHANNEL_RANK, OUTSIDE_TAGS, Candidate, Target
 from src.model.modpack import ModpackBundle, PinOrigin, PinRecord, PinSource
 
-__all__ = ["ORIGIN_LABEL", "OUTSIDE_TAGS", "PinView", "import_is_safe", "import_selects", "pin_view", "resolution_inputs",
+__all__ = ["ORIGIN_LABEL", "OUTSIDE_TAGS", "PIN_WRITE_TRIES", "PinView", "import_is_safe", "import_selects", "pin_view", "resolution_inputs",
            "pack_target", "server_origins", "server_origins_dropped", "version_problem"]
 
 # How the panel names each origin.
@@ -28,6 +28,9 @@ ORIGIN_LABEL = {PinSource.pack: "versión del pack", PinSource.admin: "elegida a
                 PinSource.resolution: "resolución", PinSource.server: "servidor"}
 # The origins whose version the resolver takes although Modrinth does not mark it for the pack.
 UNCHECKED_SOURCES = (PinSource.pack, PinSource.server)
+# How many times a pin record is read and written again when another write of it came in between
+# (its `rev`; review, 2026-10-22).
+PIN_WRITE_TRIES = 5
 
 
 @dataclass(frozen=True)

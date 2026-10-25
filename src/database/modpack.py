@@ -205,16 +205,20 @@ class ModpackDatabase():
         Write one mod's pin origins (O2) and its pin in one update, touching only those two keys:
         `pin` is the version in use, None to leave it unpinned. With `when_pin`, only if the pin
         stored is still that one (None: no pin), so a pin someone set meanwhile is never replaced.
+        Always only if the record stored is still the revision `record` was made from (`record.rev`;
+        0 matches a record stored before revisions, or none), so two writes from the same read never
+        lose one's origin (review, 2026-10-22); it is written as the next revision.
         Returns whether it wrote; 404 if the bundle does not exist. `project_id` must be a plain
         Modrinth id (the caller checks it): it becomes a key of a dotted path.
         """
         oid = self._bundle_oid(bundle_id)
-        update: dict[str, Any] = {"$set": {f"pin_origins.{project_id}": record.model_dump()}}
+        written = record.model_copy(update={"rev": record.rev + 1})
+        update: dict[str, Any] = {"$set": {f"pin_origins.{project_id}": written.model_dump()}}
         if pin is not None:
             update["$set"][f"pins.{project_id}"] = pin
         else:
             update["$unset"] = {f"pins.{project_id}": ""}
-        query: dict[str, Any] = {"_id": oid}
+        query: dict[str, Any] = {"_id": oid, f"pin_origins.{project_id}.rev": {"$in": [0, None]} if not record.rev else record.rev}
         if when_pin is not ANY_PIN:
             query[f"pins.{project_id}"] = when_pin if when_pin is not None else {"$exists": False}
         collection = ModpackBundle.get_pymongo_collection()

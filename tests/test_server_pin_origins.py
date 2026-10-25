@@ -142,3 +142,38 @@ def test_unlinking_a_server_takes_its_origins_from_its_old_pack_but_not_one_in_u
         assert [o.source for o in record.origins] == [PinSource.admin]
     # Relinking to the same pack takes nothing.
     assert linked(bundle, str(BUNDLE_ID)) == []
+
+
+class Racing(Packs):
+    """A pack whose first write meets another scan's origin, written after this scan read the pack."""
+    def __init__(self, bundle: ModpackBundle, after: ModpackBundle) -> None:
+        super().__init__(bundle)
+        self.after = after
+
+    async def bundle_pin_record_set(self, bundle_id: str, project_id: str, record: PinRecord, pin: Optional[str],
+                                    when_pin: object = None) -> bool:
+        await super().bundle_pin_record_set(bundle_id, project_id, record, pin, when_pin)
+        if self.bundle is self.after:
+            return True
+        self.bundle = self.after
+        return False
+
+
+def test_a_scan_that_meets_another_scans_write_offers_again_from_a_fresh_read() -> None:
+    before = pack({"AAAAAAAA": "va-1"})
+    after = pack({"AAAAAAAA": "va-1"})
+    after.pin_origins = {"AAAAAAAA": PinRecord(origins=[PinOrigin(source=PinSource.admin, version_id="va-1"),
+                                                        served("otro", "Creativo", "va-3")],
+                                               selected=PinSource.admin, rev=1)}
+    packs = Racing(before, after)
+    service = PterodactylService(pterodactylAPI=cast(Any, None), PterodactylDB=cast(Any, None),
+                                 modrinthAPI=cast(Any, None), modrinthDB=cast(Any, Catalog()), modpackDB=cast(Any, packs),
+                                 audit=cast(Any, None), jobDB=cast(Any, object()), clock=lambda: NOW)
+    server = PterodactylServer.model_construct(id=PydanticObjectId(SERVER_ID), identifier="1a2b3c4d", uuid="u", name="Survival",
+                                               node="n1", bundle_id=str(BUNDLE_ID))
+    scan = ServerScan.model_construct(id=PydanticObjectId(), server_id=server.id, directory="/mods", scanned_at=NOW,
+                                      full=False, files=[jar("a", "AAAAAAAA", "va-2")])
+    assert asyncio.run(service._server_pin_origins(server, scan)) == ["AAAAAAAA"]
+    [_, (_, record, _, _)] = packs.writes
+    assert [o.server_id for o in record.origins if o.source == PinSource.server] == ["otro", SERVER_ID]
+    assert record.rev == 1

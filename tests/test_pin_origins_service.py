@@ -44,6 +44,11 @@ async def built_with(s: Scenario, bundle_id: str, project_id: str, version_id: s
     await s.modpackDB.bundle_latest_build(bundle_id, 1)
 
 
+async def imported(s: Scenario) -> str:
+    """A pack imported with Sodium pinned to its version «sod-1»: a pack the card can choose on."""
+    return (await s.service.run_mrpack(mrpack(), EDITOR)).bundle_id
+
+
 def test_importing_pins_each_mod_to_the_packs_version_and_marks_one_outside_the_tags(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[Any, ModpackBundle]:
         s = Scenario()
@@ -128,13 +133,12 @@ def test_the_card_puts_one_servers_origin_in_use_by_its_server(mongo: MongoRunne
     """One «servidor» origin per linked server (owner, 2026-10-22): choosing names the server."""
     async def scenario() -> tuple[Any, ...]:
         s = Scenario()
-        bundle_id = await s.bundle()
-        await s.modpackDB.bundle_pin_set(bundle_id, SODIUM[0], "sod-1")
-        record = PinRecord(origins=[PinOrigin(source=PinSource.admin, version_id="sod-1"),
-                                    PinOrigin(source=PinSource.server, version_id="sod-1", label="Survival", server_id="s1"),
-                                    PinOrigin(source=PinSource.server, version_id="sod-1", label="Creativo", server_id="s2")],
-                           selected=PinSource.admin)
-        await s.modpackDB.bundle_pin_record_set(bundle_id, SODIUM[0], record, "sod-1")
+        bundle_id = await imported(s)
+        read = (await s.modpackDB.bundle_get(bundle_id)).pin_origins[SODIUM[0]]
+        record = read.model_copy(update={"origins": [
+            *read.origins, PinOrigin(source=PinSource.server, version_id="sod-1", label="Survival", server_id="s1"),
+            PinOrigin(source=PinSource.server, version_id="sod-1", label="Creativo", server_id="s2")]})
+        assert await s.modpackDB.bundle_pin_record_set(bundle_id, SODIUM[0], record, "sod-1")
         service = s.service.modpackService
         await service.pin_origin_select(bundle_id, SODIUM[0], PinSource.server, EDITOR, server_id="s2")
         chosen = await s.modpackDB.bundle_get(bundle_id)
@@ -174,3 +178,79 @@ def test_a_bundle_stored_before_origins_loads_with_its_pins_as_they_were(mongo: 
 
     bundle = mongo(scenario)
     assert bundle.pins == {SODIUM[0]: "sod-1"} and bundle.pin_origins == {}
+
+
+# Dos escrituras desde la misma lectura (menor de la revisión, 2026-10-22): la segunda no pisa a la primera.
+
+def server_origin(server_id: str, name: str) -> PinOrigin:
+    return PinOrigin(source=PinSource.server, version_id="sod-2", label=name, server_id=server_id)
+
+
+def test_a_record_written_from_a_stale_read_is_refused(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Any, ...]:
+        s = Scenario()
+        bundle_id = await s.bundle()
+        await s.modpackDB.bundle_pin_set(bundle_id, SODIUM[0], "sod-1")
+        base = PinRecord(origins=[PinOrigin(source=PinSource.admin, version_id="sod-1")], selected=PinSource.admin)
+        assert await s.modpackDB.bundle_pin_record_set(bundle_id, SODIUM[0], base, "sod-1")
+        read = (await s.modpackDB.bundle_get(bundle_id)).pin_origins[SODIUM[0]]
+        first = read.model_copy(update={"origins": [*read.origins, server_origin("s1", "Survival")]})
+        second = read.model_copy(update={"origins": [*read.origins, server_origin("s2", "Creativo")]})
+        written = (await s.modpackDB.bundle_pin_record_set(bundle_id, SODIUM[0], first, "sod-1"),
+                   await s.modpackDB.bundle_pin_record_set(bundle_id, SODIUM[0], second, "sod-1"))
+        return written, await s.modpackDB.bundle_get(bundle_id)
+
+    written, bundle = mongo(scenario)
+    assert written == (True, False)
+    record = bundle.pin_origins[SODIUM[0]]
+    assert [o.server_id for o in record.origins if o.source == PinSource.server] == ["s1"]
+    assert record.rev == 2
+
+
+def test_a_record_stored_before_revisions_is_written_as_revision_zero(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[bool, ModpackBundle]:
+        s = Scenario()
+        bundle_id = await s.bundle()
+        # As stored before the revision: no `rev` key in the record.
+        await ModpackBundle.get_pymongo_collection().update_one(
+            {"_id": (await s.modpackDB.bundle_get(bundle_id)).id},
+            {"$set": {"pins": {SODIUM[0]: "sod-1"},
+                      f"pin_origins.{SODIUM[0]}": {"origins": [{"source": "admin", "version_id": "sod-1"}],
+                                                    "selected": "admin"}}})
+        read = (await s.modpackDB.bundle_get(bundle_id)).pin_origins[SODIUM[0]]
+        changed = read.model_copy(update={"origins": [*read.origins, server_origin("s1", "Survival")]})
+        written = await s.modpackDB.bundle_pin_record_set(bundle_id, SODIUM[0], changed, "sod-1")
+        return written, await s.modpackDB.bundle_get(bundle_id)
+
+    written, bundle = mongo(scenario)
+    assert written and bundle.pin_origins[SODIUM[0]].rev == 1
+
+
+def test_choosing_an_origin_while_a_scan_adds_another_keeps_both(mongo: MongoRunner) -> None:
+    async def scenario() -> ModpackBundle:
+        s = Scenario()
+        bundle_id = await imported(s)
+        read = (await s.modpackDB.bundle_get(bundle_id)).pin_origins[SODIUM[0]]
+        record = read.model_copy(update={"origins": [
+            *read.origins, PinOrigin(source=PinSource.server, version_id="sod-1", label="Survival", server_id="s1")]})
+        assert await s.modpackDB.bundle_pin_record_set(bundle_id, SODIUM[0], record, "sod-1")
+        stale = await s.modpackDB.bundle_get(bundle_id)
+        # A scan of another server writes its origin after the card read the pack.
+        fresh = stale.pin_origins[SODIUM[0]]
+        await s.modpackDB.bundle_pin_record_set(
+            bundle_id, SODIUM[0], fresh.model_copy(update={"origins": [*fresh.origins, server_origin("s2", "Creativo")]}),
+            "sod-1")
+        reads = [stale]
+        real_get = s.modpackDB.bundle_get
+
+        async def get(bundle_id: str) -> ModpackBundle:
+            return reads.pop() if reads else await real_get(bundle_id)
+
+        s.modpackDB.bundle_get = get  # type: ignore[method-assign]
+        await s.service.modpackService.pin_origin_select(bundle_id, SODIUM[0], PinSource.server, EDITOR, server_id="s1")
+        return await real_get(bundle_id)
+
+    bundle = mongo(scenario)
+    record = bundle.pin_origins[SODIUM[0]]
+    assert (record.selected, record.selected_key, bundle.pins[SODIUM[0]]) == (PinSource.server, "server:s1", "sod-1")
+    assert [o.server_id for o in record.origins if o.source == PinSource.server] == ["s1", "s2"]

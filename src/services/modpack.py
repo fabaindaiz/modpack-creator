@@ -20,7 +20,7 @@ from src.model.jobs import Job
 from src.library.bridges import BRIDGES, REPLACES, VIA_RISK, bridge as find_bridge, companions, guest_of
 from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Candidate, Catalog, Lock, LockEntry, ResolveRequest, Target, free_request, merge_replacements, request_digest, resolve
 from src.model.modpack import BUNDLE_KEYED_FIELDS, AvailableUpdate, LoaderVersion, UpdateCheck, ModpackBuild, ModpackBundle, ModpackBundlePatch, ModpackReplacement, ModpackResolution, PackProject, PinOrigin, PinRecord, PinSource, ProjectOrigin
-from src.library.pins import ORIGIN_LABEL, PinView, import_is_safe, import_selects, pack_target, pin_view, resolution_inputs, version_problem
+from src.library.pins import ORIGIN_LABEL, PIN_WRITE_TRIES, PinView, import_is_safe, import_selects, pack_target, pin_view, resolution_inputs, version_problem
 from src.model.modrinth import ModrinthProject, ModrinthVersion, ModrinthVersionList, VersionBrief
 from src.model.modrinth.version import ModrinthDependencyType
 from src.model.pterodactyl import PterodactylServer, ServerScan
@@ -139,8 +139,18 @@ def _with_origin(record: PinRecord, origin: PinOrigin, select: bool) -> PinRecor
     if not any(o.source == origin.source for o in record.origins):
         origins.append(origin)
     if select:
-        return PinRecord(origins=origins, selected=origin.source, selected_key=origin.key)
-    return PinRecord(origins=origins, selected=record.selected, selected_key=record.selected_key)
+        return PinRecord(origins=origins, selected=origin.source, selected_key=origin.key, rev=record.rev)
+    return PinRecord(origins=origins, selected=record.selected, selected_key=record.selected_key, rev=record.rev)
+
+
+def _rev(bundle: ModpackBundle, project_id: str) -> int:
+    """The revision of a mod's pin record as read: a record written from it carries it."""
+    record = bundle.pin_origins.get(project_id)
+    return record.rev if record is not None else 0
+
+
+# After PIN_WRITE_TRIES writes, each meeting another write of the same mod's pin in between.
+PIN_BUSY = "La versión fijada de ese mod cambió mientras tanto; vuelve a intentarlo"
 
 
 @dataclass(frozen=True)
@@ -563,17 +573,23 @@ class ModpackService():
                 raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{value}' no es un id de Modrinth")
         bundle = await self.modpackDB.bundle_get(bundle_id)
         found, downgrade = await self._pin_checked(bundle, project_id, version_id, confirm_downgrade)
-        record = bundle.pin_origins.get(project_id)
-        if record is None:
-            updated = await self.modpackDB.bundle_pin_set(bundle_id, project_id, version_id)
-        else:
+        for _ in range(PIN_WRITE_TRIES):
+            record = bundle.pin_origins.get(project_id)
+            if record is None:
+                updated = await self.modpackDB.bundle_pin_set(bundle_id, project_id, version_id)
+                break
             # A mod with origins (O2): the admin's version becomes its «elegida a mano» origin, in use.
             problem = version_problem(candidate(found), self._target(bundle), bundle.channel_exceptions.get(project_id))
             record = _with_origin(record, PinOrigin(
                 source=PinSource.admin, version_id=version_id, version_number=found.version_number,
                 valid=problem is None, problem=problem, at=self.clock()), select=True)
-            await self.modpackDB.bundle_pin_record_set(bundle_id, project_id, record, version_id)
-            updated = await self.modpackDB.bundle_get(bundle_id)
+            written = await self.modpackDB.bundle_pin_record_set(bundle_id, project_id, record, version_id)
+            bundle = await self.modpackDB.bundle_get(bundle_id)
+            if written:
+                updated = bundle
+                break
+        else:
+            raise HTTP_409_CONFLICT(PIN_BUSY)
         details: dict[str, Any] = {"project_id": project_id, "version_id": version_id}
         if downgrade is not None:
             details["downgrade"] = {"from": downgrade.floor_number, "to": downgrade.pin_number}
@@ -597,29 +613,35 @@ class ModpackService():
         """
         if not MODRINTH_ID.fullmatch(project_id):
             raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{project_id}' no es un id de Modrinth")
-        bundle = await self.modpackDB.bundle_get(bundle_id)
-        view = pin_view(bundle, project_id)
-        if view is None:
-            raise HTTP_422_UNPROCESSABLE_ENTITY("Ese mod no tiene una versión fijada con orígenes")
-        stored = [o for o in view.origins if o.source != PinSource.resolution]
-        details: dict[str, Any] = {"project_id": project_id, "origin": source.value}
-        if source == PinSource.resolution:
-            await self.modpackDB.bundle_pin_record_set(
-                bundle_id, project_id, PinRecord(origins=stored, selected=PinSource.resolution), None)
-            details["version_id"] = None
+        for _ in range(PIN_WRITE_TRIES):
+            bundle = await self.modpackDB.bundle_get(bundle_id)
+            view = pin_view(bundle, project_id)
+            if view is None:
+                raise HTTP_422_UNPROCESSABLE_ENTITY("Ese mod no tiene una versión fijada con orígenes")
+            stored = [o for o in view.origins if o.source != PinSource.resolution]
+            details: dict[str, Any] = {"project_id": project_id, "origin": source.value}
+            rev = _rev(bundle, project_id)
+            if source == PinSource.resolution:
+                written = await self.modpackDB.bundle_pin_record_set(
+                    bundle_id, project_id, PinRecord(origins=stored, selected=PinSource.resolution, rev=rev), None)
+                details["version_id"] = None
+            else:
+                chosen = view.by_key(f"{source.value}:{server_id}") if server_id is not None else view.origin(source)
+                if chosen is None:
+                    raise HTTP_422_UNPROCESSABLE_ENTITY(f"Ese mod no tiene la versión de origen «{ORIGIN_LABEL[source]}»")
+                _, downgrade = await self._pin_checked(bundle, project_id, chosen.version_id, confirm_downgrade)
+                written = await self.modpackDB.bundle_pin_record_set(
+                    bundle_id, project_id, PinRecord(origins=stored, selected=source, selected_key=chosen.key, rev=rev),
+                    chosen.version_id)
+                details["version_id"] = chosen.version_id
+                if chosen.server_id is not None:
+                    details["server_id"] = chosen.server_id
+                if downgrade is not None:
+                    details["downgrade"] = {"from": downgrade.floor_number, "to": downgrade.pin_number}
+            if written:
+                break
         else:
-            chosen = view.by_key(f"{source.value}:{server_id}") if server_id is not None else view.origin(source)
-            if chosen is None:
-                raise HTTP_422_UNPROCESSABLE_ENTITY(f"Ese mod no tiene la versión de origen «{ORIGIN_LABEL[source]}»")
-            _, downgrade = await self._pin_checked(bundle, project_id, chosen.version_id, confirm_downgrade)
-            await self.modpackDB.bundle_pin_record_set(
-                bundle_id, project_id, PinRecord(origins=stored, selected=source, selected_key=chosen.key),
-                chosen.version_id)
-            details["version_id"] = chosen.version_id
-            if chosen.server_id is not None:
-                details["server_id"] = chosen.server_id
-            if downgrade is not None:
-                details["downgrade"] = {"from": downgrade.floor_number, "to": downgrade.pin_number}
+            raise HTTP_409_CONFLICT(PIN_BUSY)
         await self.audit.record(actor, "bundle.pin", _bundle(bundle_id), details)
         return await self.modpackDB.bundle_get(bundle_id)
 
@@ -644,21 +666,28 @@ class ModpackService():
             origin = PinOrigin(source=PinSource.pack, version_id=version.version_id,
                                version_number=version.version_number, valid=problem is None, problem=problem,
                                label=label, at=self.clock())
-            current = bundle.pin_origins.get(project_id)
             pinned = bundle.pins.get(project_id)
-            base = current
-            if base is None and pinned is not None:
-                # A pin stored before O2 is the admin's: kept, and in use.
-                base = PinRecord(origins=[PinOrigin(source=PinSource.admin, version_id=pinned)], selected=PinSource.admin)
-            selects = import_selects(pin_view(bundle, project_id), safe=project_id not in unsafe)
-            if selects:
-                record = _with_origin(base or PinRecord(), origin, select=True)
-                written = await self.modpackDB.bundle_pin_record_set(bundle_id, project_id, record, version.version_id,
-                                                                     when_pin=pinned)
-            else:
-                record = _with_origin(base or PinRecord(selected=PinSource.resolution), origin, select=False)
-                written = await self.modpackDB.bundle_pin_record_set(bundle_id, project_id, record, pinned,
-                                                                     when_pin=pinned)
+            for _ in range(PIN_WRITE_TRIES):
+                base = bundle.pin_origins.get(project_id)
+                if base is None and pinned is not None:
+                    # A pin stored before O2 is the admin's: kept, and in use.
+                    base = PinRecord(origins=[PinOrigin(source=PinSource.admin, version_id=pinned)], selected=PinSource.admin)
+                selects = import_selects(pin_view(bundle, project_id), safe=project_id not in unsafe)
+                if selects:
+                    record = _with_origin(base or PinRecord(), origin, select=True)
+                    written = await self.modpackDB.bundle_pin_record_set(bundle_id, project_id, record, version.version_id,
+                                                                         when_pin=pinned)
+                else:
+                    record = _with_origin(base or PinRecord(selected=PinSource.resolution), origin, select=False)
+                    written = await self.modpackDB.bundle_pin_record_set(bundle_id, project_id, record, pinned,
+                                                                         when_pin=pinned)
+                if written:
+                    break
+                bundle = await self.modpackDB.bundle_get(bundle_id)
+                if bundle.pins.get(project_id) != pinned:
+                    # A pin someone set meanwhile is left alone.
+                    break
+                # Only its record changed (a scan's origin): written again, from a fresh read.
             if not written:
                 result.kept.append(project_id)
             elif selects:
@@ -765,15 +794,20 @@ class ModpackService():
         """Remove the pin of one mod; only that pin changes. 422 for an id that is not a Modrinth id."""
         if not MODRINTH_ID.fullmatch(project_id):
             raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{project_id}' no es un id de Modrinth")
-        bundle = await self.modpackDB.bundle_get(bundle_id)
-        view = pin_view(bundle, project_id) if project_id in bundle.pin_origins else None
-        if view is None:
-            updated = await self.modpackDB.bundle_pin_unset(bundle_id, project_id)
-        else:
+        for _ in range(PIN_WRITE_TRIES):
+            bundle = await self.modpackDB.bundle_get(bundle_id)
+            view = pin_view(bundle, project_id) if project_id in bundle.pin_origins else None
+            if view is None:
+                updated = await self.modpackDB.bundle_pin_unset(bundle_id, project_id)
+                break
             # With origins (O2), unpinning is «resolución» in use; the other origins stay on offer.
-            await self.modpackDB.bundle_pin_record_set(bundle_id, project_id, PinRecord(
-                origins=[o for o in view.origins if o.source != PinSource.resolution], selected=PinSource.resolution), None)
-            updated = await self.modpackDB.bundle_get(bundle_id)
+            if await self.modpackDB.bundle_pin_record_set(bundle_id, project_id, PinRecord(
+                    origins=[o for o in view.origins if o.source != PinSource.resolution], selected=PinSource.resolution,
+                    rev=_rev(bundle, project_id)), None):
+                updated = await self.modpackDB.bundle_get(bundle_id)
+                break
+        else:
+            raise HTTP_409_CONFLICT(PIN_BUSY)
         await self.audit.record(actor, "bundle.pin", _bundle(bundle_id),
                                 {"project_id": project_id, "version_id": None})
         return updated

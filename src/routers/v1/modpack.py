@@ -237,12 +237,12 @@ async def modpack_import_mrpack(
     `into` fails the job, naming why (poll /v1/job/{id}). Any upload past 1 GiB is a 413; past the
     temporary disk the uploads in flight and the files kept for their jobs may take, 429 (the form
     is read only after reserving it)."""
-    with _upload_room(request):
+    async with _upload_room(request):
         form = await request.form(max_files=1, max_fields=1)
         archivo = form.get("archivo")
         if not isinstance(archivo, UploadFile):
             raise HTTP_422_UNPROCESSABLE_ENTITY("Falta el archivo (campo «archivo»)")
-        with _copy_room(archivo):
+        async with _copy_room(archivo):
             return await importer.import_upload(archivo.file, archivo.filename or "", actor, into=_into(into))
 
 @router.post("/modpack/import/curseforge", response_model=Job, status_code=202)

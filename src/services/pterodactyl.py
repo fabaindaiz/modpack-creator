@@ -13,7 +13,7 @@ from src.library.api.client.pterodactyl import PterodactylAPI
 from fastapi import HTTPException
 from src.library.deduce import Deduction, deduce_target
 from src.library.jarmeta import ModMetadata, read_mod_metadata
-from src.library.pins import pack_target, server_origins, server_origins_dropped
+from src.library.pins import PIN_WRITE_TRIES, pack_target, server_origins, server_origins_dropped
 from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Candidate
 from src.library.utils import MODRINTH_ID
 from src.library.scan import ClaimedFile, Comparison, ListedFile, LocalFile, ScanFile, compare, drift_message, plan_scan
@@ -173,10 +173,20 @@ class PterodactylService():
         `server_origins_dropped`): never the one in use, and written only while the pin is still the
         one read. A nicety of unlinking: if it fails, the link stays changed."""
         try:
-            bundle = await self.modpackDB.bundle_get(str(server.bundle_id))
-            for project_id, record in server_origins_dropped(bundle, str(server.id), server.name).items():
-                pinned = bundle.pins.get(project_id)
-                await self.modpackDB.bundle_pin_record_set(str(bundle.id), project_id, record, pinned, when_pin=pinned)
+            retry: Optional[set[str]] = None
+            for _ in range(PIN_WRITE_TRIES):
+                bundle = await self.modpackDB.bundle_get(str(server.bundle_id))
+                lost: set[str] = set()
+                for project_id, record in server_origins_dropped(bundle, str(server.id), server.name).items():
+                    if retry is not None and project_id not in retry:
+                        continue
+                    pinned = bundle.pins.get(project_id)
+                    if not await self.modpackDB.bundle_pin_record_set(str(bundle.id), project_id, record, pinned,
+                                                                      when_pin=pinned):
+                        lost.add(project_id)
+                if not lost:
+                    break
+                retry = lost
         except Exception:
             logger.warning("taking an unlinked server's pin origins from its pack failed", exc_info=True,
                            extra={"server_id": str(server.id)})
@@ -304,20 +314,31 @@ class PterodactylService():
         use, and written only while the pin is still the one read. Mods without a pin get nothing. A
         nicety of the scan: if it fails, the scan stays. Returns the mods offered."""
         try:
-            bundle = await self.modpackDB.bundle_get(str(server.bundle_id))
             installed = {f.project_id: f.version_id for f in scan.files
                          if f.status == "identified" and f.project_id and f.version_id and MODRINTH_ID.fullmatch(f.project_id)}
-            differing = sorted({v for p, v in installed.items() if p in bundle.pins and bundle.pins[p] != v})
-            versions = {v.version_id: Candidate.from_modrinth({**v.model_dump(mode="json"), "id": v.version_id})
-                        for v in await self.modrinthDB.version_find_by_version_ids(differing)} if differing else {}
-            offered = []
-            # Also with nothing differing: this server's origins go where it runs the pinned version again.
-            records = server_origins(bundle, installed, versions, pack_target(bundle), str(server.id), server.name,
-                                     self.clock())
-            for project_id, record in records.items():
-                pinned = bundle.pins[project_id]
-                if await self.modpackDB.bundle_pin_record_set(str(bundle.id), project_id, record, pinned, when_pin=pinned):
-                    offered.append(project_id)
+            offered: list[str] = []
+            retry: Optional[set[str]] = None
+            for _ in range(PIN_WRITE_TRIES):
+                bundle = await self.modpackDB.bundle_get(str(server.bundle_id))
+                differing = sorted({v for p, v in installed.items() if p in bundle.pins and bundle.pins[p] != v})
+                versions = {v.version_id: Candidate.from_modrinth({**v.model_dump(mode="json"), "id": v.version_id})
+                            for v in await self.modrinthDB.version_find_by_version_ids(differing)} if differing else {}
+                # Also with nothing differing: this server's origins go where it runs the pinned version again.
+                records = server_origins(bundle, installed, versions, pack_target(bundle), str(server.id), server.name,
+                                         self.clock())
+                lost: set[str] = set()
+                for project_id, record in records.items():
+                    if retry is not None and project_id not in retry:
+                        continue
+                    pinned = bundle.pins[project_id]
+                    if await self.modpackDB.bundle_pin_record_set(str(bundle.id), project_id, record, pinned, when_pin=pinned):
+                        offered.append(project_id)
+                    else:
+                        # The pin or its record changed since this read: offered again, from a fresh read.
+                        lost.add(project_id)
+                if not lost:
+                    break
+                retry = lost
             return offered
         except Exception:
             logger.warning("offering a scanned server's versions as pin origins failed", exc_info=True,

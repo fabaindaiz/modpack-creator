@@ -1,6 +1,7 @@
 """Los archivos de importación subidos esperan su trabajo en disco (O6, dueño 2026-10-21): la petición
 solo los guarda y encola; el trabajo los lee, y se borran al terminar. Lo que ningún trabajo activo
 sostiene, tras un reinicio o porque nunca se encoló, lo borra el barrido."""
+import asyncio
 import io
 import os
 import zipfile
@@ -51,11 +52,15 @@ def test_the_files_kept_for_jobs_count_against_the_temporary_disk(tmp_path: Path
     store = UploadStore(tmp_path)
     budget = UploadBudget(max_bytes=100, stored=store.stored_bytes)
     store.save(io.BytesIO(b"x" * 70))
-    with pytest.raises(UploadBusy):
-        with budget.reserve(40):
-            pass
-    with budget.reserve(30):
-        assert budget.in_use == 30
+
+    async def scenario() -> None:
+        with pytest.raises(UploadBusy):
+            async with budget.reserve(40):
+                pass
+        async with budget.reserve(30):
+            assert budget.in_use == 30
+
+    asyncio.run(scenario())
 
 
 def stored(store: UploadStore, data: bytes | io.BytesIO) -> str:

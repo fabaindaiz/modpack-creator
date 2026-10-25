@@ -5,10 +5,12 @@ deletes it when the request ends. A request reserves its declared Content-Length
 read (uvicorn refuses a body longer than declared); what does not fit is refused at once, with
 nothing written. Since O6 (owner, 2026-10-21) an import's file outlives its request, stored for its
 job (`src/library/import_uploads.py`): what is stored counts too, read from the disk, so it holds
-across restarts. In process: the app runs as one uvicorn process.
+across restarts, read in a thread: walking the directory blocks (review, 2026-10-22). In process: the
+app runs as one uvicorn process.
 """
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+import asyncio
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 
 
 class UploadBusy(Exception):
@@ -22,10 +24,12 @@ class UploadBudget:
         # What the uploads kept for their jobs take on disk now.
         self.stored = stored
 
-    @contextmanager
-    def reserve(self, size: int) -> Iterator[None]:
+    @asynccontextmanager
+    async def reserve(self, size: int) -> AsyncIterator[None]:
         """Hold `size` bytes while the upload is read and used; UploadBusy if they do not fit."""
-        if self.in_use + self.stored() + size > self.max_bytes:
+        stored = await asyncio.to_thread(self.stored)
+        # No await between the check and the hold: two uploads never both take the last room.
+        if self.in_use + stored + size > self.max_bytes:
             raise UploadBusy(f"{self.in_use} of {self.max_bytes} bytes in use")
         self.in_use += size
         try:
