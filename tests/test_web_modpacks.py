@@ -1135,11 +1135,13 @@ def test_app_js_opens_a_swapped_in_dialog_as_a_modal_once() -> None:
     assert "requestConfig.elt" in text
 
 
-def test_the_update_page_build_keeps_the_notice_on_undecided() -> None:
+def test_the_update_page_build_opens_the_dialog_on_the_pack_when_undecided() -> None:
     client, modpack, _ = setup()
     modpack.blocked = undecided_block("P2")
     response = client.post(f"/modpacks/{BUNDLE_ID}/actualizaciones/build", headers=HTMX)
-    assert response.status_code == 409 and "<dialog" not in response.text
+    # Never the dialog where the page has no place for it: the pack opens it (O9 user-walk, A9).
+    assert response.status_code == 200 and "<dialog" not in response.text
+    assert response.headers["HX-Redirect"] == f"/modpacks/{BUNDLE_ID}?construir=1#builds-section"
 
 
 def test_the_build_button_says_decide_when_the_saved_resolution_has_pending() -> None:

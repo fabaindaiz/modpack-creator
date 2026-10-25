@@ -10,7 +10,7 @@ from beanie import PydanticObjectId
 from dependency_injector import providers
 from fastapi.testclient import TestClient
 
-from src.exceptions import HTTP_409_CONFLICT
+from src.exceptions import HTTP_409_CONFLICT, BuildBlocked
 from src.library.changes import Change, ChangeSet
 from src.model.jobs import Job
 from src.model.modpack import AvailableUpdate, ModpackBuild, ModpackBundle, UpdateCheck
@@ -278,6 +278,25 @@ def test_create_build_with_a_conflict_is_a_notice() -> None:
     modpack.build_request = refuse  # type: ignore[method-assign]
     response = client.post(f"/modpacks/{BUNDLE_ID}/actualizaciones/build", headers=HTMX)
     assert response.status_code == 409 and "Hay mods sin decidir" in response.text
+
+
+def test_a_blocked_build_goes_to_the_pack_with_its_dialog_open() -> None:
+    """The same button on the pack opens the dialog with what is missing (O9 user-walk, A9): here it
+    was a bare 409."""
+    client, modpack, _ = setup()
+
+    async def blocked(bundle_id: str, actor: Actor) -> Any:
+        raise BuildBlocked("Hay mods sin decidir", lock=Any, only_undecided=True)  # type: ignore[arg-type]
+
+    modpack.build_request = blocked  # type: ignore[method-assign]
+    response = client.post(f"/modpacks/{BUNDLE_ID}/actualizaciones/build", headers=HTMX)
+    assert response.status_code == 200
+    assert response.headers["HX-Redirect"] == f"/modpacks/{BUNDLE_ID}?construir=1#builds-section"
+    page = client.get(f"/modpacks/{BUNDLE_ID}?construir=1").text
+    dialog = page[page.index('id="build-dialog"'):]
+    assert 'hx-trigger="load, build-blocked from:body"' in dialog[:dialog.index(">")]
+    plain = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert 'hx-trigger="build-blocked from:body"' in plain
 
 
 def test_the_detail_links_to_the_page() -> None:

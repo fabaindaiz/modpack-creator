@@ -13,7 +13,7 @@
 {# The pack's jobs while they run (E8); the page below reloads when one starts or the last one ends. #}
 <div id="job-banner" hx-get="/modpacks/{{ bundle_id }}/trabajo" hx-trigger="load, job-started from:body" hx-swap="innerHTML"></div>
 {# The build dialog, outside the part that reloads: a build job its check blocked opens it (E9). #}
-<div id="build-dialog" hx-get="/modpacks/{{ bundle_id }}/builds/dialogo" hx-trigger="build-blocked from:body" hx-swap="innerHTML" hx-disinherit="*"></div>
+<div id="build-dialog" hx-get="/modpacks/{{ bundle_id }}/builds/dialogo" hx-trigger="{{ 'load, ' if open_build_dialog is defined and open_build_dialog else '' }}build-blocked from:body" hx-swap="innerHTML" hx-disinherit="*"></div>
 {# Where a pin that goes back asks to be confirmed (F27): the pin route answers a dialog into it. #}
 <div id="pin-dialog"></div>
 {# Where adding a mod that only runs through the bridge asks first (C4): the add route answers a dialog into it. #}

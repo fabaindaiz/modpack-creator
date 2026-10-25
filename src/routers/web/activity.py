@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from src.exceptions import HTTP_404_NOT_FOUND, HTTP_422_UNPROCESSABLE_ENTITY
 from src.dependences import AuditService, Dependences, DiagnosticsService, JobService, ModpackService, ModrinthService, PterodactylService
+from src.services.modpack_import import ImportReport
 from src.model.jobs import Job, is_real_update
 from src.model.pterodactyl import ImportResult
 from src.model.users import Actor
@@ -64,6 +65,9 @@ async def _server_context(job: Job, pterodactylService: PterodactylService,
     server that is gone just shows no hint. With `jobService`, a finished dry run also carries the
     server's pending rollback, if any: its real run discards it (R17) and the dialog says so."""
     context: dict[str, Any] = {}
+    if job.kind == "modpack_import" and job.status == "done" and isinstance(job.checkpoint.get("import"), dict):
+        # A pack's import keeps its report here too: the form's lived only while it polled (O9 user-walk, A2).
+        context["pack_report"] = ImportReport(**job.checkpoint["import"])
     server_id = job.payload.get("server_id")
     if isinstance(server_id, str):
         try:

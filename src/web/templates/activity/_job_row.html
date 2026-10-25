@@ -25,6 +25,9 @@
   {% if import_result is defined and import_result %}
   {% with result=import_result, result_id="import-report-" ~ job.id, titles=(import_titles if import_titles is defined else {}), server_id=job.payload.get("server_id"), report_only=true %}{% include "servers/_import.html" %}{% endwith %}
   {% endif %}
+  {% if pack_report is defined and pack_report %}
+  {% with report=pack_report %}{% include "modpacks/_import_result.html" %}{% endwith %}
+  {% endif %}
   {% if dry_run and job.status == "done" %}
   {% include "servers/_dry_run.html" %}
   {% endif %}

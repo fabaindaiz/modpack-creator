@@ -504,7 +504,8 @@ async def modpack_detail(
     return render(request, "modpacks/detail.html", actor, onboarding=onboarding, **_bridges_context(bundle), builds=builds, servers=servers, channel_names=CHANNELS,
                   pending=_has_pending((saved, context["mods"].stale) if saved else None),
                   # Simulating is an operator's (O9 user-walk, A10).
-                  next_servers=servers if fresh and actor.is_operator else None, human_size=human_size, nav_active="modpacks",
+                  next_servers=servers if fresh and actor.is_operator else None,
+                  open_build_dialog=request.query_params.get("construir") == "1", human_size=human_size, nav_active="modpacks",
                   curseforge=importService.curseforge_enabled, **context)
 
 @router.get("/modpacks/{bundle_id}/search")
@@ -1026,9 +1027,10 @@ async def build_dialog(
     lock = await modpackService.resolve(bundle_id, actor)
     return await _build_dialog(request, actor, modpackService, modrinthService, bundle_id, lock, explain=True)
 
-def _builds_page(request: Request, bundle_id: str) -> Response:
-    """Go to the builds of the modpack: htmx cannot follow a redirect to a page, it is told where to go."""
-    url = f"/modpacks/{bundle_id}#builds-section"
+def _builds_page(request: Request, bundle_id: str, open_dialog: bool = False) -> Response:
+    """Go to the builds of the modpack: htmx cannot follow a redirect to a page, it is told where to go.
+    With `open_dialog`, the page opens the build dialog as it loads."""
+    url = f"/modpacks/{bundle_id}{'?construir=1' if open_dialog else ''}#builds-section"
     if request.headers.get("HX-Request"):
         return Response(status_code=200, headers={"HX-Redirect": url})
     return RedirectResponse(url, status_code=303)
@@ -1080,8 +1082,12 @@ async def update_build(
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         ):
     """Create a build with the same call as the builds section: it resolves again, so the result may
-    differ from the check (pins, replacements). It does not recommend it nor deploy it."""
-    await modpackService.build_request(bundle_id, actor)
+    differ from the check (pins, replacements). It does not recommend it nor deploy it. Blocked, it
+    goes to the pack with the build dialog open, as the same button there (O9 user-walk, A9)."""
+    try:
+        await modpackService.build_request(bundle_id, actor)
+    except BuildBlocked:
+        return _builds_page(request, bundle_id, open_dialog=True)
     return _builds_page(request, bundle_id)
 
 @router.post("/modpacks/{bundle_id}/builds/{number}/recommend")

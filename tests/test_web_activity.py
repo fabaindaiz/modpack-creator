@@ -536,6 +536,17 @@ def test_a_finished_import_row_carries_its_full_report() -> None:
     assert "Marcados «En el servidor»: 1 · Aceptan beta: 0" in shown
 
 
+def test_a_finished_modpack_import_keeps_its_report_on_its_page() -> None:
+    """The form's report lived only in its polled fragment (O9 user-walk, A2): the job's page shows it."""
+    client, jobs, *_ = setup()
+    report = {"bundle_id": "b1", "created": True, "source": "Aventura 2.0", "projects": ["P1", "P2"],
+              "unknown": ["mods/own.jar"], "overrides": {"config/x": 3}}
+    jobs.jobs = [make_job("modpack_import", status="done", active=False, payload={"upload": "x.upload"},
+                          checkpoint={"import": report})]
+    shown = " ".join(visible(client.get(f"/jobs/{jobs.jobs[0].id}").text).split())
+    assert "Importado: 2 mods de Aventura 2.0" in shown and "mods/own.jar" in shown
+
+
 def test_a_finished_import_row_counts_its_pending_when_it_is_read() -> None:
     """Review of release 0.3.0: the row said «Pendientes de tu decisión (N)» as the import left it;
     the server's page lowers N as the admin decides, and so does the row now."""
