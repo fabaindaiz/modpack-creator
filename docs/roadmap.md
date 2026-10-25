@@ -10,6 +10,23 @@ y tokens, con en qué se apoya (bundle 0.0.30); `close` la compara después con 
 
 ## Dónde estamos
 
+**2026-10-25, los pendientes sin decisión, hechos en `feat/ronda-3`** (sin push ni merge; detalle en el
+registro, s-7985ee-2006d0). test-mongo en verde (el test nuevo de los orígenes por servidor estaba mal
+armado y se arregló); los dos menores diferidos de la revisión (la revisión del registro de orígenes,
+`PinRecord.rev`, y la reserva de subidas que lee el disco en un hilo); el tablero lee los escaneos a la vez;
+los scripts para delegados; el **user-walk de O9** (`docs/research/2026-10-25-user-walk-flujos-o9.md`) y
+siete de sus defectos (A1, A2 en parte, A4, A5, A9, A10, A13); el **borrador de la spec de O8**
+(`docs/superpowers/specs/2026-10-25-o8-versiones-con-historia-design.md`). **Para seguir, en orden:**
+1. El barrido visual sobre lo último (`./scripts/visual-sweep.sh`, en segundo plano, solo).
+2. **Para el dueño, una a una:** las 13 decisiones de O9 (D1–D13 del user-walk) y los textos A6–A8; las 14
+   de O8 (D1–D14 del borrador), antes de su plan; lo que ya esperaba del 2026-10-22 (abajo: los textos de
+   ayuda, `LICENSES.html`, las decisiones de los agentes de la ronda 3, el «?» que baja de línea). Después,
+   el merge a `main` si lo pide; antes, se ofrece una revisión en contexto limpio de estos commits (tocan
+   datos guardados).
+3. Sin decisión, para después: A2 en la página «Importar», A3 con su test de navegador, A11 y A12
+   (indicadores de O6), y un segundo user-walk de O9 en contexto limpio antes de su spec.
+4. O1 y O4 con el log del servidor (producción: cuando el dueño lo pida).
+
 **2026-10-22, ronda 3 y grupo 2 hechos y revisados en `feat/ronda-3`** (en `origin`, sin merge). Del grupo 2
 está todo lo de abajo, más los textos de motivo de los tres escaneos que faltaban, **la barra en segunda
 fila** por debajo de 1280 px (`d5428db`; a 768 px no cabía desde la tanda B) y **un origen «servidor» por
@@ -222,9 +239,11 @@ Al cierre de la sesión de usabilidad del panel (2026-10-04 y 2026-10-05; detall
     `verbose`~~: hecho el 2026-10-05 en `release-1-prep`, solo claves (`tests/test_load_env.py`);
   - ~~un `UPDATE_CHECK_AT:` vacío o nulo debe significar "apagado"~~: hecho el 2026-10-12 (un
     valor nulo en `.env.yaml` es una clave ausente);
-  - los menores diferidos del registro (consulta de títulos por fragmento, espera secuencial del
-    tablero, índices de auditoría por `target_id` y acción, un pin que sobrevive a quitar el
-    proyecto);
+  - ~~los menores diferidos del registro~~ (revisados el 2026-10-25): la espera secuencial del
+    tablero, hecha (lee los escaneos de los servidores a la vez); un pin que sobrevive a quitar el
+    proyecto, ya hecho (quitar borra su pin, sus orígenes y sus decisiones); los índices de auditoría
+    por `target_id` y acción, descartados por la revisión final de la tanda A (los filtros viven en
+    `$facet`, que no usa índices); la consulta de títulos por fragmento ya no existe en el código;
   - subir producción a MongoDB 8.0, si no lo está (d-7985ee-83eb5b);
   - ~~**el PATCH de `/v1` de un bundle reemplaza enteros los mapas anidados**~~: hecho el
     2026-10-05 en `release-1-prep`. Cada clave se escribe sola en un solo `update_one`; en `pins`
@@ -1341,8 +1360,9 @@ Fricción vista al menos dos veces, con su costo.
   `.claude/agents/researcher.md` (tres delegados: `reset --mixed` y `checkout -- .`); `git worktree
   remove` lo corre el dueño (dos veces, la primera dejó los worktrees a medio borrar). El gate de los
   delegados con el Python del entorno de hatch y el cherry-pick de cada commit sobre el gate se armaron a
-  mano dos veces: **propuesta**, `scripts/delegate-gate.sh` (el gate sin hatch, para un worktree) y
-  `scripts/pick-through-gate.sh` (cherry-pick, gate y commit con el mensaje original); ~1 h con sus tests.
+  mano dos veces: **hechos (2026-10-25)**, `scripts/delegate-gate.sh` (el gate sin hatch, para un worktree,
+  con el Python del entorno del árbol principal) y `scripts/pick-through-gate.sh` (cherry-pick, gate y
+  commit con el mensaje original; `tests/test_pick_through_gate.py`).
 - **Un pipe esconde el código de salida del gate** (2026-10-21, un delegado: `pytest | tail` en la cadena
   del commit). Primera vez; los prompts ya lo prohíben.
 - **El barrido visual pasa los 10 min** del límite de un comando (2026-10-22, 242 capturas): se corre en
