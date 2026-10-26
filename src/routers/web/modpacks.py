@@ -1253,9 +1253,14 @@ async def build_compare(
     bundle = await modpackService.bundle_get(bundle_id)
     preview = await modpackService.compare_builds(bundle_id, de, a)
     changes = preview.changes
-    titles = await _titles(modrinthService, [c.project_id for c in changes.added + changes.removed + changes.changed])
+    # The mods of the changes, of the request's changes and those that asked for them (O8 B4), titled.
+    named = [c.project_id for c in changes.added + changes.removed + changes.changed]
+    named += [c.project_id for c in preview.request if c.project_id]
+    named += [r for reason in preview.reasons.values() for r in reason.requested_by]
+    titles = await _titles(modrinthService, sorted(set(named)))
+    sides = {b.number: b for b in await modpackService.build_find(bundle_id) if b.number in (de, a)}
     return render(request, "modpacks/compare.html", actor, bundle=bundle, bundle_id=bundle_id, preview=preview,
-                  titles=titles, de=de, a=a, nav_active="modpacks")
+                  titles=titles, de=de, a=a, sides=sides, nav_active="modpacks")
 
 @router.get("/modpacks/{bundle_id}/builds/{number}/mrpack")
 @inject

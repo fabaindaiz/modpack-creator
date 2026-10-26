@@ -3178,3 +3178,23 @@ def test_old_builds_fold_and_only_starred_is_a_filter() -> None:
     assert "3 builds anteriores" in text  # shown: 2 (starred), 8, 7, 6 and 1 (the recommended)
     only = client.get(f"/modpacks/{BUNDLE_ID}/builds", params={"destacados": "1"}, headers=HTMX).text
     assert 'id="builds"' in only and "7 builds anteriores" in only
+
+
+def test_compare_shows_summary_request_and_reasons() -> None:
+    """O8 B4: what changed, what changed in the request and why each mod moved."""
+    from src.library.changes import ChangeReason, ChangeSummary, RequestChange
+    client, modpack, _ = setup()
+    modpack.builds = [build(2, test=True, name="con Iris"), build(1)]
+
+    async def compare(bundle_id: str, de: int, a: int) -> Any:
+        shown = preview()
+        shown.request = [RequestChange(field="pins", label="Fijado", project_id="P1", before="—", after="v-p1")]
+        shown.reasons = {"P1": ChangeReason(kind="dependency", requested_by=("P2",), text="")}
+        shown.summary = ChangeSummary(up=1, down=0, branch=0, added=0, removed=0)
+        return shown
+
+    modpack.compare_builds = compare  # type: ignore[attr-defined]
+    text = client.get(f"/modpacks/{BUNDLE_ID}/builds/compare", params={"de": 1, "a": 2}).text
+    assert "Build 2 · prueba · «con Iris»" in text and "1 cambio: 1 sube" in text
+    assert "En el pedido" in text and "Fijado" in text
+    assert "dependencia de" in text

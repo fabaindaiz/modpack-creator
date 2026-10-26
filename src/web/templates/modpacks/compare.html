@@ -2,10 +2,31 @@
 {% set nav_active = "modpacks" %}
 {% block title %}Comparar builds de {{ bundle.name }}{% endblock %}
 
+{# Each side named as in the builds' list: a test and its name (O8 B1, B2). #}
+{% macro side(number) -%}
+{%- set b = sides.get(number) -%}
+Build {{ number }}{% if b and b.test %} · prueba{% endif %}{% if b and b.name %} · «{{ b.name }}»{% endif %}{% if bundle.recommended_build == number %} · Recomendado{% endif %}
+{%- endmacro %}
+
 {% block content %}
-{% call ui.page_header("Build #" ~ de ~ " → #" ~ a, bundle.name) %}
+{% call ui.page_header(side(de) ~ " → " ~ side(a), bundle.name) %}
 {{ ui.link_button("Volver al modpack", "/modpacks/" ~ bundle_id) }}
 {% endcall %}
 {% if de == a %}<p class="text-sm text-muted">Es el mismo build: no hay nada que cambie.</p>{% endif %}
+{# The explained comparison (O8 B4): how many moved each way, then what changed in what each build asked for. #}
+{% if preview.summary %}<p data-summary class="text-sm font-medium">{{ preview.summary.text() }}</p>{% endif %}
+{% if preview.request %}
+<section class="space-y-1" aria-labelledby="request-changes">
+  <h2 id="request-changes" class="text-sm font-semibold text-ink-soft">En el pedido</h2>
+  <ul class="divide-y divide-line-soft rounded-xl border border-line bg-raised text-sm">
+    {% for change in preview.request %}
+    <li class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-3 py-2">
+      <span class="min-w-0 break-words">{{ change.label }}{% if change.project_id %}: {{ titles.get(change.project_id, change.project_id) }}{% endif %}</span>
+      <span class="text-xs tabular-nums text-muted">{{ change.before }} → {{ change.after }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
 {% include "modpacks/_changes.html" %}
 {% endblock %}

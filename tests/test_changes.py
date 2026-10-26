@@ -442,3 +442,75 @@ def test_the_page_marks_each_downgrade_and_counts_them() -> None:
     assert "baja" not in item[:item.index("</li>")]
     none = ChangePreview(changes=changes, changelogs={}, failed=set())
     assert "baja de versión" not in templates.env.get_template("modpacks/_changes.html").render(preview=none, titles={})
+
+
+# La comparación explicada de dos builds (O8 B4, d-7985ee-a99db7; user-walk W17, W18).
+
+
+def _request(**fields: Any) -> ResolveRequest:
+    target = fields.pop("target", Target(game_version="1.21.1", loader="fabric"))
+    return ResolveRequest(target=target, projects=[], **fields)
+
+
+def test_request_changes_skip_floors_and_missing_fields() -> None:
+    from src.library.changes import request_changes
+    before = _request(floors={"A": ["v1"]}, free={"A"})
+    after = _request(floors={"A": ["v2"]}, unchecked={"A"})
+    assert request_changes(before, after, {}) == []
+    # A build stored before a field existed is not compared on it.
+    old = ResolveRequest.model_validate({"target": {"game_version": "1.21.1", "loader": "fabric"}, "projects": []})
+    assert request_changes(old, _request(native_only={"A"}), {}) == []
+
+
+def test_request_changes_name_pins_and_channels() -> None:
+    from src.library.changes import RequestChange, request_changes
+    before = _request(target=Target(game_version="1.21.1", loader="fabric", channels=frozenset({"release"})), pins={},
+                      server_decisions={})
+    after = _request(target=Target(game_version="1.21.1", loader="fabric", channels=frozenset({"release", "beta"})),
+                     pins={"A": "v2"}, server_decisions={"B": False})
+    assert request_changes(before, after, {"v2": "0.6.1"}) == [
+        RequestChange(field="channels", label="Canales", project_id=None, before="release", after="beta, release"),
+        RequestChange(field="pins", label="Fijado", project_id="A", before="—", after="0.6.1"),
+        RequestChange(field="server_decisions", label="En el servidor", project_id="B", before="—", after="no"),
+    ]
+
+
+def test_change_reason_prefers_the_pin_then_the_origin() -> None:
+    from src.library.changes import change_reason
+
+    def at(origin: str | None, requested_by: list[str]) -> LockEntry:
+        return LockEntry(project_id="A", origin=origin, version_id="v", version_number="1", file=None,
+                         environment=None, server="include", reason="elegida", requested_by=requested_by)  # type: ignore[arg-type]
+
+    assert change_reason(at("pack", []), {"A": "v"}).kind == "pin"
+    assert change_reason(at("admin", []), {}).kind == "admin" and change_reason(at("pack", []), {}).kind == "pack"
+    dependency = change_reason(at(None, ["X", "Y"]), {})
+    assert dependency.kind == "dependency" and dependency.requested_by == ("X", "Y")
+
+
+def test_the_summary_counts_each_way_a_mod_moved() -> None:
+    from src.library.changes import ChangeSummary, summary_of
+    changes = ChangeSet(added=[Change("N", None, "n1")], removed=[],
+                        changed=[Change("U", "u1", "u2"), Change("D", "d2", "d1"), Change("B", "b1", "b2")], unchanged=4)
+    summary = summary_of(changes, {"D": "down", "B": "branch"})
+    assert summary == ChangeSummary(up=1, down=1, branch=1, added=1, removed=0)
+    assert summary.text() == "4 cambios: 1 sube, 1 baja, 1 cambia de rama, 1 nuevo"
+
+
+@pytest.mark.network
+def test_compare_marks_pins_from_the_build_not_the_pack(mongo: MongoRunner) -> None:
+    """W17: «baja, por un pin» was read from the pack's pins of today."""
+    async def scenario() -> Any:
+        svc = service(FakeAPI({"v2": "nuevo"}))
+        created = await ModpackBundle(name="pack", description="", version="26.3", loader=MinecraftLoaders.fabric,
+                                      pins={"Q": "q9"}).insert()
+        for number, pins, entries in ((1, {}, [entry("P", "v1")]), (2, {"P": "v2"}, [entry("P", "v2")])):
+            await ModpackDatabase().build_insert(ModpackBuild(
+                bundle_id=created.id, number=number, created_at=T0, loader_version="0.16",  # type: ignore[arg-type]
+                request=_request(pins=pins), lock=lock(*entries)))
+        return await svc.compare_builds(str(created.id), 1, 2)
+
+    preview = mongo(scenario)
+    assert preview.pinned == {"P"} and preview.reasons["P"].kind == "pin"
+    assert [(c.label, c.project_id, c.after) for c in preview.request] == [("Fijado", "P", "v2")]
+    assert preview.summary is not None and preview.summary.text() == "1 cambio: 1 sube"

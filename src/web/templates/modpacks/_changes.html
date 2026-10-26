@@ -24,6 +24,17 @@
       {{ numbers.get(change.from_version, change.from_version) if change.from_version else "—" }} → {{ numbers.get(change.to_version, change.to_version) if change.to_version else "—" }}
     </span>
   </div>
+  {# Why it is there, between two builds (O8 B4). #}
+  {% set why = preview.reasons.get(change.project_id) if preview.reasons is defined and preview.reasons else None %}
+  {% if why %}
+  <p data-reason class="text-xs text-muted">
+    {%- if why.kind == "pin" %}fijado
+    {%- elif why.kind == "pack" %}del pack
+    {%- elif why.kind == "admin" %}agregado a mano
+    {%- elif why.kind == "dependency" %}dependencia de {% for r in why.requested_by %}{{ titles.get(r, r) }}{% if not loop.last %}, {% endif %}{% endfor %}
+    {%- else %}{{ why.text }}{% endif -%}
+  </p>
+  {% endif %}
   {% if show_changelog and version %}
   {% if version in preview.failed %}
   <p class="text-xs text-warning">changelog no disponible</p>

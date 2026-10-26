@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from src.database import ModpackDatabase, ModrinthDatabase, PterodactylDatabase
 from src.library.api.client.loaders import LoaderMetaAPI
 from src.library.api.client.modrinth import ID_CHUNK, ModrinthAPI
-from src.library.changes import ChangeSet, VersionFacts, diff_entries, direction
+from src.library.changes import ChangeSet, VersionFacts, diff_entries, direction, ChangeReason, ChangeSummary, RequestChange, change_reason, request_changes, summary_of
 from src.library.scan import Unexplained, compare, unexplained_for
 from src.library.mrpack import mrpack_index, write_mrpack
 from src.library.builds import build_name
@@ -123,6 +123,11 @@ class ChangePreview(BaseModel):
     # Against a server only (batch C, C6): bridge label -> how many of the build's mods go on the
     # server through it, listed apart because only starting the server says whether they run.
     bridged: dict[str, int] = {}
+    # Between two builds only (O8 B4): what changed in their requests, why each mod of the changes is
+    # there (the newer side's; a removed one, the older's), and how many moved each way.
+    request: list[RequestChange] = []
+    reasons: dict[str, ChangeReason] = {}
+    summary: Optional[ChangeSummary] = None
 
     @property
     def downgrades(self) -> list[str]:
@@ -2251,11 +2256,16 @@ class ModpackService():
         """The change from one build of the bundle to another; 404 if either does not exist."""
         before = await self.modpackDB.build_get(bundle_id, from_number)
         after = before if to_number == from_number else await self.modpackDB.build_get(bundle_id, to_number)
-        bundle = await self.modpackDB.bundle_get(bundle_id)
-        return await self._preview({e.project_id: e.version_id for e in before.lock.entries},
-                                   {e.project_id: e.version_id for e in after.lock.entries},
-                                   {e.version_id: e.version_number for e in [*before.lock.entries, *after.lock.entries]},
-                                   pins=bundle.pins)
+        numbers = {e.version_id: e.version_number for e in [*before.lock.entries, *after.lock.entries]}
+        # The pins are the newer build's own, never the pack's of today (O8, user-walk W17).
+        preview = await self._preview({e.project_id: e.version_id for e in before.lock.entries},
+                                      {e.project_id: e.version_id for e in after.lock.entries}, numbers,
+                                      pins=after.request.pins)
+        moved = {c.project_id for c in [*preview.changes.added, *preview.changes.changed, *preview.changes.removed]}
+        reasons = {e.project_id: change_reason(e, before.request.pins) for e in before.lock.entries if e.project_id in moved}
+        reasons |= {e.project_id: change_reason(e, after.request.pins) for e in after.lock.entries if e.project_id in moved}
+        return preview.model_copy(update={"request": request_changes(before.request, after.request, numbers),
+                                          "reasons": reasons, "summary": summary_of(preview.changes, preview.directions)})
 
     async def update_preview(self, updates: list[AvailableUpdate]) -> ChangePreview:
         """What the updates of a check change, with the changelogs of the versions that arrive. An
