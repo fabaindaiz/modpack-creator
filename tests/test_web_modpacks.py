@@ -2057,7 +2057,7 @@ def test_filtering_never_replaces_the_name_being_typed() -> None:
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
     form = bar(text)
     assert 'hx-select="#mods-list"' in form and 'hx-target="#mods-list"' in form and 'hx-sync="this:replace"' in form
-    assert 'hx-select-oob="#f-lado,#f-canal,#f-fijacion,#f-origen,#mod-filters-clear"' in form
+    assert 'hx-select-oob="#f-lado,#f-canal,#f-fijacion,#f-origen,#f-version,#mod-filters-clear"' in form
     listed = text[text.index('id="mods-list"'):]
     assert 'data-project="P1"' in listed and 'name="nombre"' not in listed
     empty = client.get(f"/modpacks/{BUNDLE_ID}", params={"nombre": "zzz"}).text
@@ -3016,3 +3016,11 @@ def test_an_editor_is_not_offered_linking() -> None:
     unlinked_servers(ptero)
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
     assert f'hx-post="/modpacks/{BUNDLE_ID}/servidores"' not in text
+
+
+def test_the_filter_bar_has_the_version_filter() -> None:
+    """O9 D9 (owner, 2026-10-26)."""
+    client, _, _ = setup()
+    form = bar(client.get(f"/modpacks/{BUNDLE_ID}").text)
+    assert 'id="f-version"' in form and "versión del pack ofrecida" in form and "fuera de etiquetas" in form
+    assert "#f-version" in form

@@ -9,8 +9,9 @@
   {% if report.pinned or report.offered %}
   <div class="space-y-1">
     {% if report.pinned %}<p>Fijados a la versión del pack: {{ report.pinned | length }} mods</p>{% endif %}
-    {% if report.outside %}<p>{{ report.outside | length }} fuera de las etiquetas de Modrinth: se usan igual y quedan marcados en la lista de mods.</p>{% endif %}
-    {% if report.offered %}<p>{{ report.offered | length }} con otra versión elegida o que bajaría: la versión del pack queda ofrecida en su tarjeta.</p>{% endif %}
+    {# Each links to the list filtered to them (O9 D9). #}
+    {% if report.outside %}<p>{{ report.outside | length }} fuera de las etiquetas de Modrinth: se usan igual y quedan marcados en la lista de mods. <a href="/modpacks/{{ report.bundle_id }}?vista=todos&amp;version=fuera" class="font-medium underline">Ver</a></p>{% endif %}
+    {% if report.offered %}<p>{{ report.offered | length }} con otra versión elegida o que bajaría: la versión del pack queda ofrecida en su tarjeta. <a href="/modpacks/{{ report.bundle_id }}?vista=todos&amp;version=ofrecida" class="font-medium underline">Ver</a></p>{% endif %}
   </div>
   {% endif %}
   {% if report.curseforge_only %}

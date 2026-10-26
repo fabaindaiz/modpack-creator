@@ -1,13 +1,13 @@
 """
-The filters of a pack's mod list (A6, A12; owner, 2026-10-13): a name and four lists (side, channel,
-pin, origin) that combine. Each option of a list counts the rows the other filters leave, without
+The filters of a pack's mod list (A6, A12; owner, 2026-10-13): a name and lists (side, channel,
+pin, origin, version; the loader with a bridge) that combine. Each option of a list counts the rows the other filters leave, without
 its own: the number says what choosing it shows. Pure: rows are any object with the fields of
 `FilterableRow` (the service's ModRow).
 """
 import unicodedata
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, fields
-from typing import Optional, Protocol, TypeVar
+from typing import Any, Optional, Protocol, TypeVar
 
 # The longest name filter kept; the rest is dropped.
 NAME_MAX = 100
@@ -29,6 +29,11 @@ class FilterableRow(Protocol):
     def pin_floor(self) -> Optional[str]: ...
     @property
     def via(self) -> Optional[str]: ...
+    # Its pin origins (each with `source` and `in_use`) and whether the version used is off Modrinth's tags.
+    @property
+    def pin_origins(self) -> Sequence[Any]: ...
+    @property
+    def off_tags(self) -> bool: ...
 
 
 Row = TypeVar("Row", bound=FilterableRow)
@@ -57,6 +62,11 @@ OPTIONS: dict[str, dict[str, Test]] = {
         "nativos": lambda r, e: r.via is None,
         "puente": lambda r, e: r.via is not None,
     },
+    # What an import left (O9 D9): the pack's version offered on the card, one used off the tags.
+    "version": {
+        "ofrecida": lambda r, e: any(o.source == "pack" and not o.in_use for o in r.pin_origins or ()),
+        "fuera": lambda r, e: r.off_tags,
+    },
     "origen": {
         "agregados": lambda r, e: r.origin == "admin",
         "mrpack": lambda r, e: r.origin == "pack",
@@ -79,6 +89,7 @@ class ModFilters:
     fijacion: str = ""
     origen: str = ""
     loader: str = ""
+    version: str = ""
 
     @classmethod
     def parse(cls, query: Mapping[str, str]) -> "ModFilters":

@@ -17,6 +17,8 @@ class Row:
     pinned: bool = False
     pin_floor: Optional[str] = None
     via: Optional[str] = None
+    pin_origins: tuple = ()
+    off_tags: bool = False
 
 
 ROWS = [
@@ -85,3 +87,16 @@ def test_the_loader_filter_splits_native_and_bridged() -> None:
     assert [r.project_id for r in apply(BRIDGED, ModFilters(loader="nativos"), {})] == ["X"]
     assert [r.project_id for r in apply(BRIDGED, ModFilters(loader="puente"), {})] == ["M"]
     assert counts(BRIDGED, ModFilters(), {})["loader"] == {"": 2, "nativos": 1, "puente": 1}
+
+
+def test_the_version_filter_finds_what_an_import_left_offered_or_off_the_tags() -> None:
+    """O9 D9 (owner, 2026-10-26): the pack's version offered on a card, and one used off the tags."""
+    from types import SimpleNamespace
+
+    rows = [Row("A", "A", pin_origins=(SimpleNamespace(source="pack", in_use=False),)),
+            Row("B", "B", off_tags=True),
+            Row("C", "C", pin_origins=(SimpleNamespace(source="pack", in_use=True),))]
+    assert [r.project_id for r in apply(rows, ModFilters(version="ofrecida"), {})] == ["A"]
+    assert [r.project_id for r in apply(rows, ModFilters(version="fuera"), {})] == ["B"]
+    assert ModFilters.parse({"version": "ofrecida"}).version == "ofrecida"
+    assert counts(rows, ModFilters(), {})["version"] == {"": 3, "ofrecida": 1, "fuera": 1}

@@ -382,3 +382,14 @@ def test_the_import_texts_name_what_it_takes_and_both_actions() -> None:
     shown = " ".join(visible(client.get("/modpacks/importar").text).split())
     assert ("Un .mrpack, el zip de una instancia de Prism, un zip o código de CurseForge o un modpack publicado "
             "en Modrinth: crea un modpack nuevo o reemplaza el contenido de uno.") in shown
+
+
+def test_the_report_links_what_it_left_to_the_version_filter() -> None:
+    """O9 D9 (owner, 2026-10-26): the offered and the off-the-tags mods were named only by count."""
+    client, fake = setup()
+    fake.report.outside = {"P2": "Modrinth no la marca para 1.20.1"}
+    fake.report.offered = ["P4"]
+    fake.job.status, fake.job.active = "done", False
+    text = client.get(f"/modpacks/importar/{fake.job.id}", headers=HTMX).text
+    assert f'href="/modpacks/{BUNDLE_ID}?vista=todos&amp;version=ofrecida"' in text
+    assert f'href="/modpacks/{BUNDLE_ID}?vista=todos&amp;version=fuera"' in text
