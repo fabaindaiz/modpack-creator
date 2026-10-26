@@ -243,5 +243,8 @@ la vez (`build_find_numbers`).
   limpio: la marca de prueba se perdía en un DELETE (htmx manda `hx-vals` en la query), en los diálogos de
   confirmación y en el diálogo de un trabajo bloqueado; un test de base comparaba una fecha con zona contra
   una sin zona; el 409 de recomendar una prueba estaba en inglés; el resumen decía «sube» sin saberlo.
-  Arreglados en a10676f. **Sin hacer:** test-mongo y el barrido (la VM de podman no arrancó); los menores
-  de la revisión están en el roadmap.
+  Arreglados en a10676f. Con la VM recreada por el dueño: test-mongo 1846 verdes, cuatro tests de base vistos
+  fallar con su arreglo quitado en una copia de la rama, y el barrido: el selector de simular desbordaba la
+  página del servidor 183 px a 360 px (b02a8e9) y la tabla de builds escondía sus acciones a 1280 px tras un
+  desplazamiento lateral (dos columnas y un chequeo nuevo, 1a6ad56). Los menores de la revisión están en el
+  roadmap.
