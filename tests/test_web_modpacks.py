@@ -3198,3 +3198,12 @@ def test_compare_shows_summary_request_and_reasons() -> None:
     assert "Build 2 · prueba · «con Iris»" in text and "1 cambio: 1 sube" in text
     assert "En el pedido" in text and "Fijado" in text
     assert "dependencia de" in text
+
+
+def test_one_folded_build_reads_in_the_singular() -> None:
+    client, modpack, _ = setup()
+    modpack.builds = [build(n) for n in (5, 4, 3, 2, 1)]  # 5, 4, 3 newest; 2 latest; 1 recommended
+    modpack.bundle = modpack.bundle.model_copy(update={"latest_build": 5})
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert "1 build anterior<" in text and "1 builds anteriores" not in text
+

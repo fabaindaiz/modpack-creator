@@ -226,9 +226,16 @@ async def seed_builds(bundle: ModpackBundle) -> None:
                              projects=[])
     locks = {1: [_entry("sodium", "sod-1"), _entry("gone-mod", "gone-1"), _entry("steady", "st-1")],
              2: [_entry("sodium", "sod-2"), _entry("new-mod", "new-1"), _entry("steady", "st-1")]}
+    # O8 tanda 1: build 1 starred, build 2 named with its own pin (the explained comparison), build 3 a
+    # test (never the latest nor the recommended: the pack's pointers stay on 2).
+    locks[3] = list(locks[2])
+    marks: dict[int, dict[str, Any]] = {1: {"starred": True}, 2: {"name": "con Sodium 2"},
+                                        3: {"test": True, "name": "prueba de un nombre largo para ver cómo se parte"}}
+    pinned = request.model_copy(update={"pins": {"sodium": "sod-2"}})
+    requests = {1: request, 2: pinned, 3: pinned}
     for number, entries in locks.items():
         await ModpackBuild(bundle_id=bundle.id, number=number, created_at=datetime.now(timezone.utc),  # type: ignore[arg-type]
-                           loader_version="0.16.0", request=request,
+                           loader_version="0.16.0", request=requests[number], **marks[number],
                            lock=Lock(entries=entries, problems=[], suggestions=[], needs_projects=set(),
                                      needs_types=set(), needs_versions=set())).insert()
     texts = {"sod-2": "## Arreglos\n" + "- un cambio con un texto bastante largo para ver cómo se parte la línea\n" * 120,
@@ -732,7 +739,7 @@ def shoot_build_dialog(page: Any, base: str, out: Path, ids: dict[str, str], pre
     (app.js closes the dialog of the form that sent the request, not the new one)."""
     response = page.goto(base + f"/modpacks/{ids['pending']}")
     page.wait_for_load_state("networkidle")
-    page.click('#builds button[hx-post$="/builds"]')
+    page.click('#build-create')
     page.wait_for_selector("#build-dialog dialog[open]", timeout=10_000)
     page.wait_for_timeout(300)
     opened = page.evaluate("document.querySelector('#build-dialog dialog')?.open === true")

@@ -91,7 +91,7 @@
   {% endif %}
   {% if view.folded %}
   <details data-folded-builds>
-    <summary class="cursor-pointer text-sm font-medium text-link">{{ view.folded | length }} builds anteriores</summary>
+    <summary class="cursor-pointer text-sm font-medium text-link">{{ view.folded | length }} {{ "build anterior" if view.folded | length == 1 else "builds anteriores" }}</summary>
     {% call ui.table(["Build", "Creado", "Archivos", ""], caption="Builds anteriores") %}
     {% for build in view.folded %}{{ build_row(build) }}{% endfor %}
     {% endcall %}
