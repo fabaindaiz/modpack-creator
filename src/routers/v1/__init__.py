@@ -3,6 +3,7 @@ import src.routers.v1.auth as auth
 import src.routers.v1.jobs as jobs
 import src.routers.v1.modpack as modpack
 import src.routers.v1.modrinth as modrinth
+import src.routers.v1.notes as notes
 import src.routers.v1.pterodactyl as pterodactyl
 import src.routers.v1.users as users
 
@@ -11,6 +12,7 @@ MODULES_V1 = [
     jobs,
     modpack,
     modrinth,
+    notes,
     pterodactyl,
     users,
 ]
@@ -21,6 +23,7 @@ def include_routers_v1(app: FastAPI) -> None:
     app.include_router(jobs.router, prefix=ROUTE_PREFIX)
     app.include_router(modpack.router, prefix=ROUTE_PREFIX)
     app.include_router(modrinth.router, prefix=ROUTE_PREFIX)
+    app.include_router(notes.router, prefix=ROUTE_PREFIX)
     app.include_router(pterodactyl.router, prefix=ROUTE_PREFIX)
     app.include_router(users.router, prefix=ROUTE_PREFIX)
 

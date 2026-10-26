@@ -5,6 +5,7 @@ from src.model.audit import AuditEvent
 from src.model.diagnostics import DiagnosticEvent
 from src.model.jobs import Job
 from src.model.modpack import LoaderVersion, ModpackBuild, ModpackBundle, ModpackReplacement, ModpackResolution, UpdateCheck
+from src.model.modpack.note import VersionNote
 from src.model.modrinth import ModrinthGone, ModrinthProject, ModrinthSearch, ModrinthUnknown, ModrinthVersion, ModrinthVersionList
 from src.model.pterodactyl import PanelServerList, PterodactylInstance, PterodactylServer, ServerScan
 from src.model.users import UsersInternal
@@ -27,7 +28,7 @@ async def init_databases(client: AsyncMongoClient, prefix: str = "") -> None:
     # i-7985ee-be55dd: a project has many versions. Beanie names collections after the class
     # (Settings.collection is not a Beanie 2 setting), so the collection is ModrinthVersion.
     await drop_unique_index(client[f"{prefix}modrinth"]["ModrinthVersion"], "project_id_1")
-    await init_beanie(database=client[f"{prefix}modpack"], document_models=[ModpackBundle, ModpackBuild, ModpackReplacement, ModpackResolution, UpdateCheck, LoaderVersion])
+    await init_beanie(database=client[f"{prefix}modpack"], document_models=[ModpackBundle, ModpackBuild, ModpackReplacement, ModpackResolution, UpdateCheck, LoaderVersion, VersionNote])
     await init_beanie(database=client[f"{prefix}modrinth"], document_models=[ModrinthProject, ModrinthVersion, ModrinthVersionList, ModrinthUnknown, ModrinthSearch, ModrinthGone])
     await init_beanie(database=client[f"{prefix}pterodactyl"], document_models=[PterodactylInstance, PterodactylServer, ServerScan, PanelServerList])
     await init_beanie(database=client[f"{prefix}userdata"], document_models=[UsersInternal])

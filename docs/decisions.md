@@ -107,6 +107,9 @@ los dos, o una fila mal formada, hace fallar el test. El nombre del método no s
 | `ModpackService.build_create` | editor | Crea un build del bundle. |
 | `ModpackService.build_recommend` | editor | Marca un build como el recomendado; nunca una prueba sin aprobar (409, H2 de d-7985ee-3bb53b). |
 | `ModpackService.build_name` | editor | Nombra un build (O8 B2): solo su nombre, nunca lo que congeló. |
+| `NoteService.create` | editor | Escribe una nota sobre un build o la versión de un mod (O8 tanda 2): el error se enmascara y se corta. |
+| `NoteService.edit` | editor | Edita una nota: solo quien la escribió (403), desde la revisión que leyó (409); se guarda lo anterior. |
+| `NoteService.archive` | editor | Archiva una nota o la recupera: quien la escribió; la de otra persona, solo un operador (403, chequeado en el servicio: no es `operator_only` porque al editor le basta ser el autor). |
 | `ModpackService.build_stable` | editor | Marca un build «estable» o le quita la marca (O8 tanda 2, T3b); una prueba se aprueba antes. |
 | `ModpackService.build_star` | editor | Destaca un build o le quita la estrella (O8 B3). |
 | `ModpackService.build_approve` | editor | Aprueba un build de prueba (O8 B1): deja de ser prueba, «último» avanza si es el más nuevo y, si se pide, queda recomendado. |
