@@ -44,7 +44,7 @@
   {% endcall %}
   {% if comparison.matching %}
   <details class="text-sm">
-    <summary class="cursor-pointer font-medium">Ver los {{ comparison.matching | length }} que coinciden</summary>
+    <summary class="cursor-pointer font-medium">{{ "Ver el que coincide" if comparison.matching | length == 1 else "Ver los " ~ (comparison.matching | length) ~ " que coinciden" }}</summary>
     {% call ui.table(["Estado", "Mod", "Archivo", "Detalle"], caption="Lo que coincide con el build " ~ build_number) %}
   {% for file in comparison.matching %}
   <tr data-category="matching">

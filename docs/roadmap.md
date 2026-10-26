@@ -17,17 +17,16 @@ A13 comprobados en el navegador por el barrido (dos chequeos nuevos, vistos fall
 2026-10-25 (pedida con «verifica todo lo pendiente»): dos hallazgos arreglados (un pin sin registro se
 escribía sin condición; la reserva de subidas podía pasarse por una subida liberada durante la lectura del
 disco) y dos menores anotados abajo. **Para seguir, en orden:**
-1. Hecho (2026-10-26): las 16 decisiones de O9, todas las recomendadas (d-7985ee-456ab9). Siguen su spec y
-   su plan, ~9 sesiones, en este orden por dependencias: D2 (resolver solo, sin sumar requests) y D6
-   (verbos) primero; luego D5, D3, D4, D7, D1, D8, D10, D9, D11, D12, D13; los textos A6–A8 con lo que
-   nombran. **Para el dueño, una a una** (skill `decision-review`): las 14 de O8 (D1–D14 del borrador), antes de su plan; lo que ya esperaba del 2026-10-22
+1. Hecho (2026-10-26): las 16 decisiones de O9, todas las recomendadas (d-7985ee-456ab9), y construidas el
+   mismo día (`docs/superpowers/plans/2026-10-26-o9-flujos.md`, 033d30c..dd61e2c), con test-mongo en verde. **Para el dueño, una a una** (skill `decision-review`): las 14 de O8 (D1–D14 del borrador), antes de su plan; lo que ya esperaba del 2026-10-22
    (los textos de ayuda, `LICENSES.html`, las decisiones de los agentes de la ronda 3, el «?» que baja de
    línea). Después, el merge a `main` si lo pide.
 2. Menores de la revisión del 2026-10-26, sin hacer: la revisión de un registro vuelve a 1 cuando el mod se
    quita y se agrega otra vez (una escritura de una lectura anterior al quitarlo podría coincidir; improbable),
    y `pins_from_pack` informa como «kept» un pin que no pudo escribir tras `PIN_WRITE_TRIES` (es contención, no
    la elección de otro).
-3. Un segundo user-walk de O9 en contexto limpio, antes de su spec (después de las decisiones).
+3. Un segundo user-walk de O9 en contexto limpio, ahora sobre lo construido: el panel cambió de forma en
+   casi todas sus páginas.
 4. O1 y O4 con el log del servidor (producción: cuando el dueño lo pida).
 
 **2026-10-25, los pendientes sin decisión, hechos en `feat/ronda-3`** (sin push ni merge; detalle en el

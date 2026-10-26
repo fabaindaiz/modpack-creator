@@ -93,7 +93,7 @@ OPERATOR_STEPS: dict[str, frozenset[str]] = {
 OPERATOR_NOTE = "Lo hace un operador."
 
 
-def _chain(steps: list[tuple[str, str, bool, str, tuple[str, str]]], needs: dict[str, tuple[str, ...]],
+def _chain(steps: list[tuple[str, str, bool, str, Optional[tuple[str, str]]]], needs: dict[str, tuple[str, ...]],
            operator_only: frozenset[str] = frozenset(), operator: bool = True) -> list[Step]:
     """Steps in order: one whose needed step is not done waits for the first such, instead of
     offering its action; an operator's step, to anyone else, says so instead of offering it (user
@@ -111,9 +111,12 @@ def _chain(steps: list[tuple[str, str, bool, str, tuple[str, str]]], needs: dict
 
 
 def _resolve_step(bundle_id: Optional[str], resolved: bool, pending: int,
-                  problems: int = 0) -> tuple[str, str, bool, str, tuple[str, str]]:
+                  problems: int = 0, here: bool = False) -> tuple[str, str, bool, str, Optional[tuple[str, str]]]:
     done = resolved and pending == 0
     detail = f"{pending} por decidir o con problemas" if resolved and pending else ""
+    if here and not resolved:
+        # On the pack's own page it already tried to resolve: it waits for Modrinth (sweep, 2026-10-26).
+        return "resolve", "Nada por decidir", False, "se resuelve al traer de Modrinth lo que falta", None
     # The tab with what is pending, problems first, as the dashboard (O9 user-walk, A4). No «Resolver»
     # (O9 D2): the pack resolves by itself, and opening it resolves one that is not yet.
     vista = "problemas" if problems else "decidir"
@@ -149,7 +152,7 @@ def pack_steps(bundle_id: str, facts: PackFacts, operator: bool = True) -> list[
         ("mods", "Con mods", facts.projects > 0, f"{facts.projects} mods" if facts.projects else "",
          # The search heads the section; #mods starts below it (O9 user-walk, A5).
          ("Buscar mods", f"/modpacks/{bundle_id}#mods-section")),
-        _resolve_step(bundle_id, facts.resolved, facts.pending, facts.problems),
+        _resolve_step(bundle_id, facts.resolved, facts.pending, facts.problems, here=True),
         ("build", "Build creado", facts.latest_build is not None,
          f"Build {facts.latest_build}" if facts.latest_build is not None else "",
          ("Crear build", f"/modpacks/{bundle_id}#builds")),

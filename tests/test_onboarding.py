@@ -114,3 +114,11 @@ def test_searching_for_mods_leads_to_the_search_field() -> None:
     """The step lands on the search, not below it (O9 user-walk, A5)."""
     pack = PackFacts(projects=0, resolved=False, pending=0, latest_build=None, linked_servers=(), simulated=False)
     assert pack_steps("b1", pack)[0].action == ("Buscar mods", "/modpacks/b1#mods-section")
+
+
+def test_on_the_pack_itself_an_unresolved_pack_waits_instead_of_linking_to_itself() -> None:
+    """The visual sweep (2026-10-26): «Abrir el pack» on the pack's own page led nowhere; there it
+    waits for what Modrinth still has to bring."""
+    facts = PackFacts(projects=2, resolved=False, pending=0, latest_build=None, linked_servers=(), simulated=False)
+    step = pack_steps("b1", facts)[1]
+    assert step.action is None and step.detail == "se resuelve al traer de Modrinth lo que falta"

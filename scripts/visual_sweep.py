@@ -882,14 +882,12 @@ def _overflow(page: Any) -> int:
 
 def check_tabs(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
                errors: list[str]) -> dict[str, dict[str, Any]]:
-    """The pack's three views (spec §3), after resolving it: each tab redraws #mods without
-    reloading the page and puts its `?vista=` in the URL. In "Por decidir", "Todos al servidor"
-    marks every select and sends nothing: the form's own button saves."""
+    """The pack's three views (spec §3), resolved as the page loads (O9 D2: no «Resolver»): each tab
+    redraws #mods without reloading the page and puts its `?vista=` in the URL. In "Por decidir",
+    "Todos al servidor" marks every select and sends nothing: the form's own button saves."""
     response = page.goto(base + f"/modpacks/{ids['problems']}")
     page.wait_for_load_state("networkidle")
-    _mods_swapped(page)
-    page.click('#mods [hx-post*="/resolve"]')
-    page.wait_for_selector("#mods:not([data-old]) [data-pending-summary]", timeout=15_000)
+    page.wait_for_selector("#mods [data-pending-summary]", timeout=15_000)
     page.wait_for_load_state("networkidle")
     page.evaluate("window.sweepSamePage = true")
     problems: list[str] = []

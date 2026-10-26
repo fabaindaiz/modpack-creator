@@ -393,3 +393,13 @@ def test_the_report_links_what_it_left_to_the_version_filter() -> None:
     text = client.get(f"/modpacks/importar/{fake.job.id}", headers=HTMX).text
     assert f'href="/modpacks/{BUNDLE_ID}?vista=todos&amp;version=ofrecida"' in text
     assert f'href="/modpacks/{BUNDLE_ID}?vista=todos&amp;version=fuera"' in text
+
+
+def test_a_long_pack_name_never_widens_the_import_page() -> None:
+    """The visual sweep (2026-10-26): at 360 px a long name in the select widened the page 213 px; a
+    <fieldset> is min-content wide unless told otherwise."""
+    client, _ = setup()
+    text = client.get("/modpacks/importar").text
+    fieldset = re.search(r'<fieldset id="import-target"[^>]*>', text).group(0)  # type: ignore[union-attr]
+    select = re.search(r'<select name="into"[^>]*>', text).group(0)  # type: ignore[union-attr]
+    assert "min-w-0" in fieldset and "max-w-full" in select and "min-w-0" in select

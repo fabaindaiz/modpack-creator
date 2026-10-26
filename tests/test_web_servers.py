@@ -559,7 +559,7 @@ def test_the_comparison_shows_what_differs_and_folds_what_matches() -> None:
     table = compare[:compare.index("</table>")]
     assert 'data-category="matching"' not in table and 'data-category="missing"' in table
     folded = compare[compare.index("<details"):compare.index("</details>")]
-    assert "Ver los 1 que coinciden" in visible(folded) and 'data-category="matching"' in folded
+    assert "Ver el que coincide" in visible(folded) and 'data-category="matching"' in folded
 
 
 def summary(text: str) -> str:
@@ -1804,3 +1804,9 @@ def test_leaving_a_pack_asks_first_and_says_what_goes() -> None:
 def test_the_page_has_the_place_the_link_dialog_opens_in() -> None:
     client, _ = setup(OPERATOR)
     assert 'id="link-dialog"' in client.get(f"/servers/{SERVER_ID}").text
+
+
+def test_one_match_reads_in_the_singular() -> None:
+    client, fakes = setup()
+    compare = client.get(f"/servers/{SERVER_ID}").text.split('id="compare"')[1]
+    assert "Ver el que coincide" in visible(compare) and "Ver los 1" not in compare
