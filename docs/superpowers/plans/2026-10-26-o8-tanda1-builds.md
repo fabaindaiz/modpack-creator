@@ -231,4 +231,17 @@ la vez (`build_find_numbers`).
 
 ## Estado
 
-Nada hecho todavía.
+- **Tareas 1–7**, hechas el 2026-10-26 (96965ce..11a2520), cada una con su test visto fallar (los de la web y
+  los puros); el gate en verde. Decisiones del ejecutor en el camino: `JobDatabase.last_real_updates` lee la
+  última instalación de todos los servidores en una consulta (los tests de lecturas de página contaban una por
+  servidor); `ModpackService.installed_builds` da los builds instalados a la lista; `change_reason` devuelve
+  un `ChangeReason` para que la página titule a quien pidió el mod; el mensaje programado de deriva
+  (`drift`) sigue comparando con el build vigente, solo la página del servidor compara una prueba en curso
+  contra sí misma; el aviso del diálogo de instalar es una línea si hay pruebas en la lista.
+- **Tarea 8**: a83132a (un build plegado en singular; el barrido pulsa `#build-create`, que ahora tiene un
+  vecino, y siembra un build destacado, uno con nombre y pin, y una prueba). Revisión final en contexto
+  limpio: la marca de prueba se perdía en un DELETE (htmx manda `hx-vals` en la query), en los diálogos de
+  confirmación y en el diálogo de un trabajo bloqueado; un test de base comparaba una fecha con zona contra
+  una sin zona; el 409 de recomendar una prueba estaba en inglés; el resumen decía «sube» sin saberlo.
+  Arreglados en a10676f. **Sin hacer:** test-mongo y el barrido (la VM de podman no arrancó); los menores
+  de la revisión están en el roadmap.
