@@ -81,6 +81,13 @@
     <div class="{{ TEXT }}">
       <p>Un build es una resolución congelada y numerada (build 1, build 2…). Es lo que se instala en un servidor y lo que se exporta como .mrpack.</p>
       <p>Un build no cambia nunca: para cambiar algo, resuelves de nuevo y creas otro. El recomendado es el que se ofrece al actualizar; volver atrás es recomendar uno anterior.</p>
+      {# O8 B1: the owner's accepted text (2026-10-26). #}
+      <p>Una prueba es un build para probar un cambio sin comprometer el pack.</p>
+      <ol class="list-decimal space-y-1 pl-5">
+        <li>Cambia el pack (fija o agrega un mod) y pulsa «Construir como prueba».</li>
+        <li>Instálala en un servidor de pruebas. Mientras no la apruebes, no es el último build ni sube el piso de versiones.</li>
+        <li>Si funcionó, pulsa «Aprobar». Si falló, deshaz el cambio en el pack: la prueba queda marcada y no cuenta.</li>
+      </ol>
     </div>
   </section>
 

@@ -113,3 +113,13 @@ def test_the_origins_help_names_the_servers_origin() -> None:
             "se ve al escanearlo y nunca se pone en uso sola);") in shown  # visible() spaces the <strong>
     assert ("la del pack importado, la elegida a mano, la que tiene instalada cada servidor vinculado o la que "
             "elegiría la resolución") in HELP["origenes"][0]
+
+
+def test_how_it_works_says_what_a_test_build_is() -> None:
+    """O8 B1, the owner's accepted text (2026-10-26, «claros y cortos», then «un poco más largo y claro»)."""
+    client, _, _ = modpacks_page.setup()
+    shown = " ".join(visible(client.get("/como-funciona").text).split())
+    assert 'Una prueba es un build para probar un cambio sin comprometer el pack.' in shown
+    assert 'Cambia el pack (fija o agrega un mod) y pulsa «Construir como prueba».' in shown
+    assert 'Instálala en un servidor de pruebas. Mientras no la apruebes, no es el último build ni sube el piso de versiones.' in shown
+    assert 'Si funcionó, pulsa «Aprobar». Si falló, deshaz el cambio en el pack: la prueba queda marcada y no cuenta.' in shown
