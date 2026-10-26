@@ -103,3 +103,13 @@ def test_below_1280_px_the_sections_take_a_row_of_their_own_with_how_it_works_in
 def test_how_it_works_needs_a_session() -> None:
     response = base_client(None).get("/como-funciona")
     assert response.status_code in (302, 303, 307) and "login" in response.headers["location"]
+
+
+def test_the_origins_help_names_the_servers_origin() -> None:
+    """O9 A6, the owner's accepted text (2026-10-26): «servidor» was missing from both."""
+    client, _, _ = modpacks_page.setup()
+    shown = " ".join(visible(client.get("/como-funciona").text).split())
+    assert ("servidor : la que tiene instalada un servidor vinculado, si difiere de la fijada (una por servidor; "
+            "se ve al escanearlo y nunca se pone en uso sola);") in shown  # visible() spaces the <strong>
+    assert ("la del pack importado, la elegida a mano, la que tiene instalada cada servidor vinculado o la que "
+            "elegiría la resolución") in HELP["origenes"][0]

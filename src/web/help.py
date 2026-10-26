@@ -27,9 +27,10 @@ HELP: dict[str, tuple[str, str]] = {
                 "necesitas: no todos los mods funcionan a través de él.", "puente"),
     "archivos-locales": ("Archivos del servidor que no están en Modrinth. Se quedan en el servidor al "
                          "actualizar y nunca se exportan.", "escanear"),
-    "origenes": ("Una versión fijada guarda de dónde salió: la del pack importado, la elegida a mano o la que "
-                 "elegiría la resolución. La marcada «en uso» es la que se instala. «Resolución» deja el mod sin "
-                 "fijar: se actualiza solo y nunca baja de versión.", "origenes"),
+    "origenes": ("Una versión fijada guarda de dónde salió: la del pack importado, la elegida a mano, la que "
+                 "tiene instalada cada servidor vinculado o la que elegiría la resolución. La marcada «en uso» es "
+                 "la que se instala. «Resolución» deja el mod sin fijar: se actualiza solo y nunca baja de versión.",
+                 "origenes"),
     # Updates of a modpack's mods.
     "revision": ("Busca en Modrinth versiones nuevas de los mods del build. Solo mira: no cambia el pack.",
                  "resolver"),
