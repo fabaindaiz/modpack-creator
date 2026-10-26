@@ -25,7 +25,7 @@ Clock = Callable[[], datetime]
 Handler = Callable[[Job, "JobContext"], Awaitable[None]]
 logger = logging.getLogger("modpack.jobs")
 
-def _installed(last: Optional[Job]) -> Optional[int]:
+def installed_of(last: Optional[Job]) -> Optional[int]:
     """The build of a server's last real update (`last_real_update`) if it ended done; None otherwise."""
     if last is None or last.kind != "server_update" or last.status != "done":
         return None
@@ -245,13 +245,13 @@ class JobService():
         """The build the panel last installed on the server: that of its newest real update, if it
         ended done. None when the newest is not (it failed, is running, or was rolled back), or
         when the panel never updated it: what was installed by hand is not known."""
-        return _installed(await self.jobDB.last_real_update(f"server:{server_id}"))
+        return installed_of(await self.jobDB.last_real_update(f"server:{server_id}"))
 
     async def update_state(self, server_id: str) -> UpdateState:
         """`installed_build` and `rollback_state` from one read of the server's last real update
         (review of batch B, minor 5): what its page shows."""
         last = await self.jobDB.last_real_update(f"server:{server_id}")
-        return UpdateState(installed=_installed(last), rollback=await self._rollback_from(server_id, last))
+        return UpdateState(installed=installed_of(last), rollback=await self._rollback_from(server_id, last))
 
     async def simulated_builds(self, server_ids: list[str], bundle_id: str) -> dict[str, int]:
         """`simulated_build` of each of these servers, in one query (review of batch B, minor 5): the

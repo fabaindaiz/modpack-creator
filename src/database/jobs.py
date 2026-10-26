@@ -91,6 +91,19 @@ class JobDatabase():
         return await Job.find({"key": key, "$or": [{"kind": "server_rollback"}, real]}
                               ).sort([("created_at", SortDirection.DESCENDING), ("_id", SortDirection.DESCENDING)]).first_or_none()
 
+    async def last_real_updates(self, keys: list[str]) -> list[Job]:
+        """`last_real_update` of each of these keys, in one query (H1 of O8: the floors read every
+        linked server's): the newest per key; a key with none is absent."""
+        if not keys:
+            return []
+        real = {"kind": "server_update", "payload.dry_run": False}
+        cursor = await Job.get_pymongo_collection().aggregate([
+            {"$match": {"key": {"$in": keys}, "$or": [{"kind": "server_rollback"}, real]}},
+            {"$sort": {"created_at": -1, "_id": -1}},
+            {"$group": {"_id": "$key", "job": {"$first": "$$ROOT"}}},
+        ])
+        return [Job.model_validate(row["job"]) async for row in cursor]
+
     async def last_done_update_builds(self, server_ids: list[str], bundle_id: str) -> dict[str, Any]:
         """The build of each server's newest finished update (a simulation or a real one) of this
         pack, by server id, in one query; a server without one is absent."""

@@ -14,7 +14,7 @@ from src.library.api.client.modrinth import ID_CHUNK, ModrinthAPI
 from src.library.changes import ChangeSet, VersionFacts, diff_entries, direction
 from src.library.scan import Unexplained, compare, unexplained_for
 from src.library.mrpack import mrpack_index, write_mrpack
-from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink
+from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink, installed_of
 from src.database.jobs import JobDatabase
 from src.model.jobs import Job
 from src.library.bridges import BRIDGES, REPLACES, VIA_RISK, bridge as find_bridge, companions, guest_of
@@ -1698,15 +1698,24 @@ class ModpackService():
     async def _floor_sources(self, bundle: ModpackBundle,
                              read: Optional[Mapping[int, ModpackBuild]] = None) -> dict[str, dict[str, list[str]]]:
         """The floors' sources (`_floor_sources_of`): the build in force and the latest scan of every
-        server linked to the pack. Only MongoDB is read; `read` holds builds of the bundle the caller
-        already has, by number, so the one in force is not read again."""
+        server linked to the pack, but for a server whose installed build is one of the pack's test
+        builds not yet approved (H1, d-7985ee-3bb53b). Only MongoDB is read; `read` holds builds of the
+        bundle the caller already has, by number, so the one in force is not read again."""
         in_force = bundle.recommended_build or bundle.latest_build
         build = None
         if in_force is not None:
             build = read[in_force] if read is not None and in_force in read \
                 else await self.modpackDB.build_get(str(bundle.id), in_force)
+        servers = await self.pterodactylDB.server_find_by_bundle(str(bundle.id))
+        installed: dict[str, int] = {}
+        for last in await self.jobDB.last_real_updates([f"server:{server.id}" for server in servers]) if servers else []:
+            number = installed_of(last)
+            if number is not None and last.payload.get("bundle_id") == str(bundle.id):
+                installed[str(last.payload.get("server_id"))] = number
+        tests = {b.number for b in await self.modpackDB.build_find_numbers(
+            [(bundle.id, n) for n in set(installed.values())]) if b.test} if installed else set()  # type: ignore[misc]
         linked = [(server.name, await self.pterodactylDB.scan_latest(str(server.id), SCAN_DIRECTORY))
-                  for server in await self.pterodactylDB.server_find_by_bundle(str(bundle.id))]
+                  for server in servers if installed.get(str(server.id)) not in tests]
         return _floor_sources_of(in_force, build, linked)
 
     async def _versions_known(self, version_ids: Sequence[str]) -> dict[str, ModrinthVersion]:

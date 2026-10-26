@@ -255,3 +255,62 @@ def test_a_shader_the_catalog_did_not_know_asks_for_its_versions_with_shader_loa
 
     [call] = mongo(scenario)
     assert "fabric" not in call[1][1] and "iris" in call[1][1]
+
+
+# H1 (owner, 2026-10-26, d-7985ee-3bb53b): a test build installed on a server sets no floor for the
+# pack until it is approved; the user-walk found it raised the floor of every build after it.
+
+
+async def _server_running(bundle_id: str, build: int | None, sodium: str) -> str:
+    """A server linked to the pack whose last scan has Sodium at `sodium`, and whose last real update,
+    done, installed `build` (None: the panel never installed anything)."""
+    from datetime import datetime, timezone
+
+    from src.database.pterodactyl import PterodactylDatabase
+    from src.library.scan import ScanFile
+    from src.model.jobs import Job
+    from src.model.pterodactyl import PterodactylServer, ServerScan
+
+    when = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    server = await PterodactylDatabase().server_insert(PterodactylServer(
+        identifier="1a2b3c4d", internal_id=1, uuid="1a2b3c4d-0000", name="Pruebas", node="n1", description="",
+        status=None, is_suspended=False, is_installing=False, is_transferring=False, bundle_id=bundle_id))
+    await PterodactylDatabase().scan_insert(ServerScan(
+        server_id=server.id, directory="/mods", scanned_at=when, full=False,  # type: ignore[arg-type]
+        files=[ScanFile(path="/mods/sodium.jar", size=1, modified_at=when, status="identified",
+                        project_id=SODIUM, version_id=sodium)]))
+    if build is not None:
+        await Job(kind="server_update", key=f"server:{server.id}", status="done", active=False, created_at=when,
+                  finished_at=when, payload={"server_id": str(server.id), "bundle_id": bundle_id, "build": build,
+                                             "dry_run": False}).insert()
+    return str(server.id)
+
+
+def test_a_server_running_an_unapproved_test_is_not_a_floor(mongo: MongoRunner) -> None:
+    async def scenario() -> dict[str, list[str]]:
+        service, bundle_id = await bundle(RecordedModrinthAPI(), "iris")
+        await service.build_create(bundle_id, actor=EDITOR, test=True)  # 1, a test: no build in force
+        await _server_running(bundle_id, 1, "v4PSXean")
+        return (await service._request(await ModpackDatabase().bundle_get(bundle_id))).floors
+
+    assert SODIUM not in mongo(scenario)
+
+
+def test_once_approved_the_test_servers_scan_is_a_floor_again(mongo: MongoRunner) -> None:
+    async def scenario() -> list[str]:
+        service, bundle_id = await bundle(RecordedModrinthAPI(), "iris")
+        await service.build_create(bundle_id, actor=EDITOR, test=True)
+        await _server_running(bundle_id, 1, "v4PSXean")
+        await service.build_approve(bundle_id, 1, EDITOR)
+        return (await service._request(await ModpackDatabase().bundle_get(bundle_id))).floors.get(SODIUM, [])
+
+    assert "v4PSXean" in mongo(scenario)
+
+
+def test_a_server_running_a_normal_build_is_still_a_floor(mongo: MongoRunner) -> None:
+    async def scenario() -> dict[str, list[str]]:
+        service, bundle_id = await bundle(RecordedModrinthAPI(), "iris")
+        await _server_running(bundle_id, None, "v4PSXean")  # installed by hand: still a floor
+        return (await service._request(await ModpackDatabase().bundle_get(bundle_id))).floors
+
+    assert mongo(scenario).get(SODIUM) == ["v4PSXean"]
