@@ -5,12 +5,9 @@
    a bridge back on). #}
 {% import "_macros.html" as ui %}
 {% if bridges or bridges_idle %}
-<form id="bridges" hx-post="/modpacks/{{ bundle_id }}/bridges" hx-target="#bridges" hx-swap="outerHTML"{% if bridges_oob is defined and bridges_oob %} hx-swap-oob="true"{% endif %}
+{# Its own section with its «?» (O9 D12), saved on change with «Deshacer». #}
+<form id="bridges" hx-post="/modpacks/{{ bundle_id }}/bridges" hx-trigger="change" hx-target="#bridges" hx-swap="outerHTML"{% if bridges_oob is defined and bridges_oob %} hx-swap-oob="true"{% endif %}
   class="space-y-3 rounded-xl border border-line bg-raised p-4">
-  <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-    <h3 class="text-sm font-semibold">Loaders secundarios</h3>
-    {{ ui.help_toggle("Loaders secundarios", "puentes") }}
-  </div>
   {% for found in bridges %}
   <label class="flex items-start gap-2 text-sm">
     <input type="checkbox" name="bridge" value="{{ found.key }}"{% if found.key in bundle.secondary_loaders %} checked{% endif %}
@@ -25,8 +22,8 @@
   {% for label in bridges_idle %}
   <p class="text-xs text-warning">{{ label }} está activo, pero no sirve en {{ bundle.version }}: no tiene efecto.</p>
   {% endfor %}
-  {% if bridges %}{{ ui.button("Guardar loaders secundarios", type="submit", kind="secondary") }}{% endif %}
 </form>
 {% endif %}
+{% include "modpacks/_undo_notice.html" %}
 {# Saving resolves again (spec §4): #mods comes with it, out of band. #}
 {% if mods_oob is defined and mods_oob %}{% include "modpacks/_mods.html" %}{% endif %}

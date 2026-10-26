@@ -697,3 +697,17 @@ def test_the_server_column_of_a_job_card_is_the_widest() -> None:
     assert cols is not None
     shares = [float(f) for f in re.findall(r"minmax\(0,([0-9.]+)fr\)", cols.group(1))]
     assert shares[1] == max(shares) and shares[1] >= 2 * min(shares)  # Tipo, Servidor, Estado, Paso, Pedido por
+
+
+def test_the_jobs_filters_apply_when_changed() -> None:
+    """O9 D12 (owner, 2026-10-26): like the mods' filters; «Filtrar» only without JavaScript."""
+    from pathlib import Path
+
+    client, *_ = setup()
+    text = client.get("/jobs").text
+    form = text[text.index('<form method="get" action="/jobs"'):]
+    form = form[:form.index("</form>")]
+    assert "data-submit-on-change" in form[:form.index(">")]
+    assert "<noscript>" in form and form.index("<noscript>") < form.index("Filtrar")
+    js = (Path(__file__).resolve().parent.parent / "src/web/static/app.js").read_text()
+    assert "form[data-submit-on-change]" in js and "requestSubmit" in js

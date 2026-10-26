@@ -300,3 +300,18 @@ def test_saving_the_bridges_redraws_the_builds_too() -> None:
     bridged(modpack)
     response = client.post(f"/modpacks/{BUNDLE_ID}/bridges", headers=HTMX, data={"bridge": "connector"})
     assert '<div id="builds" class="space-y-3" hx-swap-oob="true"' in response.text
+
+
+def test_the_bridges_are_their_own_section_and_save_when_changed_with_undo() -> None:
+    """O9 D12 (owner, 2026-10-26): «Loaders secundarios» was inside «Canales», with its own button."""
+    client, modpack, _ = setup()
+    bridged(modpack)
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    section = text[text.index('id="bridges-section"'):]
+    form = section[section.index('<form id="bridges"'):section.index("</form>")]
+    assert 'hx-trigger="change"' in form and "Guardar loaders secundarios" not in form
+    assert text.index('id="channels-section"') < text.index('id="bridges-section"')
+    response = client.post(f"/modpacks/{BUNDLE_ID}/bridges", headers=HTMX, data={})
+    notice = response.text[response.text.index('id="notices"'):]
+    undo = notice[notice.index("<form"):notice.index("</form>")]
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/bridges"' in undo and 'name="bridge" value="connector"' in undo

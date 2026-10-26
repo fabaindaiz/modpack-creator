@@ -435,6 +435,15 @@
     }
   });
 
+  // A plain form marked data-submit-on-change is sent when one of its fields changes (O9 D12: the
+  // jobs' filters, as the mods' do through htmx).
+  document.addEventListener('change', function (evt) {
+    var form = evt.target instanceof Element ? evt.target.closest('form[data-submit-on-change]') : null;
+    if (form && typeof form.requestSubmit === 'function') {
+      form.requestSubmit();
+    }
+  });
+
   // A link or a plain form's button to a page that waits for Modrinth (a pack's updates, comparing
   // two builds: up to ~15 s) says it is loading once clicked (O6): its `data-loading` text, busy.
   function showLoading(element) {

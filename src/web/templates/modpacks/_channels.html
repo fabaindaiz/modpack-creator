@@ -1,6 +1,7 @@
-{# The version channels the modpack allows; the fragment htmx swaps into #channels. #}
+{# The version channels the modpack allows; the fragment htmx swaps into #channels. Saved on change,
+   with «Deshacer» (O9 D12); after a save, #mods comes out of band (`mods_oob`): the pack resolves anew. #}
 {% import "_macros.html" as ui %}
-<form id="channels" hx-post="/modpacks/{{ bundle_id }}/channels" hx-target="#channels" hx-swap="outerHTML"
+<form id="channels" hx-post="/modpacks/{{ bundle_id }}/channels" hx-trigger="change" hx-target="#channels" hx-swap="outerHTML"
   class="space-y-3 rounded-xl border border-line bg-raised p-4">
   <fieldset class="flex flex-wrap gap-x-5 gap-y-2">
     <legend class="sr-only">Canales permitidos</legend>
@@ -13,5 +14,6 @@
     {% endfor %}
   </fieldset>
   <p class="text-xs text-muted">Elige al menos uno. Cambiarlos afecta al próximo lock.</p>
-  {{ ui.button("Guardar canales", type="submit", kind="secondary") }}
 </form>
+{% include "modpacks/_undo_notice.html" %}
+{% if mods_oob is defined and mods_oob %}{% include "modpacks/_mods.html" %}{% endif %}

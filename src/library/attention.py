@@ -149,7 +149,8 @@ def attention(servers: Sequence[ServerFact], packs: Sequence[PackFact], failed: 
     for pack in packs:
         if pack.problems or pack.undecided:
             vista = "problemas" if pack.problems else "decidir"
-            items.append(Attention(BLOCKING, f"{pack.name} tiene {_pending(pack)}.", "Decidir",
+            # Problems are fixed, undecided mods decided (O9 D12).
+            items.append(Attention(BLOCKING, f"{pack.name} tiene {_pending(pack)}.", "Arreglar" if pack.problems else "Decidir",
                                    f"/modpacks/{pack.id}?vista={vista}", pack.resolved_at))
         if pack.updates:
             updates = _plural(pack.updates, "actualización disponible", "actualizaciones disponibles")

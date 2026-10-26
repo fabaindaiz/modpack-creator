@@ -702,6 +702,7 @@ async def modpack_channels(
         request: Request,
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         ):
     """Save the channels the modpack allows (the checked boxes, most stable first). At least one."""
     chosen = {str(v) for k, v in (await request.form()).multi_items() if k == "channel"}
@@ -709,9 +710,15 @@ async def modpack_channels(
         raise HTTP_422_UNPROCESSABLE_ENTITY("Elige al menos un canal")
     if not chosen <= set(CHANNELS):
         raise HTTP_422_UNPROCESSABLE_ENTITY("Los canales son release, beta y alpha")
+    before = (await modpackService.bundle_get(bundle_id)).channels
     updated = await modpackService.bundle_update(
         bundle_id, ModpackBundlePatch(channels=[c for c in CHANNELS if c in chosen]), actor)
-    return _channels(request, actor, updated, bundle_id)
+    # Saved on change (O9 D12): the notice undoes it, and #mods comes resolved anew (D2).
+    context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request), _filters_from(request), actor)
+    return render(request, "modpacks/_channels.html", actor, **{
+        **context, "bundle_id": bundle_id, "bundle": updated, "channel_names": CHANNELS, "mods_oob": True,
+        "undo_values": list(before), "undo_name": "channel", "undo_said": "Canales guardados",
+        "undo_action": f"/modpacks/{bundle_id}/channels", "undo_target": "#channels"})
 
 @router.post("/modpacks/{bundle_id}/via")
 @inject
@@ -756,6 +763,7 @@ async def modpack_bridges(
     answers with #mods out of band. From a problem's card («Reactivar el puente», `contexto`) it
     answers where it was clicked, like the card's other actions."""
     chosen = [str(v) for k, v in (await request.form()).multi_items() if k == "bridge"]
+    before = (await modpackService.bundle_get(bundle_id)).secondary_loaders
     updated = await modpackService.bundle_update(bundle_id, ModpackBundlePatch(secondary_loaders=chosen), actor)
     if contexto is not None:
         acted = await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto,
@@ -775,7 +783,10 @@ async def modpack_bridges(
     return render(request, "modpacks/_bridges.html", actor, **{
         **context, "bundle_id": bundle_id, "bundle": updated, "mods_oob": True, **_bridges_context(updated),
         # #builds too, like every answer that resolved again (_resolved).
-        "builds_oob": True, "builds": await modpackService.build_find(bundle_id), "pending": pending, "ready": ready})
+        "builds_oob": True, "builds": await modpackService.build_find(bundle_id), "pending": pending, "ready": ready,
+        # Saved on change (O9 D12): the notice undoes it.
+        "undo_values": list(before), "undo_name": "bridge", "undo_said": "Loaders secundarios guardados",
+        "undo_action": f"/modpacks/{bundle_id}/bridges", "undo_target": "#bridges"})
 
 @router.post("/modpacks/{bundle_id}/pins")
 @inject

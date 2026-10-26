@@ -94,8 +94,13 @@
 
     {% call ui.section("Canales", id="channels-section", help="canales") %}
     {% include "modpacks/_channels.html" %}
+    {% endcall %}
+
+    {% if bridges or bridges_idle %}
+    {% call ui.section("Loaders secundarios", id="bridges-section", help="puentes") %}
     {% include "modpacks/_bridges.html" %}
     {% endcall %}
+    {% endif %}
 
     {% if bundle.local_files %}
     {% call ui.section("Archivos locales", id="local-files-section", help="archivos-locales") %}

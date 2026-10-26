@@ -2809,7 +2809,9 @@ def test_channels_offer_the_bridges_of_the_pack_s_loader_and_version() -> None:
     form = bridges_form(client.get(f"/modpacks/{BUNDLE_ID}").text)
     assert f'hx-post="/modpacks/{BUNDLE_ID}/bridges"' in form and 'name="bridge" value="kilt"' in form
     shown = said(form)
-    assert "Loaders secundarios" in shown and "Usar mods de Forge (vía Kilt)" in shown and "experimental" in shown
+    # Its own section (O9 D12): the heading is the section's.
+    assert 'id="bridges-section"' in client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert "Usar mods de Forge (vía Kilt)" in shown and "experimental" in shown
     assert "checked" not in form[form.index('value="kilt"'):].split(">")[0]
 
 
@@ -3024,3 +3026,28 @@ def test_the_filter_bar_has_the_version_filter() -> None:
     form = bar(client.get(f"/modpacks/{BUNDLE_ID}").text)
     assert 'id="f-version"' in form and "versión del pack ofrecida" in form and "fuera de etiquetas" in form
     assert "#f-version" in form
+
+
+def test_channels_save_when_changed_with_undo_and_the_mods_redrawn() -> None:
+    """O9 D12 (owner, 2026-10-26): like a row's select, no «Guardar canales»; the notice undoes it."""
+    client, modpack, _ = setup()
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    form = text[text.index('<form id="channels"'):]
+    form = form[:form.index("</form>")]
+    assert 'hx-trigger="change"' in form and "Guardar canales" not in form
+    response = client.post(f"/modpacks/{BUNDLE_ID}/channels", headers=HTMX, data={"channel": ["release", "beta"]})
+    notice = response.text[response.text.index('id="notices"'):]
+    undo = notice[notice.index("<form"):notice.index("</form>")]
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/channels"' in undo and 'name="channel" value="release"' in undo
+    assert 'value="beta"' not in undo and "Deshacer" in undo
+    assert '<div id="mods" class="space-y-4" hx-swap-oob="true"' in response.text
+
+
+def test_a_mod_that_came_with_the_pack_says_how_to_take_it_out() -> None:
+    """O9 D12: «Quitar del modpack» is only for what the admin added; one from the pack said nothing."""
+    client, _, _ = setup()
+    page = client.get(f"/modpacks/{BUNDLE_ID}").text
+    text = page[page.index('id="mod-row-P1"'):]
+    text = text[:text.index("</li>")]
+    assert "Vino con el pack: desactívalo o crea un reemplazo vacío" in " ".join(visible(text).split())
+    assert 'href="/replacements"' in text

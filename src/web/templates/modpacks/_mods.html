@@ -189,6 +189,10 @@
             </div>
             {% endif %}
 
+            {% if row.origin == "pack" %}
+            {# Only what the admin added is removed from here (O9 D12): this one says how. #}
+            <p class="border-t border-line-soft pt-2 text-xs text-muted">Vino con el pack: desactívalo o crea un <a href="/replacements" class="font-medium text-link hover:underline">reemplazo vacío</a>.</p>
+            {% endif %}
             {% if row.origin == "admin" %}
             <div class="border-t border-line-soft pt-2">
               {{ ui.button("Quitar del modpack", kind="ghost", small=True, attrs={

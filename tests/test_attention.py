@@ -59,7 +59,7 @@ def test_a_pack_with_undecided_mods_asks_to_decide() -> None:
 
 def test_a_pack_with_problems_goes_to_its_problems() -> None:
     [item] = attention([], [pack(problems=1, undecided=1)], [], NOW)
-    assert item.action_label == "Decidir"
+    assert item.action_label == "Arreglar"  # O9 D12 (owner, 2026-10-26)
     assert item.href == "/modpacks/id-Pack Uno?vista=problemas"
     assert item.text == "Pack Uno tiene 1 problema y 1 mod por decidir."
 

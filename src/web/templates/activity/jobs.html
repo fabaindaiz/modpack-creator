@@ -5,7 +5,8 @@
 {% block content %}
 {{ ui.page_header("Trabajos", "Lo último que el panel y el worker han hecho o están haciendo, con quién lo pidió.") }}
 
-<form method="get" action="/jobs" class="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end">
+{# Applies when a filter changes (O9 D12, app.js); «Filtrar» without JavaScript. #}
+<form method="get" action="/jobs" data-submit-on-change class="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end">
   {% set SELECT_CLASS = "mt-1 block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control focus-visible:outline-2 focus-visible:outline-accent" %}
   <div>
     <label for="f-servidor" class="block text-xs font-medium text-muted">Servidor</label>
@@ -35,7 +36,7 @@
     </select>
   </div>
   <div class="flex gap-2 sm:col-span-3">
-    {{ ui.button("Filtrar", type="submit") }}
+    <noscript>{{ ui.button("Filtrar", type="submit") }}</noscript>
     {{ ui.link_button("Limpiar", "/jobs") }}
   </div>
 </form>

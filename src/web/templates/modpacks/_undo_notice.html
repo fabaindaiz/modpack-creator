@@ -1,0 +1,14 @@
+{% import "_macros.html" as ui %}
+{# Saved on change (O9 D12): the notice puts back what was there. Needs `undo_values` and `undo_name`. #}
+{% if undo_values is defined and undo_values is not none %}
+<div id="notices" hx-swap-oob="beforeend">
+<div data-notice data-notice-tone="success" role="status" class="flex items-start gap-3 rounded-xl border px-3 py-2 text-sm shadow-sm {{ ui.NOTICE_TONES['success'] }}">
+  <p class="min-w-0 flex-1 break-words">{{ undo_said }}</p>
+  <form hx-post="{{ undo_action }}" hx-target="{{ undo_target }}" hx-swap="outerHTML" class="shrink-0">
+    {% for value in undo_values %}<input type="hidden" name="{{ undo_name }}" value="{{ value }}">{% endfor %}
+    <button type="submit" class="rounded px-1 text-sm font-medium underline underline-offset-2">Deshacer</button>
+  </form>
+  <button type="button" data-notice-close class="-my-0.5 shrink-0 rounded px-1 text-base leading-none opacity-70 hover:opacity-100" aria-label="Cerrar aviso">&times;</button>
+</div>
+</div>
+{% endif %}
