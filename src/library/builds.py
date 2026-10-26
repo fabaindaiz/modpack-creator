@@ -1,6 +1,6 @@
 """The builds of a pack as the panel lists them (O8 tanda 1, d-7985ee-a99db7): their names and, with
 the list, what is shown and what folds. Pure."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
 from src.model.modpack import ModpackBuild
@@ -26,10 +26,13 @@ class BuildsView:
     shown: list[ModpackBuild]
     folded: list[ModpackBuild]
     previous: dict[int, int]
+    # Each build's verdict and how many notes say it (O8 tanda 2, T5); a build without notes is absent.
+    verdicts: dict[int, tuple[str, int]] = field(default_factory=dict)
 
 
 def builds_view(builds: Sequence[ModpackBuild], recommended: Optional[int], latest: Optional[int],
-                installed: set[int], starred_only: bool) -> BuildsView:
+                installed: set[int], starred_only: bool,
+                verdicts: Optional[dict[int, tuple[str, int]]] = None) -> BuildsView:
     """The builds (newest first) as listed (O8 B3): the starred first, newest first, then the others.
     Never folded (user-walk W16): the recommended, the latest, one installed on a server and the
     newest builds, a test among them (H3: an older test folds like any other). With `starred_only`
@@ -45,5 +48,5 @@ def builds_view(builds: Sequence[ModpackBuild], recommended: Optional[int], late
     visible = [b for b in ordered if b.starred and shown(b)] + [b for b in ordered if not b.starred and shown(b)]
     numbers = [b.number for b in reversed(ordered)]
     return BuildsView(shown=visible, folded=[b for b in ordered if not shown(b)],
-                      previous={after: before for before, after in zip(numbers, numbers[1:])})
+                      previous={after: before for before, after in zip(numbers, numbers[1:])}, verdicts=verdicts or {})
 

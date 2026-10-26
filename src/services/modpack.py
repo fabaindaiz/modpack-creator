@@ -17,6 +17,7 @@ from src.library.mrpack import mrpack_index, write_mrpack
 from src.library.builds import build_name
 from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink, installed_of
 from src.database.jobs import JobDatabase
+from src.database.note import NoteDatabase
 from src.model.jobs import Job
 from src.library.bridges import BRIDGES, REPLACES, VIA_RISK, bridge as find_bridge, companions, guest_of
 from src.library.resolution import CHANNEL_RANK, EXCEPTION_CHANNELS, Candidate, Catalog, Lock, LockEntry, ResolveRequest, Target, free_request, merge_replacements, request_digest, resolve
@@ -482,8 +483,11 @@ class ModpackService():
             icon_deadline: float = FILL_DEADLINE,
             clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
             jobDB: Optional[JobDatabase] = None,
+            noteDB: Optional[NoteDatabase] = None,
             ) -> None:
         self.clock = clock
+        # The notes, for what the builds' list says of each build (O8 tanda 2, T5).
+        self.noteDB = noteDB or NoteDatabase()
         self.jobDB = jobDB or JobDatabase()
         self.pterodactylDB = pterodactylDB or PterodactylDatabase()
         self.changelog_deadline = changelog_deadline
@@ -1735,6 +1739,20 @@ class ModpackService():
             if number is not None and last.payload.get("bundle_id") == bundle_id:
                 installed[str(last.payload.get("server_id"))] = number
         return installed
+
+    async def build_verdicts(self, bundle_id: str) -> dict[int, tuple[str, int]]:
+        """Each build's verdict, from its notes not archived (O8 tanda 2, T5): the newest note's, and how
+        many say it. A build without notes is absent. A read."""
+        found: dict[int, tuple[str, int]] = {}
+        for note in await self.noteDB.find(bundle_id, builds_only=True, limit=2000):
+            number = note.build_number
+            if number is None:
+                continue
+            if number not in found:
+                found[number] = (note.verdict, 1)
+            elif found[number][0] == note.verdict:
+                found[number] = (note.verdict, found[number][1] + 1)
+        return found
 
     async def installed_builds(self, bundle_id: str) -> set[int]:
         """The builds of the pack installed on its linked servers (O8 B3: the list never folds them)."""

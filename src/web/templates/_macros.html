@@ -105,6 +105,14 @@
 {%- endmacro %}
 
 {# A small label: a role, a status, a state. #}
+{# A note's verdict (O8 tanda 2): a sign, its tone, and what it says. #}
+{% set VERDICTS = {"works": ("✔", "accent", "funcionó"), "fails": ("✘", "danger", "falló"),
+                   "issues": ("⚠", "warning", "con problemas"), "untested": ("·", "neutral", "sin probar")} %}
+{% macro verdict(kind, count=None) -%}
+{%- set v = VERDICTS.get(kind, ("·", "neutral", kind)) -%}
+{{ badge(v[0] ~ (" " ~ count if count is not none else " " ~ v[2]), v[1], title=v[2]) }}
+{%- endmacro %}
+
 {% macro badge(text, tone="neutral", title=None) %}
 <span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-xs font-medium whitespace-nowrap ring-1 ring-inset {{ BADGE_TONES[tone] }}"
   {%- if title %} title="{{ title }}"{% endif %}>{{ text }}</span>

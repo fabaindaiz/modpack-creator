@@ -45,12 +45,14 @@ class NoteDatabase:
         return result.modified_count == 1
 
     async def find(self, bundle_id: str, *, build_number: Optional[int] = None, project_id: Optional[str] = None,
-                   version_ids: Optional[list[str]] = None, archived: bool = False,
+                   version_ids: Optional[list[str]] = None, archived: bool = False, builds_only: bool = False,
                    before: Optional[datetime] = None, limit: int = 200) -> list[VersionNote]:
         """A pack's notes, newest first: of a build, or of a mod (some of its versions), archived or not."""
         query: dict[str, Any] = {"bundle_id": bundle_id, "archived": archived}
         if build_number is not None:
             query["build_number"] = build_number
+        elif builds_only:
+            query["build_number"] = {"$ne": None}
         if project_id is not None:
             query["project_id"] = project_id
         if version_ids is not None:

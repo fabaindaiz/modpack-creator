@@ -13,10 +13,13 @@
         aria-label="{{ ('Quitar el destacado del build ' if build.starred else 'Destacar el build ') ~ build.number }}" aria-pressed="{{ 'true' if build.starred else 'false' }}"
         hx-post="/modpacks/{{ bundle_id }}/builds/{{ build.number }}/destacar" hx-vals='{"estado": "{{ 'no' if build.starred else 'si' }}"}'
         hx-target="#builds" hx-swap="outerHTML">{{ "★" if build.starred else "☆" }}</button>
-      <span class="font-medium tabular-nums">#{{ build.number }}</span>
+      <a href="/modpacks/{{ bundle_id }}/builds/{{ build.number }}" class="font-medium tabular-nums text-link hover:underline">#{{ build.number }}</a>
       {% if build.test %}{{ ui.badge("Prueba", "warning") }}{% endif %}
       {% if bundle.recommended_build == build.number %}{{ ui.badge("Recomendado", "accent") }}{% endif %}
       {% if build.stable %}{{ ui.badge("estable", "accent") }}{% endif %}
+      {# What its notes say (O8 tanda 2, T5): the newest verdict and how many say it. #}
+      {% set said = view.verdicts.get(build.number) %}
+      {% if said %}{{ ui.verdict(said[0], said[1]) }}{% endif %}
       {% if build.name %}<span class="whitespace-normal break-words">«{{ build.name }}»</span>{% endif %}
       {# Its name (O8 B2), edited in place. #}
       {# When and how big, under it: two columns fit the pack's side column (visual sweep, 2026-10-26). #}

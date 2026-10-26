@@ -15,7 +15,7 @@ from src.library.bridges import BRIDGES, FABRIC_API, REPLACES, VIA_RISK, bridges
 from src.library.mod_filters import ModFilters, apply as filter_rows, counts as filter_counts
 from src.library.onboarding import PackFacts, fact, pack_steps, pending_count, problem_count
 from src.library.resolution import ADMIN, Lock
-from src.dependences import Dependences, JobService, ModpackImportService, ModpackService, ModrinthService, PterodactylService, UpdateCheckService
+from src.dependences import Dependences, JobService, ModpackImportService, ModpackService, ModrinthService, NoteService, PterodactylService, UpdateCheckService
 from src.model.modpack import ModpackBundle, ModpackBundleCreate, ModpackBundlePatch, PinSource, ProjectOrigin
 from src.model.modrinth.project import ModrinthEnvironment
 from src.model.users import Actor
@@ -347,7 +347,8 @@ async def _builds(request: Request, actor: Actor, modpackService: ModpackService
 async def _builds_view(modpackService: ModpackService, bundle: Any, builds: list[Any], starred_only: bool = False) -> BuildsView:
     """The builds as the list shows them (O8 B3)."""
     return builds_view(builds, bundle.recommended_build, bundle.latest_build,
-                       await modpackService.installed_builds(str(bundle.id)) if builds else set(), starred_only)
+                       await modpackService.installed_builds(str(bundle.id)) if builds else set(), starred_only,
+                       await modpackService.build_verdicts(str(bundle.id)) if builds else {})
 
 async def _replacements(request: Request, actor: Actor, modpackService: ModpackService,
                         modrinthService: ModrinthService, fragment: bool) -> Response:
@@ -1285,6 +1286,38 @@ async def build_compare(
     sides = {b.number: b for b in await modpackService.build_find(bundle_id) if b.number in (de, a)}
     return render(request, "modpacks/compare.html", actor, bundle=bundle, bundle_id=bundle_id, preview=preview,
                   titles=titles, de=de, a=a, sides=sides, nav_active="modpacks")
+
+# After the literal /builds/… pages (compare, dialogo): a number is never one of them.
+@router.get("/modpacks/{bundle_id}/builds/{number}")
+@inject
+async def build_page(
+        bundle_id: str,
+        number: int,
+        request: Request,
+        todas: Optional[str] = None,
+        archivadas: Optional[str] = None,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
+        noteService: NoteService = Depends(Provide[Dependences.noteService]),
+        ):
+    """A build (O8 tanda 2, T1 of d-7985ee-16be41): its marks, «¿Funcionó?» with its notes (the 5 newest,
+    all with `todas`, the archived with `archivadas`), and its mods. 404 for one that does not exist."""
+    bundle = await modpackService.bundle_get(bundle_id)
+    build = await modpackService.build_get(bundle_id, number)
+    builds = await modpackService.build_find(bundle_id)
+    notes = await noteService.find(bundle_id, build_number=number, archived=archivadas == "1")
+    counts: dict[str, int] = {}
+    for found in notes:
+        counts[found.verdict] = counts.get(found.verdict, 0) + 1
+    titles = await _titles(modrinthService, [e.project_id for e in build.lock.entries])
+    previous = max((b.number for b in builds if b.number < number), default=None)
+    return render(request, "modpacks/build.html", actor, bundle=bundle, bundle_id=bundle_id, build=build,
+                  notes=notes if todas == "1" else notes[:NOTES_SHOWN], more=len(notes) > NOTES_SHOWN and todas != "1",
+                  counts=counts, archived=archivadas == "1", titles=titles, previous=previous, nav_active="modpacks")
+
+# The notes a build page shows before «Ver todas» (user-walk N20).
+NOTES_SHOWN = 5
 
 @router.get("/modpacks/{bundle_id}/builds/{number}/mrpack")
 @inject

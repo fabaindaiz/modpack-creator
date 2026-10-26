@@ -1,0 +1,26 @@
+{# One note (O8 tanda 2): `found` is a VersionNote. Its verdict, where and by whom, its comment, and its
+   error folded, shown as text only (escaped, P3). #}
+{% import "_macros.html" as ui %}
+<article id="note-{{ found.id }}" data-note class="space-y-1 rounded-xl border border-line bg-raised p-3 text-sm">
+  <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+    {{ ui.verdict(found.verdict) }}
+    {% if found.version_number %}<span class="font-medium tabular-nums">{{ found.version_number }}</span>{% endif %}
+    {% if found.server_name %}<span class="text-muted">{{ found.server_name }}</span>{% endif %}
+    <span class="text-xs text-muted">{{ found.author.name }} · {{ ui.when(found.at) }}{% if found.edited_at %} · editada{% endif %}</span>
+    {% if found.archived %}{{ ui.badge("archivada") }}{% endif %}
+  </div>
+  {% if found.text %}<p class="break-words whitespace-pre-line">{{ found.text }}</p>{% endif %}
+  {% if found.error %}
+  <details>
+    <summary class="cursor-pointer text-xs text-link">Error ({{ (found.error | length / 1024) | round(0, "ceil") | int }} KB)</summary>
+    <pre class="mt-1 max-h-80 overflow-auto rounded bg-surface p-2 text-xs break-words whitespace-pre-wrap">{{ found.error }}</pre>
+  </details>
+  {% endif %}
+  {% if found.previous %}
+  <details>
+    <summary class="cursor-pointer text-xs text-link">Ver anterior</summary>
+    {% set before = found.previous[-1] %}
+    <p class="mt-1 break-words whitespace-pre-line text-muted">{{ before.text }}</p>
+  </details>
+  {% endif %}
+</article>

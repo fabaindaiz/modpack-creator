@@ -49,7 +49,8 @@ def bundle(projects: Optional[list[PackProject]] = None, decisions: Optional[dic
 
 def build(number: int, **fields: Any) -> ModpackBuild:
     return ModpackBuild.model_construct(id=PydanticObjectId(), bundle_id=BUNDLE_ID, number=number, created_at=T0,
-                                        lock=lock(), loader_version="0.16", **{"test": False, "name": None, "starred": False, "stable": False, **fields})
+                                        loader_version="0.16", **{"lock": lock(), "test": False, "name": None, "starred": False,
+                                                                    "stable": False, **fields})
 
 
 def entry(project_id: str, server: str = "include", project_type: str = "mod") -> LockEntry:
@@ -92,6 +93,28 @@ def project(project_id: str, title: str) -> ModrinthProject:
                                            description="", icon_url=None)
 
 
+class FakeNotes:
+    """NoteService's reads (O8 tanda 2): the notes it gives, and what it was asked."""
+
+    def __init__(self) -> None:
+        self.notes: list[Any] = []
+        self.asked: list[dict[str, Any]] = []
+
+    async def find(self, bundle_id: str, **filters: Any) -> list[Any]:
+        self.asked.append(filters)
+        return [n for n in self.notes if n.archived == filters.get("archived", False)]
+
+
+def note(verdict: str = "fails", text: str = "pantalla negra", **fields: Any) -> Any:
+    from src.model.modpack.note import VersionNote
+    from src.model.users.actor import ActorRef
+    return VersionNote.model_construct(id=PydanticObjectId(), bundle_id=str(BUNDLE_ID), verdict=verdict, text=text,
+                                       author=ActorRef(iss="i", sub="s", name="Eddie Editor"), at=T0, archived=False,
+                                       rev=0, key="k", previous=[], **{"build_number": None, "project_id": None,
+                                       "version_id": None, "version_number": None, "server_id": None,
+                                       "server_name": None, "error": None, "edited_at": None, **fields})
+
+
 class FakeModpack:
     def __init__(self) -> None:
         self.bundle = bundle()
@@ -100,6 +123,9 @@ class FakeModpack:
         self.approved: Any = None
         # The builds installed on the pack's servers (O8 B3: never folded).
         self.installed: set[int] = set()
+        # Each build's latest verdict and how many notes say it (O8 tanda 2, T5), and the notes' reads.
+        self.verdicts: dict[int, tuple[str, int]] = {}
+        self.notes = FakeNotes()
         # Whether the pack's last build job was a test (O8 B1: its blocked dialog stays a test's).
         self.last_test = False
         self.rules = [ModpackReplacement.model_construct(project_id="OLDMOD", replacement="NEWMOD"),
@@ -334,6 +360,15 @@ class FakeModpack:
     async def installed_builds(self, bundle_id: str) -> set[int]:
         return self.installed
 
+    async def build_verdicts(self, bundle_id: str) -> dict[int, tuple[str, int]]:
+        return self.verdicts
+
+    async def build_get(self, bundle_id: str, number: int) -> ModpackBuild:
+        found = next((b for b in self.builds if b.number == number), None)
+        if found is None:
+            raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' has no build {number}")
+        return found
+
     async def build_name(self, bundle_id: str, number: int, name: Optional[str], actor: Actor) -> ModpackBuild:
         self._record("build_name", bundle_id, number, name, actor)
         return self.builds[0]
@@ -455,6 +490,7 @@ def setup_all(actor: Optional[Actor] = EDITOR) -> tuple[TestClient, FakeModpack,
     main.container.updateCheckService.override(providers.Object(checks))
     main.container.pterodactylService.override(providers.Object(ptero))
     main.container.jobService.override(providers.Object(FakeJobs()))
+    main.container.noteService.override(providers.Object(modpack.notes))
     # Sin `with`: el lifespan abriría MongoDB y el proveedor OIDC.
     client = TestClient(main.app, base_url="https://testserver", follow_redirects=False)
     if actor is not None:
@@ -3264,3 +3300,33 @@ def test_a_build_shows_stable_and_is_marked_or_unmarked() -> None:
     assert "Marcar estable" in other[:other.index("</tr>")]
     response = client.post(f"/modpacks/{BUNDLE_ID}/builds/2/estable", data={"estado": "no"}, headers=HTMX)
     assert response.status_code == 200 and call(modpack, "build_stable")[1:] == (str(BUNDLE_ID), 2, False, EDITOR)
+
+
+# The build page (O8 tanda 2, T1 of d-7985ee-16be41) and each build's verdict in the list (T5).
+
+
+def test_the_build_page_shows_its_marks_notes_and_mods() -> None:
+    client, modpack, _ = setup()
+    modpack.builds = [build(15, test=True, name="con Iris", lock=lock(entry("P1"))), build(14)]
+    modpack.notes.notes = [note("fails", "pantalla negra al entrar", build_number=15, server_name="Survival")]
+    response = client.get(f"/modpacks/{BUNDLE_ID}/builds/15")
+    text = visible(response.text)
+    assert response.status_code == 200
+    assert "Build 15" in text and "Prueba" in text and "«con Iris»" in text and "¿Funcionó?" in text
+    assert "pantalla negra al entrar" in text and "Survival" in text and "falló" in text
+    assert "Sodium" in text  # its mods, by title
+    assert modpack.notes.asked[0]["build_number"] == 15
+
+
+def test_a_missing_build_is_a_404_page() -> None:
+    client, _, _ = setup()
+    assert client.get(f"/modpacks/{BUNDLE_ID}/builds/99").status_code == 404
+
+
+def test_the_list_shows_each_builds_verdict_and_links_its_page() -> None:
+    client, modpack, _ = setup()
+    modpack.verdicts = {2: ("works", 2)}
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    row = text[text.index('data-build="2"'):]
+    row = row[:row.index("</tr>")]
+    assert "✔ 2" in row and f'href="/modpacks/{BUNDLE_ID}/builds/2"' in row

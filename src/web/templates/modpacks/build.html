@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% set nav_active = "modpacks" %}
+{% block title %}Build {{ build.number }} de {{ bundle.name }}{% endblock %}
+
+{# A build (O8 tanda 2, T1 of d-7985ee-16be41): its marks, what its notes say, and its mods. Its marks
+   change in the pack's list of builds. #}
+{% block content %}
+{% call ui.page_header("Build " ~ build.number, bundle.name) %}
+{{ ui.link_button("Volver al modpack", "/modpacks/" ~ bundle_id ~ "#builds-section") }}
+{% endcall %}
+<div class="space-y-6">
+  <div class="flex flex-wrap items-center gap-2 text-sm">
+    {% if build.test %}{{ ui.badge("Prueba", "warning") }}{% endif %}
+    {% if bundle.recommended_build == build.number %}{{ ui.badge("Recomendado", "accent") }}{% endif %}
+    {% if build.stable %}{{ ui.badge("estable", "accent") }}{% endif %}
+    {% if build.starred %}<span aria-label="Destacado">★</span>{% endif %}
+    {% if build.name %}<span class="break-words">«{{ build.name }}»</span>{% endif %}
+    <span class="text-muted">{{ ui.when(build.created_at) }} · {{ build.lock.entries | length }} archivos</span>
+  </div>
+  <div class="flex flex-wrap gap-2">
+    {% if previous %}{{ ui.link_button("Comparar con el anterior", "/modpacks/" ~ bundle_id ~ "/builds/compare?de=" ~ previous ~ "&a=" ~ build.number, small=True) }}{% endif %}
+    {{ ui.link_button(".mrpack", "/modpacks/" ~ bundle_id ~ "/builds/" ~ build.number ~ "/mrpack", small=True) }}
+  </div>
+
+  <section class="space-y-2" aria-labelledby="worked">
+    <h2 id="worked" class="text-base font-semibold">¿Funcionó?</h2>
+    {% if counts %}
+    <p class="flex flex-wrap gap-2">{% for kind in ["works", "fails", "issues", "untested"] if counts.get(kind) %}{{ ui.verdict(kind, counts[kind]) }}{% endfor %}</p>
+    {% endif %}
+    <div id="build-notes" class="space-y-2">
+      {% for found in notes %}{% include "notes/_note.html" %}{% else %}
+      <p class="text-sm text-muted">{{ "Ninguna nota archivada." if archived else "Todavía no hay notas." }}</p>
+      {% endfor %}
+    </div>
+    <div class="flex flex-wrap gap-3 text-sm">
+      {% if more %}<a href="?todas=1" class="text-link hover:underline">Ver todas</a>{% endif %}
+      {% if archived %}<a href="?" class="text-link hover:underline">Ocultar archivadas</a>
+      {% else %}<a href="?archivadas=1" class="text-link hover:underline">Mostrar archivadas</a>{% endif %}
+    </div>
+  </section>
+
+  <section class="space-y-2" aria-labelledby="build-mods">
+    <h2 id="build-mods" class="text-base font-semibold">Mods ({{ build.lock.entries | length }})</h2>
+    <ul class="divide-y divide-line-soft rounded-xl border border-line bg-raised text-sm">
+      {% for entry in build.lock.entries | sort(attribute="project_id") %}
+      <li class="flex flex-wrap items-baseline justify-between gap-x-3 px-3 py-1.5">
+        <span class="min-w-0 break-words">{{ ui.mod_link(entry.project_id, titles.get(entry.project_id, entry.project_id), pack=bundle_id) }}</span>
+        <span class="text-xs tabular-nums text-muted">{{ entry.version_number }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+</div>
+{% endblock %}
