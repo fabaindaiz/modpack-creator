@@ -510,6 +510,14 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
                             report[key] = {"status": response.status if response else None, "overflow_px": overflow,
                                            "console_errors": list(errors),
                                            "problems": [f"{tables} tablas desbordan su caja"] if width == 360 and tables else []}
+                            if name == "modpack":
+                                # O8 tanda 1: the builds' table (a star, a name, a test's buttons) fits its
+                                # column at every width; at 1280 the page shot stops at the fold, so the
+                                # section gets its own.
+                                page.locator("#builds").screenshot(path=str(out / f"{key}-builds.png"))
+                                if page.evaluate("[...document.querySelectorAll('#builds table')]"
+                                                 ".some(t => t.parentElement.scrollWidth > t.parentElement.clientWidth + 1)"):
+                                    report[key]["problems"].append("la tabla de builds se desplaza de lado")
                             errors.clear()
                         report.update(shoot_open_card(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                         report.update(shoot_open_cards(page, base, out, ids, f"{who}-{scheme}-{width}", errors))

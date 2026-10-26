@@ -7,7 +7,7 @@
 {% set ready = ready is defined and ready %}
 {% macro build_row(build) %}
   <tr data-build="{{ build.number }}">
-    <td data-label="Build" class="whitespace-nowrap">
+    <td data-label="Build" class="align-top">
       {# The star says its state and sends the other one, never a toggle (O8 B3, user-walk W14). #}
       <button type="button" class="rounded px-0.5 text-base leading-none {{ 'text-accent' if build.starred else 'text-faint hover:text-ink' }}"
         aria-label="{{ ('Quitar el destacado del build ' if build.starred else 'Destacar el build ') ~ build.number }}" aria-pressed="{{ 'true' if build.starred else 'false' }}"
@@ -18,6 +18,8 @@
       {% if bundle.recommended_build == build.number %}{{ ui.badge("Recomendado", "accent") }}{% endif %}
       {% if build.name %}<span class="whitespace-normal break-words">«{{ build.name }}»</span>{% endif %}
       {# Its name (O8 B2), edited in place. #}
+      {# When and how big, under it: two columns fit the pack's side column (visual sweep, 2026-10-26). #}
+      <p class="text-xs text-muted">{{ ui.when(build.created_at) }} · {{ build.lock.entries | length }} archivos</p>
       <details class="whitespace-normal">
         <summary class="cursor-pointer text-xs text-link">{{ "Renombrar" if build.name else "Nombrar" }}</summary>
         <form hx-post="/modpacks/{{ bundle_id }}/builds/{{ build.number }}/nombre" hx-target="#builds" hx-swap="outerHTML" class="mt-1 flex flex-wrap gap-1">
@@ -27,9 +29,7 @@
         </form>
       </details>
     </td>
-    <td data-label="Creado">{{ ui.when(build.created_at) }}</td>
-    <td data-label="Archivos" class="tabular-nums">{{ build.lock.entries | length }}</td>
-    <td data-label="" class="text-right">
+    <td data-label="" class="align-top text-right">
       <div class="flex flex-wrap justify-end gap-1">
         {% if build.test %}
         {# A test is approved, never recommended as it is (O8 B1, H2). #}
@@ -83,7 +83,7 @@
     Solo destacados
   </label>
   {% if view.shown %}
-  {% call ui.table(["Build", "Creado", "Archivos", ""], caption="Builds") %}
+  {% call ui.table(["Build", ""], caption="Builds") %}
   {% for build in view.shown %}{{ build_row(build) }}{% endfor %}
   {% endcall %}
   {% else %}
@@ -92,7 +92,7 @@
   {% if view.folded %}
   <details data-folded-builds>
     <summary class="cursor-pointer text-sm font-medium text-link">{{ view.folded | length }} {{ "build anterior" if view.folded | length == 1 else "builds anteriores" }}</summary>
-    {% call ui.table(["Build", "Creado", "Archivos", ""], caption="Builds anteriores") %}
+    {% call ui.table(["Build", ""], caption="Builds anteriores") %}
     {% for build in view.folded %}{{ build_row(build) }}{% endfor %}
     {% endcall %}
   </details>
