@@ -20,7 +20,7 @@ Build {{ b.number }}{% if b.test %} · prueba{% endif %}{% if b.name %} · «{{ 
     {# The build simulated is chosen, the newest first or the one a link names (O9 D3). #}
     {% set simulated = simulate_build if simulate_build is defined and simulate_build in builds | map(attribute="number") | list else builds[0].number %}
     <label for="simulate-build" class="sr-only">Build a simular</label>
-    <select id="simulate-build" name="build" class="rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control">
+    <select id="simulate-build" name="build" class="min-w-0 max-w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control">
       {% for b in builds %}
       <option value="{{ b.number }}"{% if b.number == simulated %} selected{% endif %}>{{ build_label(b) }}</option>
       {% endfor %}

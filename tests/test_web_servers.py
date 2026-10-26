@@ -1851,3 +1851,12 @@ def test_a_server_running_a_test_compares_against_it() -> None:
     fakes.modpack.tests = set()  # a normal build installed: against the build in force, as before
     client.get(f"/servers/{SERVER_ID}")
     assert fakes.ptero.compared == [5, None]
+
+
+def test_the_simulate_select_never_widens_the_page() -> None:
+    """Visual sweep (2026-10-26): a test build's name in its option widened the server page 183 px at 360 px."""
+    client, fakes = setup(OPERATOR)
+    text = client.get(f"/servers/{SERVER_ID}").text
+    tag = text[text.index('id="simulate-build"'):]
+    assert "max-w-full" in tag[:tag.index(">")]
+
