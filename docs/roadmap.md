@@ -10,6 +10,24 @@ y tokens, con en qué se apoya (bundle 0.0.30); `close` la compara después con 
 
 ## Dónde estamos
 
+**2026-10-26, lo que quedaba sin decisión, hecho y revisado en `feat/ronda-3`** (sin push ni merge;
+detalle en el registro, s-7985ee-2b8b13). Del user-walk de O9: el resto de A1 y A2, A3, A11 y A12, con A3 y
+A13 comprobados en el navegador por el barrido (dos chequeos nuevos, vistos fallar sin su arreglo).
+`delegate-gate.sh` probado en un worktree real. La **revisión en contexto limpio** de los 8 commits del
+2026-10-25 (pedida con «verifica todo lo pendiente»): dos hallazgos arreglados (un pin sin registro se
+escribía sin condición; la reserva de subidas podía pasarse por una subida liberada durante la lectura del
+disco) y dos menores anotados abajo. **Para seguir, en orden:**
+1. **Para el dueño, una a una** (skill `decision-review`): las 13 decisiones de O9 (D1–D13 del user-walk) y
+   los textos A6–A8; las 14 de O8 (D1–D14 del borrador), antes de su plan; lo que ya esperaba del 2026-10-22
+   (los textos de ayuda, `LICENSES.html`, las decisiones de los agentes de la ronda 3, el «?» que baja de
+   línea). Después, el merge a `main` si lo pide.
+2. Menores de la revisión del 2026-10-26, sin hacer: la revisión de un registro vuelve a 1 cuando el mod se
+   quita y se agrega otra vez (una escritura de una lectura anterior al quitarlo podría coincidir; improbable),
+   y `pins_from_pack` informa como «kept» un pin que no pudo escribir tras `PIN_WRITE_TRIES` (es contención, no
+   la elección de otro).
+3. Un segundo user-walk de O9 en contexto limpio, antes de su spec (después de las decisiones).
+4. O1 y O4 con el log del servidor (producción: cuando el dueño lo pida).
+
 **2026-10-25, los pendientes sin decisión, hechos en `feat/ronda-3`** (sin push ni merge; detalle en el
 registro, s-7985ee-2006d0). test-mongo en verde (el test nuevo de los orígenes por servidor estaba mal
 armado y se arregló); los dos menores diferidos de la revisión (la revisión del registro de orígenes,

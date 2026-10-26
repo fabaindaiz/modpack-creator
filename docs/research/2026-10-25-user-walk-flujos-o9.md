@@ -309,6 +309,8 @@ un editor lee «Ver» donde un operador ve «Simular», como en el tablero), A9 
 diálogo con `?construir=1`) y A13 (`8e297a6`: `data-reveal` en `app.js`). Sin hacer: A3 (pide su test
 de navegador primero), A6, A7 y A8 (textos que revisa el dueño), A11 y A12 (indicadores de O6).
 
+**Estado (2026-10-26):** hechos el resto de A1 (una importación dentro de un pack guarda su `bundle_id`; la de un pack nuevo sigue llevando a `/jobs/{id}`, que muestra su informe), A2 (la página «Importar» muestra la importación en curso o la última de la persona), A3 (confirmada en el navegador: el barrido sin el arreglo da «la importación se cerró» y «perdió su avance»; el `<details>` de importar lleva `hx-preserve` y el aviso del pack sigue la importación por su `into`), A11 («Subiendo… N %» en el botón) y A12 («Buscando en Modrinth…»). A13 quedó comprobado en el navegador (sin `data-reveal`, el barrido da «llegó fuera de la vista»). Quedan A6, A7 y A8 (textos del dueño) y las 13 decisiones.
+
 ## Cuentas
 
 35 hallazgos (W1–W35): **4 altos** (W8, W9, W10, W26), **17 medios**, **14 bajos**. De ellos, W16
