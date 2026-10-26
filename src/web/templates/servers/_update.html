@@ -21,9 +21,9 @@
       <option value="{{ b.number }}"{% if b.number == simulated %} selected{% endif %}>Build {{ b.number }}{% if b.number == bundle.recommended_build %} (recomendado){% elif b.number == bundle.latest_build %} (último){% endif %}</option>
       {% endfor %}
     </select>
-    {{ ui.button("Simular instalación", kind="secondary", attrs={"hx-post": "/servers/" ~ server_id ~ "/update/preview", "hx-include": "#simulate-build", "hx-target": "#server-job", "hx-swap": "innerHTML"}) }}
+    {{ ui.button("Simular instalación", kind="secondary", attrs={"hx-post": "/servers/" ~ server_id ~ "/update/preview", "hx-include": "#simulate-build", "hx-target": "#install-job", "hx-swap": "innerHTML"}) }}
     {% elif actor.is_operator %}
-    {{ ui.button("Simular instalación", kind="secondary", attrs={"hx-post": "/servers/" ~ server_id ~ "/update/preview", "hx-target": "#server-job", "hx-swap": "innerHTML"}) }}
+    {{ ui.button("Simular instalación", kind="secondary", attrs={"hx-post": "/servers/" ~ server_id ~ "/update/preview", "hx-target": "#install-job", "hx-swap": "innerHTML"}) }}
     {% else %}
     {{ ui.button("Simular instalación", kind="secondary", disabled_reason=reason) }}
     {% endif %}
@@ -34,7 +34,7 @@
     {% set direct = "update-dialog-direct" %}
     {{ ui.button("Instalar build…", kind="danger", attrs={"data-dialog-open": direct}) }}
     {% call ui.confirm_dialog(direct, "Instalar en " ~ server.name, "Instalar el build elegido", "danger",
-        {"hx-post": "/servers/" ~ server_id ~ "/update", "hx-target": "#server-job", "hx-swap": "innerHTML"}) %}
+        {"hx-post": "/servers/" ~ server_id ~ "/update", "hx-target": "#install-job", "hx-swap": "innerHTML"}) %}
     <p>Esto apaga el servidor de juego, hace un backup, cambia los jars y lo vuelve a arrancar. Los jugadores serán desconectados.</p>
     {{ ui.discards_rollback(rollback) }}
     <input type="hidden" name="bundle_id" value="{{ bundle.id }}">
@@ -77,7 +77,7 @@
       {% set dialog = "rollback-dialog-" ~ update.id %}
       {{ ui.button("Rollback B: restaurar el backup…", kind="danger", small=True, attrs={"data-dialog-open": dialog}) }}
       {% call ui.confirm_dialog(dialog, "Restaurar el backup previo a la actualización", "Restaurar backup", "danger",
-          {"hx-post": "/servers/" ~ server_id ~ "/rollback", "hx-target": "#server-job", "hx-swap": "innerHTML"}) %}
+          {"hx-post": "/servers/" ~ server_id ~ "/rollback", "hx-target": "#install-job", "hx-swap": "innerHTML"}) %}
       <p>Esto apaga el servidor de juego y restaura el backup hecho antes de la actualización. Se pierde todo lo jugado desde ese backup, también lo jugado después del rollback A. Los jugadores serán desconectados.</p>
       <input type="hidden" name="update_id" value="{{ update.id }}">
       <input type="hidden" name="mode" value="B">
@@ -98,7 +98,7 @@
     <div class="flex flex-wrap gap-2">
       {% for mode, label in [("A", "Rollback A: devolver los jars"), ("B", "Rollback B: restaurar el backup")] %}
       {% if mode in rollback.allowed %}
-      <form{% if actor.is_operator %} hx-post="/servers/{{ server_id }}/rollback" hx-target="#server-job" hx-swap="innerHTML" hx-confirm="¿Hacer el {{ label | lower }}?"{% endif %}>
+      <form{% if actor.is_operator %} hx-post="/servers/{{ server_id }}/rollback" hx-target="#install-job" hx-swap="innerHTML" hx-confirm="¿Hacer el {{ label | lower }}?"{% endif %}>
         <input type="hidden" name="update_id" value="{{ update.id }}">
         <input type="hidden" name="mode" value="{{ mode }}">
         {{ ui.button(label, kind="danger", type="submit", small=True, disabled_reason=reason) }}

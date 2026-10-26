@@ -13,7 +13,7 @@
   <h3 class="font-medium">Nuevo modpack para este servidor</h3>
   {% if not scan %}
   <p class="text-muted">Sin escaneo no se puede deducir el loader ni la versión de Minecraft.</p>
-  {{ ui.button("Escanear para deducir", kind="secondary", small=True, attrs={"hx-post": "/servers/" ~ server_id ~ "/scan", "hx-target": "#server-job", "hx-swap": "innerHTML"}) }}
+  {{ ui.button("Escanear para deducir", kind="secondary", small=True, attrs={"hx-post": "/servers/" ~ server_id ~ "/scan", "hx-target": "#scan-job", "hx-swap": "innerHTML"}) }}
   {% elif deduction and deduction.identified %}
   <p class="text-muted">
     {%- if loader %}{{ deduction.loader_votes[loader] }} de {{ deduction.identified }} jars identificados son {{ loader }}{% else %}Los jars identificados no deciden el loader: elige uno{% endif %};

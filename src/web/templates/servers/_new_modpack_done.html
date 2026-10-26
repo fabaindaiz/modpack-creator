@@ -17,7 +17,7 @@
   {% endif %}
   {% if outcome.import_error %}
   {{ ui.notice(outcome.import_error, "error") }}
-  {{ ui.button("Importar", kind="secondary", small=True, attrs={"hx-post": "/servers/" ~ server_id ~ "/import", "hx-target": "#server-job", "hx-swap": "innerHTML"}) }}
+  {{ ui.button("Traer los mods", kind="secondary", small=True, attrs={"hx-post": "/servers/" ~ server_id ~ "/import", "hx-target": "#import-job", "hx-swap": "innerHTML"}) }}
   {% endif %}
   {% else %}
   <p>Modpack <a href="/modpacks/{{ bundle.id }}" class="font-medium hover:underline">{{ bundle.name }}</a> creado. Pide a un operador que lo vincule a este servidor e importe sus mods.</p>

@@ -41,6 +41,11 @@
     <td data-label="Detalle" class="text-xs text-muted">{{ "demasiado grande para leerlo" if file.status == "too_large" else "Modrinth no lo conoce" }}</td>
   </tr>
   {% endfor %}
+  {% endcall %}
+  {% if comparison.matching %}
+  <details class="text-sm">
+    <summary class="cursor-pointer font-medium">Ver los {{ comparison.matching | length }} que coinciden</summary>
+    {% call ui.table(["Estado", "Mod", "Archivo", "Detalle"], caption="Lo que coincide con el build " ~ build_number) %}
   {% for file in comparison.matching %}
   <tr data-category="matching">
     <td data-label="Estado">{{ ui.badge("Coincide", "accent") }}</td>
@@ -49,5 +54,7 @@
     <td data-label="Detalle"></td>
   </tr>
   {% endfor %}
-  {% endcall %}
+    {% endcall %}
+  </details>
+  {% endif %}
 </div>

@@ -510,10 +510,10 @@ def opening_tag(text: str, element_id: str) -> str:
     return match.group(0)
 
 
-def test_server_main_reloads_itself_and_excludes_the_polling_row() -> None:
-    """When a job ends (`job-finished`, sent by its finished row), #server-main reloads itself
-    from the page. The polling row is outside it: the reload must not restart the polling, nor
-    the row's own swap wipe the sections."""
+def test_server_main_reloads_itself_and_keeps_each_jobs_answer_under_its_button() -> None:
+    """When a job ends (`job-finished`, sent by its finished row), #server-main reloads itself from
+    the page. Each job answers under its own button (O9 D7, owner 2026-10-26), inside #server-main:
+    its place is kept as it is through the reload (`hx-preserve`), and brought into view (A13)."""
     client, fakes = setup()
     running = job("server_scan", "running")
     fakes.jobs.jobs = [running]
@@ -522,12 +522,36 @@ def test_server_main_reloads_itself_and_excludes_the_polling_row() -> None:
     for attribute in (f'hx-get="/servers/{SERVER_ID}"', 'hx-select="#server-main"',
                       'hx-trigger="job-finished from:body"', 'hx-swap="outerHTML"', 'hx-disinherit="*"'):
         assert attribute in tag
-    main_at, job_at = text.index(tag), text.index('id="server-job"')
-    assert job_at < main_at and text.index(f'hx-get="/jobs/{running.id}/row"') < main_at
-    # The sections are inside it, in the order of the spec: summary, comparison, then the side column.
+    main_at = text.index(tag)
+    for slot in ("scan-job", "install-job", "import-job"):
+        place = opening_tag(text, slot)
+        assert "hx-preserve" in place and "data-reveal" in place and text.index(place) > main_at
+    scan = text[text.index('id="scan-job"'):text.index('id="comparacion"')]
+    assert f'hx-get="/jobs/{running.id}/row"' in scan
+    # The order of the process: the pack, its scan, how it compares, installing, bringing its mods.
     order = [text.index(f'id="{section}"') for section in
-             ("server-summary", "comparacion", "actualizar", "modpack", "escaneo", "importar")]
+             ("server-summary", "modpack", "escaneo", "comparacion", "actualizar", "importar")]
     assert main_at < order[0] and order == sorted(order)
+    assert 'id="server-job"' not in text
+
+
+def test_each_button_answers_under_itself() -> None:
+    client, _ = setup(OPERATOR)
+    text = client.get(f"/servers/{SERVER_ID}").text
+    assert re.search(rf'hx-post="/servers/{SERVER_ID}/scan"[^>]*hx-target="#scan-job"', text)
+    assert re.search(rf'hx-post="/servers/{SERVER_ID}/update/preview"[^>]*hx-target="#install-job"', text)
+    assert re.search(rf'hx-post="/servers/{SERVER_ID}/import"[^>]*hx-target="#import-job"', text)
+
+
+def test_the_comparison_shows_what_differs_and_folds_what_matches() -> None:
+    """O9 D7: «ver los N que coinciden», folded."""
+    client, _ = setup()
+    text = client.get(f"/servers/{SERVER_ID}").text
+    compare = text[text.index('id="compare"'):]
+    table = compare[:compare.index("</table>")]
+    assert 'data-category="matching"' not in table and 'data-category="missing"' in table
+    folded = compare[compare.index("<details"):compare.index("</details>")]
+    assert "Ver los 1 que coinciden" in visible(folded) and 'data-category="matching"' in folded
 
 
 def summary(text: str) -> str:
@@ -1300,7 +1324,7 @@ def test_without_scan_offers_scanning_to_deduce() -> None:
     unlinked(fakes, scanned=False)
     form = client.get(f"/servers/{SERVER_ID}").text.split('id="new-modpack"')[1]
     assert "Escanear para deducir" in form
-    assert re.search(rf'hx-post="/servers/{SERVER_ID}/scan"[^>]*hx-target="#server-job"[^>]*>Escanear para deducir<', form)
+    assert re.search(rf'hx-post="/servers/{SERVER_ID}/scan"[^>]*hx-target="#scan-job"[^>]*>Escanear para deducir<', form)
     assert re.search(r'name="import_mods"[^>]*disabled', form)
 
 
@@ -1448,15 +1472,12 @@ def section_order(text: str) -> list[str]:
             if m in ("actualizar", "modpack", "escaneo", "importar")]
 
 
-def test_without_a_modpack_the_modpack_section_comes_first() -> None:
+def test_the_sections_follow_the_process_with_or_without_a_modpack() -> None:
+    """O9 D7 (owner, 2026-10-26): the pack, its scan, installing, bringing its mods; one order."""
     client, fakes = setup(OPERATOR)
+    assert section_order(client.get(f"/servers/{SERVER_ID}").text) == ["modpack", "escaneo", "actualizar", "importar"]
     unlinked(fakes)
-    assert section_order(client.get(f"/servers/{SERVER_ID}").text) == ["modpack", "actualizar", "escaneo", "importar"]
-
-
-def test_with_a_modpack_actualizar_comes_first() -> None:
-    client, _ = setup(OPERATOR)
-    assert section_order(client.get(f"/servers/{SERVER_ID}").text) == ["actualizar", "modpack", "escaneo", "importar"]
+    assert section_order(client.get(f"/servers/{SERVER_ID}").text) == ["modpack", "escaneo", "actualizar", "importar"]
 
 
 def test_the_in_sync_status_does_not_close_itself() -> None:

@@ -15,15 +15,15 @@
 {{ ui.button("Recargar desde el panel", kind="secondary", attrs={"hx-post": "/servers/" ~ server_id ~ "/refresh"}) }}
 {% endcall %}
 
-<div id="server-job" class="space-y-2" aria-live="polite" data-reveal>
-  {% if active_job %}{% set job = active_job %}{% set server_name = server.name %}{% include "activity/_job_row.html" %}{% endif %}
-</div>
-
 {#
-  #server-main holds the sections, never #server-job (the polling row) nor #notices: when a job
-  ends, its finished row sends `job-finished` and this reloads from the page (F19). It does not
-  pass its attributes on (hx-disinherit), so a form inside keeps its own target and swap.
+  #server-main holds the sections, never #notices: when a job ends, its finished row sends
+  `job-finished` and this reloads from the page (F19). Each job answers under its own button (O9
+  D7): #scan-job, #install-job and #import-job are kept as they are through that reload
+  (hx-preserve), so the polling row and a dry run's plan stay. It does not pass its attributes on
+  (hx-disinherit), so a form inside keeps its own target and swap.
 #}
+{% set job_kinds = {"server_scan": "scan-job", "server_import": "import-job"} %}
+{% set active_slot = job_kinds.get(active_job.kind, "install-job") if active_job else none %}
 <div id="server-main" class="space-y-6" hx-get="/servers/{{ server_id }}" hx-select="#server-main" hx-trigger="job-finished from:body" hx-swap="outerHTML" hx-disinherit="*">
   {% with steps=onboarding %}{% include "_onboarding.html" %}{% endwith %}
   {% set differences = (comparison.different_version | length) + (comparison.missing | length) + (comparison.extra | length) + (comparison.unknown | length) if comparison else 0 %}
@@ -43,37 +43,15 @@
     {% endif %}
   </div>
 
-  <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-    <div class="min-w-0 space-y-6 lg:col-span-2">
-      {% call ui.section("Comparación con el build", id="comparacion", help="comparacion") %}
-      {% if comparison %}
-      {% include "servers/_compare.html" %}
-      {% else %}
-      <p class="rounded-xl border border-dashed border-control p-4 text-sm text-muted">{{ compare_note }}</p>
-      {% endif %}
-      {% endcall %}
-    </div>
-
-    {#
-      A server without a modpack has nothing to update yet: Modpack (link it, or create one) comes
-      first, then Actualizar, Escaneo and Importar. A linked server starts with Actualizar.
-    #}
-    {% set modpack_section %}
+  {# The order of the process (O9 D7): the pack, its scan, how it compares, installing, and
+     bringing the server's mods. #}
+  <div class="min-w-0 space-y-6">
       {% call ui.section("Modpack", id="modpack", help="servidor-modpack") %}
       <div class="space-y-3 rounded-xl border border-line bg-raised p-4 text-sm">
         {% with linked=bundle, linked_id=server.bundle_id, oob=False %}{% include "servers/_link_bundle.html" %}{% endwith %}
         {% if not server.bundle_id %}{% include "servers/_new_modpack.html" %}{% endif %}
       </div>
       {% endcall %}
-    {% endset %}
-    <div class="min-w-0 space-y-6">
-      {% if not server.bundle_id %}{{ modpack_section }}{% endif %}
-
-      {% call ui.section("Instalar", id="actualizar", help="actualizar") %}
-      {% include "servers/_update.html" %}
-      {% endcall %}
-
-      {% if server.bundle_id %}{{ modpack_section }}{% endif %}
 
       {% call ui.section("Último escaneo", id="escaneo", help="ultimo-escaneo") %}
       <div class="space-y-3 rounded-xl border border-line bg-raised p-4 text-sm">
@@ -83,7 +61,25 @@
         {% else %}
         <p class="text-muted">Sin escaneo.</p>
         {% endif %}
-        {{ ui.button("Escanear ahora", kind="secondary", attrs={"hx-post": "/servers/" ~ server_id ~ "/scan", "hx-target": "#server-job", "hx-swap": "innerHTML"}) }}
+        {{ ui.button("Escanear ahora", kind="secondary", attrs={"hx-post": "/servers/" ~ server_id ~ "/scan", "hx-target": "#scan-job", "hx-swap": "innerHTML"}) }}
+      </div>
+      <div id="scan-job" class="space-y-2" aria-live="polite" data-reveal hx-preserve>
+        {% if active_slot == "scan-job" %}{% set job = active_job %}{% set server_name = server.name %}{% include "activity/_job_row.html" %}{% endif %}
+      </div>
+      {% endcall %}
+
+      {% call ui.section("Comparación con el build", id="comparacion", help="comparacion") %}
+      {% if comparison %}
+      {% include "servers/_compare.html" %}
+      {% else %}
+      <p class="rounded-xl border border-dashed border-control p-4 text-sm text-muted">{{ compare_note }}</p>
+      {% endif %}
+      {% endcall %}
+
+      {% call ui.section("Instalar", id="actualizar", help="actualizar") %}
+      {% include "servers/_update.html" %}
+      <div id="install-job" class="space-y-2" aria-live="polite" data-reveal hx-preserve>
+        {% if active_slot == "install-job" %}{% set job = active_job %}{% set server_name = server.name %}{% include "activity/_job_row.html" %}{% endif %}
       </div>
       {% endcall %}
 
@@ -115,7 +111,7 @@
         {% if import_reason %}
         {{ ui.button("Traer los mods", disabled_reason=import_reason) }}
         {% else %}
-        {{ ui.button("Traer los mods", attrs={"hx-post": "/servers/" ~ server_id ~ "/import", "hx-target": "#server-job", "hx-swap": "innerHTML"}) }}
+        {{ ui.button("Traer los mods", attrs={"hx-post": "/servers/" ~ server_id ~ "/import", "hx-target": "#import-job", "hx-swap": "innerHTML"}) }}
         {% endif %}
         {% if pending_import and pending_import.candidates %}
         {% with result=pending_import, next_bundle_id=server.bundle_id, pending_only=true %}{% include "servers/_import.html" %}{% endwith %}
@@ -123,8 +119,10 @@
         <div id="import-result"></div>
         {% endif %}
       </div>
+      <div id="import-job" class="space-y-2" aria-live="polite" data-reveal hx-preserve>
+        {% if active_slot == "import-job" %}{% set job = active_job %}{% set server_name = server.name %}{% include "activity/_job_row.html" %}{% endif %}
+      </div>
       {% endcall %}
-    </div>
   </div>
 </div>
 {% endblock %}

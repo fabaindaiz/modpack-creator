@@ -78,7 +78,8 @@ def test_a_server_jobs_result_is_brought_into_view_when_it_arrives() -> None:
     """«Escanear ahora», «Simular» and «Importar» answer at the top of the page, far from the button
     (O9 user-walk, A13): the place says so and app.js scrolls to it on that swap."""
     page = (ROOT / "src/web/templates/servers/detail.html").read_text()
-    assert re.search(r'id="server-job"[^>]*data-reveal', page)
+    for slot in ("scan-job", "install-job", "import-job"):  # under each button (O9 D7)
+        assert re.search(rf'id="{slot}"[^>]*data-reveal', page)
     js = (ROOT / "src/web/static/app.js").read_text()
     assert "[data-reveal]" in js and "scrollIntoView" in js
 

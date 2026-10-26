@@ -555,24 +555,21 @@ def check_jobs_in_place(browser: Any, base: str, out: Path, ids: dict[str, str],
 
 def check_job_reveal(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
                      errors: list[str]) -> dict[str, dict[str, Any]]:
-    """«Escanear ahora» is far below the top of the server's page, where its job answers (W21, A13):
-    the answer is brought into view when it arrives."""
+    """«Escanear ahora» answers under itself (O9 D7) and the answer is brought into view (A13)."""
     response = page.goto(base + f"/servers/{ids['server_new']}")
     page.wait_for_load_state("networkidle")
-    button = page.locator("button:has-text('Escanear ahora')")
+    button = page.locator("#escaneo button:has-text('Escanear ahora')")
     button.scroll_into_view_if_needed()
     problems: list[str] = []
-    if page.evaluate("document.getElementById('server-job').getBoundingClientRect().bottom > 0"):
-        problems.append("el lugar del trabajo ya estaba a la vista: el chequeo no prueba nada")
     button.click()
-    page.wait_for_selector("#server-job > *", state="attached", timeout=10_000)
+    page.wait_for_selector("#scan-job > *", state="attached", timeout=10_000)
     page.wait_for_timeout(500)
     seen = page.evaluate("""() => {
-        const box = document.getElementById('server-job').getBoundingClientRect();
+        const box = document.getElementById('scan-job').getBoundingClientRect();
         return box.top < window.innerHeight && box.bottom > 0;
     }""")
     if not seen:
-        problems.append("la respuesta del trabajo llegó fuera de la vista")
+        problems.append("la respuesta del escaneo llegó fuera de la vista")
     key = f"{prefix}-server-job-reveal"
     page.screenshot(path=str(out / f"{key}.png"))
     return {key: _report(response, errors, problems)}
