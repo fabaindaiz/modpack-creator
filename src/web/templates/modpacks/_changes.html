@@ -24,6 +24,17 @@
       {{ numbers.get(change.from_version, change.from_version) if change.from_version else "—" }} → {{ numbers.get(change.to_version, change.to_version) if change.to_version else "—" }}
     </span>
   </div>
+  {# What the notes say of the version that arrives (O8 tanda 2, T6), and its history. #}
+  {% set said = preview.notes.get(change.project_id, []) if preview.notes is defined and preview.notes else [] %}
+  {% if said or pack %}
+  <div class="space-y-1 text-xs" data-change-notes>
+    {% for found in said %}
+    <p class="flex flex-wrap items-center gap-1.5">{{ ui.verdict(found.verdict) }} <span class="break-words">{{ found.text }}</span>
+      <span class="text-muted">{% if found.server_name %}{{ found.server_name }}, {% endif %}{{ ui.when(found.at) }}</span></p>
+    {% endfor %}
+    <a href="/mods/{{ change.project_id | urlencode }}?pack={{ pack }}" class="text-link hover:underline">Historia →</a>
+  </div>
+  {% endif %}
   {# Why it is there, between two builds (O8 B4). #}
   {% set why = preview.reasons.get(change.project_id) if preview.reasons is defined and preview.reasons else None %}
   {% if why %}

@@ -5,7 +5,8 @@
 {# Each side named as in the builds' list: a test and its name (O8 B1, B2). #}
 {% macro side(number) -%}
 {%- set b = sides.get(number) -%}
-Build {{ number }}{% if b and b.test %} · prueba{% endif %}{% if b and b.name %} · «{{ b.name }}»{% endif %}{% if bundle.recommended_build == number %} · Recomendado{% endif %}
+Build {{ number }}{% if b and b.test %} · prueba{% endif %}{% if b and b.name %} · «{{ b.name }}»{% endif %}{% if bundle.recommended_build == number %} · Recomendado{% endif %}{% if b and b.stable %} · estable{% endif %}
+{%- set said = preview.verdicts.get(number) if preview.verdicts is defined else None %}{% if said %} · {{ ui.VERDICTS[said[0]][0] }} {{ said[1] }}{% endif %}
 {%- endmacro %}
 
 {% block content %}

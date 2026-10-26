@@ -3421,3 +3421,24 @@ def test_the_history_suggests_a_version_and_its_dialog_says_why() -> None:
     assert 'name="version_id" value="v164"' in dialog and 'name="confirm_downgrade" value="1"' in dialog
     modpack.suggestion = Suggested(version_id="v162", version_number="1.6.2", source="note", why="nota de Eddie")
     assert "Fijar la última que funcionó (1.6.2)" in client.get(f"/modpacks/{BUNDLE_ID}/projects/P1/historia", headers=HTMX).text
+
+
+def test_compare_shows_each_builds_verdict_and_each_versions_notes() -> None:
+    """T6 (d-7985ee-16be41): what the notes say, in the header and next to each change."""
+    client, modpack, _ = setup()
+    modpack.builds = [build(2, test=True), build(1, stable=True)]
+
+    async def compare(bundle_id: str, de: int, a: int) -> Any:
+        shown = preview()
+        shown.verdicts = {1: ("works", 2), 2: ("fails", 1)}
+        shown.notes = {"P1": [note("fails", "falla con shaders", project_id="P1", version_id="v-p1", server_name="Survival")]}
+        return shown
+
+    modpack.compare_builds = compare  # type: ignore[attr-defined]
+    text = client.get(f"/modpacks/{BUNDLE_ID}/builds/compare", params={"de": 1, "a": 2}).text
+    header = visible(text.split("</h1>")[0])
+    assert "estable" in header and "✔ 2" in header and "✘ 1" in header
+    change = text[text.index('data-change="P1"'):]
+    change = change[:change.index("</li>")]
+    assert "falla con shaders" in change and f'href="/mods/P1?pack={BUNDLE_ID}"' in change and "Historia" in change
+

@@ -105,6 +105,9 @@ class HistoryPage(BaseModel):
     more: bool
 
 
+# The notes shown next to each change of a comparison (T6).
+COMPARE_NOTES = 2
+
 # Entries per page of a mod's history (T3).
 HISTORY_PAGE = 20
 
@@ -144,6 +147,9 @@ class ChangePreview(BaseModel):
     request: list[RequestChange] = []
     reasons: dict[str, ChangeReason] = {}
     summary: Optional[ChangeSummary] = None
+    # What the notes say (O8 tanda 2, T6): each build's verdict, and the newest notes of each arriving version.
+    verdicts: dict[int, tuple[str, int]] = {}
+    notes: dict[str, list[Any]] = {}
 
     @property
     def downgrades(self) -> list[str]:
@@ -2385,7 +2391,14 @@ class ModpackService():
         moved = {c.project_id for c in [*preview.changes.added, *preview.changes.changed, *preview.changes.removed]}
         reasons = {e.project_id: change_reason(e, before.request.pins) for e in before.lock.entries if e.project_id in moved}
         reasons |= {e.project_id: change_reason(e, after.request.pins) for e in after.lock.entries if e.project_id in moved}
-        return preview.model_copy(update={"request": request_changes(before.request, after.request, numbers),
+        verdicts = {n: v for n, v in (await self.build_verdicts(bundle_id)).items() if n in (from_number, to_number)}
+        arriving = sorted({c.to_version for c in [*preview.changes.added, *preview.changes.changed] if c.to_version})
+        notes: dict[str, list[Any]] = {}
+        for found in await self.noteDB.find(bundle_id, version_ids=arriving) if arriving else []:
+            if found.project_id and len(notes.setdefault(found.project_id, [])) < COMPARE_NOTES:
+                notes[found.project_id].append(found)
+        return preview.model_copy(update={"verdicts": verdicts, "notes": notes,
+                                          "request": request_changes(before.request, after.request, numbers),
                                           "reasons": reasons, "summary": summary_of(preview.changes, {**preview.directions, **{p: "up" for p in preview.up}})})
 
     async def update_preview(self, updates: list[AvailableUpdate]) -> ChangePreview:
