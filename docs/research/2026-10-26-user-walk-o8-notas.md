@@ -79,6 +79,8 @@ Salió y el dueño perdió trabajo o confió en una historia falsa. Por qué:
 - **P4** (N11): el changelog queda en el catálogo (corrige la letra de D12; menos requests).
 - **P5** (N12): la historia sobrevive a quitar y volver a agregar el mod; la fijación no vuelve.
 
+Y la forma, antes del plan (d-7985ee-16be41): una página del build (T1); la historia en la tarjeta y en la ficha (T2), solo con lo que cambió, de a 20 (T3); «estable» marca un build (T3b, corregido por el dueño); «Recomendar el último estable» y «Fijar la versión del último build estable» (T4); «estable» y el veredicto en la lista (T5); las notas en la comparación (T6).
+
 Lo demás lo decide el agente como dice «Fin», y cada caso se vuelve un test que falla primero en el plan de la
 tanda 2.
 
