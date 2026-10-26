@@ -46,6 +46,9 @@ class FakeJobs:
     async def active_of_kind(self, kind: str) -> list[Job]:
         return [j for j in self.jobs if j.kind == kind and j.active]
 
+    async def last_for_key(self, key: str) -> Optional[Job]:
+        return next((j for j in reversed(self.jobs) if j.key == key), None)
+
 
 class FakeContext:
     def __init__(self, job: Job) -> None:
@@ -231,3 +234,28 @@ def test_the_app_sweeps_at_start_and_stops_when_asked(tmp_path: Path) -> None:
 
     asyncio.run(scenario())
     assert importer.uploads.names() == []
+
+
+def test_an_import_into_a_pack_names_its_pack_so_the_bar_links_there(tmp_path: Path) -> None:
+    """«Ver detalle» of an import goes to its pack when it has one (O9 user-walk, A1): `bundle_id` in
+    its payload, as the pack's other jobs. A new pack's import has none yet: its own page."""
+    importer, jobs, _ = service(tmp_path)
+    into = queued(importer, mrpack(), into="b1")
+    assert into.payload["bundle_id"] == "b1" and into.payload["into"] == "b1"
+    jobs.jobs.clear()
+    new = queued(importer, mrpack())
+    assert "bundle_id" not in new.payload
+
+
+def test_the_persons_last_import_is_the_newest_of_their_key(tmp_path: Path) -> None:
+    """The import page shows the import in progress or the last one (O9 user-walk, A2): the person's
+    key holds both, one at a time."""
+    importer, jobs, _ = service(tmp_path)
+    assert asyncio.run(importer.last_import(EDITOR)) is None
+    job = queued(importer, mrpack())
+    found = asyncio.run(importer.last_import(EDITOR))
+    assert found is not None and found[0].id == job.id and found[1] is None
+    job.status, job.active = "done", False
+    job.checkpoint["import"] = {"bundle_id": "b9", "created": True, "source": "Aventura 2.0"}
+    found = asyncio.run(importer.last_import(EDITOR))
+    assert found is not None and found[1] is not None and found[1].bundle_id == "b9"

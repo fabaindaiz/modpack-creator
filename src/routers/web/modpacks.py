@@ -419,9 +419,11 @@ async def modpack_import_page(
         importService: ModpackImportService = Depends(Provide[Dependences.modpackImportService]),
         ):
     """Import a modpack as a new one: an uploaded .mrpack, Prism or CurseForge zip, a CurseForge
-    profile code (with the owner's key, T5), or one published on Modrinth."""
+    profile code (with the owner's key, T5), or one published on Modrinth. The person's import in
+    progress, or their last one, shows in the form's result (O9 user-walk, A2)."""
+    last = await importService.last_import(actor)
     return render(request, "modpacks/import.html", actor, curseforge=importService.curseforge_enabled,
-                  nav_active="modpacks")
+                  nav_active="modpacks", last_job=last[0] if last else None, last_report=last[1] if last else None)
 
 @router.post("/modpacks/importar")
 @inject

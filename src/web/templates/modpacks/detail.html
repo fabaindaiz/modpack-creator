@@ -29,10 +29,11 @@
       <div>
         <label for="search-q" class="text-sm font-medium">Buscar en Modrinth</label>
         <input id="search-q" name="q" type="search" autocomplete="off" maxlength="100" placeholder="Nombre de un mod, shader o pack"
-          hx-get="/modpacks/{{ bundle_id }}/search" hx-trigger="input changed delay:300ms" hx-target="#search-results"
+          hx-get="/modpacks/{{ bundle_id }}/search" hx-trigger="input changed delay:300ms" hx-target="#search-results" hx-indicator="#search-loading"
           class="mt-1 {{ FIELD }}">
         <p class="mt-1 text-xs text-muted">Solo resultados para {{ bundle.version }} y {{ bundle.loader.value }}.</p>
       </div>
+      <p id="search-loading" class="htmx-indicator text-xs text-muted" role="status">Buscando en Modrinth…</p>
       <div id="search-results" aria-live="polite" class="max-h-96 overflow-y-auto"></div>
       <form hx-post="/modpacks/{{ bundle_id }}/projects" hx-target="#mods" hx-swap="outerHTML" class="flex flex-wrap items-end gap-2 border-t border-line-soft pt-3">
         <div class="min-w-0 flex-1">
@@ -69,7 +70,8 @@
     {% endif %}
 
     {% call ui.section("Contenido del pack", id="import-section", help="contenido") %}
-    <details class="space-y-3">
+    {# Kept as it is when #pack-main reloads (O9 A3): importing starts a job, which reloads it. #}
+    <details id="import-details" hx-preserve class="space-y-3">
       <summary class="cursor-pointer text-sm font-medium">Reemplazar con un .mrpack o un zip de Prism…</summary>
       <p class="mt-2 text-sm text-muted">Los mods del pack se reemplazan con los del archivo; lo que agregaste a mano se queda.</p>
       <div class="mt-3">{% with into=bundle_id %}{% include "modpacks/_import_form.html" %}{% endwith %}</div>

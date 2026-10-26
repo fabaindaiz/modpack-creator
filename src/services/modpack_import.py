@@ -82,6 +82,16 @@ class ImportReport:
     offered: list[str] = field(default_factory=list)
 
 
+def _import_key(actor: Actor) -> str:
+    """One import at a time per person; the identity is iss + sub (AGENTS.md)."""
+    return f"import:{actor.iss}|{actor.sub}"
+
+
+def _report_of(job: Job) -> Optional[ImportReport]:
+    saved = job.checkpoint.get("import")
+    return ImportReport(**saved) if saved else None
+
+
 class ModpackImportService():
     def __init__(self,
             modpackService: ModpackService,
@@ -189,12 +199,20 @@ class ModpackImportService():
         job = await self.jobDB.get(job_id)
         if job.kind != "modpack_import":
             raise HTTP_404_NOT_FOUND(f"Job '{job_id}' is not an import")
-        saved = job.checkpoint.get("import")
-        return job, ImportReport(**saved) if saved else None
+        return job, _report_of(job)
+
+    async def last_import(self, actor: Actor) -> Optional[tuple[Job, Optional[ImportReport]]]:
+        """The person's import in progress or, if none, their last one, with its report once done:
+        the import page shows it, so a reload does not lose it (O9 user-walk, A2)."""
+        job = await self.jobDB.last_for_key(_import_key(actor))
+        return (job, _report_of(job)) if job is not None else None
 
     async def _job(self, actor: Actor, payload: dict[str, Any]) -> tuple[Job, bool]:
-        """The person's import job: a new one (True), or the one already queued or running (False)."""
-        key = f"import:{actor.iss}|{actor.sub}"  # the identity is iss + sub (AGENTS.md)
+        """The person's import job: a new one (True), or the one already queued or running (False).
+        Into a pack, it names it as `bundle_id`, as the pack's other jobs (O9 user-walk, A1)."""
+        key = _import_key(actor)
+        if payload.get("into") is not None:
+            payload = {**payload, "bundle_id": payload["into"]}
         try:
             return await self.jobDB.enqueue("modpack_import", key=key, payload=payload, requested_by=actor.ref(),
                                             max_attempts=1), True

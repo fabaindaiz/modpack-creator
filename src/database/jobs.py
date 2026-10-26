@@ -35,6 +35,12 @@ class JobDatabase():
         """The active jobs holding these keys, oldest first, for a banner: without what it never shows."""
         return await self._polled({"key": {"$in": keys}, "active": True})
 
+    async def active_for_pack(self, keys: list[str], bundle_id: str) -> list[Job]:
+        """`active_for_keys` and the imports into this pack, which hold their person's key (O9
+        user-walk, A3)."""
+        return await self._polled({"active": True, "$or": [{"key": {"$in": keys}},
+                                                           {"kind": "modpack_import", "payload.into": bundle_id}]})
+
     async def active_for_requester(self, iss: str, sub: str) -> list[Job]:
         """The active jobs this person asked for, oldest first, for the bar."""
         return await self._polled({"active": True, "requested_by.iss": iss, "requested_by.sub": sub})
@@ -47,7 +53,8 @@ class JobDatabase():
     async def _polled(query: dict[str, Any]) -> list[Job]:
         """Jobs for a page that polls every few seconds: without the read file an import carries
         (`payload.content`) nor the checkpoints (code review, 2026-10-09)."""
-        cursor = Job.get_pymongo_collection().find(query, {"payload.content": 0, "checkpoint": 0}).sort("created_at", 1)
+        cursor = Job.get_pymongo_collection().find(query, {"payload.content": 0, "checkpoint": 0}).sort(
+            [("created_at", 1), ("_id", 1)])  # two jobs of the same millisecond, in the order they came
         return [Job.model_validate(document) for document in await cursor.to_list(None)]
 
     async def last_of_kind(self, kind: str, key: str) -> Optional[Job]:

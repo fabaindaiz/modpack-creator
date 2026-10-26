@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def tag_with(text: str, needle: str) -> str:
     """The opening tag that holds `needle`."""
-    found = re.search(r"<(a|button|select|p)\b[^>]*" + re.escape(needle) + r"[^>]*>", text)
+    found = re.search(r"<(a|button|select|p|input)\b[^>]*" + re.escape(needle) + r"[^>]*>", text)
     assert found, f"no tag with {needle!r}"
     return found.group(0)
 
@@ -79,3 +79,30 @@ def test_a_server_jobs_result_is_brought_into_view_when_it_arrives() -> None:
     assert re.search(r'id="server-job"[^>]*data-reveal', page)
     js = (ROOT / "src/web/static/app.js").read_text()
     assert "[data-reveal]" in js and "scrollIntoView" in js
+
+
+def test_the_live_search_says_it_is_searching() -> None:
+    """With Modrinth slow nothing showed for seconds (O9 user-walk, W5, A12): htmx's indicator, as
+    the update preview."""
+    client, _, _ = modpacks_setup()
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    field = tag_with(text, 'id="search-q"')
+    assert 'hx-indicator="#search-loading"' in field
+    indicator = tag_with(text, 'id="search-loading"')
+    assert 'class="htmx-indicator' in indicator and 'role="status"' in indicator
+    after = text[text.index('id="search-loading"'):]
+    assert after[after.index(">") + 1:].startswith("Buscando en Modrinth…")
+
+
+def test_an_upload_says_how_far_it_is() -> None:
+    """A Prism zip of up to 1 GiB took minutes with a disabled button and nothing else (O9 user-walk,
+    W11, A11): the button says the share sent, from htmx's upload progress."""
+    from tests.test_web_import import setup as import_setup
+
+    client, _ = import_setup()
+    text = client.get("/modpacks/importar").text
+    form = text[text.index('hx-encoding="multipart/form-data"'):]
+    form = form[:form.index("</form>")]
+    assert 'data-progress="Subiendo…"' in tag_with(form, 'type="submit"')
+    js = (ROOT / "src/web/static/app.js").read_text()
+    assert "htmx:xhr:progress" in js and "button[data-progress]" in js

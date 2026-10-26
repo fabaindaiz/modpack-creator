@@ -528,9 +528,86 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
                                 report.update(check_problem_actions(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                                 report.update(check_row_selects(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                         ctx.close()
+            report.update(check_jobs_in_place(browser, base, out, ids, cookies))
         finally:
             browser.close()
     return report
+
+
+def check_jobs_in_place(browser: Any, base: str, out: Path, ids: dict[str, str],
+                        cookies: dict[str, str]) -> dict[str, dict[str, Any]]:
+    """What starts a job keeps its answer where the person sees it (O9 user-walk): last and once,
+    at 360 px, since both queue jobs that change what the other contexts capture."""
+    ctx = browser.new_context(viewport={"width": 360, "height": 900}, color_scheme="light")
+    ctx.add_cookies([{"name": "session", "value": cookies["operator"], "url": base}])
+    ctx.route("https://cdn.modrinth.com/**", lambda route: route.fulfill(status=200, content_type="image/png", body=PNG))
+    ctx.add_init_script(CSP_LISTENER)
+    page = ctx.new_page()
+    errors: list[str] = []
+    page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+    try:
+        report = check_import_into_pack(page, base, out, ids, "operator-light-360", errors)
+        report.update(check_job_reveal(page, base, out, ids, "operator-light-360", errors))
+    finally:
+        ctx.close()
+    return report
+
+
+def check_import_into_pack(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
+                           errors: list[str]) -> dict[str, dict[str, Any]]:
+    """Importing into a pack starts a job, and the job reloads #pack-main, where the form is (W10,
+    A3): the import's <details> stays open with its progress or its answer."""
+    pack = ids["empty"]
+    response = page.goto(base + f"/modpacks/{pack}")
+    page.wait_for_load_state("networkidle")
+    page.locator(f"#import-section details:has(#import-ref-{pack}) > summary").click()
+    page.evaluate("document.getElementById('pack-main').dataset.old = '1'")
+    page.fill(f"#import-ref-{pack}", "aventura-pack")
+    page.locator(f"form:has(#import-ref-{pack}) button[type=submit]").click()
+    problems: list[str] = []
+    try:
+        page.wait_for_selector("#pack-main:not([data-old])", state="attached", timeout=10_000)
+    except Exception:
+        problems.append("#pack-main no se recargó al empezar la importación")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(500)
+    state = page.evaluate("""() => {
+        const result = document.getElementById('import-result');
+        const details = result && result.closest('details');
+        return {open: !!details && details.open, shown: !!result && result.textContent.trim().length > 0};
+    }""")
+    if not state["open"]:
+        problems.append("la importación se cerró al recargarse el pack")
+    if not state["shown"]:
+        problems.append("la importación perdió su avance al recargarse el pack")
+    key = f"{prefix}-import-into-pack"
+    page.screenshot(path=str(out / f"{key}.png"))
+    return {key: _report(response, errors, problems)}
+
+
+def check_job_reveal(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
+                     errors: list[str]) -> dict[str, dict[str, Any]]:
+    """«Escanear ahora» is far below the top of the server's page, where its job answers (W21, A13):
+    the answer is brought into view when it arrives."""
+    response = page.goto(base + f"/servers/{ids['server_new']}")
+    page.wait_for_load_state("networkidle")
+    button = page.locator("button:has-text('Escanear ahora')")
+    button.scroll_into_view_if_needed()
+    problems: list[str] = []
+    if page.evaluate("document.getElementById('server-job').getBoundingClientRect().bottom > 0"):
+        problems.append("el lugar del trabajo ya estaba a la vista: el chequeo no prueba nada")
+    button.click()
+    page.wait_for_selector("#server-job > *", state="attached", timeout=10_000)
+    page.wait_for_timeout(500)
+    seen = page.evaluate("""() => {
+        const box = document.getElementById('server-job').getBoundingClientRect();
+        return box.top < window.innerHeight && box.bottom > 0;
+    }""")
+    if not seen:
+        problems.append("la respuesta del trabajo llegó fuera de la vista")
+    key = f"{prefix}-server-job-reveal"
+    page.screenshot(path=str(out / f"{key}.png"))
+    return {key: _report(response, errors, problems)}
 
 
 def _report(response: Any, errors: list[str], problems: list[str]) -> dict[str, Any]:

@@ -426,3 +426,19 @@ def test_the_polled_job_lists_leave_out_payload_content_and_checkpoints(mongo: M
     for found in (mine, keyed):
         assert "content" not in found.payload and found.payload["source"] == "Pack 1.0"
         assert found.checkpoint == {} and found.kind == "modpack_import"
+
+
+def test_a_packs_active_jobs_include_an_import_into_it(mongo: MongoRunner) -> None:
+    """Importing into a pack is a job of the person's key (O9 user-walk, A3): the pack's banner finds
+    it by its `into`, and not another pack's import nor a finished one."""
+    async def scenario() -> list[str]:
+        jobs = JobDatabase()
+        await jobs.enqueue("catalog_refresh", key="catalog:b1", payload={"bundle_id": "b1"})
+        await jobs.enqueue("modpack_import", key="import:a", payload={"ref": "x", "into": "b1"}, requested_by=EDITOR.ref())
+        await jobs.enqueue("modpack_import", key="import:b", payload={"ref": "y", "into": "b2"}, requested_by=EDITOR.ref())
+        await jobs.enqueue("modpack_import", key="import:c", payload={"ref": "z", "into": None}, requested_by=EDITOR.ref())
+        done = await jobs.enqueue("modpack_import", key="import:d", payload={"ref": "w", "into": "b1"})
+        await Job.get_pymongo_collection().update_one({"_id": done.id}, {"$set": {"active": False, "status": "done"}})
+        return [str(j.key) for j in await jobs.active_for_pack(["catalog:b1", "build:b1"], "b1")]
+
+    assert mongo(scenario) == ["catalog:b1", "import:a"]

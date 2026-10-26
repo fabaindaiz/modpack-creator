@@ -1471,8 +1471,10 @@ class ModpackService():
             return active
 
     async def active_jobs(self, bundle_id: str) -> list[Job]:
-        """The pack's queued or running jobs: its catalog, its build and its update check (E8)."""
-        return await self.jobDB.active_for_keys([_catalog_key(bundle_id), f"build:{bundle_id}", f"bundle:{bundle_id}"])
+        """The pack's queued or running jobs: its catalog, its build, its update check (E8) and an
+        import into it (O9 user-walk, A3)."""
+        return await self.jobDB.active_for_pack([_catalog_key(bundle_id), f"build:{bundle_id}", f"bundle:{bundle_id}"],
+                                                bundle_id)
 
     def handlers(self) -> dict[str, Handler]:
         return {"catalog_refresh": self._catalog_run, "build_create": self._build_run}

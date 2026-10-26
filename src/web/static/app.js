@@ -410,6 +410,31 @@
     }, 0);
   });
 
+  // An upload says how far it is (O9 user-walk, A11): a Prism zip of up to 1 GiB takes minutes. Its
+  // button reads its `data-progress` text and the share sent; htmx gives it back when it ends.
+  document.addEventListener('htmx:xhr:progress', function (evt) {
+    var form = evt.detail.elt;
+    var button = form instanceof Element ? form.querySelector('button[data-progress]') : null;
+    if (!button || !evt.detail.lengthComputable || !evt.detail.total) {
+      return;
+    }
+    if (!button.hasAttribute('data-progress-from')) {
+      button.setAttribute('data-progress-from', button.innerHTML);
+    }
+    button.textContent = button.getAttribute('data-progress') + ' ' +
+      Math.floor(100 * evt.detail.loaded / evt.detail.total) + ' %';
+    button.setAttribute('aria-busy', 'true');
+  });
+  document.addEventListener('htmx:afterRequest', function (evt) {
+    var form = evt.detail.elt;
+    var button = form instanceof Element ? form.querySelector('button[data-progress-from]') : null;
+    if (button) {
+      button.innerHTML = button.getAttribute('data-progress-from');
+      button.removeAttribute('data-progress-from');
+      button.removeAttribute('aria-busy');
+    }
+  });
+
   // A link or a plain form's button to a page that waits for Modrinth (a pack's updates, comparing
   // two builds: up to ~15 s) says it is loading once clicked (O6): its `data-loading` text, busy.
   function showLoading(element) {

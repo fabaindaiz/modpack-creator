@@ -55,6 +55,13 @@ class FakeImport:
     async def import_status(self, job_id: str) -> tuple[Job, Optional[ImportReport]]:
         return self.job, self.report if self.job.status == "done" else None
 
+    last: bool = False
+
+    async def last_import(self, actor: Actor) -> Optional[tuple[Job, Optional[ImportReport]]]:
+        if not self.last:
+            return None
+        return self.job, self.report if self.job.status == "done" else None
+
 
 @pytest.fixture(autouse=True)
 def reset_overrides() -> Any:
@@ -318,3 +325,29 @@ def test_v1_takes_a_curseforge_zip_and_a_profile_code_as_jobs() -> None:
     coded = client.post("/v1/modpack/import/curseforge", params={"code": "ABCD1234"})
     assert zipped.status_code == coded.status_code == 202
     assert fake.calls == [("import_upload", data, "pack.zip", EDITOR, None), ("import_curseforge_code", "ABCD1234", EDITOR, None)]
+
+
+def test_the_import_page_shows_the_import_in_progress_and_then_the_last_report() -> None:
+    """The report lived only in the fragment that polls (O9 user-walk, W8, A2): reloading or coming
+    back lost it. The page shows the person's import in progress, or the last one's report."""
+    client, fake = setup()
+    page = client.get("/modpacks/importar").text
+    assert "every 2s" not in page and "data-import-report" not in page
+    fake.last = True
+    page = client.get("/modpacks/importar").text
+    result = page[page.index('id="import-result"'):]
+    assert f'hx-get="/modpacks/importar/{fake.job.id}"' in result and 'hx-trigger="every 2s"' in result
+    fake.job.status, fake.job.active = "done", False
+    shown = " ".join(visible(client.get("/modpacks/importar").text).split())
+    assert "Importado: 3 mods de Aventura 2.0" in shown
+
+
+def test_the_packs_import_keeps_its_progress_when_the_pack_reloads() -> None:
+    """Importing into a pack starts a job, and the pack reloads #pack-main, where its form is (O9
+    user-walk, W10, A3): the import keeps its place (`hx-preserve`), open and with its progress."""
+    client, _ = setup()
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    details = text[text.rindex("<details", 0, text.index('id="import-details"')):]
+    tag = details[:details.index(">") + 1]
+    assert "hx-preserve" in tag
+    assert 'id="import-ref-' in details[:details.index("</details>")]
