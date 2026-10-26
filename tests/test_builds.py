@@ -494,3 +494,27 @@ def test_starring_twice_stays_starred(mongo: MongoRunner) -> None:
         return twice, (await service.build_star(bundle_id, 1, False, EDITOR)).starred
 
     assert mongo(scenario) == (True, False)
+
+
+# «Estable» (O8 tanda 2, T3b of d-7985ee-16be41): a mark of a build, apart from its star and the recommended one.
+
+
+def test_a_build_is_marked_stable_and_unmarked(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[bool, bool, list[str]]:
+        service, bundle_id = await _normal_test_normal()
+        service.audit = audit = RecordingAudit()
+        marked = (await service.build_stable(bundle_id, 1, True, EDITOR)).stable
+        unmarked = (await service.build_stable(bundle_id, 1, False, EDITOR)).stable
+        return marked, unmarked, [e[0] for e in audit.events]
+
+    assert mongo(scenario) == (True, False, ["build.stable", "build.stable"])
+
+
+def test_a_test_is_approved_before_stable(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[int, Any, bool]:
+        service, bundle_id = await _normal_test_normal()
+        with pytest.raises(HTTPException) as refused:
+            await service.build_stable(bundle_id, 2, True, EDITOR)
+        return refused.value.status_code, refused.value.detail, (await service.build_get(bundle_id, 2)).stable
+
+    assert mongo(scenario) == (409, "Aprueba la prueba antes de marcarla estable.", False)

@@ -2166,6 +2166,15 @@ class ModpackService():
         await self.audit.record(actor, "build.name", _bundle(bundle_id), {"number": number, "name": build.name})
         return build
 
+    async def build_stable(self, bundle_id: str, number: int, stable: bool, actor: Actor) -> ModpackBuild:
+        """Mark a build «estable», or take the mark away (O8 tanda 2, T3b of d-7985ee-16be41). A test is
+        approved first, as for recommending it (409)."""
+        if stable and (await self.modpackDB.build_get(bundle_id, number)).test:
+            raise HTTP_409_CONFLICT("Aprueba la prueba antes de marcarla estable.")
+        build = await self.modpackDB.build_set(bundle_id, number, {"stable": stable})
+        await self.audit.record(actor, "build.stable", _bundle(bundle_id), {"number": number, "stable": stable})
+        return build
+
     async def build_star(self, bundle_id: str, number: int, starred: bool, actor: Actor) -> ModpackBuild:
         """Star a build or take its star away (O8 B3): the state is said, never toggled (user-walk W14)."""
         build = await self.modpackDB.build_set(bundle_id, number, {"starred": starred})

@@ -10,9 +10,9 @@ from src.model.modpack import ModpackBuild
 
 def builds(*numbers: int, **marks: Any) -> list[ModpackBuild]:
     """Builds of one pack, newest first as `build_find` gives them; `tests` and `starred` are sets of numbers."""
-    tests, starred = marks.get("tests", set()), marks.get("starred", set())
+    tests, starred, stable = marks.get("tests", set()), marks.get("starred", set()), marks.get("stable", set())
     return [ModpackBuild.model_construct(bundle_id=PydanticObjectId(), number=n, created_at=datetime(2026, 10, 1, tzinfo=timezone.utc),
-                                         test=n in tests, starred=n in starred, name=None)
+                                         test=n in tests, starred=n in starred, name=None, stable=n in stable)
             for n in sorted(numbers, reverse=True)]
 
 
@@ -58,3 +58,9 @@ def test_only_starred_shows_the_starred_and_folds_the_rest() -> None:
 def test_two_hundred_builds_fold_all_but_the_shown() -> None:
     view = builds_view(builds(*range(1, 201)), recommended=None, latest=200, installed=set(), starred_only=False)
     assert numbers(view.shown) == [200, 199, 198] and len(view.folded) == 197
+
+
+def test_a_stable_build_never_folds() -> None:
+    """T3b (d-7985ee-16be41): «Recomendar el último estable» reads it from the list."""
+    view = builds_view(builds(*range(1, 11), stable={2}), recommended=None, latest=10, installed=set(), starred_only=False)
+    assert 2 in numbers(view.shown)

@@ -29,6 +29,7 @@ ACTIONS: dict[str, tuple[str, str]] = {
     "build.approve": ("Aprobó un build de prueba", "Builds"),
     "build.name": ("Nombró un build", "Builds"),
     "build.star": ("Destacó un build", "Builds"),
+    "build.stable": ("Marcó un build estable", "Builds"),
     "replacement.set": ("Creó un reemplazo", "Reemplazos"),
     "replacement.delete": ("Borró un reemplazo", "Reemplazos"),
     "server.create": ("Creó un servidor", "Servidores"),

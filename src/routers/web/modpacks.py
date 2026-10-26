@@ -1207,6 +1207,19 @@ async def build_name_set(
     await modpackService.build_name(bundle_id, number, name if isinstance(name, str) else None, actor)
     return await _builds(request, actor, modpackService, bundle_id)
 
+@router.post("/modpacks/{bundle_id}/builds/{number}/estable")
+@inject
+async def build_stable(
+        bundle_id: str,
+        number: int,
+        request: Request,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        ):
+    """Mark a build «estable» or take the mark away (T3b): `estado` is «si» or «no», never a toggle. #builds."""
+    await modpackService.build_stable(bundle_id, number, (await request.form()).get("estado") == "si", actor)
+    return await _builds(request, actor, modpackService, bundle_id)
+
 @router.post("/modpacks/{bundle_id}/builds/{number}/destacar")
 @inject
 async def build_star(

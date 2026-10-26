@@ -198,6 +198,7 @@ class BuildPatch(BaseModel):
     and its star. Nothing it froze."""
     name: Optional[str] = None
     starred: Optional[bool] = None
+    stable: Optional[bool] = None
 
 
 @router.patch("/modpack/{id}/build/{number}", response_model=ModpackBuild)
@@ -212,12 +213,14 @@ async def build_patch(
     """Name or star a build; a field left out is left as it is."""
     sent = patch.model_fields_set
     if not sent:
-        raise HTTP_422_UNPROCESSABLE_ENTITY("Send `name`, `starred` or both")
+        raise HTTP_422_UNPROCESSABLE_ENTITY("Send `name`, `starred`, `stable` or several")
     build = await modpack.build_get(bundle_id=id, number=number)
     if "name" in sent:
         build = await modpack.build_name(id, number, patch.name, actor)
     if "starred" in sent and patch.starred is not None:
         build = await modpack.build_star(id, number, patch.starred, actor)
+    if "stable" in sent and patch.stable is not None:
+        build = await modpack.build_stable(id, number, patch.stable, actor)
     return build
 
 @router.put("/modpack/{id}/recommended/{number}", response_model=ModpackBundle)

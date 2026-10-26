@@ -49,7 +49,7 @@ def bundle(projects: Optional[list[PackProject]] = None, decisions: Optional[dic
 
 def build(number: int, **fields: Any) -> ModpackBuild:
     return ModpackBuild.model_construct(id=PydanticObjectId(), bundle_id=BUNDLE_ID, number=number, created_at=T0,
-                                        lock=lock(), loader_version="0.16", **{"test": False, "name": None, "starred": False, **fields})
+                                        lock=lock(), loader_version="0.16", **{"test": False, "name": None, "starred": False, "stable": False, **fields})
 
 
 def entry(project_id: str, server: str = "include", project_type: str = "mod") -> LockEntry:
@@ -336,6 +336,10 @@ class FakeModpack:
 
     async def build_name(self, bundle_id: str, number: int, name: Optional[str], actor: Actor) -> ModpackBuild:
         self._record("build_name", bundle_id, number, name, actor)
+        return self.builds[0]
+
+    async def build_stable(self, bundle_id: str, number: int, stable: bool, actor: Actor) -> ModpackBuild:
+        self._record("build_stable", bundle_id, number, stable, actor)
         return self.builds[0]
 
     async def build_star(self, bundle_id: str, number: int, starred: bool, actor: Actor) -> ModpackBuild:
@@ -3246,3 +3250,17 @@ def test_the_dialog_of_a_blocked_test_job_is_a_tests() -> None:
     assert "hx-vals='{\"prueba\": \"1\"}'" in dialog_tag(client.get(f"/modpacks/{BUNDLE_ID}/builds/dialogo", headers=HTMX).text)
     modpack.last_test = False
     assert "prueba" not in dialog_tag(client.get(f"/modpacks/{BUNDLE_ID}/builds/dialogo", headers=HTMX).text)
+
+
+def test_a_build_shows_stable_and_is_marked_or_unmarked() -> None:
+    """T3b (d-7985ee-16be41): a green «estable», and the button that says the other state."""
+    client, modpack, _ = setup()
+    modpack.builds = [build(2, stable=True), build(1)]
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    row = text[text.index('data-build="2"'):]
+    row = row[:row.index("</tr>")]
+    assert "estable" in row and f'hx-post="/modpacks/{BUNDLE_ID}/builds/2/estable"' in row and "Quitar estable" in row
+    other = text[text.index('data-build="1"'):]
+    assert "Marcar estable" in other[:other.index("</tr>")]
+    response = client.post(f"/modpacks/{BUNDLE_ID}/builds/2/estable", data={"estado": "no"}, headers=HTMX)
+    assert response.status_code == 200 and call(modpack, "build_stable")[1:] == (str(BUNDLE_ID), 2, False, EDITOR)

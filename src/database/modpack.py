@@ -387,9 +387,9 @@ class ModpackDatabase():
         return build
 
     async def build_set(self, bundle_id: str, number: int, fields: dict[str, Any]) -> ModpackBuild:
-        """Write a build's name or star (O8 B2, B3) with a $set of only those fields: what it froze is
+        """Write a build's name, star or «estable» mark (O8 B2, B3; T3b) with a $set of only those fields: what it froze is
         never written again (user-walk W13). Any other field is a ValueError; 404 if it does not exist."""
-        if not fields or set(fields) - {"name", "starred"}:
+        if not fields or set(fields) - {"name", "starred", "stable"}:
             raise ValueError(f"Only a build's name and star are written after it is made, not {sorted(fields)}")
         await ModpackBuild.get_pymongo_collection().update_one(
             {"bundle_id": self._bundle_oid(bundle_id), "number": number}, {"$set": fields})

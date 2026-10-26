@@ -36,7 +36,8 @@ def builds_view(builds: Sequence[ModpackBuild], recommended: Optional[int], late
     only the starred are shown."""
     ordered = sorted(builds, key=lambda b: b.number, reverse=True)
     newest = {b.number for b in ordered[:NEWEST_SHOWN]}
-    kept = {n for n in (recommended, latest) if n is not None} | installed | newest
+    # A stable build too (T3b): «Recomendar el último estable» reads it here.
+    kept = {n for n in (recommended, latest) if n is not None} | installed | newest | {b.number for b in ordered if b.stable}
 
     def shown(build: ModpackBuild) -> bool:
         return build.starred if starred_only else build.starred or build.number in kept

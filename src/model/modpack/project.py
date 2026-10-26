@@ -186,6 +186,9 @@ class ModpackBuild(Document):
     test: bool = False
     name: Optional[str] = None
     starred: bool = False
+    # «Estable» (O8 tanda 2, T3b of d-7985ee-16be41): it worked, it is not a test; several may be.
+    # Apart from the star (to find it) and the recommended one (installed by default, the floor).
+    stable: bool = False
     # The bundle's local files when the build was made.
     local_files: list[LocalFile] = Field(default_factory=list)
     request: ResolveRequest
