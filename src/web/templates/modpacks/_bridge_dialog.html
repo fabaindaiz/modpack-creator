@@ -10,7 +10,8 @@
 {% for project_id, name in missing %}
 {% set names.items = names.items + [name ~ (" (en lugar de " ~ instead[project_id] ~ ")" if project_id in instead else "")] %}
 {% endfor %}
-<dialog data-autoopen aria-labelledby="bridge-confirm-title"
+{# Opened from a test build's dialog, it keeps the mark (O8 B1, final review 2026-10-26). #}
+<dialog data-autoopen aria-labelledby="bridge-confirm-title"{% if test is defined and test %} hx-vals='{"prueba": "1"}'{% endif %}
   class="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-xl border border-line bg-raised p-0 text-ink shadow-xl backdrop:bg-scrim/50">
   <form id="bridge-add-{{ main }}" class="space-y-4 p-5" hx-post="/modpacks/{{ bundle_id }}/projects" hx-target="{{ target }}" hx-swap="{{ swap }}">
     <h2 id="bridge-confirm-title" class="text-base font-semibold" autofocus tabindex="-1">Agregar con {{ bridge.label }}</h2>

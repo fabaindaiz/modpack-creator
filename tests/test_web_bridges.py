@@ -315,3 +315,14 @@ def test_the_bridges_are_their_own_section_and_save_when_changed_with_undo() -> 
     notice = response.text[response.text.index('id="notices"'):]
     undo = notice[notice.index("<form"):notice.index("</form>")]
     assert f'hx-post="/modpacks/{BUNDLE_ID}/bridges"' in undo and 'name="bridge" value="connector"' in undo
+
+
+def test_the_bridge_dialog_of_a_tests_dialog_keeps_the_mark() -> None:
+    """Final review (2026-10-26): the confirm dialog opened from a test's build dialog keeps its mark."""
+    client, modpack, modrinth = setup()
+    bridged(modpack)
+    modpack.missing = MISSING  # type: ignore[attr-defined]
+    response = client.post(f"/modpacks/{BUNDLE_ID}/projects", headers={**HTMX, "HX-Trigger": "hit-add-FM"},
+                           data={"ref": "FM", "contexto": "dialogo", "prueba": "1"})
+    assert response.headers["HX-Retarget"] == "#bridge-dialog"
+    assert "hx-vals='{\"prueba\": \"1\"}'" in response.text.split("<dialog")[1].split(">")[0]

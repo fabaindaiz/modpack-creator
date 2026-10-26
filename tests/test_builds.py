@@ -439,13 +439,14 @@ def test_approving_twice_is_a_no_op_the_second_time(mongo: MongoRunner) -> None:
 
 
 def test_recommending_a_test_is_refused(mongo: MongoRunner) -> None:
-    async def scenario() -> tuple[int, Any]:
+    async def scenario() -> tuple[Any, ...]:
         service, bundle_id = await _normal_test_normal()
         with pytest.raises(HTTPException) as refused:
             await service.build_recommend(bundle_id, 2, EDITOR)
-        return refused.value.status_code, (await service.bundle_get(bundle_id)).recommended_build
+        return refused.value.status_code, refused.value.detail, (await service.bundle_get(bundle_id)).recommended_build
 
-    assert mongo(scenario) == (409, None)
+    # In Spanish: the panel shows it as it is (final review).
+    assert mongo(scenario) == (409, "El build 2 es una prueba: apruébalo primero.", None)
 
 
 def test_an_approved_build_is_announced(mongo: MongoRunner) -> None:
@@ -475,8 +476,10 @@ def test_naming_a_build_never_rewrites_its_lock(mongo: MongoRunner) -> None:
         after = await service.build_get(bundle_id, 1)
         with pytest.raises(ValueError):
             await ModpackDatabase().build_set(bundle_id, 1, {"lock": None})
+        # Read back from MongoDB on both sides: dates come naive and to the millisecond (final review).
+        stored = await ModpackDatabase().build_find(bundle_id)
         return (after.name, after.starred, after.lock == before.lock, after.request == before.request,
-                after.created_at == before.created_at)
+                after.created_at == stored[0].created_at)
 
     assert mongo(scenario) == ("con Iris 1.7", True, True, True, True)
 

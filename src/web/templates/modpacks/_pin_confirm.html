@@ -7,7 +7,8 @@
 {# From a mod's card, choosing one of its pin's origins (O2, `origin`): the same choice again, confirmed. #}
 {% set by_origin = origin is defined and origin %}
 {% set action = "/modpacks/" ~ bundle_id ~ "/pins/" ~ downgrade.project_id ~ "/origen" if by_origin else "/modpacks/" ~ bundle_id ~ "/pins" %}
-<dialog data-autoopen aria-labelledby="pin-confirm-title"
+{# Opened from a test build's dialog, it keeps the mark (O8 B1, final review 2026-10-26). #}
+<dialog data-autoopen aria-labelledby="pin-confirm-title"{% if test is defined and test %} hx-vals='{"prueba": "1"}'{% endif %}
   class="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-xl border border-line bg-raised p-0 text-ink shadow-xl backdrop:bg-scrim/50">
   <form class="space-y-4 p-5" hx-post="{{ action }}" hx-target="{{ target }}" hx-swap="{{ swap }}">
     <h2 id="pin-confirm-title" class="text-base font-semibold" autofocus tabindex="-1">Baja de versión</h2>

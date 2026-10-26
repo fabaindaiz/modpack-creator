@@ -492,9 +492,12 @@ def test_the_summary_counts_each_way_a_mod_moved() -> None:
     from src.library.changes import ChangeSummary, summary_of
     changes = ChangeSet(added=[Change("N", None, "n1")], removed=[],
                         changed=[Change("U", "u1", "u2"), Change("D", "d2", "d1"), Change("B", "b1", "b2")], unchanged=4)
-    summary = summary_of(changes, {"D": "down", "B": "branch"})
-    assert summary == ChangeSummary(up=1, down=1, branch=1, added=1, removed=0)
+    summary = summary_of(changes, {"U": "up", "D": "down", "B": "branch"})
+    assert summary == ChangeSummary(up=1, down=1, branch=1, added=1, removed=0, other=0)
     assert summary.text() == "4 cambios: 1 sube, 1 baja, 1 cambia de rama, 1 nuevo"
+    # A direction the catalog cannot tell is not said to go up (final review).
+    unknown = summary_of(ChangeSet(added=[], removed=[], changed=[Change("U", "u1", "u2")], unchanged=0), {})
+    assert unknown.text() == "1 cambio: 1 cambia de versión"
 
 
 @pytest.mark.network
@@ -513,4 +516,4 @@ def test_compare_marks_pins_from_the_build_not_the_pack(mongo: MongoRunner) -> N
     preview = mongo(scenario)
     assert preview.pinned == {"P"} and preview.reasons["P"].kind == "pin"
     assert [(c.label, c.project_id, c.after) for c in preview.request] == [("Fijado", "P", "v2")]
-    assert preview.summary is not None and preview.summary.text() == "1 cambio: 1 sube"
+    assert preview.summary is not None and preview.summary.text() == "1 cambio: 1 cambia de versión"

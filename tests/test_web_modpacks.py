@@ -100,6 +100,8 @@ class FakeModpack:
         self.approved: Any = None
         # The builds installed on the pack's servers (O8 B3: never folded).
         self.installed: set[int] = set()
+        # Whether the pack's last build job was a test (O8 B1: its blocked dialog stays a test's).
+        self.last_test = False
         self.rules = [ModpackReplacement.model_construct(project_id="OLDMOD", replacement="NEWMOD"),
                       ModpackReplacement.model_construct(project_id="DROPPED", replacement=None)]
         self.lock = lock(entry("P1"), entry("P2", "admin"))
@@ -309,6 +311,9 @@ class FakeModpack:
         if self.blocked is not None:
             raise self.blocked
         return self.queued
+
+    async def last_build_test(self, bundle_id: str) -> bool:
+        return self.last_test
 
     async def last_build_blocked(self, bundle_id: str) -> bool:
         return self.build_blocked_now
@@ -3190,7 +3195,7 @@ def test_compare_shows_summary_request_and_reasons() -> None:
         shown = preview()
         shown.request = [RequestChange(field="pins", label="Fijado", project_id="P1", before="—", after="v-p1")]
         shown.reasons = {"P1": ChangeReason(kind="dependency", requested_by=("P2",), text="")}
-        shown.summary = ChangeSummary(up=1, down=0, branch=0, added=0, removed=0)
+        shown.summary = ChangeSummary(up=1, down=0, branch=0, added=0, removed=0, other=0)
         return shown
 
     modpack.compare_builds = compare  # type: ignore[attr-defined]
@@ -3207,3 +3212,37 @@ def test_one_folded_build_reads_in_the_singular() -> None:
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
     assert "1 build anterior<" in text and "1 builds anteriores" not in text
 
+
+# The final review (2026-10-26): the test mark was lost on a DELETE (htmx sends `hx-vals` in the query),
+# in the confirm dialogs that open from the build dialog, and in the dialog a blocked test job opens.
+
+
+@pytest.mark.parametrize("method,path,data,action", DIALOG_ACTIONS)
+def test_every_action_of_a_tests_dialog_keeps_the_mark(
+        method: str, path: str, data: Optional[dict[str, str]], action: str) -> None:
+    client, modpack, _ = setup()
+    modpack.lock = lock(entry("P1"), problems=[Problem(kind="no_file", project_id="P1", detail="x")])
+    marked = {**data, "prueba": "1"} if data is not None else None
+    response = client.request(method, path if data is not None else path + "&prueba=1", headers=HTMX, data=marked)
+    assert "hx-vals='{\"prueba\": \"1\"}'" in dialog_tag(response.text)
+    plain = client.request(method, path, headers=HTMX, data=data)
+    assert "prueba" not in dialog_tag(plain.text)
+
+
+def test_the_downgrade_dialog_of_a_tests_dialog_keeps_the_mark() -> None:
+    client, modpack, _ = setup()
+    pin_rows(modpack)
+    modpack.downgrade = JEI_DOWN
+    response = client.post(f"/modpacks/{BUNDLE_ID}/pins", headers=HTMX,
+                           data={"project_id": "P2", "version_id": "ver-51", "contexto": "dialogo", "prueba": "1"})
+    assert response.headers["HX-Retarget"] == "#pin-dialog"
+    assert "hx-vals='{\"prueba\": \"1\"}'" in dialog_tag(response.text)
+
+
+def test_the_dialog_of_a_blocked_test_job_is_a_tests() -> None:
+    client, modpack, _ = setup()
+    modpack.lock = lock(entry("P1"), problems=[Problem(kind="no_file", project_id="P1", detail="x")])
+    modpack.last_test = True
+    assert "hx-vals='{\"prueba\": \"1\"}'" in dialog_tag(client.get(f"/modpacks/{BUNDLE_ID}/builds/dialogo", headers=HTMX).text)
+    modpack.last_test = False
+    assert "prueba" not in dialog_tag(client.get(f"/modpacks/{BUNDLE_ID}/builds/dialogo", headers=HTMX).text)

@@ -276,10 +276,16 @@ async def _acted(request: Request, actor: Actor, modpackService: ModpackService,
         builds = await modpackService.build_find(bundle_id)
         # A test's dialog stays a test's after an action (O8 B1, user-walk W7): its requests carry the mark.
         return _dialog(request, actor, lock, done=success, mods_oob=True, builds_oob=True, builds=builds,
-                       test=(await request.form()).get("prueba") == "1",
+                       test=await _test_mark(request),
                        view=await _builds_view(modpackService, context["bundle"], builds),
                        pending=_has_pending((mods.resolution, mods.stale) if mods.resolution else None), **context)
     return await _resolved(request, actor, modpackService, updateCheckService, bundle_id, success, vista="problemas")
+
+async def _test_mark(request: Request) -> bool:
+    """Whether a request comes from a test build's dialog (O8 B1, user-walk W7): its `<dialog>` carries
+    `prueba` in `hx-vals`, which htmx sends in the form, or in the query on a GET or a DELETE (final
+    review, 2026-10-26)."""
+    return request.query_params.get("prueba") == "1" or (await request.form()).get("prueba") == "1"
 
 # What the decision dialog says when it is sent with every mod left "Por decidir".
 NOTHING_DECIDED = "Elige «En el servidor» o «Desactivado» para al menos un mod."
@@ -634,6 +640,7 @@ async def project_add(
             instead = {replacement: "Fabric API" if replaced == FABRIC_API else replaced
                        for replaced, replacement in REPLACES.get(used.key, {}).items()}
             response = render(request, "modpacks/_bridge_dialog.html", actor, bundle_id=bundle_id, main=main,
+                              test=await _test_mark(request),
                               title=titles.get(main, main), bridge=used, missing=missing, instead=instead,
                               contexto=contexto)
             response.headers["HX-Retarget"] = "#bridge-dialog"
@@ -838,6 +845,7 @@ async def pin_add(
             await modpackService.pin_set(bundle_id, project_id, version_id, actor, confirm_downgrade=confirm_downgrade)
         except DowngradeRefused as refused:
             response = render(request, "modpacks/_pin_confirm.html", actor, bundle_id=bundle_id, downgrade=refused.downgrade,
+                              test=await _test_mark(request),
                               version_id=version_id, contexto=contexto, fila=fila, previous=previous)
             response.headers["HX-Retarget"] = "#pin-dialog"
             response.headers["HX-Reswap"] = "innerHTML"
@@ -891,6 +899,7 @@ async def pin_origin(
                                                server_id=server or None)
     except DowngradeRefused as refused:
         response = render(request, "modpacks/_pin_confirm.html", actor, bundle_id=bundle_id, downgrade=refused.downgrade,
+                              test=await _test_mark(request),
                           version_id=refused.downgrade.pin_version, contexto=None, origin=origin.value,
                           origin_server=server or None)
         response.headers["HX-Retarget"] = "#pin-dialog"
@@ -1080,7 +1089,9 @@ async def build_dialog(
     """The build dialog after a build job that its check blocked (E9): from the pack resolved from the
     catalog, with why."""
     lock = await modpackService.resolve(bundle_id, actor)
-    return await _build_dialog(request, actor, modpackService, modrinthService, bundle_id, lock, explain=True)
+    # The blocked job's own mark (O8 B1): a test's dialog builds a test (final review, 2026-10-26).
+    return await _build_dialog(request, actor, modpackService, modrinthService, bundle_id, lock, explain=True,
+                               test=await modpackService.last_build_test(bundle_id))
 
 def _builds_page(request: Request, bundle_id: str, open_dialog: bool = False) -> Response:
     """Go to the builds of the modpack: htmx cannot follow a redirect to a page, it is told where to go.

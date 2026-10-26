@@ -114,6 +114,8 @@ class ChangePreview(BaseModel):
     # Project id -> "down" or "branch" for the changed mods that go back or change branch (F27,
     # d-7985ee-322302); a mod that goes forward, or whose versions the catalog lacks, is absent.
     directions: dict[str, str] = {}
+    # The changed mods that go forward (O8 B4's summary): the others are in `directions` or unknown.
+    up: set[str] = set()
     # The changed mods whose new version is the pack's pin: a step back there is the pin's.
     pinned: set[str] = set()
     # Against a server only (F28, d-7985ee-83e764): the jars of its last scan, taken at `scanned_at`,
@@ -2018,6 +2020,12 @@ class ModpackService():
         newest = max(found, key=lambda j: as_utc(j.finished_at))  # type: ignore[arg-type]
         return newest if self.clock() - as_utc(newest.finished_at) <= BLOCKED_BUILD_RECENT else None  # type: ignore[arg-type]
 
+    async def last_build_test(self, bundle_id: str) -> bool:
+        """Whether the pack's last build job was a test build's (O8 B1): the dialog it opens when blocked
+        builds a test too."""
+        last = await self.jobDB.last_for_key(f"build:{bundle_id}")
+        return last is not None and bool(last.payload.get("test", False))
+
     async def last_build_blocked(self, bundle_id: str) -> bool:
         """Whether the pack's last build job ended just now without a build, blocked by what its check found."""
         last = await self.jobDB.last_for_key(f"build:{bundle_id}")
@@ -2143,7 +2151,7 @@ class ModpackService():
         """Point recommended at an existing build; going back is pointing at an older one. Never at a
         test build (H2, d-7985ee-3bb53b): it is approved first, or with `build_approve(recommend=True)`."""
         if (await self.modpackDB.build_get(bundle_id, number)).test:
-            raise HTTP_409_CONFLICT(f"Build {number} is a test: approve it first")
+            raise HTTP_409_CONFLICT(f"El build {number} es una prueba: apruébalo primero.")
         bundle = await self.modpackDB.bundle_recommend_build(bundle_id, number)
         await self.audit.record(actor, "build.recommend", _bundle(bundle_id), {"number": number})
         return bundle
@@ -2213,8 +2221,8 @@ class ModpackService():
             return None if found is None else VersionFacts(
                 published=found.date_published, game_versions=tuple(found.game_versions), loaders=tuple(found.loaders))
 
-        directions: dict[str, str] = {c.project_id: d for c in changes.changed
-                      if (d := direction(facts(c.from_version), facts(c.to_version))) in ("down", "branch")}
+        every = {c.project_id: direction(facts(c.from_version), facts(c.to_version)) for c in changes.changed}
+        directions: dict[str, str] = {p: d for p, d in every.items() if d in ("down", "branch")}
         pinned = {c.project_id for c in changes.changed if pins and pins.get(c.project_id) == c.to_version}
         arriving = sorted({c.to_version for c in changes.added + changes.changed if c.to_version})
         changelogs: dict[str, Optional[str]] = {}
@@ -2250,7 +2258,8 @@ class ModpackService():
             except asyncio.TimeoutError:
                 timed_out.update(v for v in missing if v not in changelogs and v not in failed)
         return ChangePreview(changes=changes, changelogs=changelogs, failed=failed, timed_out=timed_out,
-                             numbers=known, directions=directions, pinned=pinned)
+                             numbers=known, directions=directions, pinned=pinned,
+                             up={p for p, d in every.items() if d == "up"})
 
     async def compare_builds(self, bundle_id: str, from_number: int, to_number: int) -> ChangePreview:
         """The change from one build of the bundle to another; 404 if either does not exist."""
@@ -2265,7 +2274,7 @@ class ModpackService():
         reasons = {e.project_id: change_reason(e, before.request.pins) for e in before.lock.entries if e.project_id in moved}
         reasons |= {e.project_id: change_reason(e, after.request.pins) for e in after.lock.entries if e.project_id in moved}
         return preview.model_copy(update={"request": request_changes(before.request, after.request, numbers),
-                                          "reasons": reasons, "summary": summary_of(preview.changes, preview.directions)})
+                                          "reasons": reasons, "summary": summary_of(preview.changes, {**preview.directions, **{p: "up" for p in preview.up}})})
 
     async def update_preview(self, updates: list[AvailableUpdate]) -> ChangePreview:
         """What the updates of a check change, with the changelogs of the versions that arrive. An

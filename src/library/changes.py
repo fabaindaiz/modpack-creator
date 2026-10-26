@@ -150,21 +150,23 @@ class ChangeSummary:
     branch: int
     added: int
     removed: int
+    # Changed mods whose direction the catalog cannot tell: never said to go up (final review).
+    other: int = 0
 
     def text(self) -> str:
         """«6 cambios: 4 suben, 1 baja, 1 nuevo»: only the parts that are not zero."""
-        total = self.up + self.down + self.branch + self.added + self.removed
+        total = self.up + self.down + self.branch + self.other + self.added + self.removed
         parts = [f"{n} {one if n == 1 else many}" for n, one, many in (
             (self.up, "sube", "suben"), (self.down, "baja", "bajan"), (self.branch, "cambia de rama", "cambian de rama"),
+            (self.other, "cambia de versión", "cambian de versión"),
             (self.added, "nuevo", "nuevos"), (self.removed, "quitado", "quitados")) if n]
         return f"{total} {'cambio' if total == 1 else 'cambios'}: {', '.join(parts)}" if total else "Sin cambios"
 
 
 def summary_of(changes: ChangeSet, directions: Mapping[str, str]) -> ChangeSummary:
-    """The summary of `changes`; `directions` says which changed mods go down or change branch (the
-    others count as going up)."""
-    down = sum(1 for c in changes.changed if directions.get(c.project_id) == "down")
-    branch = sum(1 for c in changes.changed if directions.get(c.project_id) == "branch")
-    return ChangeSummary(up=len(changes.changed) - down - branch, down=down, branch=branch,
-                         added=len(changes.added), removed=len(changes.removed))
+    """The summary of `changes`; `directions` says which changed mods go up, down or change branch;
+    one it does not name only changes version."""
+    count = {way: sum(1 for c in changes.changed if directions.get(c.project_id) == way) for way in ("up", "down", "branch")}
+    return ChangeSummary(up=count["up"], down=count["down"], branch=count["branch"],
+                         other=len(changes.changed) - sum(count.values()), added=len(changes.added), removed=len(changes.removed))
 
