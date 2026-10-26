@@ -21,14 +21,20 @@ class UploadBudget:
     def __init__(self, max_bytes: int, stored: Callable[[], int] = lambda: 0) -> None:
         self.max_bytes = max_bytes
         self.in_use = 0
+        # Every byte ever released: what is released while the disk is read is counted as stored.
+        self.released = 0
         # What the uploads kept for their jobs take on disk now.
         self.stored = stored
 
     @asynccontextmanager
     async def reserve(self, size: int) -> AsyncIterator[None]:
         """Hold `size` bytes while the upload is read and used; UploadBusy if they do not fit."""
+        released = self.released
         stored = await asyncio.to_thread(self.stored)
-        # No await between the check and the hold: two uploads never both take the last room.
+        # A hold released during the walk may be a copy that landed where the walk had passed
+        # (review, 2026-10-26): it counts as stored. No await between the check and the hold: two
+        # uploads never both take the last room.
+        stored += self.released - released
         if self.in_use + stored + size > self.max_bytes:
             raise UploadBusy(f"{self.in_use} of {self.max_bytes} bytes in use")
         self.in_use += size
@@ -36,3 +42,4 @@ class UploadBudget:
             yield
         finally:
             self.in_use -= size
+            self.released += size

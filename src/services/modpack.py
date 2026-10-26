@@ -576,8 +576,12 @@ class ModpackService():
         for _ in range(PIN_WRITE_TRIES):
             record = bundle.pin_origins.get(project_id)
             if record is None:
-                updated = await self.modpackDB.bundle_pin_set(bundle_id, project_id, version_id)
-                break
+                # Only while it still has none: an import or a scan may have stored one meanwhile.
+                if await self.modpackDB.bundle_pin_set_unrecorded(bundle_id, project_id, version_id):
+                    updated = await self.modpackDB.bundle_get(bundle_id)
+                    break
+                bundle = await self.modpackDB.bundle_get(bundle_id)
+                continue
             # A mod with origins (O2): the admin's version becomes its «elegida a mano» origin, in use.
             problem = version_problem(candidate(found), self._target(bundle), bundle.channel_exceptions.get(project_id))
             record = _with_origin(record, PinOrigin(
@@ -798,8 +802,10 @@ class ModpackService():
             bundle = await self.modpackDB.bundle_get(bundle_id)
             view = pin_view(bundle, project_id) if project_id in bundle.pin_origins else None
             if view is None:
-                updated = await self.modpackDB.bundle_pin_unset(bundle_id, project_id)
-                break
+                if await self.modpackDB.bundle_pin_set_unrecorded(bundle_id, project_id, None):
+                    updated = await self.modpackDB.bundle_get(bundle_id)
+                    break
+                continue
             # With origins (O2), unpinning is «resolución» in use; the other origins stay on offer.
             if await self.modpackDB.bundle_pin_record_set(bundle_id, project_id, PinRecord(
                     origins=[o for o in view.origins if o.source != PinSource.resolution], selected=PinSource.resolution,

@@ -254,3 +254,33 @@ def test_choosing_an_origin_while_a_scan_adds_another_keeps_both(mongo: MongoRun
     record = bundle.pin_origins[SODIUM[0]]
     assert (record.selected, record.selected_key, bundle.pins[SODIUM[0]]) == (PinSource.server, "server:s1", "sod-1")
     assert [o.server_id for o in record.origins if o.source == PinSource.server] == ["s1", "s2"]
+
+
+def test_pinning_a_mod_whose_record_an_import_stores_meanwhile_keeps_both(mongo: MongoRunner) -> None:
+    """Review of 2026-10-26: a mod with no record when read was pinned with no condition, so an
+    import that stored its record during the pin's checks was left saying «pack» while the admin's
+    version was in use. The pin is written only while the mod still has no record, else read again."""
+    async def scenario() -> ModpackBundle:
+        s = Scenario()
+        bundle_id = await imported(s)
+        oid = (await s.modpackDB.bundle_get(bundle_id)).id
+        await ModpackBundle.get_pymongo_collection().update_one(
+            {"_id": oid}, {"$unset": {f"pins.{SODIUM[0]}": "", f"pin_origins.{SODIUM[0]}": ""}})
+        service = s.service.modpackService
+        checked = service._pin_checked
+
+        async def racing(*args: Any) -> Any:
+            found = await checked(*args)
+            pack = PinRecord(origins=[PinOrigin(source=PinSource.pack, version_id="sod-1", version_number="sod-1")],
+                             selected=PinSource.pack)
+            assert await s.modpackDB.bundle_pin_record_set(bundle_id, SODIUM[0], pack, "sod-1")
+            return found
+
+        service._pin_checked = racing  # type: ignore[method-assign,assignment]
+        await service.pin_set(bundle_id, SODIUM[0], "sod-1", EDITOR)
+        return await s.modpackDB.bundle_get(bundle_id)
+
+    bundle = mongo(scenario)
+    record = bundle.pin_origins[SODIUM[0]]
+    assert bundle.pins[SODIUM[0]] == "sod-1" and record.selected == PinSource.admin
+    assert [o.source for o in record.origins] == [PinSource.pack, PinSource.admin]

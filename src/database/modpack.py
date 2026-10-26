@@ -199,6 +199,23 @@ class ModpackDatabase():
             raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' not found")
         return await self.bundle_get(bundle_id)
 
+    async def bundle_pin_set_unrecorded(self, bundle_id: str, project_id: str, pin: Optional[str]) -> bool:
+        """
+        Pin one mod (None: unpin it) only while it has no pin origins (O2): a record stored since
+        the caller read the pack (an import, a scan) makes this write nothing, so the caller writes
+        the record instead (review, 2026-10-26). Returns whether it wrote; 404 if the bundle does not
+        exist. `project_id` must be a plain Modrinth id (the caller checks it).
+        """
+        oid = self._bundle_oid(bundle_id)
+        update = {"$set": {f"pins.{project_id}": pin}} if pin is not None else {"$unset": {f"pins.{project_id}": ""}}
+        collection = ModpackBundle.get_pymongo_collection()
+        result = await collection.update_one({"_id": oid, f"pin_origins.{project_id}": {"$exists": False}}, update)
+        if result.matched_count:
+            return True
+        if not await collection.count_documents({"_id": oid}, limit=1):
+            raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' not found")
+        return False
+
     async def bundle_pin_record_set(self, bundle_id: str, project_id: str, record: PinRecord, pin: Optional[str],
                                     when_pin: object = ANY_PIN) -> bool:
         """
