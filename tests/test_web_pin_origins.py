@@ -107,3 +107,19 @@ def test_an_origin_that_goes_back_opens_the_downgrade_dialog_that_sends_it_again
     assert 'name="origin" value="pack"' in text and 'name="confirm_downgrade" value="1"' in text
     client.post(f"/modpacks/{BUNDLE_ID}/pins/P2/origen", data={"origin": "pack", "confirm_downgrade": "1"}, headers=HTMX)
     assert modpack.confirmed == [False, True]
+
+
+def test_putting_an_origin_in_use_offers_undo_back_to_the_one_before() -> None:
+    """O9 D4 (owner, 2026-10-26): every change of the card's «Versión» block has «Deshacer»."""
+    from src.model.modpack import PinOrigin, PinRecord
+
+    client, modpack, _ = setup()
+    modpack.bundle.pin_origins = {"P1": PinRecord(origins=[
+        PinOrigin(source=PinSource.pack, version_id="mt-pack"),
+        PinOrigin(source=PinSource.server, version_id="mt-3", server_id="s1")],
+        selected=PinSource.server, selected_key="server:s1")}
+    response = client.post(f"/modpacks/{BUNDLE_ID}/pins/P1/origen", data={"origin": "pack"}, headers=HTMX)
+    notice = response.text[response.text.index('id="notices"'):]
+    undo = notice[notice.index("<form"):notice.index("</form>")]
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/pins/P1/origen"' in undo and "Deshacer" in undo
+    assert 'name="origin" value="server"' in undo and 'name="server" value="s1"' in undo

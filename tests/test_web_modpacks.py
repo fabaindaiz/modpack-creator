@@ -1430,7 +1430,7 @@ def test_detail_shows_local_files_channels_and_pins() -> None:
     assert 'id="channels"' in text and f'hx-post="/modpacks/{BUNDLE_ID}/channels"' in text
     assert re.search(r'name="channel" value="release"[^>]*checked', text)
     assert not re.search(r'name="channel" value="beta"[^>]*checked', text)
-    assert "fijado" in card(text, "P1") and f'hx-delete="/modpacks/{BUNDLE_ID}/pins/P1"' in card(text, "P1")
+    assert "fijado" in card(text, "P1") and 'name="previous" value="ver-p1"' in card(text, "P1")
     assert "fijado" not in card(text, "P2") and "ver-p1" not in visible(text)
 
 
@@ -1446,7 +1446,8 @@ def test_pins_without_a_row_are_listed_and_can_be_removed() -> None:
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
     orphans = text.split("Fijaciones de mods que ya no están")[1]
     assert "Viejo" in orphans and f'hx-delete="/modpacks/{BUNDLE_ID}/pins/GONE"' in orphans
-    assert "pins/D1" not in orphans and f'hx-delete="/modpacks/{BUNDLE_ID}/pins/D1"' in card(text, "D1")
+    # The dependency's card unpins it from its «Versión» block (O9 D4), with «Deshacer».
+    assert "pins/D1" not in orphans and 'name="previous" value="v-d1"' in card(text, "D1")
 
 
 def test_detail_without_local_files_says_so() -> None:
@@ -1937,24 +1938,42 @@ def pin_rows(modpack: FakeModpack) -> None:
         row("P3", "Iris", "admin")]
 
 
-def test_the_pin_select_marks_the_pinned_version_and_greys_without_a_pin() -> None:
+def row_line(text: str, project_id: str) -> str:
+    """A row's line under its <summary>: its selects and marks, without the card."""
+    item = text[text.index(f'id="mod-row-{project_id}"'):]
+    item = item[:item.index("</li>")]
+    return item[item.index("</details>"):]
+
+
+def test_the_row_marks_the_pin_and_the_card_is_where_it_changes() -> None:
+    """O9 D4 (owner, 2026-10-26): one place to pin, the card; the row only says it is pinned."""
     client, modpack, _ = setup()
     pin_rows(modpack)
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
-    pinned, free = row_select(text, "P1", "version_id"), row_select(text, "P2", "version_id")
-    assert f'hx-post="/modpacks/{BUNDLE_ID}/pins"' in pinned and 'hx-trigger="change"' in pinned
-    assert 'name="from" value="fila"' in pinned and 'name="previous" value="ver-p1"' in pinned
-    assert selected(pinned) == "fijado 0.8.13 (release)" and 'data-saved="ver-p1"' in pinned and "hx-confirm" not in pinned
-    assert '<option value="ver-new">0.8.14 (release)</option>' in pinned and '<option value="">sin fijar</option>' in pinned
-    assert selected(free) == "sin fijar" and "text-muted" in free and 'data-saved=""' in free
-    assert "text-muted" not in pinned[:pinned.index("<option")]
+    pinned, free = row_line(text, "P1"), row_line(text, "P2")
+    assert 'name="version_id"' not in pinned and 'name="version_id"' not in free
+    assert "fijado 0.8.13" in visible(pinned) and "fijado" not in visible(free)
 
 
-def test_without_options_the_select_points_to_the_card() -> None:
+def test_the_cards_version_block_unpins_with_undo() -> None:
     client, modpack, _ = setup()
     pin_rows(modpack)
-    form = row_select(client.get(f"/modpacks/{BUNDLE_ID}").text, "P3", "version_id")
-    assert selected(form) == "sin fijar" and '<option value="" disabled>ver versiones en la ficha</option>' in form
+    block = card(client.get(f"/modpacks/{BUNDLE_ID}").text, "P1")
+    block = block[block.index("data-version-block"):]
+    assert "Versión" in visible(block[:400])
+    unpin = block[block.rindex("<form", 0, block.index("Quitar fijación")):]
+    unpin = unpin[:unpin.index("</form>")]
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/pins"' in unpin and 'name="version_id" value=""' in unpin
+    assert 'name="from" value="fila"' in unpin and 'name="previous" value="ver-p1"' in unpin and "hx-delete" not in unpin
+
+
+def test_another_version_is_used_from_the_card_with_undo() -> None:
+    client, modpack, _ = setup()
+    modpack.bundle.pins = {"P1": "ver-p1"}
+    modpack.versions = [option("ver-new", "0.8.14"), option("ver-p1", "0.8.13")]
+    text = client.get(f"/modpacks/{BUNDLE_ID}/projects/P1/versions", headers=HTMX).text
+    assert 'name="from" value="fila"' in text and 'name="previous" value="ver-p1"' in text
+    assert "Usar esta" in visible(text) and ">Fijar<" not in text
 
 
 def test_choosing_a_version_pins_it_and_offers_undo() -> None:

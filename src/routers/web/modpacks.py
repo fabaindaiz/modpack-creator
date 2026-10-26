@@ -202,11 +202,11 @@ async def _mods_context(modpackService: ModpackService, updateCheckService: Upda
 
 async def _mods(request: Request, actor: Actor, modpackService: ModpackService, updateCheckService: UpdateCheckService,
                 bundle_id: str, success: Optional[str] = None, info: Optional[str] = None,
-                hit: Optional[str] = None, vista: str = "todos") -> Response:
+                hit: Optional[str] = None, vista: str = "todos", **extra: Any) -> Response:
     """The #mods fragment; `success` or `info` and `hit` go after it, out of band (a notice, a search
     hit marked "Ya está")."""
     context = await _mods_context(modpackService, updateCheckService, bundle_id, vista, _filters_from(request), actor)
-    return render(request, "modpacks/_mods.html", actor, success=success, info=info, hit=hit, **context)
+    return render(request, "modpacks/_mods.html", actor, success=success, info=info, hit=hit, **context, **extra)
 
 def human_size(size: int) -> str:
     """1536 → "1,5 KiB", 3 MiB → "3,0 MiB"; under 1 KiB in bytes."""
@@ -683,6 +683,7 @@ async def project_versions(
         raise HTTP_422_UNPROCESSABLE_ENTITY("Eso no es un id de Modrinth")
     versions: list[Any] = []
     failed = False
+    pinned = (await modpackService.bundle_get(bundle_id)).pins.get(project_id)
     try:
         versions = await modpackService.project_versions(bundle_id, project_id)
     except (UpstreamError, TimeoutError):
@@ -690,7 +691,7 @@ async def project_versions(
         logger.warning("Modrinth versions failed for %s in bundle %s", project_id, bundle_id, exc_info=True)
         failed = True
     return render(request, "modpacks/_versions.html", actor, bundle_id=bundle_id, project_id=project_id,
-                  versions=versions, failed=failed)
+                  versions=versions, failed=failed, pinned=pinned)
 
 @router.post("/modpacks/{bundle_id}/channels")
 @inject
@@ -848,7 +849,12 @@ async def pin_origin(
     """Put one of a mod's pin origins in use, from its card (O2); a server's names its server, one
     origin per linked server (2026-10-22). An older version than the mod's floor is not saved: the
     answer is the pin dialog, into #pin-dialog, that sends the same choice again with
-    `confirm_downgrade` (d-7985ee-c62c61)."""
+    `confirm_downgrade` (d-7985ee-c62c61). The answer offers to put the one before back (O9 D4)."""
+    record = (await modpackService.bundle_get(bundle_id)).pin_origins.get(project_id)
+    key = record.selected_key if record is not None else None
+    before = {"project_id": project_id,
+              "origin": record.selected.value if record is not None and record.selected is not None else PinSource.resolution.value,
+              "server": key.split(":", 1)[1] if key and key.startswith("server:") else None}
     try:
         await modpackService.pin_origin_select(bundle_id, project_id, origin, actor, confirm_downgrade=confirm_downgrade,
                                                server_id=server or None)
@@ -859,7 +865,8 @@ async def pin_origin(
         response.headers["HX-Retarget"] = "#pin-dialog"
         response.headers["HX-Reswap"] = "innerHTML"
         return response
-    return await _acted(request, actor, modpackService, updateCheckService, bundle_id, None, "Versión en uso cambiada")
+    return await _mods(request, actor, modpackService, updateCheckService, bundle_id, vista=_vista_from(request),
+                       undo_origin=before)
 
 @router.get("/modpacks/{bundle_id}/trabajo")
 @inject

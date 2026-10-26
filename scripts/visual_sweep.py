@@ -687,8 +687,8 @@ TOKEN_SHOTS = {"help-open": shoot_help_open, "pin-origins": shoot_pin_origins, "
 
 def check_row_selects(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
                       errors: list[str]) -> dict[str, dict[str, Any]]:
-    """Batch A (A1, A14): a row's select that fails goes back to its saved value; "sin fijar" from
-    the row unpins and offers "Deshacer"; undoing back to a version before the floor opens the
+    """Batch A (A1, A14): a row's select that fails goes back to its saved value; «Quitar fijación»
+    from the card (O9 D4) unpins and offers "Deshacer"; undoing back to a version before the floor opens the
     confirmation, and cancelling it leaves the row as saved. The pin is set again at the end, so
     the pack is as seeded for the contexts after this one."""
     problems: list[str] = []
@@ -706,7 +706,9 @@ def check_row_selects(page: Any, base: str, out: Path, ids: dict[str, str], pref
     errors[:] = [e for e in errors if "500" not in e]  # the failure we asked for
     page.goto(base + f"/modpacks/{pack}")
     page.wait_for_load_state("networkidle")
-    page.select_option("#mod-row-jei select[name=version_id]", "")
+    # The pin changes in the card's «Versión» block (O9 D4): «Quitar fijación» there, with «Deshacer».
+    page.locator("#mod-row-jei summary").first.click()
+    page.locator("#mod-row-jei [data-version-block] button:text('Quitar fijación')").click()
     page.wait_for_selector("#notices [data-notice] button:text('Deshacer')", timeout=10_000)
     page.wait_for_timeout(300)
     page.screenshot(path=str(out / f"{prefix}-row-undo.png"))
@@ -714,8 +716,8 @@ def check_row_selects(page: Any, base: str, out: Path, ids: dict[str, str], pref
     page.wait_for_selector("#pin-dialog dialog[open]", timeout=10_000)
     page.locator("#pin-dialog dialog button[data-dialog-close]").click()
     page.wait_for_timeout(300)
-    if page.eval_on_selector("#mod-row-jei select[name=version_id]", "s => s.value") != "":
-        problems.append("al cancelar la baja, el select no quedó en lo guardado")
+    if "fijado " in page.inner_text("#mod-row-jei"):  # the row's mark, lowercase; the card says «Fijado:»
+        problems.append("al cancelar la baja, la fila no quedó en lo guardado (sin fijar)")
     page.evaluate(f"htmx.ajax('POST', '/modpacks/{pack}/pins', {{target: '#mods', swap: 'outerHTML', "
                   "values: {project_id: 'jei', version_id: 'jei-1951', confirm_downgrade: '1'}})")
     page.wait_for_load_state("networkidle")

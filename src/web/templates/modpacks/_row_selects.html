@@ -31,24 +31,16 @@
     </select>
   </form>
   {% set pin = row.pinned_version or "" %}
-  {% set pin_number = (row.pin_options or []) | selectattr("version_id", "equalto", pin) | map(attribute="version_number") | first if pin else none %}
-  <form hx-post="/modpacks/{{ bundle_id }}/pins" hx-trigger="change" hx-target="#mods" hx-swap="outerHTML">
-    <input type="hidden" name="project_id" value="{{ row.project_id }}">
-    <input type="hidden" name="from" value="fila">
-    <input type="hidden" name="previous" value="{{ pin }}">
-    <select name="version_id" data-saved="{{ pin }}" aria-label="Versión fijada de {{ row.title }}" class="{{ SELECT ~ ('text-info-ink ring-info-line' if pin else GREY) }}">
-      <option value=""{% if not pin %} selected{% endif %}>sin fijar</option>
-      {% if row.pin_options is none %}
-      {% if pin %}<option value="{{ pin }}" selected>fijado</option>{% endif %}
-      <option value="" disabled>ver versiones en la ficha</option>
-      {% else %}
-      {% for option in row.pin_options %}
-      {% if option.version_id == pin %}<option value="{{ option.version_id }}" selected>fijado {{ option.version_number }}{% if option.channel %} ({{ option.channel }}){% endif %}</option>
-      {% else %}<option value="{{ option.version_id }}">{{ option.version_number }}{% if option.channel %} ({{ option.channel }}){% endif %}</option>{% endif %}
-      {% endfor %}
-      {% endif %}
-    </select>
-  </form>
+  {% set numbers = (row.pin_options or []) | selectattr("version_id", "equalto", pin) | map(attribute="version_number") | list if pin else [] %}
+  {% set pin_number = numbers[0] if numbers else none %}
+  {# The pin is changed in the card's «Versión» block (O9 D4): the row only marks it, with the
+     origin in use. #}
+  {% if pin %}
+  {% set used = (row.pin_origins or []) | selectattr("in_use") | list %}
+  {% set in_use = used[0] if used else none %}
+  {% set short = {"pack": "pack", "admin": "a mano", "server": "servidor"}.get(in_use.source) if in_use else none %}
+  {{ ui.badge("fijado " ~ (pin_number or (in_use.version_number if in_use else none) or "") ~ (" · " ~ short if short else ""), "info") }}
+  {% endif %}
   {% if row.pin_floor %}{{ ui.badge("baja (piso " ~ row.pin_floor ~ ")", "warning") }}{% endif %}
   {% if exception and current %}
   {% if row.project_id in saved.excepted %}<span class="text-xs text-warning">en uso: no hay una estable más nueva que la instalada</span>
