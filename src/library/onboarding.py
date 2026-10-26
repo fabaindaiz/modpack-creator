@@ -135,8 +135,9 @@ def server_steps(server_id: str, facts: ServerFacts, operator: bool = True) -> l
         ("build", "Build creado", facts.latest_build is not None,
          f"Build {facts.latest_build}" if facts.latest_build is not None else "",
          ("Crear build", f"/modpacks/{facts.bundle_id}#builds")),
+        # The build the guide counts is the one it offers (O9 D3).
         ("simulate", "Simulado en este servidor", simulated, "",
-         ("Simular instalación", f"/servers/{server_id}#actualizar")),
+         (f"Simular instalación del build {facts.latest_build}", f"/servers/{server_id}?build={facts.latest_build}#actualizar")),
     ], NEEDS["server"], OPERATOR_STEPS["server"], operator)
 
 
@@ -155,7 +156,7 @@ def pack_steps(bundle_id: str, facts: PackFacts, operator: bool = True) -> list[
         ("server", "Servidor vinculado", bool(facts.linked_servers),
          ", ".join(name for _, name in facts.linked_servers), ("Vincular un servidor", "/servers")),
         ("simulate", "Simulado", facts.simulated, "",
-         ("Simular instalación", f"/servers/{first}#actualizar") if first else ("Vincular un servidor", "/servers")),
+         (f"Simular instalación del build {facts.latest_build}", f"/servers/{first}?build={facts.latest_build}#actualizar") if first else ("Vincular un servidor", "/servers")),
     ], NEEDS["pack"], OPERATOR_STEPS["pack"], operator)
 
 

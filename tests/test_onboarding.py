@@ -41,7 +41,7 @@ def test_a_build_not_simulated_yet_offers_the_simulation() -> None:
     facts = NEW._replace(scanned=True, bundle_id="b1", resolved=True, latest_build=3, simulated_build=2)
     steps = server_steps("s1", facts)
     assert keys_done(steps)[3:] == [("build", True), ("simulate", False)]
-    assert steps[3].detail == "Build 3" and steps[4].action == ("Simular instalación", "/servers/s1#actualizar")
+    assert steps[3].detail == "Build 3" and steps[4].action == ("Simular instalación del build 3", "/servers/s1?build=3#actualizar")
 
 
 def test_a_server_whose_last_build_was_simulated_is_set_up() -> None:
@@ -64,7 +64,7 @@ def test_a_pack_s_steps_end_on_a_linked_server_s_simulation() -> None:
     built = empty._replace(projects=4, resolved=True, latest_build=2, linked_servers=(("s1", "Survival"),))
     steps = pack_steps("b1", built)
     assert steps[3].done and steps[3].detail == "Survival"
-    assert steps[4].action == ("Simular instalación", "/servers/s1#actualizar")
+    assert steps[4].action == ("Simular instalación del build 2", "/servers/s1?build=2#actualizar")
     assert pack_steps("b1", built._replace(simulated=True))[4].done
     unlinked = pack_steps("b1", built._replace(linked_servers=()))
     assert unlinked[3].action == ("Vincular un servidor", "/servers") and unlinked[4].waits_for == "Servidor vinculado"

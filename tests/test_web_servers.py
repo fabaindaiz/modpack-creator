@@ -901,9 +901,12 @@ def test_direct_update_dialog_lists_builds_with_recommended_selected() -> None:
     fakes.modpack.recommended = 4
     text = client.get(f"/servers/{SERVER_ID}").text
     assert f'hx-post="/servers/{SERVER_ID}/update"' in text and "Instalar en Survival" in text
-    assert text.index("Build 5 (último)") < text.index("Build 4 (recomendado)") < text.index("Build 3")
-    assert re.search(r'<option value="4" selected>\s*Build 4 \(recomendado\)', text)
-    assert len(re.findall(r'<option value="\d+" selected>', text)) == 1 and "Instalar el build elegido" in text
+    # The direct dialog's own select: simulating has another (O9 D3).
+    dialog = text[text.index('id="update-dialog-direct-build"'):]
+    dialog = dialog[:dialog.index("</select>")]
+    assert dialog.index("Build 5 (último)") < dialog.index("Build 4 (recomendado)") < dialog.index("Build 3")
+    assert re.search(r'<option value="4" selected>\s*Build 4 \(recomendado\)', dialog)
+    assert len(re.findall(r'<option value="\d+" selected>', dialog)) == 1 and "Instalar el build elegido" in text
     assert 'name="build"' in text and 'name="confirm"' in text and "<code" in text
     # Sin recomendado, el último.
     fakes.modpack.recommended = None
@@ -1734,3 +1737,17 @@ def test_bringing_a_servers_mods_is_not_called_importing() -> None:
     client, _ = setup(OPERATOR)
     shown = " ".join(visible(client.get(f"/servers/{SERVER_ID}").text).split())
     assert "Traer los mods del servidor" in shown and "Importar el servidor" not in shown
+
+
+def test_simulating_chooses_the_build_the_newest_first() -> None:
+    """O9 D3 (owner, 2026-10-26): it simulated the recommended build while the guide counted the
+    newest; now the build is chosen, the newest preselected, or the one the link names."""
+    client, fakes = setup(OPERATOR)
+    text = client.get(f"/servers/{SERVER_ID}").text
+    select = re.search(r'<select id="simulate-build"[^>]*>.*?</select>', text, re.S).group(0)  # type: ignore[union-attr]
+    assert 'name="build"' in select and re.findall(r'<option value="(\d+)" selected', select) == ["5"]
+    chosen = client.get(f"/servers/{SERVER_ID}", params={"build": "4"}).text
+    select = re.search(r'<select id="simulate-build"[^>]*>.*?</select>', chosen, re.S).group(0)  # type: ignore[union-attr]
+    assert re.findall(r'<option value="(\d+)" selected', select) == ["4"]
+    client.post(f"/servers/{SERVER_ID}/update/preview", headers=HTMX, data={"build": "4"})
+    assert only(fakes.update.calls, "enqueue_update")[1:] == (str(SERVER_ID), OPERATOR, 4, True)

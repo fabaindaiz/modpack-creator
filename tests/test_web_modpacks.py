@@ -1211,9 +1211,11 @@ def test_a_new_build_offers_simulating_on_linked_servers() -> None:
                      PterodactylServer.model_construct(id="srv2", name="Otro", bundle_id="x", is_suspended=False, status=None)]
     modpack.builds[0].created_at = datetime.now(timezone.utc) - timedelta(seconds=20)  # its job just made it
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
-    assert "Simular instalación en Survival" in text and 'href="/servers/srv1#actualizar"' in text and "Otro" not in text
+    # The build it offers is the new one, by number (O9 D3).
+    assert "Simular instalación del build 2 en Survival" in text and 'href="/servers/srv1?build=2#actualizar"' in text
+    assert "Otro" not in text
     modpack.builds[0].created_at = datetime.now(timezone.utc) - timedelta(minutes=10)
-    assert "Simular instalación en Survival" not in client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert "Simular instalación del build 2 en Survival" not in client.get(f"/modpacks/{BUNDLE_ID}").text
 
 
 def test_the_pack_page_reads_its_servers_simulations_together_and_its_pack_once() -> None:

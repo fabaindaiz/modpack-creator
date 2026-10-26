@@ -16,7 +16,7 @@
   </div>
   {% if next_servers is defined and next_servers %}
   <div class="flex flex-wrap gap-2">
-    {% for server in next_servers %}{{ ui.next_step("Simular instalación en " ~ server.name, "/servers/" ~ server.id ~ "#actualizar") }}{% endfor %}
+    {% for server in next_servers %}{{ ui.next_step("Simular instalación del build " ~ builds[0].number ~ " en " ~ server.name, "/servers/" ~ server.id ~ "?build=" ~ builds[0].number ~ "#actualizar") }}{% endfor %}
   </div>
   {% endif %}
   {% if not builds %}

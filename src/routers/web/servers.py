@@ -126,6 +126,7 @@ async def server_create(
 async def server_detail(
         server_id: str,
         request: Request,
+        build: Annotated[Optional[int], Query(ge=1)] = None,
         actor: Actor = Depends(get_web_actor),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
@@ -184,7 +185,7 @@ async def server_detail(
         simulated_build=await fact(jobService.simulated_build(server_id, str(bundle.id)), None) if bundle is not None else None),
         operator=actor.is_operator)
     game_versions = await modrinthService.game_versions_release() if server.bundle_id is None else None
-    return render(request, "servers/detail.html", actor, onboarding=onboarding, game_versions=game_versions, server=server, server_id=server_id, bundles=bundles,
+    return render(request, "servers/detail.html", actor, simulate_build=build, onboarding=onboarding, game_versions=game_versions, server=server, server_id=server_id, bundles=bundles,
                   bundle=bundle, scan=scan, comparison=comparison, compare_note=compare_note, titles=titles,
                   scan_reason=full_reason_text(scan.full_reason) if scan is not None else None,
                   versions=versions, to_import=to_import, installed_build=installed_build, active_job=active,
@@ -357,12 +358,14 @@ async def server_update_changes(
 async def server_update_preview(
         server_id: str,
         request: Request,
+        build: Annotated[Optional[int], Form(ge=1)] = None,
         actor: Actor = Depends(get_web_actor),
         updateService: UpdateService = Depends(Provide[Dependences.updateService]),
         ):
     """A dry run of the update: it reads the server and writes nothing. The answer is the job's
-    row, which polls and shows the plan when it finishes."""
-    job = await updateService.enqueue_update(server_id, actor, dry_run=True)
+    row, which polls and shows the plan when it finishes. `build` is the one chosen (O9 D3); without
+    it, the recommended one."""
+    job = await updateService.enqueue_update(server_id, actor, build=build, dry_run=True)
     return _job_row(request, actor, job)
 
 @router.post("/servers/{server_id}/update")
