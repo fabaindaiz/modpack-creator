@@ -67,7 +67,7 @@ def test_a_pack_s_steps_end_on_a_linked_server_s_simulation() -> None:
     assert steps[4].action == ("Simular instalación del build 2", "/servers/s1?build=2#actualizar")
     assert pack_steps("b1", built._replace(simulated=True))[4].done
     unlinked = pack_steps("b1", built._replace(linked_servers=()))
-    assert unlinked[3].action == ("Vincular un servidor", "/servers") and unlinked[4].waits_for == "Servidor vinculado"
+    assert unlinked[3].action == ("Vincular un servidor", "/modpacks/b1#servers-section") and unlinked[4].waits_for == "Servidor vinculado"
 
 
 def test_linking_never_waits_and_simulating_waits_for_the_build_too() -> None:
@@ -76,7 +76,7 @@ def test_linking_never_waits_and_simulating_waits_for_the_build_too() -> None:
     steps = pack_steps("b1", linked)
     assert steps[3].done and steps[4].waits_for == "Build creado" and steps[4].action is None
     unlinked = pack_steps("b1", linked._replace(linked_servers=()))
-    assert unlinked[3].action == ("Vincular un servidor", "/servers") and unlinked[3].waits_for is None
+    assert unlinked[3].action == ("Vincular un servidor", "/modpacks/b1#servers-section") and unlinked[3].waits_for is None
 
 
 def test_no_step_offers_resolving() -> None:

@@ -395,6 +395,14 @@ class FakePtero:
     async def server_find(self) -> list[PterodactylServer]:
         return self.servers
 
+    async def server_link_bundle(self, server_id: str, bundle_id: Optional[str], actor: Actor,
+                                 only_unlinked: bool = False) -> PterodactylServer:
+        server = next(s for s in self.servers if str(s.id) == server_id)
+        if only_unlinked and server.bundle_id is not None:
+            raise HTTP_409_CONFLICT("Ese servidor ya tiene un modpack")
+        self.linked = getattr(self, "linked", []) + [(server_id, bundle_id, actor)]
+        return server
+
 
 @pytest.fixture(autouse=True)
 def reset_overrides() -> Any:
@@ -2758,7 +2766,7 @@ def test_the_pack_page_lists_what_is_left_to_set_up() -> None:
     shown = said(part)
     assert "Para terminar el alta" in shown and "Con mods" in shown and "1 por decidir o con problemas" in shown
     assert f'href="/modpacks/{BUNDLE_ID}?vista=decidir"' in part
-    assert 'href="/servers"' in part  # no server linked: link one
+    assert f'href="/modpacks/{BUNDLE_ID}#servers-section"' in part  # no server linked: link one, here (O9 D8)
 
 
 # F09 (d-7985ee-a44a91): the Minecraft version is chosen from Modrinth's releases.
@@ -2975,3 +2983,36 @@ def test_below_1280_the_builds_come_before_the_mods() -> None:
     assert "xl:grid-cols-3" in grid and "xl:grid-rows-[auto_1fr]" in grid
     builds = text[text.rindex('<div class="', 0, text.index('id="builds-section"')):]
     assert "xl:col-start-3" in builds[:builds.index('>')] and "xl:row-start-1" in builds[:builds.index('>')]
+
+
+def unlinked_servers(ptero: FakePtero) -> None:
+    ptero.servers = [PterodactylServer.model_construct(id="srv1", name="Survival", bundle_id=None, is_suspended=False, status=None),
+                     PterodactylServer.model_construct(id="srv2", name="Otro", bundle_id="x", is_suspended=False, status=None)]
+
+
+def test_an_operator_links_a_server_without_a_pack_from_the_pack() -> None:
+    """O9 D8 (owner, 2026-10-26): «Vincular» in «Servidores vinculados», the servers with no pack."""
+    client, _, _, _, ptero = setup_all(OPERATOR)
+    unlinked_servers(ptero)
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    section = text[text.index('id="servers-section"'):]
+    form = section[section.index("<form"):section.index("</form>")]
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/servidores"' in form and '<option value="srv1">Survival</option>' in form
+    assert "srv2" not in form and "Vincular" in visible(form)
+    response = client.post(f"/modpacks/{BUNDLE_ID}/servidores", headers=HTMX, data={"server_id": "srv1"})
+    assert response.status_code == 200 and response.headers["HX-Redirect"] == f"/modpacks/{BUNDLE_ID}#servers-section"
+    assert ptero.linked == [("srv1", str(BUNDLE_ID), OPERATOR)]
+
+
+def test_a_server_with_a_pack_is_not_moved_from_another_pack() -> None:
+    client, _, _, _, ptero = setup_all(OPERATOR)
+    unlinked_servers(ptero)
+    response = client.post(f"/modpacks/{BUNDLE_ID}/servidores", headers=HTMX, data={"server_id": "srv2"})
+    assert response.status_code == 409 and not getattr(ptero, "linked", [])
+
+
+def test_an_editor_is_not_offered_linking() -> None:
+    client, _, _, _, ptero = setup_all(EDITOR)
+    unlinked_servers(ptero)
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/servidores"' not in text

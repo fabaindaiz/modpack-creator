@@ -507,7 +507,8 @@ async def modpack_detail(
     context = await _mods_context(modpackService, updateCheckService, bundle_id, vista, _filters_from(request), actor)
     builds = await modpackService.build_find(bundle_id)
     linked = str(context["bundle"].id)
-    servers = [s for s in await pterodactylService.server_find() if s.bundle_id == linked]
+    every = await pterodactylService.server_find()
+    servers = [s for s in every if s.bundle_id == linked]
     saved = context["mods"].resolution
     # A build made a moment ago (by its job, E9) offers to simulate it on the linked servers.
     fresh = bool(builds) and as_utc(builds[0].created_at) > datetime.now(timezone.utc) - FRESH_BUILD
@@ -525,7 +526,8 @@ async def modpack_detail(
                   pending=_has_pending((saved, context["mods"].stale) if saved else None),
                   # Simulating is an operator's (O9 user-walk, A10).
                   next_servers=servers if fresh and actor.is_operator else None,
-                  open_build_dialog=request.query_params.get("construir") == "1", human_size=human_size, nav_active="modpacks",
+                  open_build_dialog=request.query_params.get("construir") == "1",
+                  unlinked_servers=[s for s in every if not s.bundle_id], human_size=human_size, nav_active="modpacks",
                   curseforge=importService.curseforge_enabled, **context)
 
 @router.get("/modpacks/{bundle_id}/search")
@@ -867,6 +869,21 @@ async def pin_origin(
         return response
     return await _mods(request, actor, modpackService, updateCheckService, bundle_id, vista=_vista_from(request),
                        undo_origin=before)
+
+@router.post("/modpacks/{bundle_id}/servidores")
+@inject
+async def pack_server_link(
+        bundle_id: str,
+        request: Request,
+        server_id: Annotated[str, Form(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")],
+        actor: Actor = Depends(get_web_actor),
+        pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
+        ):
+    """Link a server with no pack to this one, from «Servidores vinculados» (O9 D8); operators only,
+    as on the server's page (the service checks it). One that runs another pack is not moved from
+    here: its page changes it, and asks first."""
+    await pterodactylService.server_link_bundle(server_id, bundle_id, actor, only_unlinked=True)
+    return Response(status_code=200, headers={"HX-Redirect": f"/modpacks/{bundle_id}#servers-section"})
 
 @router.get("/modpacks/{bundle_id}/trabajo")
 @inject

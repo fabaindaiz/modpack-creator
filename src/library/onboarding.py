@@ -154,9 +154,9 @@ def pack_steps(bundle_id: str, facts: PackFacts, operator: bool = True) -> list[
          f"Build {facts.latest_build}" if facts.latest_build is not None else "",
          ("Crear build", f"/modpacks/{bundle_id}#builds")),
         ("server", "Servidor vinculado", bool(facts.linked_servers),
-         ", ".join(name for _, name in facts.linked_servers), ("Vincular un servidor", "/servers")),
+         ", ".join(name for _, name in facts.linked_servers), ("Vincular un servidor", f"/modpacks/{bundle_id}#servers-section")),
         ("simulate", "Simulado", facts.simulated, "",
-         (f"Simular instalación del build {facts.latest_build}", f"/servers/{first}?build={facts.latest_build}#actualizar") if first else ("Vincular un servidor", "/servers")),
+         (f"Simular instalación del build {facts.latest_build}", f"/servers/{first}?build={facts.latest_build}#actualizar") if first else ("Vincular un servidor", f"/modpacks/{bundle_id}#servers-section")),
     ], NEEDS["pack"], OPERATOR_STEPS["pack"], operator)
 
 

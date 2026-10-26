@@ -68,7 +68,7 @@ los dos, o una fila mal formada, hace fallar el test. El nombre del método no s
 |---|---|---|
 | `UpdateService.enqueue_update` | operador | Encola una actualización (o su simulación) de un servidor a un build. |
 | `UpdateService.enqueue_rollback` | operador | Encola el rollback de una actualización, en modo A o B. |
-| `PterodactylService.server_link_bundle` | operador | Asocia un servidor a un bundle, o lo desasocia. |
+| `PterodactylService.server_link_bundle` | operador | Asocia un servidor a un bundle, o lo desasocia. Desde la página de un pack (O9 D8) solo asocia un servidor sin pack: uno con otro pack es un 409. |
 | `PterodactylService.import_request` | operador | «Importar»: deja el trabajo de importación del servidor (uno por servidor, con avance), que escanea primero (incremental) y agrega al bundle los mods identificados por hash; los ubicados por metadata (slugs en lote, búsqueda solo si falla) quedan como candidatos hasta decidirse (S3) y los que no se ubican, como archivos locales del bundle (d-7985ee-c8a15d; T1). |
 | `PterodactylService.import_server` | operador | El paso del trabajo de importación: solo lo corre el trabajo que deja `import_request`, ninguna ruta lo llama (`JOB_ONLY` de `tests/test_routes_roles.py`), y sigue exigiendo operador. |
 | `PterodactylService.panel_refresh` | editor | «Actualizar lista» en Servidores: vuelve a pedir la lista de servidores del panel, una vez por minuto para todos (U6). Solo lee el panel y guarda la lista. |

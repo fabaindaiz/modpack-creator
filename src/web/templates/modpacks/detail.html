@@ -56,8 +56,11 @@
   </div>
 
   <div class="min-w-0 space-y-6 xl:col-start-3 xl:row-start-2">
-    {% if servers %}
+    {# An operator links a server with no pack from here (O9 D8). #}
+    {% set linkable = unlinked_servers if actor.is_operator else [] %}
+    {% if servers or linkable %}
     {% call ui.section("Servidores vinculados", id="servers-section", help="servidores-vinculados") %}
+    {% if servers %}
     <ul class="divide-y divide-line-soft rounded-xl border border-line bg-raised text-sm">
       {% for server in servers %}
       <li class="flex flex-wrap items-center gap-2 px-3 py-2">
@@ -68,6 +71,16 @@
       </li>
       {% endfor %}
     </ul>
+    {% endif %}
+    {% if linkable %}
+    <form hx-post="/modpacks/{{ bundle_id }}/servidores" class="mt-3 flex flex-wrap items-center gap-2 text-sm">
+      <label for="link-server" class="text-muted">Vincular otro:</label>
+      <select id="link-server" name="server_id" required class="rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control">
+        {% for server in linkable %}<option value="{{ server.id }}">{{ server.name }}</option>{% endfor %}
+      </select>
+      {{ ui.button("Vincular", kind="secondary", small=True, type="submit") }}
+    </form>
+    {% endif %}
     {% endcall %}
     {% else %}
     <p id="servers-section" class="text-sm text-muted">Servidores vinculados: ninguno. Se vincula desde la página de cada <a href="/servers" class="font-medium text-link hover:underline">servidor</a>.</p>

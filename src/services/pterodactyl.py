@@ -156,12 +156,17 @@ class PterodactylService():
         return saved
 
     @operator_only
-    async def server_link_bundle(self, server_id: str, bundle_id: Optional[str], actor: Actor) -> PterodactylServer:
+    async def server_link_bundle(self, server_id: str, bundle_id: Optional[str], actor: Actor,
+                                 only_unlinked: bool = False) -> PterodactylServer:
         """Link a server to the bundle it runs (404 if the bundle does not exist), or unlink it.
-        Operators only: the bundle decides what an update writes to the server."""
+        Operators only: the bundle decides what an update writes to the server. With `only_unlinked`
+        (from a pack, O9 D8) a server that runs another pack is a 409 and nothing changes: moving it
+        is its page's, which asks first."""
         if bundle_id is not None:
             await self.modpackDB.bundle_get(bundle_id)
         before = await self.pterodactylDB.server_get(server_id)
+        if only_unlinked and before.bundle_id is not None:
+            raise HTTP_409_CONFLICT("Ese servidor ya tiene un modpack: se cambia desde su página")
         server = await self.pterodactylDB.server_set_bundle(server_id, bundle_id)
         await self.audit.record(actor, "server.bundle", _target(server_id), {"bundle_id": bundle_id})
         if before.bundle_id is not None and str(before.bundle_id) != str(bundle_id):

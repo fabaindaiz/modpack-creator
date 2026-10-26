@@ -177,3 +177,22 @@ def test_a_scan_that_meets_another_scans_write_offers_again_from_a_fresh_read() 
     [_, (_, record, _, _)] = packs.writes
     assert [o.server_id for o in record.origins if o.source == PinSource.server] == ["otro", SERVER_ID]
     assert record.rev == 1
+
+
+def test_linking_from_a_pack_never_moves_a_server_from_another() -> None:
+    """O9 D8 (owner, 2026-10-26): the pack links a server with no pack; moving one is its page's,
+    which asks first (D10). Nothing is written."""
+    from src.exceptions import HTTP_409_CONFLICT
+
+    servers = Servers(str(BUNDLE_ID))
+    service = PterodactylService(pterodactylAPI=cast(Any, None), PterodactylDB=cast(Any, servers),
+                                 modrinthAPI=cast(Any, None), modrinthDB=cast(Any, Catalog()),
+                                 modpackDB=cast(Any, Packs(pack({}))), audit=cast(Any, Audit()), jobDB=cast(Any, object()),
+                                 clock=lambda: NOW)
+    try:
+        asyncio.run(service.server_link_bundle(SERVER_ID, str(PydanticObjectId()), OPERATOR, only_unlinked=True))
+    except HTTP_409_CONFLICT:
+        pass
+    else:
+        raise AssertionError("a linked server was moved")
+    assert servers.server.bundle_id == str(BUNDLE_ID)
