@@ -36,7 +36,7 @@
       {%- if count is not none %} <span class="rounded-full px-1.5 text-xs tabular-nums {{ highlight if highlight and count else 'bg-subtle text-ink-soft' }}">{{ count }}</span>{% endif %}
     {%- endcall %}
     {% endfor %}
-    {% if not current %}<span class="px-2 py-2 text-xs text-muted">Resuelve para ver lo pendiente</span>{% endif %}
+    {% if not current %}<span class="px-2 py-2 text-xs text-muted">Lo pendiente se ve al traer de Modrinth lo que falta</span>{% endif %}
   </nav>
 
   {% if vista == "decidir" %}
@@ -48,7 +48,7 @@
   {% elif vista == "problemas" %}
   <div data-vista="problemas" class="space-y-3">
     {% if not current %}
-    <p class="text-sm text-muted">Resuelve para ver lo pendiente: {{ "todavía no se resolvió." if saved is none else "el pack cambió desde la última resolución." }}</p>
+    <p class="text-sm text-muted">Lo pendiente se ve al traer de Modrinth lo que falta: {{ "todavía no se resolvió." if saved is none else "el pack cambió desde la última resolución." }}</p>
     {% elif not saved.problems %}
     <p class="text-sm text-muted">No hay problemas en la resolución vigente.</p>
     {% else %}

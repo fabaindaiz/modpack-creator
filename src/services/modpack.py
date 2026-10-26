@@ -1415,6 +1415,26 @@ class ModpackService():
             await self._catalog_job(bundle_id, actor, force=False)
         return lock
 
+    async def resolve_current(self, bundle_id: str, actor: Optional[Actor] = None) -> Optional[Lock]:
+        """
+        Resolve the bundle by itself after an action, from the catalog alone (O9 D2, owner
+        2026-10-26: «sin aumentar la cantidad de requests»): never asks Modrinth and, unlike
+        `resolve`, never queues the check of a pack past the window; that is «Traer de Modrinth» and
+        the daily check. What the catalog lacks queues the pack's catalog job, the one «Resolver»
+        queued before, which resolves the pack when it ends; then None, and the action stands.
+        """
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        request = await self._request(bundle)
+        try:
+            lock = await self._resolve(request, local_only=True)
+        except _NeedsModrinth:
+            await self._catalog_job(bundle_id, actor, force=False)
+            return None
+        await self._resolution_save(bundle, request, lock)
+        if lock.free_needs:
+            await self._catalog_job(bundle_id, actor, force=False)
+        return lock
+
     async def resolve_fetching(self, bundle_id: str, report: Optional[Report] = None, force: bool = False) -> Lock:
         """Resolve asking Modrinth for what the catalog lacks, and checking it first if the pack is past
         the window (or `force`): the catalog job's work. `report` hears how far it is."""

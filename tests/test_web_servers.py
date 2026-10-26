@@ -618,7 +618,7 @@ def test_import_result_offers_the_next_step_to_the_pack() -> None:
     fakes.ptero.pending = fakes.ptero.import_result
     text = client.get(f"/servers/{SERVER_ID}").text
     section = text[text.index('id="importar"'):]
-    assert "Resolver y crear build" in section and f'href="/modpacks/{BUNDLE_ID}"' in section
+    assert "Decidir y crear build" in section and f'href="/modpacks/{BUNDLE_ID}"' in section
 
 
 def test_drift_pre_is_gone_and_dry_run_jars_fold() -> None:
@@ -1366,7 +1366,7 @@ def test_operator_post_shows_the_import_job_and_next_step() -> None:
         (str(SERVER_ID), "Creativo", "1.21.1", MinecraftLoaders.fabric, True, OPERATOR)
     assert fakes.modpack.calls == []
     assert "Importación del servidor" in response.text and 'hx-trigger="every 2s"' in response.text
-    assert "Resolver y crear build" in response.text and f'href="/modpacks/{NEW_BUNDLE_ID}"' in response.text
+    assert "Decidir y crear build" in response.text and f'href="/modpacks/{NEW_BUNDLE_ID}"' in response.text
     assert 'id="notices" hx-swap-oob="beforeend"' in response.text
 
 
@@ -1696,7 +1696,7 @@ def test_a_set_up_fact_that_fails_to_read_leaves_its_step_undone_never_a_500() -
     fakes.modpack.resolution_error = UpstreamError("modrinth", 502)
     response = client.get(f"/servers/{SERVER_ID}")
     assert response.status_code == 200
-    assert "Pack resuelto" in visible(onboarding(response.text))
+    assert "Nada por decidir" in visible(onboarding(response.text))
 
 
 def test_v1_the_latest_scan_says_why_it_was_full_and_the_node() -> None:

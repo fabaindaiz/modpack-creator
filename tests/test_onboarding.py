@@ -18,7 +18,7 @@ def test_a_new_server_has_every_step_left_and_only_the_first_offers_its_action()
     assert steps[0].action == ("Escanear", "/servers/s1#escaneo")
     assert steps[1].action == ("Crear o vincular", "/servers/s1#modpack")  # scanning is not required to link
     assert steps[2].action is None and steps[2].waits_for == "Pack vinculado"
-    assert steps[3].waits_for == "Pack resuelto" and steps[4].waits_for == "Build creado"
+    assert steps[3].waits_for == "Nada por decidir" and steps[4].waits_for == "Build creado"
 
 
 def test_a_linked_server_with_pending_mods_points_to_deciding_them() -> None:
@@ -30,9 +30,11 @@ def test_a_linked_server_with_pending_mods_points_to_deciding_them() -> None:
     assert steps[2].action == ("Decidir", "/modpacks/b1?vista=decidir")
 
 
-def test_an_unresolved_pack_offers_resolving() -> None:
+def test_an_unresolved_pack_leads_to_the_pack_which_resolves_by_itself() -> None:
+    """O9 D2 (owner, 2026-10-26): no «Resolver» step; opening the pack resolves it."""
     facts = NEW._replace(scanned=True, bundle_id="b1", bundle_name="Survival")
-    assert server_steps("s1", facts)[2].action == ("Resolver", "/modpacks/b1#mods")
+    step = server_steps("s1", facts)[2]
+    assert step.label == "Nada por decidir" and step.action == ("Abrir el pack", "/modpacks/b1#mods-section")
 
 
 def test_a_build_not_simulated_yet_offers_the_simulation() -> None:
@@ -77,11 +79,12 @@ def test_linking_never_waits_and_simulating_waits_for_the_build_too() -> None:
     assert unlinked[3].action == ("Vincular un servidor", "/servers") and unlinked[3].waits_for is None
 
 
-def test_resolving_points_to_the_mods_where_the_resolve_button_is() -> None:
-    """User walk 2026-10-13 (K1): on the pack page the step pointed to the page itself, at the top."""
+def test_no_step_offers_resolving() -> None:
+    """O9 D2 (owner, 2026-10-26): every action resolves the pack; the guide keeps «Decidir»."""
     facts = PackFacts(projects=2, resolved=False, pending=0, latest_build=None, linked_servers=(), simulated=False)
-    assert pack_steps("b1", facts)[1].action == ("Resolver", "/modpacks/b1#mods")
-    assert server_steps("s1", NEW._replace(bundle_id="b1"))[2].action == ("Resolver", "/modpacks/b1#mods")
+    steps = pack_steps("b1", facts) + server_steps("s1", NEW._replace(bundle_id="b1"))
+    assert all(s.action is None or s.action[0] != "Resolver" for s in steps)
+    assert "Resolver" not in " ".join(s.why for s in steps)
 
 
 def test_an_editor_is_told_an_operator_does_the_operator_steps() -> None:

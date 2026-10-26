@@ -3,7 +3,7 @@
    project, and each opens its card from this pack. #}
 {% import "_macros.html" as ui %}
 {% if not current %}
-<p class="text-sm text-muted">Resuelve para ver lo pendiente: {{ "todavía no se resolvió." if saved is none else "el pack cambió desde la última resolución." }}</p>
+<p class="text-sm text-muted">Lo pendiente se ve al traer de Modrinth lo que falta: {{ "todavía no se resolvió." if saved is none else "el pack cambió desde la última resolución." }}</p>
 {% elif not saved.suggestions %}
 <p class="text-sm text-muted">No hay sugerencias en la resolución vigente.</p>
 {% else %}

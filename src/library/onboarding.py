@@ -27,7 +27,7 @@ WHY = {
     "scan": "El escaneo dice qué corre hoy: es el punto de partida, y ningún mod baja de lo que ya corre.",
     "pack": "El pack es la lista de lo que debería correr; se puede crear desde lo escaneado.",
     "mods": "Los mods del pack; sus dependencias las agrega la resolución.",
-    "resolve": "Resolver elige una versión para cada mod y sus dependencias; lo que queda por decidir es tuyo.",
+    "resolve": "El pack se resuelve solo con cada cambio: elige una versión para cada mod y sus dependencias; lo que queda por decidir es tuyo.",
     "build": "Un build congela lo que se instala: lo que se prueba es exactamente lo que se instala.",
     "server": "El build se prueba e instala en un servidor vinculado al pack.",
     "simulate": "Simular muestra qué cambia, las bajas y los jars sin explicar, antes de tocar el servidor.",
@@ -114,11 +114,12 @@ def _resolve_step(bundle_id: Optional[str], resolved: bool, pending: int,
                   problems: int = 0) -> tuple[str, str, bool, str, tuple[str, str]]:
     done = resolved and pending == 0
     detail = f"{pending} por decidir o con problemas" if resolved and pending else ""
-    # The resolve button heads the pack's mods (user walk, 2026-10-13: the bare page left it out of sight).
-    # The tab with what is pending, problems first, as the dashboard (O9 user-walk, A4).
+    # The tab with what is pending, problems first, as the dashboard (O9 user-walk, A4). No «Resolver»
+    # (O9 D2): the pack resolves by itself, and opening it resolves one that is not yet.
     vista = "problemas" if problems else "decidir"
-    action = ("Decidir", f"/modpacks/{bundle_id}?vista={vista}") if resolved else ("Resolver", f"/modpacks/{bundle_id}#mods")
-    return "resolve", "Pack resuelto", done, detail, action
+    action = ("Decidir", f"/modpacks/{bundle_id}?vista={vista}") if resolved \
+        else ("Abrir el pack", f"/modpacks/{bundle_id}#mods-section")
+    return "resolve", "Nada por decidir", done, detail, action
 
 
 def server_steps(server_id: str, facts: ServerFacts, operator: bool = True) -> list[Step]:

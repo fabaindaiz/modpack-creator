@@ -305,3 +305,35 @@ def test_a_refresh_whose_loader_meta_is_down_still_ends_done(mongo: MongoRunner)
         return (await JobDatabase().get(str(job.id))).status
 
     assert mongo(scenario) == "done"
+
+
+def test_resolving_by_itself_never_asks_modrinth_nor_queues_the_window_check(mongo: MongoRunner) -> None:
+    """O9 D2 (owner, 2026-10-26): the pack resolves by itself after every action, «sin aumentar la
+    cantidad de requests»: from the catalog, and past the window it does not queue the check that
+    `resolve` queues; that is «Traer de Modrinth» and the daily check."""
+    async def scenario() -> tuple[Any, ...]:
+        service, api, clock, bundle_id = await setup()
+        await service.resolve_fetching(bundle_id)
+        api.calls.clear()
+        clock.now += CATALOG_WINDOW + timedelta(seconds=1)
+        lock = await service.resolve_current(bundle_id, EDITOR)
+        return lock, api.calls, await Job.find().to_list(), await service.resolution(bundle_id)
+
+    lock, calls, jobs, saved = mongo(scenario)
+    assert lock is not None and {e.project_id for e in lock.entries} == {"AAAA", "BBBB", "LIBB"}
+    assert calls == [] and jobs == []
+    assert saved is not None and saved[1] is False
+
+
+def test_resolving_by_itself_a_pack_the_catalog_lacks_leaves_one_job_and_does_not_fail(mongo: MongoRunner) -> None:
+    """What the catalog lacks is the one catalog job «Resolver» queued before: the action that
+    resolved still answers, and the job reloads the pack when it ends."""
+    async def scenario() -> tuple[Any, ...]:
+        service, api, clock, bundle_id = await setup()
+        first = await service.resolve_current(bundle_id, EDITOR)
+        second = await service.resolve_current(bundle_id, EDITOR)
+        return first, second, await Job.find().to_list(), api.calls
+
+    first, second, jobs, calls = mongo(scenario)
+    assert first is None and second is None and calls == []
+    assert [(j.kind, j.status) for j in jobs] == [("catalog_refresh", "queued")]

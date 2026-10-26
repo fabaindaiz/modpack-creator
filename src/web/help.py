@@ -12,7 +12,7 @@ HELP: dict[str, tuple[str, str]] = {
     "nuevo-modpack": ("Elige la versión de Minecraft y el loader. Los mods se agregan después, uno a uno o "
                       "importando un pack.", "modpack"),
     "mods": ("Los mods del pack y las dependencias que trajo la última resolución. Agrega mods buscándolos o "
-             "por su slug, y pulsa «Resolver» para elegir la versión de cada uno. En cada fila decides si el "
+             "por su slug: el pack se resuelve solo y elige la versión de cada uno. En cada fila decides si el "
              "mod va en el servidor, si acepta beta o alpha y si queda fijado a una versión.", "resolver"),
     "builds": ("Un build es una resolución congelada y numerada: lo que se instala en un servidor. Créalo "
                "cuando la resolución no tenga problemas ni mods por decidir. El recomendado es el que se ofrece "

@@ -1,23 +1,20 @@
 {# The latest saved resolution above the mods: when it ran and whether the pack changed since, how
    many mods are left to decide, how many problems and how many suggestions it has (each a link to
-   its tab, where they are listed), each only when there are some. Part of _mods.html. Resolving
-   keeps the view. #}
+   its tab, where they are listed), each only when there are some. Part of _mods.html. The pack
+   resolves by itself (O9 D2): «Traer de Modrinth» is what asks Modrinth again. #}
 {% import "_macros.html" as ui %}
 {% set resolution = mods.resolution %}
 <div class="space-y-3">
   <div class="flex flex-wrap items-center justify-between gap-2">
     <p class="text-sm text-muted">
       {% if resolution is none %}
-      Todavía no se resolvió. Resolver consulta Modrinth y guarda el resultado para verlo aquí; un build vuelve a resolver y congela ese lock.
+      Todavía no se resolvió: falta traer de Modrinth lo que el catálogo no tiene. Un build vuelve a resolver y congela ese lock.
       {% else %}
       Resuelto {{ ui.when(resolution.resolved_at) }} · {{ resolution.lock.entries | length }} archivos
       {% endif %}
     </p>
     <div class="flex flex-wrap items-center gap-2">
-      {{ ui.button("Resolver" if resolution is none else "Resolver de nuevo", kind="secondary", disabled_reason="En curso…" if busy else None, icon_name="refresh-cw", attrs={
-        "hx-post": "/modpacks/" ~ bundle_id ~ "/resolve" ~ ("" if vista == "todos" else "?vista=" ~ vista),
-        "hx-target": "#mods", "hx-swap": "outerHTML"}) }}
-      {{ ui.button("Actualizar desde Modrinth", kind="ghost", disabled_reason="En curso…" if busy else None, attrs={
+      {{ ui.button("Traer de Modrinth", kind="secondary", disabled_reason="En curso…" if busy else None, icon_name="refresh-cw", attrs={
         "hx-post": "/modpacks/" ~ bundle_id ~ "/catalogo", "hx-swap": "none"}) }}
     </div>
   </div>

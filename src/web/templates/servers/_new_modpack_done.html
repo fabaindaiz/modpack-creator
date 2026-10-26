@@ -22,7 +22,7 @@
   {% else %}
   <p>Modpack <a href="/modpacks/{{ bundle.id }}" class="font-medium hover:underline">{{ bundle.name }}</a> creado. Pide a un operador que lo vincule a este servidor e importe sus mods.</p>
   {% endif %}
-  <div>{{ ui.next_step("Resolver y crear build", "/modpacks/" ~ bundle.id) }}</div>
+  <div>{{ ui.next_step("Decidir y crear build", "/modpacks/" ~ bundle.id) }}</div>
 </div>
 <div id="notices" hx-swap-oob="beforeend">
   {%- if outcome and outcome.import_error %}{{ ui.notice("Modpack creado y vinculado, pero la importación falló: puedes importar de nuevo.", "warning") }}

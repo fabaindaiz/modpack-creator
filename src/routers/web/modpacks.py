@@ -169,14 +169,21 @@ def _filters_from(request: Request) -> ModFilters:
     return ModFilters.parse({name: values[0] for name, values in query.items()})
 
 async def _mods_context(modpackService: ModpackService, updateCheckService: UpdateCheckService,
-                        bundle_id: str, vista: str = "todos", filters: ModFilters = ModFilters()) -> dict[str, Any]:
+                        bundle_id: str, vista: str = "todos", filters: ModFilters = ModFilters(),
+                        actor: Optional[Actor] = None) -> dict[str, Any]:
     """What _mods.html needs: the bundle and its mod list, with the latest update check (for the
     newer versions) and the titles of what the saved resolution names, in one of its views. Modrinth
     is asked at most once, inside mod_list, within one deadline. `cards` has a card for every row
     and every problem's mod; `origins` is the pack's project ids → origin. `shown` are the rows the
     filters keep, and `filter_counts` what each filter option would show (A6, A12)."""
     bundle = await modpackService.bundle_get(bundle_id)
-    mods = await modpackService.mod_list(bundle_id, await updateCheckService.latest(bundle_id), bundle=bundle)
+    check = await updateCheckService.latest(bundle_id)
+    mods = await modpackService.mod_list(bundle_id, check, bundle=bundle)
+    if mods.resolution is None or mods.stale:
+        # The pack resolves by itself, from the catalog (O9 D2): every action and every visit show
+        # it current. Lacking something, its catalog job is queued and the list stays as it was.
+        if await modpackService.resolve_current(bundle_id, actor) is not None:
+            mods = await modpackService.mod_list(bundle_id, check, bundle=bundle)
     exceptions = bundle.channel_exceptions
     loader = str(bundle.loader.value)
     # Batch C: each bridge of the pack's loader by key, for the rows' labels.
@@ -197,7 +204,7 @@ async def _mods(request: Request, actor: Actor, modpackService: ModpackService, 
                 hit: Optional[str] = None, vista: str = "todos") -> Response:
     """The #mods fragment; `success` or `info` and `hit` go after it, out of band (a notice, a search
     hit marked "Ya está")."""
-    context = await _mods_context(modpackService, updateCheckService, bundle_id, vista, _filters_from(request))
+    context = await _mods_context(modpackService, updateCheckService, bundle_id, vista, _filters_from(request), actor)
     return render(request, "modpacks/_mods.html", actor, success=success, info=info, hit=hit, **context)
 
 def human_size(size: int) -> str:
@@ -230,7 +237,7 @@ async def _resolved(request: Request, actor: Actor, modpackService: ModpackServi
     redrawn out of band: its button says whether something is still pending, and "Crear build" is
     the highlighted next step when the current resolution has nothing left to decide and no
     problems (spec §2). Nothing here creates a build."""
-    context = await _mods_context(modpackService, updateCheckService, bundle_id, vista, _filters_from(request))
+    context = await _mods_context(modpackService, updateCheckService, bundle_id, vista, _filters_from(request), actor)
     mods = context["mods"]
     saved = (mods.resolution, mods.stale) if mods.resolution else None
     pending = _has_pending(saved)
@@ -254,11 +261,13 @@ async def _acted(request: Request, actor: Actor, modpackService: ModpackService,
     behind it redrawn out of band. Never a build: that is the owner's click."""
     if contexto is None:
         return await _mods(request, actor, modpackService, updateCheckService, bundle_id, vista=_vista_from(request))
-    lock = await modpackService.resolve(bundle_id, actor)
+    # Drawing #mods resolves the pack by itself (O9 D2); the dialog needs the lock, and says so if
+    # the catalog lacks something (CatalogPending).
     if contexto == "dialogo":
+        lock = await modpackService.resolve(bundle_id, actor)
         # mod_list (inside) fills the catalog once for every mod the page and the dialog name: the
         # resolution it reads is the one just saved, this lock.
-        context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request), _filters_from(request))
+        context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request), _filters_from(request), actor)
         mods = context["mods"]
         return _dialog(request, actor, lock, done=success, mods_oob=True, builds_oob=True,
                        builds=await modpackService.build_find(bundle_id),
@@ -486,7 +495,7 @@ async def modpack_detail(
     ones to decide, the problems; spec §3), the search to add more, and on the side its builds, the
     servers linked to it, its channels and its local files. A tab asks for this page and keeps only
     #mods."""
-    context = await _mods_context(modpackService, updateCheckService, bundle_id, vista, _filters_from(request))
+    context = await _mods_context(modpackService, updateCheckService, bundle_id, vista, _filters_from(request), actor)
     builds = await modpackService.build_find(bundle_id)
     linked = str(context["bundle"].id)
     servers = [s for s in await pterodactylService.server_find() if s.bundle_id == linked]
@@ -612,7 +621,7 @@ async def project_add(
                             "Agregado: " + ", ".join(titles[i] for i in added) if added else "Ya estaban en el modpack")
     trigger = request.headers.get("HX-Trigger")
     from_hit = trigger in (f"hit-add-{main}", f"bridge-add-{main}") and any(p.project_id == main for p in projects)
-    context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request), _filters_from(request))
+    context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request), _filters_from(request), actor)
     names = ", ".join(context["titles"].get(i, i) for i in added)
     return render(request, "modpacks/_mods.html", actor, success=f"Agregado: {names}" if names else None,
                   info=None if names else "Ese mod ya estaba en el modpack", hit=main if from_hit else None, **context)
@@ -716,7 +725,6 @@ async def modpack_via(
         response.headers["HX-Retarget"] = "#pin-dialog"
         response.headers["HX-Reswap"] = "innerHTML"
         return response
-    await modpackService.resolve(bundle_id, actor)
     return await _resolved(request, actor, modpackService, updateCheckService, bundle_id,
                            "El mod pasa a sus versiones nativas" if native == "1" else "El mod vuelve a ir por el puente",
                            vista=_vista_from(request))
@@ -747,8 +755,7 @@ async def modpack_bridges(
         headers = {k: v for k, v in acted.headers.items() if k.lower() != "content-length"}
         return Response(content=bytes(acted.body) + bytes(section.body), status_code=acted.status_code,
                         headers=headers, media_type="text/html")
-    await modpackService.resolve(bundle_id, actor)
-    context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request), _filters_from(request))
+    context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request), _filters_from(request), actor)
     mods = context["mods"]
     pending = _has_pending((mods.resolution, mods.stale) if mods.resolution else None)
     lock = mods.resolution.lock if mods.resolution else None
@@ -795,7 +802,7 @@ async def pin_add(
             response.headers["HX-Reswap"] = "innerHTML"
             return response
     if fila is not None:
-        context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request), _filters_from(request))
+        context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request), _filters_from(request), actor)
         return render(request, "modpacks/_mods.html", actor, success=None, info=None, hit=None,
                       undo={"project_id": project_id, "version_id": version_id or "", "previous": previous or ""},
                       **context)
@@ -907,7 +914,6 @@ async def channel_exception_add(
         await modpackService.channel_exception_unset(bundle_id, project_id, actor)
         success = "El mod vuelve a los canales del pack"
     if contexto is None:
-        await modpackService.resolve(bundle_id, actor)
         return await _resolved(request, actor, modpackService, updateCheckService, bundle_id, success,
                                vista=_vista_from(request))
     return await _acted(request, actor, modpackService, updateCheckService, bundle_id, contexto, success)
@@ -926,21 +932,6 @@ async def channel_exception_remove(
     await modpackService.channel_exception_unset(bundle_id, project_id, actor)
     return await _mods(request, actor, modpackService, updateCheckService, bundle_id, vista=_vista_from(request))
 
-@router.post("/modpacks/{bundle_id}/resolve")
-@inject
-async def modpack_resolve(
-        bundle_id: str,
-        request: Request,
-        vista: Annotated[str, Query()] = "todos",
-        actor: Actor = Depends(get_web_actor),
-        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
-        updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
-        ):
-    """Resolve the bundle now and show the mods under it. The resolution is kept only to show it:
-    a build resolves again and freezes that lock. The view it was asked from stays."""
-    await modpackService.resolve(bundle_id, actor)
-    return await _mods(request, actor, modpackService, updateCheckService, bundle_id, vista=vista)
-
 @router.post("/modpacks/{bundle_id}/decisions")
 @inject
 async def modpack_decide(
@@ -955,7 +946,6 @@ async def modpack_decide(
     """Decide whether a mod goes on the server: one key, written atomically by the service. The
     resolution is run again so the mod leaves "Por decidir"."""
     await modpackService.decision_set(bundle_id, project_id, server == "yes", actor)
-    await modpackService.resolve(bundle_id, actor)
     return await _decided(request, actor, modpackService, updateCheckService, bundle_id)
 
 @router.post("/modpacks/{bundle_id}/decisions/bulk")
@@ -974,7 +964,6 @@ async def modpack_decide_bulk(
     if not decisions:
         raise HTTP_422_UNPROCESSABLE_ENTITY("Elige al menos una decisión")
     await modpackService.decisions_set(bundle_id, decisions, actor)
-    await modpackService.resolve(bundle_id, actor)
     return await _decided(request, actor, modpackService, updateCheckService, bundle_id, vista)
 
 @router.post("/modpacks/{bundle_id}/builds")

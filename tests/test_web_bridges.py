@@ -194,7 +194,7 @@ def test_agregar_todo_from_a_problem_card_resolves_and_answers_there() -> None:
     response = client.post(f"/modpacks/{BUNDLE_ID}/projects", headers=HTMX,
                            data={"ref": [CONNECTOR, FORGIFIED_FABRIC_API], "confirm_bridge": "1", "contexto": "problemas"})
     assert response.status_code == 200 and 'data-vista="problemas"' in response.text
-    assert [c[0] for c in modpack.calls if c[0] in ("project_add", "resolve")] == ["project_add", "resolve"]
+    assert [c[0] for c in modpack.calls if c[0] in ("project_add", "resolve_current")] == ["project_add", "resolve_current"]
 
 
 def test_the_dialog_from_a_problem_card_sends_its_context_back() -> None:
@@ -255,7 +255,7 @@ def test_turning_a_bridge_back_on_from_a_card_resolves_and_answers_there() -> No
                            data={"bridge": "connector", "contexto": "problemas"})
     assert response.status_code == 200 and response.text.lstrip().startswith('<div id="mods"')
     assert call(modpack, "bundle_update")[2].secondary_loaders == ["connector"]
-    assert [c[0] for c in modpack.calls].count("resolve") == 1
+    assert [c[0] for c in modpack.calls].count("resolve_current") == 1
 
 
 def test_saving_the_bridges_resolves_again_and_redraws_the_mods() -> None:
@@ -265,7 +265,7 @@ def test_saving_the_bridges_resolves_again_and_redraws_the_mods() -> None:
     response = client.post(f"/modpacks/{BUNDLE_ID}/bridges", headers=HTMX, data={"bridge": "connector"})
     assert response.status_code == 200 and response.text.lstrip().startswith('<form id="bridges"')
     assert '<div id="mods" class="space-y-4" hx-swap-oob="true"' in response.text
-    assert [c[0] for c in modpack.calls].count("resolve") == 1
+    assert [c[0] for c in modpack.calls].count("resolve_current") == 1
 
 
 def test_volver_al_puente_only_while_the_installed_version_still_runs_through_it() -> None:

@@ -57,10 +57,11 @@ def setup() -> tuple[Any, Any, FakeJobs]:
 
 
 def test_a_resolve_that_needs_modrinth_says_a_job_prepares_it_and_shows_it() -> None:
-    # Not an error (the visual sweep flagged the 409 in the console): the work is queued.
+    # Not an error (the visual sweep flagged the 409 in the console): the work is queued. The build
+    # dialog is what still asks for a lock (O9 D2: the rest resolves by itself, quietly).
     client, modpack, _ = setup()
     modpack.error = CatalogPending(job())
-    response = client.post(f"/modpacks/{BUNDLE_ID}/resolve", headers=HTMX)
+    response = client.get(f"/modpacks/{BUNDLE_ID}/builds/dialogo", headers=HTMX)
     assert response.status_code == 200 and response.headers.get("HX-Trigger") == "job-started"
     assert response.headers.get("HX-Reswap") == "none"
     assert "Preparando el catálogo de Modrinth para este pack: se resuelve solo al terminar." in response.text
@@ -117,17 +118,17 @@ def test_the_pack_page_has_the_banner_the_refresh_button_and_reloads_on_job_even
     modpack.bundle.modrinth_checked_at = datetime.now(timezone.utc) - timedelta(minutes=3)
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
     assert f'hx-get="/modpacks/{BUNDLE_ID}/trabajo"' in text and "job-started from:body" in text
-    assert f'hx-post="/modpacks/{BUNDLE_ID}/catalogo"' in text and "Actualizar desde Modrinth" in text
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/catalogo"' in text and "Traer de Modrinth" in text
     assert "Revisado en Modrinth hace 3 min" in " ".join(visible(text).split())
     assert 'hx-trigger="job-finished from:body, job-started from:body"' in text
 
 
-def test_while_a_job_runs_the_resolve_and_refresh_buttons_say_it() -> None:
+def test_while_a_job_runs_the_bring_from_modrinth_button_says_it() -> None:
     client, modpack, _ = setup()
     modpack.jobs = [job()]
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
-    resolve = text[text.rindex("<button", 0, text.index("/resolve")):]
-    assert "disabled" in resolve[:resolve.index(">")] and "En curso…" in text
+    bring = text[text.rindex("<button", 0, text.index("/catalogo")):]
+    assert "disabled" in bring[:bring.index(">")] and "En curso…" in text
 
 
 def test_the_bar_shows_the_users_open_jobs_with_their_progress_and_a_shortcut() -> None:

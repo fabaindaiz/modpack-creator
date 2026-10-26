@@ -53,6 +53,9 @@ class FakeModpack:
     async def active_jobs(self, bundle_id: str) -> list[Any]:
         return []
 
+    async def resolve_current(self, bundle_id: str, actor: Any = None) -> None:
+        return None  # a pack the catalog lacks: it stays as it is (O9 D2)
+
     async def build_find(self, bundle_id: str) -> list[ModpackBuild]:
         return []
 

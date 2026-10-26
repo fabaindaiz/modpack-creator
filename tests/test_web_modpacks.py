@@ -14,7 +14,7 @@ from beanie import PydanticObjectId
 from dependency_injector import providers
 from fastapi.testclient import TestClient
 
-from src.exceptions import BuildBlocked, DowngradeRefused, ViaChangeRefused, HTTP_404_NOT_FOUND, HTTP_409_CONFLICT, UpstreamError
+from src.exceptions import CatalogPending, BuildBlocked, DowngradeRefused, ViaChangeRefused, HTTP_404_NOT_FOUND, HTTP_409_CONFLICT, UpstreamError
 from src.library.resolution import Alternative, Lock, LockEntry, Problem, Suggestion
 from src.library.scan import LocalFile
 from src.model.modpack import (AvailableUpdate, ModpackBuild, ModpackBundle, ModpackReplacement, ModpackResolution,
@@ -242,7 +242,20 @@ class FakeModpack:
 
     async def resolve(self, bundle_id: str, actor: Optional[Actor] = None) -> Lock:
         self._record("resolve", bundle_id, actor)
+        if isinstance(self.error, CatalogPending):
+            raise self.error  # the catalog lacks something: its job is queued (O6)
         self.saved = resolution(self.lock)
+        return self.lock
+
+    # Whether resolve_current resolves (O9 D2); off, it is a pack the catalog lacks: its job is
+    # queued and nothing changes, as most tests want the resolution they set.
+    resolves_by_itself = False
+
+    async def resolve_current(self, bundle_id: str, actor: Optional[Actor] = None) -> Optional[Lock]:
+        self._record("resolve_current", bundle_id, actor)
+        if not self.resolves_by_itself:
+            return None
+        self.saved, self.stale = resolution(self.lock), False
         return self.lock
 
     async def mod_list(self, bundle_id: str, check: Optional[UpdateCheck],
@@ -658,25 +671,24 @@ def test_remove_project_with_the_actor() -> None:
 
 # Lock y decisiones.
 
-def test_resolve_answers_the_mods_with_the_saved_resolution_on_top() -> None:
+def test_the_mods_show_the_resolution_on_top() -> None:
     client, modpack, _ = setup()
-    response = client.post(f"/modpacks/{BUNDLE_ID}/resolve", headers=HTMX)
-    assert response.status_code == 200 and response.text.lstrip().startswith('<div id="mods"')
-    assert call(modpack, "resolve")[1] == str(BUNDLE_ID)
-    assert "Sodium" in response.text and "Lithium" in response.text
+    modpack.resolves_by_itself = True
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert call(modpack, "resolve_current")[1] == str(BUNDLE_ID)
+    assert "Sodium" in text and "Lithium" in text
     # The panel counts what is pending; deciding is in its own tab, not above the list (spec §3).
-    assert f'hx-post="/modpacks/{BUNDLE_ID}/decisions/bulk' not in response.text
-    text = response.text
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/decisions/bulk' not in text
+    text = text[text.index('<div id="mods"'):]
     assert text.index("Resuelto") < text.index("1 por decidir") < text.index('data-tab="todos"') < text.index('data-project="P1"')
 
 
-def test_resolve_keeps_the_view_it_was_asked_from() -> None:
+def test_resolving_by_itself_keeps_the_view_it_was_asked_from() -> None:
     client, modpack, _ = setup()
+    modpack.resolves_by_itself = True
     modpack.lock = lock(entry("P1"), problems=[Problem(kind="no_file", project_id="P9", detail="v-P9 no tiene archivo")])
-    text = client.post(f"/modpacks/{BUNDLE_ID}/resolve", params={"vista": "problemas"}, headers=HTMX).text
-    assert 'aria-current="page"' in tab(text, "problemas") and 'data-problem="P9"' in view(text, "problemas")
     text = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "problemas"}).text
-    assert f'hx-post="/modpacks/{BUNDLE_ID}/resolve?vista=problemas"' in text
+    assert 'aria-current="page"' in tab(text, "problemas") and 'data-problem="P9"' in view(text, "problemas")
 
 
 def test_decision_is_one_key_with_the_actor() -> None:
@@ -703,8 +715,9 @@ def test_decision_must_be_yes_or_no() -> None:
 
 def test_lock_offers_one_form_with_every_undecided_mod() -> None:
     client, modpack, _ = setup()
+    modpack.resolves_by_itself = True
     modpack.lock = lock(entry("P1"), entry("P2", "admin"), entry("P3", "admin"))
-    text = client.post(f"/modpacks/{BUNDLE_ID}/resolve", params={"vista": "decidir"}, headers=HTMX).text
+    text = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "decidir"}).text
     assert f'hx-post="/modpacks/{BUNDLE_ID}/decisions/bulk?vista=decidir"' in text
     assert 'name="decision.P2"' in text and 'name="decision.P3"' in text and 'name="decision.P1"' not in text
     assert "Guardar las 2 decisiones" in text
@@ -1165,6 +1178,7 @@ def test_decisions_refresh_the_builds_out_of_band(route: str, data: dict[str, st
     """After deciding, the builds section is redrawn in the same answer: its button says whether
     something is still pending, so it never keeps saying "Decidir y crear build…" until a reload."""
     client, modpack, _ = setup()
+    modpack.resolves_by_itself = True
     modpack.lock = lock(entry("P1"), entry("P2", "admin"), entry("P3", "admin"))
     text = client.post(f"/modpacks/{BUNDLE_ID}/{route}", headers=HTMX, data=data).text
     assert 'hx-swap-oob="true"' in re.search(r'<div id="builds"[^>]*>', text).group(0)  # type: ignore[union-attr]
@@ -1177,6 +1191,7 @@ def test_decisions_refresh_the_builds_out_of_band(route: str, data: dict[str, st
                                         ("decisions/bulk", {"decision.P2": "si"})])
 def test_deciding_the_last_mod_highlights_crear_build(route: str, data: dict[str, str]) -> None:
     client, modpack, _ = setup()
+    modpack.resolves_by_itself = True
     modpack.lock = lock(entry("P1"), entry("P2"))
     builds = builds_part(client.post(f"/modpacks/{BUNDLE_ID}/{route}", headers=HTMX, data=data).text)
     assert "No quedan mods por decidir" in builds and ">Crear build<" in builds
@@ -1801,10 +1816,10 @@ def test_the_blue_box_is_gone_and_the_summary_links_the_suggestions() -> None:
     assert f'href="/modpacks/{BUNDLE_ID}?vista=sugerencias"' in summary
 
 
-def test_without_a_current_resolution_the_suggestions_tab_asks_to_resolve() -> None:
+def test_without_a_current_resolution_the_suggestions_tab_says_it_waits_for_modrinth() -> None:
     client, modpack, _ = setup()
     text = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "sugerencias"}).text
-    assert "Resuelve para ver lo pendiente" in visible(view(text, "sugerencias"))
+    assert "Lo pendiente se ve al traer de Modrinth lo que falta" in visible(view(text, "sugerencias"))
 
 
 def test_add_from_search_marks_the_hit_out_of_band() -> None:
@@ -1881,12 +1896,12 @@ def test_choosing_beta_sets_the_exception_and_the_pack_channel_removes_it() -> N
     response = client.post(f"/modpacks/{BUNDLE_ID}/channel-exceptions", headers=HTMX,
                            data={"project_id": "P2", "channel": "beta"})
     assert response.status_code == 200 and response.text.lstrip().startswith('<div id="mods"')
-    assert [c[0] for c in modpack.calls] == ["channel_exception_set", "resolve"]
+    assert [c[0] for c in modpack.calls] == ["channel_exception_set", "resolve_current"]
     modpack.calls.clear()
     response = client.post(f"/modpacks/{BUNDLE_ID}/channel-exceptions", headers=HTMX,
                            data={"project_id": "P2", "channel": ""})
     assert response.status_code == 200 and response.text.lstrip().startswith('<div id="mods"')
-    assert [c[0] for c in modpack.calls] == ["channel_exception_unset", "resolve"]
+    assert [c[0] for c in modpack.calls] == ["channel_exception_unset", "resolve_current"]
     assert call(modpack, "channel_exception_unset")[1:] == (str(BUNDLE_ID), "P2", EDITOR)
 
 
@@ -2233,17 +2248,17 @@ def test_the_selected_tab_is_marked_and_only_its_view_is_drawn() -> None:
     assert 'data-project="P1"' not in text and 'data-vista="todos"' not in text
 
 
-def test_tabs_without_a_current_resolution_ask_to_resolve() -> None:
+def test_tabs_without_a_current_resolution_say_it_waits_for_modrinth() -> None:
     client, modpack, _ = setup()
     for stale in (None, True):
         if stale:
             modpack.saved, modpack.stale = resolution(lock(entry("P1"), entry("P2", "admin"))), True
         text = client.get(f"/modpacks/{BUNDLE_ID}").text
-        assert "resuelve para ver lo pendiente" in said(text).lower()
+        assert "lo pendiente se ve al traer de modrinth lo que falta" in said(text).lower()
         assert said(tab(text, "decidir")) == "Por decidir" and said(tab(text, "problemas")) == "Con problemas"
         for name in ("decidir", "problemas"):
             shown = view(client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": name}).text, name)
-            assert "resuelve para ver lo pendiente" in said(shown).lower() and 'name="decision.P2"' not in shown
+            assert "lo pendiente se ve al traer de modrinth lo que falta" in said(shown).lower() and 'name="decision.P2"' not in shown
 
 
 def test_the_pack_panel_counts_what_is_pending_with_links_to_the_tabs() -> None:
@@ -2304,6 +2319,7 @@ def test_pending_view_without_mods_to_decide_says_so() -> None:
 
 def test_the_bulk_decisions_from_the_pending_view_stay_in_it() -> None:
     client, modpack, _ = setup()
+    modpack.resolves_by_itself = True
     modpack.lock = lock(entry("P1"), entry("P2", "admin"), entry("P3", "admin"))
     text = client.post(f"/modpacks/{BUNDLE_ID}/decisions/bulk", params={"vista": "decidir"}, headers=HTMX,
                        data={"decision.P2": "si"}).text
@@ -2529,17 +2545,19 @@ def test_pinning_another_is_only_for_a_mod_of_the_pack() -> None:
 def test_a_problem_action_applies_then_resolves_and_answers_the_problems_view(
         method: str, path: str, data: Optional[dict[str, str]], action: str) -> None:
     client, modpack, _ = setup()
+    modpack.resolves_by_itself = True
     modpack.lock = lock(entry("P1"), problems=[Problem(kind="no_file", project_id="P1", detail="x")])
     response = client.request(method, f"/modpacks/{BUNDLE_ID}/{path}", headers=HTMX, data=data)
     assert response.status_code == 200 and response.text.lstrip().startswith('<div id="mods"')
-    assert [c[0] for c in modpack.calls] == [action, "resolve"]
-    assert call(modpack, action)[-1] == EDITOR and call(modpack, "resolve")[1] == str(BUNDLE_ID)
+    assert [c[0] for c in modpack.calls] == [action, "resolve_current"]
+    assert call(modpack, action)[-1] == EDITOR and call(modpack, "resolve_current")[1] == str(BUNDLE_ID)
     assert 'aria-current="page"' in tab(response.text, "problemas") and 'data-problem="P1"' in view(response.text, "problemas")
     assert 'hx-swap-oob="true"' in re.search(r'<div id="builds"[^>]*>', response.text).group(0)  # type: ignore[union-attr]
 
 
 def test_a_problem_action_that_leaves_nothing_highlights_crear_build() -> None:
     client, modpack, _ = setup()
+    modpack.resolves_by_itself = True
     modpack.lock = lock(entry("P1"))
     text = client.delete(f"/modpacks/{BUNDLE_ID}/projects/P2", params={"contexto": "problemas"}, headers=HTMX).text
     assert "No hay problemas" in view(text, "problemas") and "data-ready" in builds_part(text)
@@ -2550,10 +2568,13 @@ def test_a_problem_action_that_leaves_nothing_highlights_crear_build() -> None:
     ("DELETE", "pins/P1", None),
     ("DELETE", "projects/P2", None),
 ])
-def test_without_contexto_an_action_does_not_resolve(method: str, path: str, data: Optional[dict[str, str]]) -> None:
+def test_without_contexto_an_action_resolves_by_itself_too(method: str, path: str, data: Optional[dict[str, str]]) -> None:
+    """O9 D2 (owner, 2026-10-26): every action on the mods leaves the pack resolved, not only a
+    problem's card; the answer stays in the tab it was asked from."""
     client, modpack, _ = setup()
+    modpack.resolves_by_itself = True
     response = client.request(method, f"/modpacks/{BUNDLE_ID}/{path}", headers=HTMX, data=data)
-    assert response.status_code == 200 and "resolve" not in [c[0] for c in modpack.calls]
+    assert response.status_code == 200 and [c[0] for c in modpack.calls].count("resolve_current") == 1
     assert 'aria-current="page"' in tab(response.text, "todos")
 
 
@@ -2573,7 +2594,7 @@ def test_ignoring_a_dependency_drops_it_everywhere_then_resolves_the_pack() -> N
     response = client.post("/replacements", headers=HTMX, data={
         "project_id": "X9", "replacement": "", "bundle_id": str(BUNDLE_ID), "contexto": "problemas"})
     assert response.status_code == 200 and response.text.lstrip().startswith('<div id="mods"')
-    assert modpack.calls == [("replacement_set", "X9", None, EDITOR), ("resolve", str(BUNDLE_ID), EDITOR)]
+    assert modpack.calls == [("replacement_set", "X9", None, EDITOR), ("resolve_current", str(BUNDLE_ID), EDITOR)]
     assert 'aria-current="page"' in tab(response.text, "problemas")
 
 
@@ -2604,7 +2625,7 @@ def test_a_channel_exception_from_the_mods_tab_resolves_and_answers_the_problems
     response = client.post(f"/modpacks/{BUNDLE_ID}/channel-exceptions", headers=HTMX,
                            data={"project_id": "P2", "channel": "beta", "contexto": "problemas"})
     assert response.status_code == 200
-    assert [c[0] for c in modpack.calls] == ["channel_exception_set", "resolve"]
+    assert [c[0] for c in modpack.calls] == ["channel_exception_set", "resolve_current"]
     assert call(modpack, "channel_exception_set")[1:] == (str(BUNDLE_ID), "P2", "beta", EDITOR)
     assert "Beta aceptada para este mod" in response.text
     alpha = client.post(f"/modpacks/{BUNDLE_ID}/channel-exceptions", headers=HTMX,
@@ -2888,3 +2909,28 @@ def test_an_editor_is_never_offered_a_simulation_on_the_pack_page() -> None:
     servers = servers[:servers.index("</section>")]
     assert "Simular" not in servers and ">Ver<" in servers and 'href="/servers/srv1"' in servers
     assert "Simular en Survival" not in text
+
+
+def test_the_pack_resolves_by_itself_when_its_resolution_is_missing_or_old() -> None:
+    """O9 D2 (owner, 2026-10-26): drawing the mods resolves the pack when what is saved is missing
+    or older than the pack, so every action and every visit show it current, with no button."""
+    client, modpack, _ = setup()
+    modpack.resolves_by_itself = True
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert call(modpack, "resolve_current")[1] == str(BUNDLE_ID) and "1 por decidir" in text
+    modpack.calls.clear()
+    client.get(f"/modpacks/{BUNDLE_ID}")
+    assert not [c for c in modpack.calls if c[0] == "resolve_current"]
+    modpack.stale = True
+    client.post(f"/modpacks/{BUNDLE_ID}/decisions", headers=HTMX, data={"project_id": "P2", "server": "no"})
+    assert [c[0] for c in modpack.calls if c[0].startswith("resolve")] == ["resolve_current"]
+
+
+def test_the_pack_has_no_resolve_button_and_brings_from_modrinth() -> None:
+    """O9 D2 and D6: «Resolver» goes; asking Modrinth again is «Traer de Modrinth»."""
+    client, modpack, _ = setup()
+    modpack.saved = resolution(modpack.lock)
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert "/resolve" not in text and ">Resolver" not in visible(text)
+    assert "Traer de Modrinth" in visible(text) and f'hx-post="/modpacks/{BUNDLE_ID}/catalogo"' in text
+    assert client.post(f"/modpacks/{BUNDLE_ID}/resolve", headers=HTMX).status_code in (404, 405)
