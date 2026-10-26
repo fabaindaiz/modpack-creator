@@ -305,9 +305,9 @@ class JobService():
         return await self.jobDB.recent(limit)
 
     async def find(self, *, server_id: Optional[str], kind: Optional[str], status: Optional[str],
-                   before_id: Optional[str], limit: int) -> list[Job]:
-        """Jobs newest first, by exact filters, a page after the job `before_id`."""
-        return await self.jobDB.find(server_id=server_id, kind=kind, status=status,
+                   before_id: Optional[str], limit: int, bundle_id: Optional[str] = None) -> list[Job]:
+        """Jobs newest first, by exact filters (a server, a pack: O9 D13), a page after the job `before_id`."""
+        return await self.jobDB.find(server_id=server_id, bundle_id=bundle_id, kind=kind, status=status,
                                      before_id=before_id, limit=limit)
 
     async def schedule_scans(self, now: datetime, every: timedelta, full_every: timedelta) -> list[Job]:

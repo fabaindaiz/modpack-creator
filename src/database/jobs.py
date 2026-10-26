@@ -116,6 +116,7 @@ class JobDatabase():
     async def find(self, *,
             server_id: Optional[str],
             kind: Optional[str],
+            bundle_id: Optional[str] = None,
             status: Optional[str],
             before_id: Optional[str],
             limit: int,
@@ -125,6 +126,9 @@ class JobDatabase():
         query: dict[str, Any] = {}
         if server_id is not None:
             query["key"] = {"$eq": f"server:{server_id}"}
+        if bundle_id is not None:
+            # A pack's jobs name it in their payload (O9 D13): its catalog, builds, checks, imports.
+            query["payload.bundle_id"] = {"$eq": bundle_id}
         if kind is not None:
             query["kind"] = {"$eq": kind}
         if status is not None:

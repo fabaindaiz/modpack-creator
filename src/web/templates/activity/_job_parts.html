@@ -4,7 +4,7 @@
 #}
 {% import "_macros.html" as ui %}
 {% set COLS = "sm:grid-cols-[minmax(0,1.2fr)_minmax(0,2.2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_8rem]" %}
-{% set HEADERS = ["Tipo", "Servidor", "Estado", "Paso", "Pedido por", "Creado"] %}
+{% set HEADERS = ["Tipo", "Sobre", "Estado", "Paso", "Pedido por", "Creado"] %}
 
 {# The server a job is about: its payload's, or its key's (`server:<id>`); empty when none. #}
 {% macro server_of(job) -%}
@@ -18,7 +18,10 @@
 {% set server_id = server_of(job) | trim %}
 <span class="font-medium">{{ ui.JOB_KIND.get(job.kind, job.kind) }}{% if dry_run %} (simulación){% endif %}</span>
 <span class="min-w-0">
+  {# A server's, else a pack's (O9 D13). #}
+  {% set bundle_id = job.payload.get("bundle_id") %}
   {% if server_id %}<a href="/servers/{{ server_id }}" class="hover:underline">{{ server_names.get(server_id, "Servidor desconocido") }}</a>
+  {% elif bundle_id %}<a href="/modpacks/{{ bundle_id }}" class="hover:underline">{{ pack_names.get(bundle_id, "Modpack") if pack_names is defined else "Modpack" }}</a>
   {% else %}<span class="text-faint">—</span>{% endif %}
 </span>
 <span class="min-w-0">

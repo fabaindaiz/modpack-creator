@@ -185,7 +185,8 @@ def test_jobs_page_lists_recent_jobs_with_who_asked() -> None:
     jobs.jobs = [make_job(requested_by=ActorRef(iss="i", sub="s", name="Ana")), make_job(requested_by=None)]
     response = client.get("/jobs")
     assert response.status_code == 200 and "Ana" in response.text and "programado" in response.text
-    assert jobs.calls == [{"server_id": None, "kind": None, "status": None, "before_id": None, "limit": 51}]
+    assert jobs.calls == [{"server_id": None, "bundle_id": None, "kind": None, "status": None, "before_id": None,
+                           "limit": 51}]
 
 
 def test_jobs_table_links_each_row_to_its_page_and_names_the_server() -> None:
@@ -268,7 +269,8 @@ def test_the_old_row_route_tells_a_page_from_before_to_stop_polling() -> None:
 def test_jobs_filters_pass_through_as_exact_values() -> None:
     client, jobs, *_ = setup()
     client.get("/jobs", params={"servidor": ".*", "tipo": "server_*", "estado": "done", "before": "abc"})
-    assert jobs.calls[-1] == {"server_id": ".*", "kind": "server_*", "status": "done", "before_id": "abc", "limit": 51}
+    assert jobs.calls[-1] == {"server_id": ".*", "bundle_id": None, "kind": "server_*", "status": "done",
+                              "before_id": "abc", "limit": 51}
     client.get("/jobs", params={"servidor": "", "tipo": "", "estado": ""})
     assert jobs.calls[-1]["server_id"] is None and jobs.calls[-1]["kind"] is None and jobs.calls[-1]["status"] is None
 
@@ -276,11 +278,11 @@ def test_jobs_filters_pass_through_as_exact_values() -> None:
 def test_jobs_filter_form_has_selects_with_the_known_values() -> None:
     client, jobs, _, ptero = setup()
     text = client.get("/jobs", params={"estado": "failed", "servidor": str(SERVER_ID)}).text
-    for name in ("servidor", "tipo", "estado"):
+    for name in ("sobre", "tipo", "estado"):  # «Sobre», a server or a pack (O9 D13)
         assert f'<select id="f-{name}" name="{name}"' in text
     for value in ("server_scan", "server_update", "server_rollback", "notify", "queued", "running", "done", "failed"):
         assert f'value="{value}"' in text
-    assert f'value="{SERVER_ID}" selected' in text and 'value="failed" selected' in text
+    assert f'value="servidor:{SERVER_ID}" selected' in text and 'value="failed" selected' in text
 
 
 def test_jobs_paginate_keeping_the_filters() -> None:
@@ -711,3 +713,26 @@ def test_the_jobs_filters_apply_when_changed() -> None:
     assert "<noscript>" in form and form.index("<noscript>") < form.index("Filtrar")
     js = (Path(__file__).resolve().parent.parent / "src/web/static/app.js").read_text()
     assert "form[data-submit-on-change]" in js and "requestSubmit" in js
+
+
+def test_a_job_says_what_it_is_about_a_server_or_a_pack() -> None:
+    """O9 D13 (owner, 2026-10-26): a build or a pack's import said «—» under «Servidor»."""
+    client, jobs, _, _ = setup()
+    jobs.jobs = [make_job("build_create", key=f"build:{BUNDLE_ID}", payload={"bundle_id": str(BUNDLE_ID)})]
+    text = client.get("/jobs").text
+    assert "Sobre" in visible(text) and "Servidor" not in visible(text[text.index("Trabajos</h1>"):text.index('id="f-tipo"')])
+    assert f'href="/modpacks/{BUNDLE_ID}"' in text and "Pack Uno" in text
+
+
+def test_the_jobs_are_filtered_by_server_or_pack() -> None:
+    client, jobs, _, _ = setup()
+    text = client.get("/jobs").text
+    select = text[text.index('id="f-sobre"'):]
+    select = select[:select.index("</select>")]
+    assert 'name="sobre"' in select and f'value="pack:{BUNDLE_ID}"' in select and f'value="servidor:{SERVER_ID}"' in select
+    jobs.calls.clear()
+    client.get("/jobs", params={"sobre": f"pack:{BUNDLE_ID}"})
+    client.get("/jobs", params={"sobre": f"servidor:{SERVER_ID}"})
+    client.get("/jobs", params={"servidor": str(SERVER_ID)})  # the links from before still work
+    assert [(c["server_id"], c["bundle_id"]) for c in jobs.calls] == [
+        (None, str(BUNDLE_ID)), (str(SERVER_ID), None), (str(SERVER_ID), None)]

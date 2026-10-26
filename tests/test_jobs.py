@@ -442,3 +442,16 @@ def test_a_packs_active_jobs_include_an_import_into_it(mongo: MongoRunner) -> No
         return [str(j.key) for j in await jobs.active_for_pack(["catalog:b1", "build:b1"], "b1")]
 
     assert mongo(scenario) == ["catalog:b1", "import:a"]
+
+
+def test_find_filters_by_the_pack_a_job_is_about(mongo: MongoRunner) -> None:
+    """O9 D13 (owner, 2026-10-26): the pack's jobs, by their payload's `bundle_id`."""
+    async def scenario() -> list[str]:
+        jobs = JobDatabase()
+        await jobs.enqueue("build_create", key="build:b1", payload={"bundle_id": "b1"})
+        await jobs.enqueue("modpack_import", key="import:a", payload={"ref": "x", "into": "b1", "bundle_id": "b1"})
+        await jobs.enqueue("build_create", key="build:b2", payload={"bundle_id": "b2"})
+        found = await jobs.find(server_id=None, bundle_id="b1", kind=None, status=None, before_id=None, limit=10)
+        return sorted(str(j.key) for j in found)
+
+    assert mongo(scenario) == ["build:b1", "import:a"]

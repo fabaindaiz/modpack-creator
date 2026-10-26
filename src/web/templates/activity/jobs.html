@@ -9,12 +9,20 @@
 <form method="get" action="/jobs" data-submit-on-change class="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end">
   {% set SELECT_CLASS = "mt-1 block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control focus-visible:outline-2 focus-visible:outline-accent" %}
   <div>
-    <label for="f-servidor" class="block text-xs font-medium text-muted">Servidor</label>
-    <select id="f-servidor" name="servidor" class="{{ SELECT_CLASS }}">
+    {# What a job is about, a server or a pack (O9 D13). #}
+    <label for="f-sobre" class="block text-xs font-medium text-muted">Sobre</label>
+    <select id="f-sobre" name="sobre" class="{{ SELECT_CLASS }}">
       <option value="">Todos</option>
+      <optgroup label="Servidores">
       {% for id, name in server_names.items() %}
-      <option value="{{ id }}"{% if filters.servidor == id %} selected{% endif %}>{{ name }}</option>
+      <option value="servidor:{{ id }}"{% if filters.sobre == "servidor:" ~ id %} selected{% endif %}>{{ name }}</option>
       {% endfor %}
+      </optgroup>
+      <optgroup label="Modpacks">
+      {% for id, name in pack_names.items() %}
+      <option value="pack:{{ id }}"{% if filters.sobre == "pack:" ~ id %} selected{% endif %}>{{ name }}</option>
+      {% endfor %}
+      </optgroup>
     </select>
   </div>
   <div>

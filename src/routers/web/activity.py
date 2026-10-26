@@ -109,6 +109,7 @@ async def _import_titles(modrinthService: ModrinthService, result: ImportResult)
 @inject
 async def job_list(
         request: Request,
+        sobre: FilterValue = None,
         servidor: FilterValue = None,
         tipo: FilterValue = None,
         estado: FilterValue = None,
@@ -116,17 +117,24 @@ async def job_list(
         actor: Actor = Depends(get_web_actor),
         jobService: JobService = Depends(Provide[Dependences.jobService]),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         ):
     """Jobs newest first, 50 per page, filtered by exact values; `before` is the id of the last
-    job shown."""
-    jobs = await jobService.find(server_id=servidor or None, kind=tipo or None, status=estado or None,
+    job shown. `sobre` is what a job is about (O9 D13): `servidor:<id>` or `pack:<id>`; `servidor`
+    alone is the filter of before, kept for its links."""
+    about, _, about_id = (sobre or "").partition(":")
+    server_id = about_id if about == "servidor" and about_id else servidor or None
+    bundle_id = about_id if about == "pack" and about_id else None
+    jobs = await jobService.find(server_id=server_id, bundle_id=bundle_id, kind=tipo or None, status=estado or None,
                                  before_id=before or None, limit=JOBS_SHOWN + 1)
     has_older = len(jobs) > JOBS_SHOWN  # one more than shown: only then is there a next page
     jobs = jobs[:JOBS_SHOWN]
     older = f"before={jobs[-1].id}" if has_older else None
-    filters = {"servidor": servidor or "", "tipo": tipo or "", "estado": estado or ""}
+    chosen = f"servidor:{server_id}" if server_id else (f"pack:{bundle_id}" if bundle_id else "")
+    filters = {"sobre": chosen, "tipo": tipo or "", "estado": estado or ""}
     return render(request, "activity/jobs.html", actor, jobs=jobs, filters=filters, older=older,
-                  server_names=await _server_names(pterodactylService), nav_active="jobs")
+                  server_names=await _server_names(pterodactylService),
+                  pack_names={str(b.id): b.name for b in await modpackService.bundle_find()}, nav_active="jobs")
 
 @router.get("/jobs/{job_id}")
 @inject
