@@ -1,8 +1,7 @@
 # O8: versiones resueltas con historia, fuente y conocimiento
 
-> **Borrador: nada decidido; cada decisión es del dueño.** Lo que sigue es una propuesta para revisar
-> con `decision-review`, una decisión por turno. Antes del plan falta también el user-walk del flujo
-> (O8 espera su spec y su user-walk, `docs/research/2026-10-21-observaciones-ronda-3.md`, «Reparto»).
+> **Decidida el 2026-10-26 (d-7985ee-a99db7): ver §8, que manda sobre §3–§6 donde difieren.** Antes del
+> plan de cada tanda falta su user-walk (`docs/research/2026-10-21-observaciones-ronda-3.md`, «Reparto»).
 
 **Fecha:** 2026-10-25 · **Origen:** O8 y O2 de `docs/research/2026-10-21-observaciones-ronda-3.md` ·
 **Base:** d-7985ee-fce4ff (los orígenes de una fijación) y d-7985ee-da27e6 (el origen «servidor») ·
@@ -323,3 +322,33 @@ Cada una con la recomendada primero. «Costo» es esfuerzo, datos y riesgo.
 El aspecto de las pantallas nuevas (barrido visual manual), los datos de producción (cuántos builds y
 escaneos hay, y si alguno se purgó fuera de la app: SUPUESTO que no), y cualquier lectura real del
 servidor si se elige D5-C.
+
+## 8. Lo decidido (dueño, 2026-10-26, d-7985ee-a99db7)
+
+Con `decision-review`, una por turno. Las del dueño, todas la recomendada salvo donde se dice:
+
+| # | Decisión |
+|---|---|
+| D1 | La versión resuelta es **el build**. El dueño pidió explorar las pruebas como builds, nombres, destacados y una mejor revisión: de ahí B1–B4. |
+| B1 | **«Construir como prueba»**: misma numeración, marca «prueba», nunca el build vigente (no sube el piso, el puntero «último» la salta); «Aprobar» quita la marca. Tiene que ser un build: solo así todas las versiones están resueltas y el pack es instalable. Instalada en un servidor, el escaneo de ese servidor sí pone su piso. |
+| B2 | **Nombre** corto (~60 caracteres) y editable; los comentarios de un build son sus notas (D3, D4). |
+| B3 | **Estrella** «Destacar», varios por pack: primero en la lista, filtro «Solo destacados», los viejos sin estrella plegados en «N builds anteriores». «Recomendado» sigue siendo uno y es el que pone el piso. |
+| B4 | **Comparación explicada**: «Comparar con el anterior» en cada build; un resumen («6 cambios: 4 suben, 1 baja, 1 nuevo»); «En el pedido» (canales, pins, MC, loader, puentes, de `ResolveRequest`); el porqué de cada mod (`LockEntry.reason`, `requested_by`); las notas de cada lado. Sin requests nuevos. |
+| D2 | A: derivar y guardar los orígenes reemplazados (`PinRecord.past`). |
+| D3 | A: a un build o a la versión de un mod en un pack, servidor opcional. |
+| D4 | A: veredicto + texto + error. |
+| D5 | **D**: pegar ahora; «Traer el último crash» por Pterodactyl (`files/contents`, solo lectura, hasta 4 MiB) en una tanda posterior. |
+| D11 | A: el autor edita, se guarda el texto anterior; borrar es archivar. |
+| D10 | A, con lo de B1–B3 de editor (como `build_create` y `build_recommend`). |
+| D12 | **C, nueva**: lo del catálogo y el changelog pedido a Modrinth solo al desplegarlo, sin guardarlo (reusa la lectura de la simulación). Condición del dueño: «solo si no aumenta las request demasiado»; un test comprueba que dibujar la historia no llama a Modrinth. |
+| D6 | A sobre B4: notas y avisos junto a cada cambio y «Marcar como sospechoso». B (leer el error) y C (bisección), descartadas. |
+| D7 | A con **rango opcional**: vacío es cualquier versión; desde la comparación, la versión que lo provocó se sugiere a un clic y no se llena sola. |
+| D9 | A: global, con los packs donde se vio. |
+| D8 | A: solo avisa. |
+| D14 | **Tres tandas**: 1 builds (B1–B4, ~3 sesiones), 2 historia y notas (D2–D5, D11, D12, ~3), 3 conocimiento (D6–D9, ~3). Las notas al lado de la comparación llegan con la 2. |
+
+Del agente (s-7985ee-2b8b13): **D13** A (`/v1` también, mismos roles). Nombre, estrella y marca de prueba
+se guardan junto al build sin tocar su `lock` ni su `request` («un build nunca se edita» es su contenido) y
+quedan en la auditoría. Topes: 20 orígenes pasados por mod, 64 KiB por error. La simulación (O9 D3)
+preselecciona el build más nuevo, prueba incluida.
+

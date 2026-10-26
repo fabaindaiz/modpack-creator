@@ -18,7 +18,7 @@ A13 comprobados en el navegador por el barrido (dos chequeos nuevos, vistos fall
 escribía sin condición; la reserva de subidas podía pasarse por una subida liberada durante la lectura del
 disco) y dos menores anotados abajo. **Para seguir, en orden:**
 1. Hecho (2026-10-26): las 16 decisiones de O9, todas las recomendadas (d-7985ee-456ab9), y construidas el
-   mismo día (`docs/superpowers/plans/2026-10-26-o9-flujos.md`, 033d30c..dd61e2c), con test-mongo en verde. **Para el dueño, una a una** (skill `decision-review`): las 14 de O8 (D1–D14 del borrador), antes de su plan; lo que ya esperaba del 2026-10-22
+   mismo día (`docs/superpowers/plans/2026-10-26-o9-flujos.md`, 033d30c..dd61e2c), con test-mongo en verde. Las de O8 también, el mismo día (d-7985ee-a99db7, 17 con B1–B4: pruebas como builds, nombre, estrella, comparación explicada), en tres tandas: **sigue el user-walk de la tanda 1 (builds) y su plan**. Más adelante, de O8 D5: «Traer el último crash» del servidor. **Para el dueño, una a una:** lo que ya esperaba del 2026-10-22
    (los textos de ayuda, `LICENSES.html`, las decisiones de los agentes de la ronda 3, el «?» que baja de
    línea). Después, el merge a `main` si lo pide.
 2. Menores de la revisión del 2026-10-26, sin hacer: la revisión de un registro vuelve a 1 cuando el mod se
