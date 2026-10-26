@@ -5,7 +5,7 @@
 {% set wait = job.waiting_until | seconds_until %}
 <div class="min-w-0 space-y-1" data-job="{{ job.id }}">
   <p class="flex flex-wrap items-center gap-x-2 gap-y-1">
-    <span class="font-medium">{{ ui.JOB_KIND.get(job.kind, job.kind) }}</span>
+    <span class="font-medium">{{ ui.job_kind(job) }}</span>
     {{ ui.badge("En cola" if job.status == "queued" else "En curso", "info") }}
   </p>
   {% if job.progress %}

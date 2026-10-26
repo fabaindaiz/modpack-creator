@@ -16,7 +16,7 @@
 {% set label, tone = ui.JOB_STATUS.get(job.status, (job.status, "neutral")) %}
 {% set dry_run = job.kind == "server_update" and job.payload.get("dry_run") is not sameas false %}
 {% set server_id = server_of(job) | trim %}
-<span class="font-medium">{{ ui.JOB_KIND.get(job.kind, job.kind) }}{% if dry_run %} (simulación){% endif %}</span>
+<span class="font-medium">{{ ui.job_kind(job) }}{% if dry_run %} (simulación){% endif %}</span>
 <span class="min-w-0">
   {# A server's, else a pack's (O9 D13). #}
   {% set bundle_id = job.payload.get("bundle_id") %}

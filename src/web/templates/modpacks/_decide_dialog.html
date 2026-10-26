@@ -12,7 +12,10 @@
    builds' button, redrawn) when that is gone. The cards' forms are not inside the decisions' form (no nesting).
    Each mod's name opens its card. #}
 {% import "_macros.html" as ui %}
-<dialog id="decide-dialog" aria-labelledby="decide-dialog-title" data-autoopen data-return-focus="build-create"
+{# A test build's dialog (O8 B1): every request from inside carries `prueba`, so building from it, after
+   an action too, still builds a test (user-walk W7). #}
+{% set test = test is defined and test %}
+<dialog id="decide-dialog" aria-labelledby="decide-dialog-title" data-autoopen data-return-focus="build-create"{% if test %} hx-vals='{"prueba": "1"}'{% endif %}
   class="m-auto max-h-[calc(100dvh-2rem)] w-[min(40rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-line bg-raised p-0 text-ink shadow-xl backdrop:bg-scrim/50">
   <div class="space-y-4 p-5">
     <h2 id="decide-dialog-title" tabindex="-1" autofocus class="text-base font-semibold focus:outline-none">{{ "Todo resuelto" if ready else "Antes de crear el build" }}</h2>
@@ -34,6 +37,7 @@
     {% if undecided %}
     <form class="space-y-3" hx-post="/modpacks/{{ bundle_id }}/builds" hx-target="#builds" hx-swap="outerHTML" aria-labelledby="decide-dialog-pending">
       <input type="hidden" name="dialog" value="1">
+      {% if test %}<input type="hidden" name="prueba" value="1">{% endif %}
       <h3 id="decide-dialog-pending" class="text-sm font-semibold text-warning">Por decidir ({{ undecided | length }})</h3>
       <p class="text-sm text-ink-soft">Modrinth no dice si estos mods van en el servidor. Al decidirlos se crea el build{{ ", si ya no quedan problemas" if problems else "" }}; los que dejes sin decidir seguirán bloqueándolo.</p>
       <ul class="space-y-2 text-sm">
@@ -55,6 +59,7 @@
     </form>
     {% elif ready %}
     <form class="space-y-3" hx-post="/modpacks/{{ bundle_id }}/builds" hx-target="#builds" hx-swap="outerHTML">
+      {% if test %}<input type="hidden" name="prueba" value="1">{% endif %}
       <p class="rounded-xl border border-success-line bg-success-soft p-3 text-sm font-medium text-success-ink">No quedan problemas ni mods por decidir: ya puedes crear el build.</p>
       <div class="flex justify-end gap-2">
         {{ ui.button("Cancelar", kind="secondary", attrs={"data-dialog-close": ""}) }}

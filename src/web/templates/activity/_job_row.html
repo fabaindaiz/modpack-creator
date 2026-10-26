@@ -10,7 +10,7 @@
   class="space-y-2 rounded-xl border border-line bg-raised p-3 text-sm"
   {%- if job.active %} hx-get="/jobs/{{ job.id }}/row" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
   <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-    <span class="font-medium">{{ ui.JOB_KIND.get(job.kind, job.kind) }}{% if dry_run %} (simulación){% endif %}</span>
+    <span class="font-medium">{{ ui.job_kind(job) }}{% if dry_run %} (simulación){% endif %}</span>
     {{ ui.badge(label, tone, title=job.status) }}
     {% if job.step %}<span class="text-xs text-muted">{{ ui.JOB_STEP.get(job.step, job.step) }}</span>{% endif %}
     <span class="text-xs text-muted">{{ job.requested_by.name if job.requested_by else "programado" }}</span>

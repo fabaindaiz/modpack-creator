@@ -122,3 +122,13 @@ def test_on_the_pack_itself_an_unresolved_pack_waits_instead_of_linking_to_itsel
     facts = PackFacts(projects=2, resolved=False, pending=0, latest_build=None, linked_servers=(), simulated=False)
     step = pack_steps("b1", facts)[1]
     assert step.action is None and step.detail == "se resuelve al traer de Modrinth lo que falta"
+
+
+def test_only_test_builds_say_how_they_count() -> None:
+    """O8 B1, user-walk W9: a test build is not «Build creado» until it is approved."""
+    facts = PackFacts(projects=3, resolved=True, pending=0, latest_build=None, linked_servers=(), simulated=False,
+                      test_builds=(5, 4))
+    step = pack_steps("b1", facts)[2]
+    assert step.key == "build" and not step.done and step.detail == "Hay builds de prueba (5, 4); aprobar uno lo cuenta."
+    server = server_steps("s1", NEW._replace(bundle_id="b1", bundle_name="Survival", resolved=True, test_builds=(5,)))[3]
+    assert server.detail == "Hay builds de prueba (5); aprobar uno lo cuenta."

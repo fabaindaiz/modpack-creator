@@ -8,6 +8,10 @@
   rollback A only B is left, confirmed by typing the server's name (d-7985ee-5445a0).
 #}
 {% import "_macros.html" as ui %}
+{# A build in the selects: a test and its name say so (O8 B1, B2; user-walk W8). #}
+{% macro build_label(b) -%}
+Build {{ b.number }}{% if b.test %} · prueba{% endif %}{% if b.name %} · «{{ b.name }}»{% endif %}{% if b.number == bundle.recommended_build %} (recomendado){% elif b.number == bundle.latest_build %} (último){% endif %}
+{%- endmacro %}
 {% set reason = None if actor.is_operator else "requiere operador" %}
 <div class="space-y-3 rounded-xl border border-line bg-raised p-4 text-sm">
   <p class="text-muted">Simular la instalación muestra qué jars cambiarían y qué escribiría en el servidor, sin tocarlo. Instalar lo cambia de verdad, al build que elijas, sin simular antes.</p>
@@ -18,7 +22,7 @@
     <label for="simulate-build" class="sr-only">Build a simular</label>
     <select id="simulate-build" name="build" class="rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control">
       {% for b in builds %}
-      <option value="{{ b.number }}"{% if b.number == simulated %} selected{% endif %}>Build {{ b.number }}{% if b.number == bundle.recommended_build %} (recomendado){% elif b.number == bundle.latest_build %} (último){% endif %}</option>
+      <option value="{{ b.number }}"{% if b.number == simulated %} selected{% endif %}>{{ build_label(b) }}</option>
       {% endfor %}
     </select>
     {{ ui.button("Simular instalación", kind="secondary", attrs={"hx-post": "/servers/" ~ server_id ~ "/update/preview", "hx-include": "#simulate-build", "hx-target": "#install-job", "hx-swap": "innerHTML"}) }}
@@ -38,14 +42,16 @@
     <p>Esto apaga el servidor de juego, hace un backup, cambia los jars y lo vuelve a arrancar. Los jugadores serán desconectados.</p>
     {{ ui.discards_rollback(rollback) }}
     <input type="hidden" name="bundle_id" value="{{ bundle.id }}">
-    {% set chosen = bundle.recommended_build or bundle.latest_build %}
+    {# With only test builds, the newest (user-walk W9). #}
+    {% set chosen = bundle.recommended_build or bundle.latest_build or builds[0].number %}
+    {% if builds | selectattr("test") | list %}<p>Los builds marcados «prueba» no están aprobados.</p>{% endif %}
     <label for="{{ direct }}-build" class="block font-medium">Build a instalar</label>
     {# The preview loads when the dialog opens (a closed <dialog> is not displayed, so it does not
        intersect), never with the page: it may wait up to 10 s for Modrinth. #}
     <select id="{{ direct }}-build" name="build" hx-get="/servers/{{ server_id }}/update/preview" hx-trigger="change" hx-target="#update-preview" hx-include="this" hx-indicator="#update-preview-loading" class="block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control">
       {% for b in builds %}
       <option value="{{ b.number }}"{% if b.number == chosen %} selected{% endif %}>
-        Build {{ b.number }}{% if b.number == bundle.recommended_build %} (recomendado){% elif b.number == bundle.latest_build %} (último){% endif %}
+        {{ build_label(b) }}
       </option>
       {% endfor %}
     </select>

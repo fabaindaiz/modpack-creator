@@ -736,3 +736,10 @@ def test_the_jobs_are_filtered_by_server_or_pack() -> None:
     client.get("/jobs", params={"servidor": str(SERVER_ID)})  # the links from before still work
     assert [(c["server_id"], c["bundle_id"]) for c in jobs.calls] == [
         (None, str(BUNDLE_ID)), (str(SERVER_ID), None), (str(SERVER_ID), None)]
+
+
+def test_a_test_builds_job_says_so() -> None:
+    """O8 B1, user-walk W21: «Build de prueba» in Trabajos."""
+    client, jobs, _, _ = setup()
+    jobs.jobs = [make_job("build_create", key=f"build:{BUNDLE_ID}", payload={"bundle_id": str(BUNDLE_ID), "test": True})]
+    assert "Build de prueba" in client.get("/jobs").text

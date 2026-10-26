@@ -95,6 +95,7 @@ def comparison() -> Comparison:
 
 class FakePterodactyl:
     def __init__(self) -> None:
+        self.compared: list[Optional[int]] = []  # the `build` each compare was asked for
         self.server = server()
         self.external = [server(), server("Creative", None, "uuid-2", PydanticObjectId())]
         self.scan: Optional[ServerScan] = scan()
@@ -168,6 +169,7 @@ class FakePterodactyl:
         return self.scan
 
     async def compare(self, server_id: str, bundle_id: Optional[str] = None, build: Optional[int] = None) -> Comparison:
+        self.compared.append(build)
         if self.comparison is None:
             raise HTTP_409_CONFLICT("not linked")
         return self.comparison
@@ -282,6 +284,10 @@ class FakeModpack:
     def __init__(self) -> None:
         self.builds = True
         self.recommended: Optional[int] = 2
+        self.latest: Optional[int] = 5
+        # The test builds and the names (O8 B1, B2), by number.
+        self.tests: set[int] = set()
+        self.names: dict[int, str] = {}
         # The pack's saved resolution and whether it is stale (B1's facts); None: never resolved.
         self.saved: Optional[tuple[Any, bool]] = None
         self.resolution_error: Optional[Exception] = None
@@ -298,7 +304,7 @@ class FakeModpack:
         return self.preview
 
     async def bundle_find(self) -> list[ModpackBundle]:
-        return [bundle(5, self.recommended) if self.builds else bundle(None, None)]
+        return [bundle(self.latest, self.recommended) if self.builds else bundle(None, None)]
 
     async def resolution(self, bundle_id: str, bundle: Optional[ModpackBundle] = None) -> Optional[tuple[Any, bool]]:
         self.resolution_given.append(bundle)
@@ -317,7 +323,8 @@ class FakeModpack:
         """Newest first, as ModpackDatabase.build_find gives them."""
         if not self.builds:
             return []
-        return [ModpackBuild.model_construct(bundle_id=BUNDLE_ID, number=n, created_at=T0) for n in (5, 4, 3)]
+        return [ModpackBuild.model_construct(bundle_id=BUNDLE_ID, number=n, created_at=T0, test=n in self.tests,
+                                             name=self.names.get(n), starred=False) for n in (5, 4, 3)]
 
 
 class FakeModrinth:
@@ -1810,3 +1817,37 @@ def test_one_match_reads_in_the_singular() -> None:
     client, fakes = setup()
     compare = client.get(f"/servers/{SERVER_ID}").text.split('id="compare"')[1]
     assert "Ver el que coincide" in visible(compare) and "Ver los 1" not in compare
+
+
+# O8 B1 (d-7985ee-a99db7) and the user-walk (W8–W10): a test build is named as such on the server.
+
+
+def test_server_selects_name_test_builds() -> None:
+    client, fakes = setup(OPERATOR)
+    fakes.modpack.tests, fakes.modpack.names = {5}, {5: "con Iris"}
+    text = client.get(f"/servers/{SERVER_ID}").text
+    simulate = text[text.index('id="simulate-build"'):]
+    simulate = simulate[:simulate.index("</select>")]
+    direct = text[text.index('id="update-dialog-direct-build"'):]
+    direct = direct[:direct.index("</select>")]
+    assert "Build 5 · prueba · «con Iris»" in simulate and "Build 5 · prueba · «con Iris»" in direct
+    assert "Los builds marcados «prueba» no están aprobados." in text
+
+
+def test_with_only_test_builds_install_preselects_the_newest() -> None:
+    client, fakes = setup(OPERATOR)
+    fakes.modpack.latest, fakes.modpack.recommended, fakes.modpack.tests = None, None, {5, 4, 3}
+    text = client.get(f"/servers/{SERVER_ID}").text
+    direct = text[text.index('id="update-dialog-direct-build"'):]
+    assert re.search(r'<option value="5" selected>', direct[:direct.index("</select>")])
+    assert "Este modpack solo tiene builds de prueba: apruébalo para compararlo." in text
+
+
+def test_a_server_running_a_test_compares_against_it() -> None:
+    """W10: every mod of the test showed as «otra versión» against the build in force."""
+    client, fakes = setup(OPERATOR)
+    fakes.modpack.tests, fakes.jobs.installed = {5}, 5
+    client.get(f"/servers/{SERVER_ID}")
+    fakes.modpack.tests = set()  # a normal build installed: against the build in force, as before
+    client.get(f"/servers/{SERVER_ID}")
+    assert fakes.ptero.compared == [5, None]

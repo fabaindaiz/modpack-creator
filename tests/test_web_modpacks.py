@@ -807,6 +807,17 @@ def undecided_block(*ids: str, only: bool = True, detail: str = "Mods sin decidi
     return BuildBlocked(detail, lock(*(entry(i, "admin") for i in ids)), only)
 
 
+def test_the_blocked_dialog_keeps_the_test_mark() -> None:
+    """O8 B1, user-walk W7: «Decidir y crear build» from the dialog of a test still builds a test."""
+    client, modpack, _ = setup()
+    modpack.blocked = undecided_block("P2")
+    text = client.post(f"/modpacks/{BUNDLE_ID}/builds", data={"prueba": "1"}, headers=HTMX).text
+    form = text[text.index('name="dialog"'):]
+    assert '<input type="hidden" name="prueba" value="1">' in form[:form.index("</form>")]
+    plain = client.post(f"/modpacks/{BUNDLE_ID}/builds", headers=HTMX).text
+    assert 'name="prueba"' not in plain
+
+
 def test_blocked_by_undecided_answers_a_dialog_with_titles() -> None:
     client, modpack, _ = setup()
     modpack.blocked = undecided_block("P2")

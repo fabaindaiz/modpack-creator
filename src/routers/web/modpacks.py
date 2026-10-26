@@ -274,7 +274,9 @@ async def _acted(request: Request, actor: Actor, modpackService: ModpackService,
         context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request), _filters_from(request), actor)
         mods = context["mods"]
         builds = await modpackService.build_find(bundle_id)
+        # A test's dialog stays a test's after an action (O8 B1, user-walk W7): its requests carry the mark.
         return _dialog(request, actor, lock, done=success, mods_oob=True, builds_oob=True, builds=builds,
+                       test=(await request.form()).get("prueba") == "1",
                        view=await _builds_view(modpackService, context["bundle"], builds),
                        pending=_has_pending((mods.resolution, mods.stale) if mods.resolution else None), **context)
     return await _resolved(request, actor, modpackService, updateCheckService, bundle_id, success, vista="problemas")
@@ -298,7 +300,7 @@ def _dialog(request: Request, actor: Actor, lock: Lock, **context: Any) -> Respo
 
 async def _build_dialog(request: Request, actor: Actor, modpackService: ModpackService,
                         modrinthService: ModrinthService, bundle_id: str, lock: Lock, reason: Optional[str] = None,
-                        explain: bool = False) -> Response:
+                        explain: bool = False, test: bool = False) -> Response:
     """The build dialog for a refused build (`_dialog`). Every mod it names gets its card in one
     Modrinth call. `explain` adds why the build was refused (unless a `reason` is given), naming the
     mods by title."""
@@ -311,7 +313,7 @@ async def _build_dialog(request: Request, actor: Actor, modpackService: ModpackS
     if explain and reason is None:
         reason = _blocked_reason(lock, titles)
     return _dialog(request, actor, lock, bundle=await modpackService.bundle_get(bundle_id), bundle_id=bundle_id,
-                   titles=titles, cards=cards, reason=reason)
+                   titles=titles, cards=cards, reason=reason, test=test)
 
 def _blocked_reason(lock: Lock, titles: dict[str, str]) -> str:
     """Why a build was refused, from its fresh lock, naming mods by title (never by id): each
@@ -533,7 +535,8 @@ async def modpack_detail(
         pending=pending_count((saved, context["mods"].stale) if saved else None),
         problems=problem_count((saved, context["mods"].stale) if saved else None), latest_build=bundle.latest_build,
         linked_servers=tuple((str(s.id), s.name) for s in servers),
-        simulated=bundle.latest_build is not None and bundle.latest_build in simulated), operator=actor.is_operator)
+        simulated=bundle.latest_build is not None and bundle.latest_build in simulated,
+        test_builds=tuple(b.number for b in builds if b.test)), operator=actor.is_operator)
     return render(request, "modpacks/detail.html", actor, onboarding=onboarding, **_bridges_context(bundle), builds=builds,
                   view=await _builds_view(modpackService, bundle, builds), servers=servers, channel_names=CHANNELS,
                   pending=_has_pending((saved, context["mods"].stale) if saved else None),
@@ -1043,16 +1046,17 @@ async def build_create(
     form = await request.form()
     decisions = _parse_decisions(form)
     from_dialog = form.get("dialog") == "1"
+    # «Construir como prueba» (O8 B1); the dialog of a blocked test keeps the mark (user-walk W7).
+    test = form.get("prueba") == "1"
     try:
         if decisions:
             await modpackService.decisions_set(bundle_id, decisions, actor)
-        # «Construir como prueba» (O8 B1) sends `prueba=1`.
-        job = await modpackService.build_request(bundle_id, actor, test=form.get("prueba") == "1")
+        job = await modpackService.build_request(bundle_id, actor, test=test)
     except BuildBlocked as blocked:
         nothing_decided = from_dialog and not decisions and blocked.only_undecided
         return await _build_dialog(request, actor, modpackService, modrinthService, bundle_id, blocked.lock,
                                    reason=NOTHING_DECIDED if nothing_decided else None,
-                                   explain=from_dialog or bool(decisions))
+                                   explain=from_dialog or bool(decisions), test=test)
     # The build is a job now (E9): the banner shows it and the page reloads when it ends. The
     # dialog, if this came from it, closes: its content is emptied.
     # The banner comes with the job, so even one that ends at once is seen ending (and opens the

@@ -145,16 +145,25 @@ async def server_detail(
     except HTTPException as error:
         if error.status_code != 404:
             raise
+    # One read of the last real update for both (review of batch B, minor 5).
+    update_state = await jobService.update_state(server_id)
+    installed_build = update_state.installed if bundle else None
+    builds = sorted(await modpackService.build_find(str(bundle.id)), key=lambda b: b.number, reverse=True) \
+        if bundle is not None else []
+    tests = tuple(b.number for b in builds if b.test)
+    # A server running a test build compares against it, not the build in force (O8, user-walk W10).
+    against = installed_build if installed_build in tests else None
     comparison, compare_note = None, None
     if server.bundle_id is None:
         compare_note = "El servidor no tiene modpack: vincúlalo para compararlo con un build."
-    elif bundle is not None and bundle.latest_build is None and bundle.recommended_build is None:
-        compare_note = "Este modpack todavía no tiene builds: crea uno para comparar."
+    elif bundle is not None and bundle.latest_build is None and bundle.recommended_build is None and against is None:
+        compare_note = "Este modpack solo tiene builds de prueba: apruébalo para compararlo." if tests \
+            else "Este modpack todavía no tiene builds: crea uno para comparar."
     elif scan is None:
         compare_note = "Todavía no hay escaneo para comparar."
     else:
         try:
-            comparison = await pterodactylService.compare(server_id)
+            comparison = await pterodactylService.compare(server_id, build=against)
         except HTTPException as error:
             if error.status_code not in (404, 409):
                 raise
@@ -166,14 +175,9 @@ async def server_detail(
     versions = await pterodactylService.compare_names(comparison) if comparison else {}
     # What importing would bring: the jars the bundle itself does not explain (F26's rule).
     to_import = unexplained_for(comparison, bundle) if comparison and bundle else None
-    # One read of the last real update for both (review of batch B, minor 5).
-    update_state = await jobService.update_state(server_id)
-    installed_build = update_state.installed if bundle else None
     active = await jobService.active_for_server(server_id)
     rollback = update_state.rollback
     build_number = (bundle.recommended_build or bundle.latest_build) if bundle else None
-    builds = sorted(await modpackService.build_find(str(bundle.id)), key=lambda b: b.number, reverse=True) \
-        if bundle is not None else []
     deduction = await pterodactylService.deduction(server_id) if server.bundle_id is None else None
     link_notice = next((text for flag, text in LINK_NOTICES.items() if request.query_params.get(flag) == "1"), None)
     saved = await fact(modpackService.resolution(str(bundle.id), bundle=bundle), None) if bundle is not None else None
@@ -182,7 +186,8 @@ async def server_detail(
         bundle_id=str(bundle.id) if bundle is not None else None, bundle_name=bundle.name if bundle is not None else None,
         resolved=saved is not None and not saved[1], pending=pending_count(saved), problems=problem_count(saved),
         latest_build=bundle.latest_build if bundle is not None else None,
-        simulated_build=await fact(jobService.simulated_build(server_id, str(bundle.id)), None) if bundle is not None else None),
+        simulated_build=await fact(jobService.simulated_build(server_id, str(bundle.id)), None) if bundle is not None else None,
+        test_builds=tests),
         operator=actor.is_operator)
     game_versions = await modrinthService.game_versions_release() if server.bundle_id is None else None
     return render(request, "servers/detail.html", actor, simulate_build=build, onboarding=onboarding, game_versions=game_versions, server=server, server_id=server_id, bundles=bundles,

@@ -46,6 +46,11 @@
   "notify": "Aviso",
 } %}
 
+{# A job's kind in Spanish; a test build says so (O8 B1, user-walk W21). #}
+{% macro job_kind(job) -%}
+{{ "Build de prueba" if job.kind == "build_create" and job.payload.get("test") else JOB_KIND.get(job.kind, job.kind) }}
+{%- endmacro %}
+
 {# How a job's step reads in Spanish; an unknown step is shown as it is. #}
 {% set JOB_STEP = {
   "preflight": "Revisando",

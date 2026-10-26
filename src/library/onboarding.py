@@ -63,6 +63,8 @@ class ServerFacts(NamedTuple):
     simulated_build: Optional[int]
     # Of `pending`, the problems: «Decidir» leads to them first (O9 user-walk, A4).
     problems: int = 0
+    # The pack's test builds, newest first (O8 B1): not «Build creado» until one is approved.
+    test_builds: tuple[int, ...] = ()
 
 
 class PackFacts(NamedTuple):
@@ -76,6 +78,8 @@ class PackFacts(NamedTuple):
     simulated: bool
     # Of `pending`, the problems: «Decidir» leads to them first (O9 user-walk, A4).
     problems: int = 0
+    # The pack's test builds, newest first (O8 B1): not «Build creado» until one is approved.
+    test_builds: tuple[int, ...] = ()
 
 
 # What each step needs done first; a step not listed (the scan, linking) never waits.
@@ -125,6 +129,13 @@ def _resolve_step(bundle_id: Optional[str], resolved: bool, pending: int,
     return "resolve", "Nada por decidir", done, detail, action
 
 
+def _build_step(builds: str, latest: Optional[int], tests: tuple[int, ...]) -> Any:
+    """«Build creado»: done with a build that is not a test; with only tests, it says how they count."""
+    detail = f"Build {latest}" if latest is not None else \
+        f"Hay builds de prueba ({', '.join(str(n) for n in tests)}); aprobar uno lo cuenta." if tests else ""
+    return "build", "Build creado", latest is not None, detail, ("Crear build", builds)
+
+
 def server_steps(server_id: str, facts: ServerFacts, operator: bool = True) -> list[Step]:
     """A server's steps: scanned, a pack linked, the pack resolved with nothing pending, a build,
     and that build simulated on this server."""
@@ -135,9 +146,7 @@ def server_steps(server_id: str, facts: ServerFacts, operator: bool = True) -> l
         ("pack", "Pack vinculado", facts.bundle_id is not None, facts.bundle_name or "",
          ("Crear o vincular", f"/servers/{server_id}#modpack")),
         _resolve_step(facts.bundle_id, facts.resolved, facts.pending, facts.problems),
-        ("build", "Build creado", facts.latest_build is not None,
-         f"Build {facts.latest_build}" if facts.latest_build is not None else "",
-         ("Crear build", f"/modpacks/{facts.bundle_id}#builds")),
+        _build_step(f"/modpacks/{facts.bundle_id}#builds", facts.latest_build, facts.test_builds),
         # The build the guide counts is the one it offers (O9 D3).
         ("simulate", "Simulado en este servidor", simulated, "",
          (f"Simular instalación del build {facts.latest_build}", f"/servers/{server_id}?build={facts.latest_build}#actualizar")),
@@ -153,9 +162,7 @@ def pack_steps(bundle_id: str, facts: PackFacts, operator: bool = True) -> list[
          # The search heads the section; #mods starts below it (O9 user-walk, A5).
          ("Buscar mods", f"/modpacks/{bundle_id}#mods-section")),
         _resolve_step(bundle_id, facts.resolved, facts.pending, facts.problems, here=True),
-        ("build", "Build creado", facts.latest_build is not None,
-         f"Build {facts.latest_build}" if facts.latest_build is not None else "",
-         ("Crear build", f"/modpacks/{bundle_id}#builds")),
+        _build_step(f"/modpacks/{bundle_id}#builds", facts.latest_build, facts.test_builds),
         ("server", "Servidor vinculado", bool(facts.linked_servers),
          ", ".join(name for _, name in facts.linked_servers), ("Vincular un servidor", f"/modpacks/{bundle_id}#servers-section")),
         ("simulate", "Simulado", facts.simulated, "",
