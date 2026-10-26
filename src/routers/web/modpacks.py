@@ -425,15 +425,21 @@ def _copy_room(upload: UploadFile) -> AbstractAsyncContextManager[None]:
 @inject
 async def modpack_import_page(
         request: Request,
+        en: Annotated[Optional[str], Query(max_length=40)] = None,
         actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         importService: ModpackImportService = Depends(Provide[Dependences.modpackImportService]),
         ):
     """Import a modpack as a new one: an uploaded .mrpack, Prism or CurseForge zip, a CurseForge
     profile code (with the owner's key, T5), or one published on Modrinth. The person's import in
-    progress, or their last one, shows in the form's result (O9 user-walk, A2)."""
+    progress, or their last one, shows in the form's result (O9 user-walk, A2). The one place to
+    import (O9 D5): a new pack, or the content of the pack chosen (`en`, from the pack's link)."""
     last = await importService.last_import(actor)
+    bundles = await modpackService.bundle_find()
+    chosen = en if en is not None and any(str(b.id) == en for b in bundles) else None
     return render(request, "modpacks/import.html", actor, curseforge=importService.curseforge_enabled,
-                  nav_active="modpacks", last_job=last[0] if last else None, last_report=last[1] if last else None)
+                  nav_active="modpacks", last_job=last[0] if last else None, last_report=last[1] if last else None,
+                  bundles=bundles, chosen=chosen)
 
 @router.post("/modpacks/importar")
 @inject
@@ -445,8 +451,10 @@ async def modpack_import(
     """Import an uploaded .mrpack (`archivo`) or a Modrinth reference (`ref`): as a new pack, or as the
     content of `into`. The answer is the report, into the form's #import-result."""
     async with _upload_room(request):
-        form = await request.form(max_files=1, max_fields=4)
-        into = str(form.get("into") or "") or None
+        form = await request.form(max_files=1, max_fields=5)
+        # «Crear un pack nuevo» leaves the pack in the select aside (O9 D5); without `destino` (/v1's
+        # callers, an older page) `into` says it alone.
+        into = None if form.get("destino") == "nuevo" else str(form.get("into") or "") or None
         if into is not None and not re.fullmatch(BUNDLE_REF, into):
             raise HTTP_422_UNPROCESSABLE_ENTITY("Ese modpack no existe")
         upload, ref = form.get("archivo"), str(form.get("ref") or "").strip()

@@ -1,40 +1,37 @@
 {# Import a modpack (spec 2026-10-09-importar-modpacks): an uploaded .mrpack or Prism instance zip (T6) or a modpack published on
    Modrinth, or with the owner's CurseForge key (`curseforge`, T5) a CurseForge zip or profile code.
-   Without `into` it creates a pack; with it (a bundle id) it replaces that pack's content.
+   Where it goes is #import-target's, on the import page, the one place to import (O9 D5).
    The report answers into #import-result; with `last_job` (the import page, O9 A2) it starts with
    that import. #}
 {% import "_macros.html" as ui %}
 {% set FIELD = "mt-1 block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm text-ink shadow-xs ring-1 ring-inset ring-control placeholder:text-placeholder focus-visible:outline-2 focus-visible:outline-accent" %}
 <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-  <form hx-post="/modpacks/importar" hx-encoding="multipart/form-data" hx-target="#import-result" hx-swap="innerHTML"
+  <form hx-post="/modpacks/importar" hx-encoding="multipart/form-data" hx-target="#import-result" hx-swap="innerHTML" hx-include="#import-target"
     class="space-y-3 rounded-xl border border-line bg-raised p-4">
-    {% if into %}<input type="hidden" name="into" value="{{ into }}">{% endif %}
     <div>
-      <label for="import-file{{ '-' ~ into if into else '' }}" class="text-sm font-medium">Archivo .mrpack{{ ", zip de Prism o de CurseForge" if curseforge else " o zip de Prism" }}</label>
-      <input id="import-file{{ '-' ~ into if into else '' }}" name="archivo" type="file" accept=".mrpack,.zip" required
+      <label for="import-file" class="text-sm font-medium">Archivo .mrpack{{ ", zip de Prism o de CurseForge" if curseforge else " o zip de Prism" }}</label>
+      <input id="import-file" name="archivo" type="file" accept=".mrpack,.zip" required
         class="mt-1 block w-full text-sm text-ink-soft file:mr-3 file:rounded-md file:border-0 file:bg-subtle file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-ink">
       <p class="mt-1 text-xs text-muted">.mrpack hasta 50 MiB. El zip de Prism hasta 1 GiB: los mundos no se leen; exportarlo sin saves/ sube más rápido.</p>
     </div>
     {{ ui.button("Importar archivo", type="submit", attrs={"data-progress": "Subiendo…"}) }}
   </form>
-  <form hx-post="/modpacks/importar" hx-target="#import-result" hx-swap="innerHTML"
+  <form hx-post="/modpacks/importar" hx-target="#import-result" hx-swap="innerHTML" hx-include="#import-target"
     class="space-y-3 rounded-xl border border-line bg-raised p-4">
-    {% if into %}<input type="hidden" name="into" value="{{ into }}">{% endif %}
     <div>
-      <label for="import-ref{{ '-' ~ into if into else '' }}" class="text-sm font-medium">Modpack de Modrinth</label>
-      <input id="import-ref{{ '-' ~ into if into else '' }}" name="ref" type="text" required maxlength="500"
+      <label for="import-ref" class="text-sm font-medium">Modpack de Modrinth</label>
+      <input id="import-ref" name="ref" type="text" required maxlength="500"
         placeholder="https://modrinth.com/modpack/…" class="{{ FIELD }}">
       <p class="mt-1 text-xs text-muted">La URL, el slug o el id. Sin versión, se usa la más nueva.</p>
     </div>
     {{ ui.button("Importar de Modrinth", type="submit") }}
   </form>
   {% if curseforge %}
-  <form hx-post="/modpacks/importar" hx-target="#import-result" hx-swap="innerHTML"
+  <form hx-post="/modpacks/importar" hx-target="#import-result" hx-swap="innerHTML" hx-include="#import-target"
     class="space-y-3 rounded-xl border border-line bg-raised p-4">
-    {% if into %}<input type="hidden" name="into" value="{{ into }}">{% endif %}
     <div>
-      <label for="import-code{{ '-' ~ into if into else '' }}" class="text-sm font-medium">Código de perfil de CurseForge</label>
-      <input id="import-code{{ '-' ~ into if into else '' }}" name="codigo" type="text" required maxlength="40"
+      <label for="import-code" class="text-sm font-medium">Código de perfil de CurseForge</label>
+      <input id="import-code" name="codigo" type="text" required maxlength="40"
         placeholder="ABCD1234" autocomplete="off" class="{{ FIELD }}">
       <p class="mt-1 text-xs text-muted">Dura 7 días desde que lo compartes.</p>
     </div>

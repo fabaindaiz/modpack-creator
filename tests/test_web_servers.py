@@ -585,17 +585,17 @@ def test_import_is_always_shown_and_says_when_nothing_to_import() -> None:
     client, fakes = setup(OPERATOR)
     # A jar Modrinth does not know and a mod outside the pack: there is something to import.
     section = importar(client.get(f"/servers/{SERVER_ID}").text)
-    assert f'hx-post="/servers/{SERVER_ID}/import"' in section and "No hay nada que importar" not in section
+    assert f'hx-post="/servers/{SERVER_ID}/import"' in section and "No hay nada que traer" not in section
     # Everything explained (a second copy of a mod of the pack is extra, not foreign): nothing to import.
     fakes.ptero.comparison = Comparison(matching=[scan_file("/mods/sodium.jar", "P1")], different_version=[],
                                         missing=[], extra=[scan_file("/mods/sodium-2.jar", "P1")], unknown=[])
     section = importar(client.get(f"/servers/{SERVER_ID}").text)
-    assert "No hay nada que importar: el modpack ya explica todos los jars del último escaneo" in section
+    assert "No hay nada que traer: el modpack ya explica todos los jars del último escaneo" in section
     assert "hx-post" not in section and "disabled" in section
     # No scan: importing scans first (T1), so the button works and says so.
     fakes.ptero.scan, fakes.ptero.comparison = None, None
     section = importar(client.get(f"/servers/{SERVER_ID}").text)
-    assert "Importar escanea el servidor primero" in section and f'hx-post="/servers/{SERVER_ID}/import"' in section
+    assert "Traerlos escanea el servidor primero" in section and f'hx-post="/servers/{SERVER_ID}/import"' in section
     assert "Escanea primero" not in section
     # Only jars too large to read: importing could not bring them either.
     fakes.ptero.scan = scan()
@@ -1727,3 +1727,10 @@ def test_one_verb_per_thing_on_the_servers_pages() -> None:
     assert "Simular actualización" not in shown and "Actualizar…" not in shown and "Refrescar" not in shown
     listed = " ".join(visible(client.get("/servers").text).split())
     assert "Recargar lista" in listed and "Actualizar lista" not in listed
+
+
+def test_bringing_a_servers_mods_is_not_called_importing() -> None:
+    """O9 D5 (owner, 2026-10-26): «Importar» is for a pack; the server's is «Traer los mods del servidor»."""
+    client, _ = setup(OPERATOR)
+    shown = " ".join(visible(client.get(f"/servers/{SERVER_ID}").text).split())
+    assert "Traer los mods del servidor" in shown and "Importar el servidor" not in shown

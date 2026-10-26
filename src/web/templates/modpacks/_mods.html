@@ -89,7 +89,7 @@
             <div class="min-w-0 flex-1">
               <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <span class="min-w-0 font-medium wrap-anywhere">{{ ui.mod_link(row.project_id, row.title, pack=bundle_id) }}</span>
-                {% if row.origin == "admin" %}{{ ui.badge("agregado") }}{% elif row.origin == "pack" %}{{ ui.badge("del .mrpack") }}{% endif %}
+                {% if row.origin == "admin" %}{{ ui.badge("agregado") }}{% elif row.origin == "pack" %}{{ ui.badge("del pack") }}{% endif %}
                 {% if side %}{{ ui.badge(side[0], side[1]) }}{% endif %}
                 {% set bridge_label = bridge_labels.get(row.via) if row.via else none %}
                 {% if bridge_label %}{{ ui.badge("vía " ~ bridge_label[0] ~ " (" ~ bridge_label[1] ~ ")", "info") }}{% endif %}

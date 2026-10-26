@@ -1,6 +1,7 @@
 """Importar un modpack desde el panel (spec 2026-10-09-importar-modpacks): la página, el formulario
 en el detalle de un pack, la subida con su tope y el informe. El servicio es un doble."""
 import io
+import re
 from typing import Any, Optional
 
 import pytest
@@ -88,14 +89,18 @@ def test_the_list_links_to_the_import_page_and_the_page_offers_a_file_and_a_modr
     text = client.get("/modpacks/importar").text
     assert 'hx-post="/modpacks/importar"' in text and 'hx-encoding="multipart/form-data"' in text
     assert 'type="file"' in text and 'name="archivo"' in text and 'accept=".mrpack,.zip"' in text
-    assert 'name="ref"' in text and 'name="into"' not in text
+    assert 'name="ref"' in text and 'type="hidden" name="into"' not in text
 
 
-def test_the_pack_page_offers_replacing_its_content_and_says_what_stays() -> None:
+def test_the_pack_links_to_the_import_page_instead_of_its_own_form() -> None:
+    """O9 D5 (owner, 2026-10-26): «Importar modpack» is the one place to import; the pack links to
+    it with itself chosen, and says what stays."""
     client, _ = setup()
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
     section = text[text.index('id="import-section"'):]
-    assert f'name="into" value="{BUNDLE_ID}"' in section and 'name="archivo"' in section and 'name="ref"' in section
+    section = section[:section.index("</section>")] if "</section>" in section else section[:2000]
+    assert f'href="/modpacks/importar?en={BUNDLE_ID}"' in section and "Reemplazar con otro pack" in visible(section)
+    assert 'name="archivo"' not in section and 'name="ref"' not in section
     assert "lo que agregaste a mano se queda" in visible(section)
 
 
@@ -213,11 +218,11 @@ def test_a_prism_zip_in_the_same_field_is_queued_like_any_upload() -> None:
 def test_the_form_and_the_report_speak_of_prism() -> None:
     client, fake = setup()
     page = " ".join(visible(client.get("/modpacks/importar").text).split())
-    assert "Un .mrpack, el zip de una instancia de Prism o un modpack publicado en Modrinth se convierte en un modpack nuevo." in page
+    assert "Un .mrpack, el zip de una instancia de Prism o un modpack publicado en Modrinth: crea un modpack nuevo o reemplaza el contenido de uno." in page
     assert "Archivo .mrpack o zip de Prism" in page
     assert ".mrpack hasta 50 MiB. El zip de Prism hasta 1 GiB: los mundos no se leen; exportarlo sin saves/ sube más rápido." in page
     assert 'accept=".mrpack,.zip"' in client.get("/modpacks/importar").text
-    assert "Reemplazar con un .mrpack o un zip de Prism…" in client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert "Reemplazar con otro pack" in client.get(f"/modpacks/{BUNDLE_ID}").text
     fake.report.disabled = 3
     fake.job.status, fake.job.active = "done", False
     shown = " ".join(visible(client.get(f"/modpacks/importar/{fake.job.id}", headers=HTMX).text).split())
@@ -342,12 +347,38 @@ def test_the_import_page_shows_the_import_in_progress_and_then_the_last_report()
     assert "Importado: 3 mods de Aventura 2.0" in shown
 
 
-def test_the_packs_import_keeps_its_progress_when_the_pack_reloads() -> None:
-    """Importing into a pack starts a job, and the pack reloads #pack-main, where its form is (O9
-    user-walk, W10, A3): the import keeps its place (`hx-preserve`), open and with its progress."""
+def test_the_import_page_creates_a_pack_or_replaces_the_content_of_one() -> None:
+    """O9 D5 (owner, 2026-10-26): one choice for every form on the page, «Crear un pack nuevo» or
+    «Reemplazar el contenido de» a pack; the pack's link comes with it chosen."""
     client, _ = setup()
-    text = client.get(f"/modpacks/{BUNDLE_ID}").text
-    details = text[text.rindex("<details", 0, text.index('id="import-details"')):]
-    tag = details[:details.index(">") + 1]
-    assert "hx-preserve" in tag
-    assert 'id="import-ref-' in details[:details.index("</details>")]
+    text = client.get("/modpacks/importar").text
+    target = text[text.index('id="import-target"'):]
+    target = target[:target.index("</fieldset>")]
+    new, replace = (re.search(rf'<input [^>]*value="{v}"[^>]*>', target).group(0) for v in ("nuevo", "reemplazar"))  # type: ignore[union-attr]
+    assert 'name="destino"' in new and "checked" in new and "checked" not in replace
+    assert f'<option value="{BUNDLE_ID}"' in target and "Crear un pack nuevo" in visible(target)
+    forms = re.findall(r'<form [^>]*hx-post="/modpacks/importar"[^>]*>', text)
+    assert forms and all('hx-include="#import-target"' in f for f in forms)
+    chosen = client.get("/modpacks/importar", params={"en": str(BUNDLE_ID)}).text
+    target = chosen[chosen.index('id="import-target"'):]
+    assert "checked" in re.search(r'<input [^>]*value="reemplazar"[^>]*>', target).group(0)  # type: ignore[union-attr]
+    assert re.search(rf'<option value="{BUNDLE_ID}" selected', target)
+
+
+def test_a_new_pack_ignores_the_pack_in_the_select_and_replacing_takes_it() -> None:
+    client, fake = setup()
+    for destino in ("nuevo", "reemplazar"):
+        client.post("/modpacks/importar", headers=HTMX, data={"ref": "aventura", "destino": destino, "into": str(BUNDLE_ID)})
+    assert [c[-1] for c in fake.calls] == [None, str(BUNDLE_ID)]
+
+
+def test_the_import_texts_name_what_it_takes_and_both_actions() -> None:
+    """O9 A8 (owner's text, 2026-10-26): CurseForge only with its key."""
+    client, fake = setup()
+    shown = " ".join(visible(client.get("/modpacks/importar").text).split())
+    assert ("Un .mrpack, el zip de una instancia de Prism o un modpack publicado en Modrinth: crea un modpack "
+            "nuevo o reemplaza el contenido de uno.") in shown
+    fake.curseforge_enabled = True
+    shown = " ".join(visible(client.get("/modpacks/importar").text).split())
+    assert ("Un .mrpack, el zip de una instancia de Prism, un zip o código de CurseForge o un modpack publicado "
+            "en Modrinth: crea un modpack nuevo o reemplaza el contenido de uno.") in shown

@@ -546,43 +546,11 @@ def check_jobs_in_place(browser: Any, base: str, out: Path, ids: dict[str, str],
     errors: list[str] = []
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
     try:
-        report = check_import_into_pack(page, base, out, ids, "operator-light-360", errors)
-        report.update(check_job_reveal(page, base, out, ids, "operator-light-360", errors))
+        # Importing into a pack is the import page's since O9 D5: nothing reloads under it there.
+        report = check_job_reveal(page, base, out, ids, "operator-light-360", errors)
     finally:
         ctx.close()
     return report
-
-
-def check_import_into_pack(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
-                           errors: list[str]) -> dict[str, dict[str, Any]]:
-    """Importing into a pack starts a job, and the job reloads #pack-main, where the form is (W10,
-    A3): the import's <details> stays open with its progress or its answer."""
-    pack = ids["empty"]
-    response = page.goto(base + f"/modpacks/{pack}")
-    page.wait_for_load_state("networkidle")
-    page.locator(f"#import-section details:has(#import-ref-{pack}) > summary").click()
-    page.evaluate("document.getElementById('pack-main').dataset.old = '1'")
-    page.fill(f"#import-ref-{pack}", "aventura-pack")
-    page.locator(f"form:has(#import-ref-{pack}) button[type=submit]").click()
-    problems: list[str] = []
-    try:
-        page.wait_for_selector("#pack-main:not([data-old])", state="attached", timeout=10_000)
-    except Exception:
-        problems.append("#pack-main no se recargó al empezar la importación")
-    page.wait_for_load_state("networkidle")
-    page.wait_for_timeout(500)
-    state = page.evaluate("""() => {
-        const result = document.getElementById('import-result');
-        const details = result && result.closest('details');
-        return {open: !!details && details.open, shown: !!result && result.textContent.trim().length > 0};
-    }""")
-    if not state["open"]:
-        problems.append("la importación se cerró al recargarse el pack")
-    if not state["shown"]:
-        problems.append("la importación perdió su avance al recargarse el pack")
-    key = f"{prefix}-import-into-pack"
-    page.screenshot(path=str(out / f"{key}.png"))
-    return {key: _report(response, errors, problems)}
 
 
 def check_job_reveal(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,

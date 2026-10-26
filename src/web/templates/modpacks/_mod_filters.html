@@ -7,7 +7,7 @@
   ("lado", "Lado", (("", "Todos"), ("decidir", "Por decidir"), ("servidor", "En el servidor"), ("desactivado", "Desactivado"))),
   ("canal", "Canal", (("", "Todos"), ("pack", "canal del pack"), ("excepcion", "con excepción"), ("beta", "acepta beta"), ("alpha", "acepta alpha"))),
   ("fijacion", "Fijación", (("", "Todas"), ("fijados", "fijados"), ("sin", "sin fijar"), ("baja", "con baja"))),
-  ("origen", "Origen", (("", "Todos"), ("agregados", "agregados"), ("mrpack", "del .mrpack"), ("dependencias", "dependencias"))),
+  ("origen", "Origen", (("", "Todos"), ("agregados", "agregados"), ("mrpack", "del pack"), ("dependencias", "dependencias"))),
 ) + ((("loader", "Loader", (("", "Todos"), ("nativos", "nativos"), ("puente", "vía puente"))),) if bridges_on else ()) %}
 {% set FIELD = "mt-1 block w-full rounded-md border-0 bg-raised px-2 py-1 text-sm ring-1 ring-inset ring-control focus-visible:outline-2 focus-visible:outline-accent" %}
 <form data-mod-filters action="/modpacks/{{ bundle_id }}" method="get" hx-get="/modpacks/{{ bundle_id }}"

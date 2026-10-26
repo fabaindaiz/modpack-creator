@@ -163,6 +163,6 @@
     {% endif %}
   </div>
   {% if mrpack.ids %}
-  <p class="text-xs break-words text-muted">{% set one = mrpack.ids | length == 1 %}{{ names(mrpack.ids) }} {{ "vino" if one else "vinieron" }} con el .mrpack: {{ "vuelve" if one else "vuelven" }} si se reemplaza el contenido del pack; para que no vuelva, crea un <a href="/replacements" class="font-medium text-link hover:underline">reemplazo vacío</a>.</p>
+  <p class="text-xs break-words text-muted">{% set one = mrpack.ids | length == 1 %}{{ names(mrpack.ids) }} {{ "vino" if one else "vinieron" }} con el pack: {{ "vuelve" if one else "vuelven" }} si se reemplaza el contenido del pack; para que no vuelva, crea un <a href="/replacements" class="font-medium text-link hover:underline">reemplazo vacío</a>.</p>
   {% endif %}
 </article>

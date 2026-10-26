@@ -80,7 +80,7 @@
       <li class="space-y-1 px-3 py-2">
         <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
           <a href="/modpacks/{{ use.bundle_id }}{{ '?vista=problemas' if use.problem else '' }}" class="{{ LINK }} wrap-anywhere">{{ use.bundle_name }}</a>
-          {% if use.origin == "admin" %}{{ ui.badge("agregado") }}{% elif use.origin == "pack" %}{{ ui.badge("del .mrpack") }}{% endif %}
+          {% if use.origin == "admin" %}{{ ui.badge("agregado") }}{% elif use.origin == "pack" %}{{ ui.badge("del pack") }}{% endif %}
         </div>
         {% if use.origin is none %}
         <p class="text-xs break-words text-muted">dependencia de

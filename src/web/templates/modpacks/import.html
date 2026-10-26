@@ -3,8 +3,21 @@
 {% block title %}Importar modpack{% endblock %}
 
 {% block content %}
-{% call ui.page_header("Importar modpack", "Un .mrpack, el zip de una instancia de Prism o un modpack publicado en Modrinth se convierte en un modpack nuevo.") %}
+{% call ui.page_header("Importar modpack", "Un .mrpack, el zip de una instancia de Prism" ~ (", un zip o código de CurseForge" if curseforge else "") ~ " o un modpack publicado en Modrinth: crea un modpack nuevo o reemplaza el contenido de uno.") %}
 {{ ui.link_button("Volver a los modpacks", "/modpacks") }}
 {% endcall %}
-{% with into=none %}{% include "modpacks/_import_form.html" %}{% endwith %}
+{# Where the import goes, for every form below (O9 D5): they include it (hx-include). #}
+<fieldset id="import-target" class="mb-4 space-y-2 rounded-xl border border-line bg-raised p-4 text-sm">
+  <legend class="sr-only">Dónde importar</legend>
+  <label class="flex items-center gap-2"><input type="radio" name="destino" value="nuevo"{% if not chosen %} checked{% endif %}> Crear un pack nuevo</label>
+  <div class="flex flex-wrap items-center gap-2">
+    <label class="flex items-center gap-2"><input type="radio" name="destino" value="reemplazar"{% if chosen %} checked{% endif %}{% if not bundles %} disabled{% endif %}> Reemplazar el contenido de:</label>
+    <select name="into" aria-label="Pack cuyo contenido se reemplaza"{% if not bundles %} disabled{% endif %}
+      class="rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control">
+      {% for b in bundles %}<option value="{{ b.id }}"{% if chosen == b.id | string %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
+    </select>
+  </div>
+  <p class="text-xs text-muted">Al reemplazar, los mods del pack se reemplazan con los del archivo; lo que agregaste a mano se queda.</p>
+</fieldset>
+{% include "modpacks/_import_form.html" %}
 {% endblock %}

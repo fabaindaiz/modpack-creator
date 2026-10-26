@@ -1670,7 +1670,7 @@ def test_mods_list_shows_card_data_not_ids() -> None:
     assert 'title="0.8.13 → 0.8.14"' in sodium and "truncate" in sodium  # versión larga con elipsis
     dependency = card(text, "P9")
     assert "dependencia de Sodium" in dependency and "En el servidor" in dependency and "0.100.0" in dependency
-    assert "del .mrpack" in card(text, "P8") and "Por decidir" in card(text, "P8")
+    assert "del pack" in card(text, "P8") and "Por decidir" in card(text, "P8")
     # Tester feedback (2026-10-08): "Solo cliente" read as a property of the mod, not a decision.
     assert "Solo cliente" not in text and "Sin decidir" not in text
     decide = row_select(text, "P8", "server")
@@ -2015,7 +2015,7 @@ def test_the_filter_bar_shows_each_option_with_its_count() -> None:
     assert f'hx-get="/modpacks/{BUNDLE_ID}"' in form and 'hx-push-url="true"' in form
     assert 'name="vista" value="todos"' in form and 'name="nombre"' in form
     assert ">con excepción (2)</option>" in form and ">acepta alpha (1)</option>" in form
-    assert ">Desactivado (1)</option>" in form and ">del .mrpack (1)</option>" in form
+    assert ">Desactivado (1)</option>" in form and ">del pack (1)</option>" in form
     assert re.search(r'<option value="decidir"[^>]*text-faint[^>]*>Por decidir \(0\)</option>', form)
 
 
@@ -2934,3 +2934,10 @@ def test_the_pack_has_no_resolve_button_and_brings_from_modrinth() -> None:
     assert "/resolve" not in text and ">Resolver" not in visible(text)
     assert "Traer de Modrinth" in visible(text) and f'hx-post="/modpacks/{BUNDLE_ID}/catalogo"' in text
     assert client.post(f"/modpacks/{BUNDLE_ID}/resolve", headers=HTMX).status_code in (404, 405)
+
+
+def test_a_mod_from_an_imported_pack_says_del_pack() -> None:
+    """O9 A8 (owner's text, 2026-10-26): a Prism or CurseForge zip is not an .mrpack."""
+    client, modpack, _ = setup()
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert "del .mrpack" not in text and "del pack" in visible(text)

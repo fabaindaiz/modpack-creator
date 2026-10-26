@@ -92,30 +92,30 @@
         without a comparison: a bundle without builds can still be filled by importing. Jars too
         large to read count as unexplained, but importing only lists them.
       #}
-      {% call ui.section("Importar el servidor", id="importar", help="importar-servidor") %}
+      {% call ui.section("Traer los mods del servidor", id="importar", help="importar-servidor") %}
       <div class="space-y-3 rounded-xl border border-line bg-raised p-4 text-sm">
         {% set importable = (to_import.foreign | reject("in", to_import.too_large) | list) if to_import else [] %}
         {% if not server.bundle_id %}
         {% set import_reason = "el servidor está sin modpack" %}
-        <p class="text-muted">Vincula el servidor a un modpack, o crea uno, para importar sus jars.</p>
+        <p class="text-muted">Vincula el servidor a un modpack, o crea uno, para traer sus jars.</p>
         {% elif to_import is not none and not to_import.foreign %}
-        {% set import_reason = "no hay nada que importar" %}
-        <p class="text-muted">No hay nada que importar: el modpack ya explica todos los jars del último escaneo.
+        {% set import_reason = "no hay nada que traer" %}
+        <p class="text-muted">No hay nada que traer: el modpack ya explica todos los jars del último escaneo.
           {%- if to_import.in_pack %} El build no incluye {{ to_import.in_pack | length }} de ellos: crea un build nuevo.{% endif %}</p>
         {% elif to_import is not none and not importable %}
-        {% set import_reason = "demasiado grandes para importar" %}
-        <p class="text-muted">{{ to_import.too_large | length }} {{ "jar" if to_import.too_large | length == 1 else "jars" }} del último escaneo {{ "es demasiado grande" if to_import.too_large | length == 1 else "son demasiado grandes" }} para leerlos: importar no puede traerlos al modpack.</p>
+        {% set import_reason = "demasiado grandes para traer" %}
+        <p class="text-muted">{{ to_import.too_large | length }} {{ "jar" if to_import.too_large | length == 1 else "jars" }} del último escaneo {{ "es demasiado grande" if to_import.too_large | length == 1 else "son demasiado grandes" }} para leerlos: no se pueden traer al modpack.</p>
         {% else %}
         {% set import_reason = reason %}
         <p class="text-muted">
           {%- if importable %}{{ importable | length }} {{ "jar" if importable | length == 1 else "jars" }} del último escaneo que el modpack no explica. {% endif -%}
-          {%- if not scan %}Importar escanea el servidor primero. {% endif -%}
-          Importar los trae al modpack: los que Modrinth reconoce se agregan; los demás esperan tu decisión. Solo lee el servidor.</p>
+          {%- if not scan %}Traerlos escanea el servidor primero. {% endif -%}
+          Se traen al modpack: los que Modrinth reconoce se agregan; los demás esperan tu decisión. Solo lee el servidor.</p>
         {% endif %}
         {% if import_reason %}
-        {{ ui.button("Importar", disabled_reason=import_reason) }}
+        {{ ui.button("Traer los mods", disabled_reason=import_reason) }}
         {% else %}
-        {{ ui.button("Importar", attrs={"hx-post": "/servers/" ~ server_id ~ "/import", "hx-target": "#server-job", "hx-swap": "innerHTML"}) }}
+        {{ ui.button("Traer los mods", attrs={"hx-post": "/servers/" ~ server_id ~ "/import", "hx-target": "#server-job", "hx-swap": "innerHTML"}) }}
         {% endif %}
         {% if pending_import and pending_import.candidates %}
         {% with result=pending_import, next_bundle_id=server.bundle_id, pending_only=true %}{% include "servers/_import.html" %}{% endwith %}

@@ -71,12 +71,9 @@
     {% endif %}
 
     {% call ui.section("Contenido del pack", id="import-section", help="contenido") %}
-    {# Kept as it is when #pack-main reloads (O9 A3): importing starts a job, which reloads it. #}
-    <details id="import-details" hx-preserve class="space-y-3">
-      <summary class="cursor-pointer text-sm font-medium">Reemplazar con un .mrpack o un zip de Prism…</summary>
-      <p class="mt-2 text-sm text-muted">Los mods del pack se reemplazan con los del archivo; lo que agregaste a mano se queda.</p>
-      <div class="mt-3">{% with into=bundle_id %}{% include "modpacks/_import_form.html" %}{% endwith %}</div>
-    </details>
+    {# Importing is one page (O9 D5): this pack comes chosen. #}
+    <p class="text-sm"><a href="/modpacks/importar?en={{ bundle_id }}" class="font-medium text-link hover:underline">Reemplazar con otro pack →</a></p>
+    <p class="mt-1 text-sm text-muted">Los mods del pack se reemplazan con los del archivo; lo que agregaste a mano se queda.</p>
     {% endcall %}
 
     {% call ui.section("Canales", id="channels-section", help="canales") %}
