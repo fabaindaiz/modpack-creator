@@ -311,6 +311,8 @@ de navegador primero), A6, A7 y A8 (textos que revisa el dueño), A11 y A12 (ind
 
 **Estado (2026-10-26):** hechos el resto de A1 (una importación dentro de un pack guarda su `bundle_id`; la de un pack nuevo sigue llevando a `/jobs/{id}`, que muestra su informe), A2 (la página «Importar» muestra la importación en curso o la última de la persona), A3 (confirmada en el navegador: el barrido sin el arreglo da «la importación se cerró» y «perdió su avance»; el `<details>` de importar lleva `hx-preserve` y el aviso del pack sigue la importación por su `into`), A11 («Subiendo… N %» en el botón) y A12 («Buscando en Modrinth…»). A13 quedó comprobado en el navegador (sin `data-reveal`, el barrido da «llegó fuera de la vista»). Quedan A6, A7 y A8 (textos del dueño) y las 13 decisiones.
 
+**Decidido (2026-10-26, el dueño, d-7985ee-456ab9):** las 13 decisiones y los textos A6–A8, cada una la opción recomendada; D2 con la condición de no sumar requests, y D12 con sus cuatro arreglos. Los textos aceptados de A6, A7 y A8 son los de la fila de la decisión y los de este documento (A7: «Agrega o quita mods: el pack se resuelve solo», «escanéalo, vincúlalo al modpack (una sola vez) y simula la instalación del build», «Si la simulación se ve bien, instálalo», «Más adelante, «Buscar actualizaciones de mods» y crea otro build»).
+
 ## Cuentas
 
 35 hallazgos (W1–W35): **4 altos** (W8, W9, W10, W26), **17 medios**, **14 bajos**. De ellos, W16

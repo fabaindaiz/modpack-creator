@@ -17,7 +17,9 @@ está al final del archivo, para que nada entre este párrafo y la primera entra
 
 **Qué salió mal en el camino.** Chromium no arranca dentro del sandbox (`bootstrap_check_in … Permission denied`): los chequeos de navegador solo corren con `./scripts/visual-sweep.sh` escrito tal cual, más de 10 min por corrida. El barrido rojo hizo falta tres veces: el chequeo nuevo abrió el «?» de la sección en vez del `<details>` de importar (el primer `summary`), y después usó `wait_for_function`, que la CSP del panel rechaza; `visual_sweep.py` ya lo decía en un comentario (línea 48) que no leí antes de escribir. El test nuevo del pin usó primero el servicio de importación en vez del de modpacks y mypy lo paró en test-mongo. Un comando llevó un heredoc vacío por descuido (sin efecto; la regla dice ninguno).
 
-**Qué quedó sin hacer.** Las decisiones del dueño (O9 D1–D13 y A6–A8, O8 D1–D14, lo del 2026-10-22). Los dos menores de la revisión (en el roadmap). La importación de un pack nuevo sigue sin guardar su `bundle_id` mientras corre (su «Ver detalle» va a `/jobs/{id}`, que muestra el informe al terminar). El segundo user-walk de O9, después de las decisiones.
+**Decidido.** Con `decision-review`, el dueño decidió las 16 de O9 (D1–D13 y A6–A8), una por turno: todas las recomendadas, D2 con la condición de no sumar requests (d-7985ee-456ab9). Las 30 juntas (O9 y O8) pasaban de 15: se partieron, O8 va en otra ronda.
+
+**Qué quedó sin hacer.** Las 14 de O8 y lo del 2026-10-22; la spec y el plan de O9 (~9 sesiones). Los dos menores de la revisión (en el roadmap). La importación de un pack nuevo sigue sin guardar su `bundle_id` mientras corre (su «Ver detalle» va a `/jobs/{id}`, que muestra el informe al terminar). El segundo user-walk de O9, después de las decisiones.
 
 **Desvío del plan.** Ninguno.
 

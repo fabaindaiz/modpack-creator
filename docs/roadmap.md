@@ -17,8 +17,10 @@ A13 comprobados en el navegador por el barrido (dos chequeos nuevos, vistos fall
 2026-10-25 (pedida con «verifica todo lo pendiente»): dos hallazgos arreglados (un pin sin registro se
 escribía sin condición; la reserva de subidas podía pasarse por una subida liberada durante la lectura del
 disco) y dos menores anotados abajo. **Para seguir, en orden:**
-1. **Para el dueño, una a una** (skill `decision-review`): las 13 decisiones de O9 (D1–D13 del user-walk) y
-   los textos A6–A8; las 14 de O8 (D1–D14 del borrador), antes de su plan; lo que ya esperaba del 2026-10-22
+1. Hecho (2026-10-26): las 16 decisiones de O9, todas las recomendadas (d-7985ee-456ab9). Siguen su spec y
+   su plan, ~9 sesiones, en este orden por dependencias: D2 (resolver solo, sin sumar requests) y D6
+   (verbos) primero; luego D5, D3, D4, D7, D1, D8, D10, D9, D11, D12, D13; los textos A6–A8 con lo que
+   nombran. **Para el dueño, una a una** (skill `decision-review`): las 14 de O8 (D1–D14 del borrador), antes de su plan; lo que ya esperaba del 2026-10-22
    (los textos de ayuda, `LICENSES.html`, las decisiones de los agentes de la ronda 3, el «?» que baja de
    línea). Después, el merge a `main` si lo pide.
 2. Menores de la revisión del 2026-10-26, sin hacer: la revisión de un registro vuelve a 1 cuando el mod se
