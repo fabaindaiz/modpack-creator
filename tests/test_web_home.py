@@ -145,7 +145,7 @@ def test_the_dashboard_lists_are_cards_not_tables() -> None:
 
 def test_an_empty_dashboard_says_so_in_each_list() -> None:
     text = client(EDITOR, (FakePterodactyl([], {}), FakeModpack([]), FakeJobs([]))).get("/").text
-    assert "No hay servidores registrados." in text and "No hay modpacks." in text
+    assert "No hay servidores." in text and "No hay modpacks." in text
     assert "Todavía no hay trabajos." in text and "Todo en orden" in text
 
 
@@ -200,3 +200,19 @@ def test_the_dashboard_reads_its_servers_scans_together() -> None:
     pterodactyl, modpack, jobs = default_fakes()
     waiting = Waiting(pterodactyl.servers, pterodactyl.drifts)
     assert client(OPERATOR, (waiting, modpack, jobs)).get("/").status_code == 200
+
+
+def test_the_first_time_the_empty_lists_say_what_to_do() -> None:
+    """O9 D11 (owner, 2026-10-26): «No hay modpacks» and «No hay servidores» led nowhere."""
+    import re as _re
+
+    _, _, jobs = calm_fakes()
+    text = client(EDITOR, (FakePterodactyl([], {}), FakeModpack([]), jobs)).get("/").text
+
+    def visible(html: str) -> str:
+        return " ".join(_re.sub(r"<[^>]+>", " ", html).split())
+
+    servers = text[text.index('id="servidores"'):text.index('id="trabajos"')]
+    builds = text[text.index('id="builds"'):]
+    assert "No hay servidores." in visible(servers) and 'href="/servers"' in servers and "Traer del panel" in visible(servers)
+    assert "No hay modpacks." in visible(builds) and 'href="/modpacks#nuevo"' in builds and 'href="/modpacks/importar"' in builds
