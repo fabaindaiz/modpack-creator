@@ -182,3 +182,17 @@ def test_the_panel_words_only_the_reasons_it_can_say_plainly() -> None:
     assert full_reason_text("node_unreadable") == "Escaneo completo: no se pudo leer en qué nodo está el servidor"
     assert set(FULL_REASON_TEXT) == {"no_activity_permission", "first", "restored", "too_old", "node_changed",
                                      "activity_unreadable", "forced", "periodic", "node_unreadable"}
+
+
+def test_a_scan_remembers_its_pack() -> None:
+    """O8 tanda 2, user-walk N5: a server linked to another pack later brought this one's scans along."""
+    panel, servers = Panel(), Servers()
+    linked = server("n1").model_copy(update={"bundle_id": "b1"})
+
+    async def linked_get(server_id: str) -> PterodactylServer:
+        return linked
+
+    servers.server_get = linked_get  # type: ignore[method-assign]
+    [scan] = scans(panel, servers, {})
+    [unlinked] = scans(Panel(), Servers(), {})
+    assert scan.bundle_id == "b1" and unlinked.bundle_id is None

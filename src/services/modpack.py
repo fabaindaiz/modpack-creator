@@ -596,6 +596,7 @@ class ModpackService():
                 raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{value}' no es un id de Modrinth")
         bundle = await self.modpackDB.bundle_get(bundle_id)
         found, downgrade = await self._pin_checked(bundle, project_id, version_id, confirm_downgrade)
+        previous = bundle.pins.get(project_id)
         for _ in range(PIN_WRITE_TRIES):
             record = bundle.pin_origins.get(project_id)
             if record is None:
@@ -617,7 +618,8 @@ class ModpackService():
                 break
         else:
             raise HTTP_409_CONFLICT(PIN_BUSY)
-        details: dict[str, Any] = {"project_id": project_id, "version_id": version_id}
+        # Where it came from too (O8 tanda 2, user-walk N4): the mod's history reads it.
+        details: dict[str, Any] = {"project_id": project_id, "version_id": version_id, "from_version_id": previous}
         if downgrade is not None:
             details["downgrade"] = {"from": downgrade.floor_number, "to": downgrade.pin_number}
         await self.audit.record(actor, "bundle.pin", _bundle(bundle_id), details)
@@ -646,7 +648,8 @@ class ModpackService():
             if view is None:
                 raise HTTP_422_UNPROCESSABLE_ENTITY("Ese mod no tiene una versión fijada con orígenes")
             stored = [o for o in view.origins if o.source != PinSource.resolution]
-            details: dict[str, Any] = {"project_id": project_id, "origin": source.value}
+            details: dict[str, Any] = {"project_id": project_id, "origin": source.value,
+                                       "from_version_id": bundle.pins.get(project_id)}
             rev = _rev(bundle, project_id)
             if source == PinSource.resolution:
                 written = await self.modpackDB.bundle_pin_record_set(
@@ -823,6 +826,7 @@ class ModpackService():
             raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{project_id}' no es un id de Modrinth")
         for _ in range(PIN_WRITE_TRIES):
             bundle = await self.modpackDB.bundle_get(bundle_id)
+            previous = bundle.pins.get(project_id)
             view = pin_view(bundle, project_id) if project_id in bundle.pin_origins else None
             if view is None:
                 if await self.modpackDB.bundle_pin_set_unrecorded(bundle_id, project_id, None):
@@ -838,7 +842,7 @@ class ModpackService():
         else:
             raise HTTP_409_CONFLICT(PIN_BUSY)
         await self.audit.record(actor, "bundle.pin", _bundle(bundle_id),
-                                {"project_id": project_id, "version_id": None})
+                                {"project_id": project_id, "version_id": None, "from_version_id": previous})
         return updated
 
     async def _version_project(self, version_id: str) -> Optional[str]:

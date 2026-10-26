@@ -87,7 +87,7 @@ def test_confirming_saves_the_pin_and_the_event_says_it_goes_back(mongo: MongoRu
 
     pins, details = mongo(scenario)
     assert pins == {"J": J51}
-    assert details == {"project_id": "J", "version_id": J51, "downgrade": {"from": "19.57", "to": "19.51"}}
+    assert details == {"project_id": "J", "version_id": J51, "from_version_id": None, "downgrade": {"from": "19.57", "to": "19.51"}}
 
 
 def test_a_pin_at_or_after_the_floor_or_on_another_branch_needs_nothing(mongo: MongoRunner) -> None:

@@ -16,6 +16,9 @@ class ServerScan(Document):
     scanned_at: datetime
     full: bool
     files: list[ScanFile]
+    # The pack the server was linked to when scanned (O8 tanda 2, user-walk N5): a mod's history only
+    # counts its own pack's scans. None for a server without a pack, and for scans stored before.
+    bundle_id: Optional[str] = None
     # How the scan compared with the server's build, as announced; None if it was not linked.
     drift: Optional[str] = None
     # Why it was full (a `FullReason` code of src/library/scan.py); None when it read only what changed,

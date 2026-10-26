@@ -89,3 +89,21 @@ def test_removing_the_mod_keeps_its_history_and_marks_it(mongo: MongoRunner) -> 
 
     still, history = mongo(scenario)
     assert still is False and ("pack", True) in history
+
+
+@pytest.mark.network
+def test_a_pin_change_audits_from_which_version(mongo: MongoRunner) -> None:
+    """User-walk N4: «bundle.pin» said only where a pin went; the history needs where it came from."""
+    async def scenario() -> list[tuple[Any, Any]]:
+        s = Scenario()
+        newer = version("sod-2", SODIUM[0], "sodium jar 2", day=5)
+        s.api.versions.append(newer)
+        await ModrinthDatabase().version_upsert_many([ModrinthVersion.parse(**newer)])
+        bundle_id = (await s.service.run_mrpack(mrpack(), EDITOR)).bundle_id  # pinned to the pack's sod-1
+        service = s.service.modpackService
+        await service.pin_set(bundle_id, SODIUM[0], "sod-2", EDITOR)
+        await service.pin_origin_select(bundle_id, SODIUM[0], PinSource.pack, EDITOR, confirm_downgrade=True)
+        await service.pin_unset(bundle_id, SODIUM[0], EDITOR)
+        return [(e[2].get("from_version_id"), e[2].get("version_id")) for e in s.audit.events if e[0] == "bundle.pin"]
+
+    assert mongo(scenario) == [("sod-1", "sod-2"), ("sod-2", "sod-1"), ("sod-1", None)]

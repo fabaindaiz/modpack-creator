@@ -291,7 +291,8 @@ class PterodactylService():
         files = sorted([*known, *identified, *too_large], key=lambda f: f.path)
         stored = await self.pterodactylDB.scan_insert(ServerScan(
             server_id=server.id, directory=directory, scanned_at=started,  # type: ignore[arg-type]
-            full=full, files=files, full_reason=reason, node=node))
+            full=full, files=files, full_reason=reason, node=node,
+            bundle_id=str(server.bundle_id) if server.bundle_id is not None else None))
         if record_drift and directory == SCAN_DIRECTORY:
             stored = await self._store_drift(server_id, stored)
         if directory == SCAN_DIRECTORY and server.bundle_id is not None:
