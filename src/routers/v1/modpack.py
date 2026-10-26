@@ -138,13 +138,14 @@ async def project_remove(
 @inject
 async def build_create(
         id: str,
+        test: bool = Query(False, description="a test build (O8 B1): never the latest nor the recommended until approved"),
         modpack: ModpackService = Depends(Provide[Dependences.modpackService]),
         actor: Actor = Depends(get_current_actor)
         ):
     """Queue the next build: 202 with its job, the panel's own (one per pack: asking again gives the
-    running one; poll /v1/job/{id}). 409 now if the pack, resolved from the catalog, has problems
-    or undecided mods (owner's decision U5, 2026-10-09)."""
-    return await modpack.build_request(bundle_id=id, actor=actor)
+    running one; poll /v1/job/{id}; the other kind, normal or test, is a 409). 409 now if the pack,
+    resolved from the catalog, has problems or undecided mods (owner's decision U5, 2026-10-09)."""
+    return await modpack.build_request(bundle_id=id, actor=actor, test=test)
 
 @router.get("/modpack/{id}/build", response_model=list[ModpackBuild])
 @inject

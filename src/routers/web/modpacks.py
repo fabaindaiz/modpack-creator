@@ -1031,7 +1031,8 @@ async def build_create(
     try:
         if decisions:
             await modpackService.decisions_set(bundle_id, decisions, actor)
-        job = await modpackService.build_request(bundle_id, actor)
+        # «Construir como prueba» (O8 B1) sends `prueba=1`.
+        job = await modpackService.build_request(bundle_id, actor, test=form.get("prueba") == "1")
     except BuildBlocked as blocked:
         nothing_decided = from_dialog and not decisions and blocked.only_undecided
         return await _build_dialog(request, actor, modpackService, modrinthService, bundle_id, blocked.lock,

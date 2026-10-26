@@ -170,6 +170,12 @@ class ModpackBuild(Document):
     loader_version: Optional[str] = None
     # The build job that made it, if one did: a retry of that job finds it instead of making another.
     job_id: Optional[str] = None
+    # A test build (O8 B1, d-7985ee-a99db7): numbered like any other, never the latest nor the
+    # recommended until approved. Its name and star (B2, B3) are the only other fields ever written
+    # after it is made, each with its own $set: what it froze never changes.
+    test: bool = False
+    name: Optional[str] = None
+    starred: bool = False
     # The bundle's local files when the build was made.
     local_files: list[LocalFile] = Field(default_factory=list)
     request: ResolveRequest

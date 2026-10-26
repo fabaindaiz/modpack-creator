@@ -299,8 +299,9 @@ class FakeModpack:
             raise self.blocked
         return self.builds[0]
 
-    async def build_request(self, bundle_id: str, actor: Actor) -> Any:
-        self._record("build_request", bundle_id, actor)
+    async def build_request(self, bundle_id: str, actor: Actor, test: bool = False) -> Any:
+        # A test build (O8 B1) is recorded with its mark; a normal one as before.
+        self._record("build_request", bundle_id, actor, *(["test"] if test else []))
         if self.blocked is not None:
             raise self.blocked
         return self.queued
@@ -3051,3 +3052,11 @@ def test_a_mod_that_came_with_the_pack_says_how_to_take_it_out() -> None:
     text = text[:text.index("</li>")]
     assert "Vino con el pack: desactívalo o crea un reemplazo vacío" in " ".join(visible(text).split())
     assert 'href="/replacements"' in text
+
+
+def test_build_as_test_queues_a_test_job() -> None:
+    """O8 B1 (d-7985ee-a99db7): «Construir como prueba» sends `prueba=1`."""
+    client, modpack, _ = setup()
+    response = client.post(f"/modpacks/{BUNDLE_ID}/builds", data={"prueba": "1"}, headers=HTMX)
+    assert response.status_code == 200 and response.headers["HX-Trigger"] == "job-started"
+    assert call(modpack, "build_request")[1:] == (str(BUNDLE_ID), EDITOR, "test")

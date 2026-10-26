@@ -348,3 +348,48 @@ def test_a_build_rereads_its_versions_in_one_batch_and_sees_an_edit_in_place(mon
 
     took, again, rereads = mongo(scenario)
     assert again != took and len(rereads) == 1
+
+
+# Builds de prueba (O8 B1, d-7985ee-a99db7; user-walk W5, H4 en d-7985ee-3bb53b).
+
+
+def test_a_test_build_is_numbered_but_never_moves_latest(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Any, ...]:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        await service.build_create(bundle_id, actor=EDITOR)
+        test = await service.build_create(bundle_id, actor=EDITOR, test=True)
+        stored = await service.bundle_get(bundle_id)
+        return test.number, (await service.build_get(bundle_id, 2)).test, stored.latest_build
+
+    assert mongo(scenario) == (2, True, 1)
+
+
+def test_retrying_a_test_builds_job_never_moves_latest(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Any, ...]:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        await service.build_create(bundle_id, actor=EDITOR, test=True, job_id="j1")
+        await service.build_create(bundle_id, actor=EDITOR, test=True, job_id="j1")  # the retry
+        stored = await service.bundle_get(bundle_id)
+        return [b.number for b in await service.build_find(bundle_id)], stored.latest_build
+
+    assert mongo(scenario) == ([1], None)
+
+
+def test_a_test_build_is_announced_as_a_test(mongo: MongoRunner) -> None:
+    from tests.test_notify import Recorder
+
+    async def scenario() -> list[str]:
+        recorder = Recorder()
+        service = ModpackService(modpackDB=ModpackDatabase(), modrinthDB=ModrinthDatabase(),
+                                 modrinthAPI=cast(Any, RecordedModrinthAPI()), loaderAPI=cast(Any, FakeLoaders()), audit=RecordingAudit(),
+                                 notifier=cast(Any, recorder))
+        bundle = await service.bundle_create(ModpackBundle(name="Survival", description="", version="26.3",
+                                                           loader=MinecraftLoaders.fabric), actor=EDITOR)
+        await service.project_add(str(bundle.id), ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        await service.build_create(str(bundle.id), actor=EDITOR, test=True)
+        return recorder.sent
+
+    [message] = mongo(scenario)
+    assert message.startswith("🧪 Survival: build de prueba 1 creado, ") and message.endswith(" archivos.")

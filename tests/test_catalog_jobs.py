@@ -337,3 +337,39 @@ def test_resolving_by_itself_a_pack_the_catalog_lacks_leaves_one_job_and_does_no
     first, second, jobs, calls = mongo(scenario)
     assert first is None and second is None and calls == []
     assert [(j.kind, j.status) for j in jobs] == [("catalog_refresh", "queued")]
+
+
+def test_a_test_build_job_carries_its_mark_and_never_meets_a_normal_one(mongo: MongoRunner) -> None:
+    """O8 B1, W6 (user-walk 2026-10-26): one key for both kinds of build; the other kind is refused."""
+    from fastapi import HTTPException
+
+    async def scenario() -> tuple[Any, ...]:
+        service, api, clock, bundle_id = await setup()
+        await service.resolve_fetching(bundle_id)
+        await service.decisions_set(bundle_id, {"AAAA": True, "BBBB": True, "LIBB": True}, EDITOR)
+        test = await service.build_request(bundle_id, EDITOR, test=True)
+        again = await service.build_request(bundle_id, EDITOR, test=True)
+        with pytest.raises(HTTPException) as normal:
+            await service.build_request(bundle_id, EDITOR)
+        await run_jobs(service)
+        bundle = await service.bundle_get(bundle_id)
+        built = await service.build_get(bundle_id, 1)
+        return test.payload, again.id == test.id, normal.value.status_code, built.test, bundle.latest_build
+
+    payload, same, refused, is_test, latest = mongo(scenario)
+    assert payload["test"] is True and same and refused == 409 and is_test is True and latest is None
+
+
+def test_a_normal_build_job_refuses_a_test_meanwhile(mongo: MongoRunner) -> None:
+    from fastapi import HTTPException
+
+    async def scenario() -> int:
+        service, api, clock, bundle_id = await setup()
+        await service.resolve_fetching(bundle_id)
+        await service.decisions_set(bundle_id, {"AAAA": True, "BBBB": True, "LIBB": True}, EDITOR)
+        await service.build_request(bundle_id, EDITOR)
+        with pytest.raises(HTTPException) as test:
+            await service.build_request(bundle_id, EDITOR, test=True)
+        return test.value.status_code
+
+    assert mongo(scenario) == 409

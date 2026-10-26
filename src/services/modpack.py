@@ -84,6 +84,11 @@ CHANGELOG_DEADLINE = 10.0
 LOADER_VERSION_TTL = timedelta(hours=24)
 
 
+# A build of the other kind is queued or running (O8 B1, user-walk W6): by whether that one is a test.
+BUILD_OTHER_KIND = {False: "Ya hay un build normal en curso: espera a que termine para construir una prueba.",
+                    True: "Ya hay un build de prueba en curso: espera a que termine para construir uno normal."}
+
+
 class ChangePreview(BaseModel):
     """What changes between two locks, with the changelog of each version that arrives."""
     changes: ChangeSet
@@ -1933,12 +1938,13 @@ class ModpackService():
 
     # Builds (i-7985ee-098611).
 
-    async def build_request(self, bundle_id: str, actor: Actor) -> Job:
+    async def build_request(self, bundle_id: str, actor: Actor, test: bool = False) -> Job:
         """
         "Crear build" in the panel (E9): resolved from the catalog first, with no request, a pack
         that cannot be built is refused at once (BuildBlocked, as build_create). Otherwise, or when
         the catalog lacks something, the build job: it checks Modrinth (bringing what is missing),
-        resolves and freezes (build_create). Asking again while it is queued or running gives that job.
+        resolves and freezes (build_create). Asking again while it is queued or running gives that job;
+        asking for the other kind (a test build, O8 B1, or a normal one) is a 409 (user-walk W6).
         """
         bundle = await self.modpackDB.bundle_get(bundle_id)
         request = await self._request(bundle)
@@ -1952,13 +1958,15 @@ class ModpackService():
             await self._resolution_save(bundle, request, lock)
             _refuse_blocked(lock)
         key = f"build:{bundle_id}"
+        payload: dict[str, Any] = {"bundle_id": bundle_id, **({"test": True} if test else {})}
         try:
-            job = await self.jobDB.enqueue("build_create", key=key, payload={"bundle_id": bundle_id},
-                                           requested_by=actor.ref())
+            job = await self.jobDB.enqueue("build_create", key=key, payload=payload, requested_by=actor.ref())
         except HTTP_409_CONFLICT:
             active = await self.jobDB.active_for(key)
             if active is None:
                 raise
+            if bool(active.payload.get("test", False)) != test:
+                raise HTTP_409_CONFLICT(BUILD_OTHER_KIND[bool(active.payload.get("test", False))]) from None
             return active
         await self.audit.record(actor, "build.request", _bundle(bundle_id), {"job_id": str(job.id)})
         return job
@@ -1993,7 +2001,8 @@ class ModpackService():
 
         async def run() -> dict[str, Any]:
             try:
-                build = await self.build_create(bundle_id, actor, report=context.progress, job_id=str(job.id))
+                build = await self.build_create(bundle_id, actor, report=context.progress, job_id=str(job.id),
+                                                test=bool(job.payload.get("test", False)))
             except BuildBlocked as blocked:
                 return {"blocked": True, "problems": len(blocked.lock.problems), "undecided": len(blocked.lock.undecided)}
             return {"number": build.number}
@@ -2001,9 +2010,10 @@ class ModpackService():
         await context.step("build", run)
 
     async def build_create(self, bundle_id: str, actor: Actor, report: Optional[Report] = None,
-                           job_id: Optional[str] = None) -> ModpackBuild:
+                           job_id: Optional[str] = None, test: bool = False) -> ModpackBuild:
         """
-        Resolve the bundle and freeze the lock as its next build; latest moves to it.
+        Resolve the bundle and freeze the lock as its next build; latest moves to it, unless it is a
+        test build (O8 B1): that one never moves it, on a retry neither (user-walk W5).
 
         Refused with 409 when the lock is not complete, has problems, or has mods whose place on
         the server waits for the admin: a build is something that can be deployed as it is.
@@ -2015,7 +2025,8 @@ class ModpackService():
             # with the pointer moved (idempotent), never a second build.
             done = next((b for b in await self.modpackDB.build_find(bundle_id) if b.job_id == job_id), None)
             if done is not None:
-                await self.modpackDB.bundle_latest_build(bundle_id, done.number)
+                if not done.test:
+                    await self.modpackDB.bundle_latest_build(bundle_id, done.number)
                 return done
         bundle = await self.modpackDB.bundle_get(bundle_id)
         request = await self._request(bundle)
@@ -2031,11 +2042,16 @@ class ModpackService():
         number = (builds[0].number if builds else 0) + 1
         build = await self.modpackDB.build_insert(ModpackBuild(
             bundle_id=bundle.id, number=number, created_at=datetime.now(timezone.utc),  # type: ignore[arg-type]
-            loader_version=loader_version, local_files=bundle.local_files, request=request, lock=lock, job_id=job_id))
-        await self.modpackDB.bundle_latest_build(bundle_id, number)
-        await self.audit.record(actor, "build.create", _bundle(bundle_id), {"number": number})
+            loader_version=loader_version, local_files=bundle.local_files, request=request, lock=lock, job_id=job_id,
+            test=test))
+        if not test:
+            await self.modpackDB.bundle_latest_build(bundle_id, number)
+        await self.audit.record(actor, "build.create", _bundle(bundle_id), {"number": number, **({"test": True} if test else {})})
         if self.notifier is not None:
-            await self.notifier.notify(f"📦 {bundle.name}: build {number} creado, {len(lock.entries)} archivos.")
+            # A test says so (H4, d-7985ee-3bb53b): not taken for a release.
+            await self.notifier.notify(
+                f"🧪 {bundle.name}: build de prueba {number} creado, {len(lock.entries)} archivos." if test
+                else f"📦 {bundle.name}: build {number} creado, {len(lock.entries)} archivos.")
         return build
 
     async def _reread_versions(self, version_ids: list[str]) -> bool:
