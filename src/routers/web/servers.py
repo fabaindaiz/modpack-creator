@@ -224,11 +224,21 @@ async def server_bundle(
         server_id: str,
         request: Request,
         bundle_id: Annotated[str, Form(max_length=24, pattern=r"^([0-9a-fA-F]{24})?$")] = "",
+        confirmar: Annotated[bool, Form()] = False,
         actor: Actor = Depends(get_web_actor),
         pterodactylService: PterodactylService = Depends(Provide[Dependences.pterodactylService]),
         ):
     """Link the server to the bundle it runs, or unlink it (empty), and go back to its page, which
-    says which one was done. Operators only."""
+    says which one was done. Operators only. Leaving a pack asks first (O9 D10): a dialog, into
+    #link-dialog, says what goes and sends the change again with `confirmar`."""
+    if not confirmar:
+        change = await pterodactylService.link_change(server_id, bundle_id or None, actor)
+        if change is not None:
+            response = render(request, "servers/_link_confirm.html", actor, server_id=server_id,
+                              bundle_id=bundle_id, change=change)
+            response.headers["HX-Retarget"] = "#link-dialog"
+            response.headers["HX-Reswap"] = "innerHTML"
+            return response
     await pterodactylService.server_link_bundle(server_id, bundle_id or None, actor)
     return _back(request, server_id, "vinculado" if bundle_id else "desvinculado")
 

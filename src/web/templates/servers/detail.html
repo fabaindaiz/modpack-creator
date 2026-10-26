@@ -22,6 +22,8 @@
   (hx-preserve), so the polling row and a dry run's plan stay. It does not pass its attributes on
   (hx-disinherit), so a form inside keeps its own target and swap.
 #}
+{# Where leaving a pack asks first (O9 D10): the link route answers a dialog into it. #}
+<div id="link-dialog"></div>
 {% set job_kinds = {"server_scan": "scan-job", "server_import": "import-job"} %}
 {% set active_slot = job_kinds.get(active_job.kind, "install-job") if active_job else none %}
 <div id="server-main" class="space-y-6" hx-get="/servers/{{ server_id }}" hx-select="#server-main" hx-trigger="job-finished from:body" hx-swap="outerHTML" hx-disinherit="*">

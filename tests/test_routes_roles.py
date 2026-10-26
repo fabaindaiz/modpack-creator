@@ -68,6 +68,8 @@ SERVICES = Path(__file__).resolve().parent.parent / "src" / "services"
 # el método). Un método que escribe algo que importa audita; estos solo tocan el catálogo local o
 # una copia derivada que se recalcula (la última resolución).
 NOT_AUDITED: dict[str, str] = {
+    "PterodactylService.link_change": ("solo lee: cuenta lo que un servidor quita al pack que deja, para el "
+                                       "diálogo que pregunta antes (O9 D10); el cambio lo audita server_link_bundle"),
     "PterodactylService.panel_refresh": ("lee la lista de servidores del panel y la guarda (una copia que se renueva "
                                          "cada 5 min); no cambia nada en el panel ni en un pack"),
     "ModpackService.resolve": ("calcula el lock, guarda en el catálogo de Modrinth lo que trae y guarda la última "

@@ -150,9 +150,17 @@ class FakePterodactyl:
         self._record("server_update", server_id, actor)
         return self.server
 
-    async def server_link_bundle(self, server_id: str, bundle_id: Optional[str], actor: Actor) -> PterodactylServer:
+    async def server_link_bundle(self, server_id: str, bundle_id: Optional[str], actor: Actor,
+                                 only_unlinked: bool = False) -> PterodactylServer:
         self._record("server_link_bundle", server_id, bundle_id, actor)
         return self.server
+
+    # What leaving the linked pack takes (O9 D10): None when nothing is left behind.
+    leaving: Any = None
+
+    async def link_change(self, server_id: str, bundle_id: Optional[str], actor: Actor) -> Any:
+        self._record("link_change", server_id, bundle_id, actor)
+        return self.leaving
 
     async def scan_latest(self, server_id: str, directory: str = "/mods") -> ServerScan:
         if self.scan is None:
@@ -1772,3 +1780,27 @@ def test_simulating_chooses_the_build_the_newest_first() -> None:
     assert re.findall(r'<option value="(\d+)" selected', select) == ["4"]
     client.post(f"/servers/{SERVER_ID}/update/preview", headers=HTMX, data={"build": "4"})
     assert only(fakes.update.calls, "enqueue_update")[1:] == (str(SERVER_ID), OPERATOR, 4, True)
+
+
+def test_leaving_a_pack_asks_first_and_says_what_goes() -> None:
+    """O9 D10 (owner, 2026-10-26): changing or removing the pack took the server's «servidor» origins
+    from it at once. Now a dialog says so and sends the change again, confirmed."""
+    from src.services.pterodactyl import LinkChange
+
+    client, fakes = setup(OPERATOR)
+    fakes.ptero.leaving = LinkChange(server="Survival", pack="Pack Uno", origins=4)
+    response = client.put(f"/servers/{SERVER_ID}/bundle", headers=HTMX, data={"bundle_id": ""})
+    assert response.status_code == 200 and response.headers["HX-Retarget"] == "#link-dialog"
+    assert not [c for c in fakes.ptero.calls if c[0] == "server_link_bundle"]
+    shown = " ".join(visible(response.text).split())
+    assert "Survival deja Pack Uno" in shown and "Se borran sus 4 orígenes «servidor»" in shown
+    assert "data-autoopen" in response.text and 'name="confirmar" value="1"' in response.text
+    assert f'hx-put="/servers/{SERVER_ID}/bundle"' in response.text and 'name="bundle_id" value=""' in response.text
+    confirmed = client.put(f"/servers/{SERVER_ID}/bundle", headers=HTMX, data={"bundle_id": "", "confirmar": "1"})
+    assert confirmed.headers["HX-Redirect"] == f"/servers/{SERVER_ID}?desvinculado=1"
+    assert only(fakes.ptero.calls, "server_link_bundle")[2] is None
+
+
+def test_the_page_has_the_place_the_link_dialog_opens_in() -> None:
+    client, _ = setup(OPERATOR)
+    assert 'id="link-dialog"' in client.get(f"/servers/{SERVER_ID}").text

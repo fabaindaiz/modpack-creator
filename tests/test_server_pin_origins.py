@@ -196,3 +196,23 @@ def test_linking_from_a_pack_never_moves_a_server_from_another() -> None:
     else:
         raise AssertionError("a linked server was moved")
     assert servers.server.bundle_id == str(BUNDLE_ID)
+
+
+def test_what_leaving_a_pack_takes_is_counted_before_it_happens() -> None:
+    """O9 D10: the dialog's numbers, read before anything is written."""
+    bundle = pack({"AAAAAAAA": "va-1", "BBBBBBBB": "vb-2"})
+    bundle.pin_origins = {
+        "AAAAAAAA": PinRecord(origins=[PinOrigin(source=PinSource.admin, version_id="va-1"),
+                                       served(SERVER_ID, "Survival", "va-2")], selected=PinSource.admin),
+        "BBBBBBBB": PinRecord(origins=[served(SERVER_ID, "Survival", "vb-2")], selected=PinSource.server,
+                              selected_key=f"server:{SERVER_ID}")}
+    servers = Servers(str(BUNDLE_ID))
+    service = PterodactylService(pterodactylAPI=cast(Any, None), PterodactylDB=cast(Any, servers),
+                                 modrinthAPI=cast(Any, None), modrinthDB=cast(Any, Catalog()),
+                                 modpackDB=cast(Any, Packs(bundle)), audit=cast(Any, Audit()), jobDB=cast(Any, object()),
+                                 clock=lambda: NOW)
+    change = asyncio.run(service.link_change(SERVER_ID, None, OPERATOR))
+    assert change is not None and (change.server, change.origins) == ("Survival", 1)  # the one in use stays
+    assert asyncio.run(service.link_change(SERVER_ID, str(BUNDLE_ID), OPERATOR)) is None
+    servers.server = servers.server.model_copy(update={"bundle_id": None})
+    assert asyncio.run(service.link_change(SERVER_ID, str(BUNDLE_ID), OPERATOR)) is None

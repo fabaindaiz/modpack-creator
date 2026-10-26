@@ -4,7 +4,7 @@ import hashlib
 import math
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional
 from src.database import ModpackDatabase, ModrinthDatabase, PterodactylDatabase
 from src.database.jobs import JobDatabase
 from src.model.jobs import Job
@@ -70,6 +70,15 @@ def _utc(value: datetime) -> datetime:
 
 def _servers(kept: list[dict[str, Any]]) -> list[PterodactylServer]:
     return [PterodactylServer.model_validate(item) for item in kept]
+
+
+class LinkChange(NamedTuple):
+    """What a server leaving its pack takes from it (O9 D10): the dialog that asks first says it."""
+    server: str
+    # None when the pack it leaves is gone.
+    pack: Optional[str]
+    # How many of the pack's mods lose this server's «servidor» origin (`server_origins_dropped`).
+    origins: int
 
 
 class PterodactylService():
@@ -154,6 +163,21 @@ class PterodactylService():
         saved = await self.pterodactylDB.server_save(server, document.id)
         await self.audit.record(actor, "server.refresh", _target(server_id))
         return saved
+
+    @operator_only
+    async def link_change(self, server_id: str, bundle_id: Optional[str], actor: Actor) -> Optional[LinkChange]:
+        """What linking `server_id` to `bundle_id` (None: unlinking) takes from the pack it leaves, for
+        the dialog that asks first (O9 D10); None when it leaves none (no pack, or the same one).
+        Only reads. Operators only, as the change it asks about."""
+        server = await self.pterodactylDB.server_get(server_id)
+        if server.bundle_id is None or str(server.bundle_id) == str(bundle_id):
+            return None
+        try:
+            bundle = await self.modpackDB.bundle_get(str(server.bundle_id))
+        except HTTPException:
+            return LinkChange(server=server.name, pack=None, origins=0)
+        return LinkChange(server=server.name, pack=bundle.name,
+                          origins=len(server_origins_dropped(bundle, str(server.id), server.name)))
 
     @operator_only
     async def server_link_bundle(self, server_id: str, bundle_id: Optional[str], actor: Actor,

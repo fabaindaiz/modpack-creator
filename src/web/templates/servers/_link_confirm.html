@@ -1,0 +1,21 @@
+{# Leaving a pack, not saved yet (O9 D10): a dialog, opened on arrival (data-autoopen, app.js), that
+   says what the server's old pack loses and sends the same change again, confirmed. Needs
+   `server_id`, `bundle_id` (empty: unlinking) and `change` (LinkChange). #}
+{% import "_macros.html" as ui %}
+<dialog data-autoopen aria-labelledby="link-confirm-title"
+  class="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-xl border border-line bg-raised p-0 text-ink shadow-xl backdrop:bg-scrim/50">
+  <form class="space-y-4 p-5" hx-put="/servers/{{ server_id }}/bundle">
+    <h2 id="link-confirm-title" class="text-base font-semibold" autofocus tabindex="-1">{{ change.server }} deja {{ change.pack or "su modpack" }}</h2>
+    <div class="space-y-2 text-sm text-ink-soft">
+      {% if change.origins %}<p>Se borran sus {{ change.origins }} {{ "origen" if change.origins == 1 else "orígenes" }} «servidor» de {{ change.pack or "ese modpack" }}; el que está en uso se queda.</p>
+      {% else %}<p>El modpack no tiene orígenes «servidor» de este servidor.</p>{% endif %}
+      <p>{{ "Se vincula a otro modpack." if bundle_id else "Queda sin modpack." }} ¿Seguir?</p>
+    </div>
+    <input type="hidden" name="bundle_id" value="{{ bundle_id }}">
+    <input type="hidden" name="confirmar" value="1">
+    <div class="flex justify-end gap-2">
+      {{ ui.button("Cancelar", kind="secondary", attrs={"data-dialog-close": ""}) }}
+      {{ ui.button("Desvincular" if not bundle_id else "Cambiar de modpack", kind="danger", type="submit") }}
+    </div>
+  </form>
+</dialog>
