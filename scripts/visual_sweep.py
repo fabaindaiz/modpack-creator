@@ -608,7 +608,7 @@ def shoot_open_card(page: Any, base: str, out: Path, ids: dict[str, str], prefix
     response = page.goto(base + f"/modpacks/{ids['bundle']}")
     page.wait_for_load_state("networkidle")
     first = page.locator("#mods details").first
-    first.locator("summary").click()
+    first.locator(":scope > summary").click()
     page.wait_for_selector("#mods details[open] [id^=versions-] :text('Modrinth no respondió')", timeout=10_000)
     key = f"{prefix}-modpack-card"
     page.screenshot(path=str(out / f"{key}.png"))
@@ -629,7 +629,7 @@ def shoot_open_cards(page: Any, base: str, out: Path, ids: dict[str, str], prefi
         response = page.goto(base + path)
         page.wait_for_load_state("networkidle")
         card = page.locator("main details").first
-        card.locator("summary").click()
+        card.locator(":scope > summary").click()
         page.wait_for_load_state("networkidle")
         page.wait_for_timeout(300)
         key = f"{prefix}-{name}"
@@ -981,10 +981,10 @@ def check_notes(page: Any, base: str, out: Path, ids: dict[str, str], prefix: st
     response = page.goto(base + f"/modpacks/{ids['bundle']}?vista=todos")
     page.wait_for_load_state("networkidle")
     row = page.locator("#mods li[data-project] > details").first
-    row.locator("summary").first.click()
+    row.locator(":scope > summary").click()
     history = row.locator('details[hx-get$="/historia"]').first
     if history.count():
-        history.locator("summary").click()
+        history.locator(":scope > summary").click()
         try:
             history.locator("[data-mod-history]").wait_for(timeout=10_000)
         except Exception:
