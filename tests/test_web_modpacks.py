@@ -126,6 +126,12 @@ class FakeModpack:
         # Each build's latest verdict and how many notes say it (O8 tanda 2, T5), and the notes' reads.
         self.verdicts: dict[int, tuple[str, int]] = {}
         self.notes = FakeNotes()
+        # A mod's history (O8 tanda 2): its entries, whether more remain, and what was asked.
+        self.history: list[Any] = []
+        self.history_more = False
+        self.history_calls: list[tuple[str, Any]] = []
+        self.changelog: tuple[Optional[str], str] = ("## Arreglos", "ok")
+        self.changelog_calls: list[tuple[str, str]] = []
         # Whether the pack's last build job was a test (O8 B1: its blocked dialog stays a test's).
         self.last_test = False
         self.rules = [ModpackReplacement.model_construct(project_id="OLDMOD", replacement="NEWMOD"),
@@ -359,6 +365,15 @@ class FakeModpack:
 
     async def installed_builds(self, bundle_id: str) -> set[int]:
         return self.installed
+
+    async def mod_history(self, bundle_id: str, project_id: str, before: Any = None) -> Any:
+        from src.services.modpack import HistoryPage
+        self.history_calls.append((project_id, before))
+        return HistoryPage(entries=self.history, more=self.history_more)
+
+    async def version_changelog(self, project_id: str, version_id: str) -> tuple[Optional[str], str]:
+        self.changelog_calls.append((project_id, version_id))
+        return self.changelog
 
     async def build_verdicts(self, bundle_id: str) -> dict[int, tuple[str, int]]:
         return self.verdicts
@@ -3330,3 +3345,49 @@ def test_the_list_shows_each_builds_verdict_and_links_its_page() -> None:
     row = text[text.index('data-build="2"'):]
     row = row[:row.index("</tr>")]
     assert "✔ 2" in row and f'href="/modpacks/{BUNDLE_ID}/builds/2"' in row
+
+
+# A mod's history (O8 tanda 2, T2 and T3 of d-7985ee-16be41; D12, P4).
+
+
+def history_entry(text: str, version: Optional[str] = None, version_id: Optional[str] = None, kind: str = "build") -> Any:
+    from src.library.history import HistoryEntry
+    return HistoryEntry(at=T0, kind=kind, text=text, version=version, version_id=version_id)
+
+
+def test_the_card_loads_its_history_only_when_opened() -> None:
+    client, modpack, _ = setup()
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert f'hx-get="/modpacks/{BUNDLE_ID}/projects/P1/historia"' in text and 'hx-trigger="toggle once"' in text
+    assert modpack.history_calls == []
+
+
+def test_the_history_lists_what_changed_and_offers_notes_and_changelogs() -> None:
+    client, modpack, _ = setup()
+    modpack.history = [history_entry("Builds 3–14 · 1.6.4", "1.6.4", "v164")]
+    modpack.history_more = True
+    text = client.get(f"/modpacks/{BUNDLE_ID}/projects/P1/historia", headers=HTMX).text
+    assert "Builds 3–14 · 1.6.4" in text and 'id="notes-mod-P1"' in text
+    assert f'/modpacks/{BUNDLE_ID}/notas/nueva?mod=P1&amp;version=v164&amp;numero=1.6.4' in text
+    assert f'hx-get="/modpacks/{BUNDLE_ID}/projects/P1/changelog?version=v164"' in text and "Ver más" in text
+    assert modpack.changelog_calls == []  # drawing a history asks Modrinth nothing
+
+
+def test_a_changelog_is_asked_only_when_unfolded_and_retried_when_it_failed() -> None:
+    client, modpack, _ = setup()
+    text = client.get(f"/modpacks/{BUNDLE_ID}/projects/P1/changelog", params={"version": "v164"}, headers=HTMX).text
+    assert "## Arreglos" in text and modpack.changelog_calls == [("P1", "v164")]
+    modpack.changelog = (None, "timed_out")
+    retry = client.get(f"/modpacks/{BUNDLE_ID}/projects/P1/changelog", params={"version": "v164"}, headers=HTMX).text
+    assert "Reintentar" in retry
+
+
+def test_ver_mas_answers_the_next_entries_with_their_own_ver_mas() -> None:
+    client, modpack, _ = setup()
+    modpack.history = [history_entry("Build 2 · 1.6.4", "1.6.4", "v164")]
+    modpack.history_more = True
+    text = client.get(f"/modpacks/{BUNDLE_ID}/projects/P1/historia", params={"antes": "2026-10-01T00:00:00+00:00"},
+                      headers=HTMX).text
+    assert "Build 2 · 1.6.4" in text and "Ver más" in text and "data-mod-history" not in text
+    assert modpack.history_calls[0][1] is not None
+

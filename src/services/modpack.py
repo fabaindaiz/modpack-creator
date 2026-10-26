@@ -15,8 +15,11 @@ from src.library.changes import ChangeSet, VersionFacts, diff_entries, direction
 from src.library.scan import Unexplained, compare, unexplained_for
 from src.library.mrpack import mrpack_index, write_mrpack
 from src.library.builds import build_name
+from src.library.history import BuildPoint, PinEvent, PresenceEvent, ScanPoint, mod_history
 from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink, installed_of
+from src.library.pins import past_origins
 from src.database.jobs import JobDatabase
+from src.database.audit import AuditDatabase
 from src.database.note import NoteDatabase
 from src.model.jobs import Job
 from src.library.bridges import BRIDGES, REPLACES, VIA_RISK, bridge as find_bridge, companions, guest_of
@@ -94,6 +97,16 @@ class ApproveResult(BaseModel):
     approved: bool
     in_force: Optional[int]
     newer: list[int]
+
+
+class HistoryPage(BaseModel):
+    """A page of a mod's history: its entries, and whether older ones remain («Ver más»)."""
+    entries: list[Any]
+    more: bool
+
+
+# Entries per page of a mod's history (T3).
+HISTORY_PAGE = 20
 
 
 # A build of the other kind is queued or running (O8 B1, user-walk W6): by whether that one is a test.
@@ -484,10 +497,13 @@ class ModpackService():
             clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
             jobDB: Optional[JobDatabase] = None,
             noteDB: Optional[NoteDatabase] = None,
+            auditDB: Optional[AuditDatabase] = None,
             ) -> None:
         self.clock = clock
         # The notes, for what the builds' list says of each build (O8 tanda 2, T5).
         self.noteDB = noteDB or NoteDatabase()
+        # A mod's pin changes, removal and return, for its history (O8 tanda 2).
+        self.auditDB = auditDB or AuditDatabase()
         self.jobDB = jobDB or JobDatabase()
         self.pterodactylDB = pterodactylDB or PterodactylDatabase()
         self.changelog_deadline = changelog_deadline
@@ -889,8 +905,9 @@ class ModpackService():
             await self._refuse_replaced(bundle, found)
         added = await self.modpackDB.bundle_projects_add(
             bundle_id, [PackProject(project_id=p.project_id, origin=origin) for p in projects])
+        # By id too: a mod's history finds its return (O8 tanda 2).
         await self.audit.record(actor, "bundle.project.add", _bundle(bundle_id),
-                                {"refs": list(refs), "origin": origin.value})
+                                {"refs": list(refs), "origin": origin.value, "project_ids": [p.project_id for p in added]})
         return added
 
     async def _installed_native(self, bundle: ModpackBundle, project_ids: Iterable[str],
@@ -1753,6 +1770,48 @@ class ModpackService():
             elif found[number][0] == note.verdict:
                 found[number] = (note.verdict, found[number][1] + 1)
         return found
+
+    async def mod_history(self, bundle_id: str, project_id: str, before: Optional[datetime] = None,
+                          limit: int = HISTORY_PAGE) -> HistoryPage:
+        """A mod's history in the pack (O8 tanda 2, D2, T2, T3): only what changed, newest first, `limit`
+        entries older than `before`. One read per source, each projected to this mod (user-walk N6): the
+        builds, the scans of the pack (a scan of another pack never; one stored before scans knew their
+        pack only if its server is linked now, N5), the audit, the notes. Only MongoDB: never Modrinth."""
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        builds = await self.modpackDB.build_points(bundle_id, project_id)
+        linked = await self.pterodactylDB.server_find_by_bundle(bundle_id) if self.pterodactylDB else []
+        scans = await self.pterodactylDB.scan_points(bundle_id, [str(s.id) for s in linked], project_id, SCAN_DIRECTORY) \
+            if self.pterodactylDB else []
+        names = {str(s.id): s.name for s in await self.pterodactylDB.server_find().to_list()} if scans and self.pterodactylDB else {}
+        events = await self.auditDB.mod_events(bundle_id, project_id)
+        notes = await self.noteDB.find(bundle_id, project_id=project_id)
+        ids = {v for b in builds for v in [b[3]] if v} | {v for s in scans for v in [s[2]] if v}
+        ids |= {str(v) for e in events for v in (e.details.get("version_id"), e.details.get("from_version_id")) if v}
+        numbers = {v.version_id: v.version_number for v in await self.modrinthDB.version_find_by_version_ids(sorted(ids))} if ids else {}
+        def number(version_id: Optional[str]) -> Optional[str]:
+            return numbers.get(version_id, version_id) if version_id else None
+        entries = mod_history(
+            [BuildPoint(number=n, at=as_utc(at), version=number(v), version_id=v, test=t, stable=st) for n, at, (t, st), v in builds],
+            [ScanPoint(server=names.get(server, "un servidor"), at=as_utc(at), version=number(v)) for server, at, v in scans],
+            [PinEvent(at=as_utc(e.at), author=e.actor.name, from_version=number(e.details.get("from_version_id")),
+                      to_version=number(e.details.get("version_id")), known="from_version_id" in e.details)
+             for e in events if e.action == "bundle.pin"],
+            past_origins(bundle.pin_history.get(project_id, [])),
+            notes,
+            [PresenceEvent(at=as_utc(e.at), added=e.action == "bundle.project.add") for e in events if e.action != "bundle.pin"])
+        older = [e for e in entries if before is None or e.at < as_utc(before)]
+        return HistoryPage(entries=older[:limit], more=len(older) > limit)
+
+    async def version_changelog(self, project_id: str, version_id: str) -> tuple[Optional[str], str]:
+        """A version's changelog when its history unfolds it (D12, P4 of d-7985ee-a68b5c): from the
+        catalog, else from Modrinth with the comparison's deadline, then kept in the catalog. The text,
+        and «ok», «failed» or «timed_out»."""
+        preview = await self._preview({}, {project_id: version_id})
+        if version_id in preview.timed_out:
+            return None, "timed_out"
+        if version_id in preview.failed:
+            return None, "failed"
+        return preview.changelogs.get(version_id), "ok"
 
     async def installed_builds(self, bundle_id: str) -> set[int]:
         """The builds of the pack installed on its linked servers (O8 B3: the list never folds them)."""

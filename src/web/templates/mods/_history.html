@@ -1,0 +1,44 @@
+{# A mod's history in a pack (O8 tanda 2, T2, T3): `entries` (HistoryEntry, newest first), `more` and
+   `bundle_id`, `project_id`. Each version offers a note (the dialog, P1) and its changelog, asked of
+   Modrinth only when unfolded (D12, P4). A new note lands in #notes-mod-<id>. With `page_more` the
+   answer is only the next entries («Ver más»). #}
+{% import "_macros.html" as ui %}
+{% macro entry_item(entry) %}
+<li data-history="{{ entry.kind }}" class="space-y-1 py-2">
+  {% if entry.kind == "note" %}
+  {% with found = entry.note %}{% include "notes/_note.html" %}{% endwith %}
+  {% else %}
+  <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-sm">
+    <span class="min-w-0 break-words">{{ entry.text }}</span>
+    <span class="text-xs text-muted">{{ ui.when(entry.at) }}</span>
+  </div>
+  {% if entry.version_id %}
+  <div class="flex flex-wrap items-center gap-3 text-xs">
+    {{ ui.button("Agregar nota", kind="ghost", small=True, attrs={"hx-get": "/modpacks/" ~ bundle_id ~ "/notas/nueva?mod=" ~ project_id ~ "&version=" ~ entry.version_id ~ "&numero=" ~ (entry.version or ""), "hx-target": "#note-dialog", "hx-swap": "innerHTML"}) }}
+    <details class="min-w-0" hx-get="/modpacks/{{ bundle_id }}/projects/{{ project_id }}/changelog?version={{ entry.version_id }}" hx-trigger="toggle once" hx-target="find div" hx-swap="innerHTML">
+      <summary class="cursor-pointer text-link">Changelog</summary>
+      <div class="mt-1"><p class="text-muted">Cargando…</p></div>
+    </details>
+  </div>
+  {% endif %}
+  {% endif %}
+</li>
+{% endmacro %}
+{% if page_more is defined and page_more %}
+{% for entry in entries %}{{ entry_item(entry) }}{% endfor %}
+{% if more %}<li><button type="button" class="text-sm text-link hover:underline" hx-get="/modpacks/{{ bundle_id }}/projects/{{ project_id }}/historia?antes={{ entries[-1].at.isoformat() | urlencode }}" hx-target="closest li" hx-swap="outerHTML">Ver más</button></li>{% endif %}
+{% else %}
+<div class="space-y-2" data-mod-history>
+  <div id="notes-mod-{{ project_id }}" class="space-y-2"></div>
+  {% if entries %}
+  <ul class="divide-y divide-line-soft">
+    {% for entry in entries %}{{ entry_item(entry) }}{% endfor %}
+    {% if more %}
+    <li><button type="button" class="text-sm text-link hover:underline" hx-get="/modpacks/{{ bundle_id }}/projects/{{ project_id }}/historia?antes={{ entries[-1].at.isoformat() | urlencode }}" hx-target="closest li" hx-swap="outerHTML">Ver más</button></li>
+    {% endif %}
+  </ul>
+  {% else %}
+  <p class="text-sm text-muted">Todavía no hay nada que contar de este mod en el pack.</p>
+  {% endif %}
+</div>
+{% endif %}

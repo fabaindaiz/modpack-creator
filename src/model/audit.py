@@ -1,7 +1,7 @@
 from beanie import Document
 from datetime import datetime
 from pydantic import BaseModel, Field
-from pymongo import DESCENDING, IndexModel
+from pymongo import ASCENDING, DESCENDING, IndexModel
 from typing import Any, Optional
 from src.model.users import ActorRef
 
@@ -27,6 +27,8 @@ class AuditEvent(Document):
         # every write (final review of batch A, 2026-10-13).
         indexes = [
             IndexModel([("at", DESCENDING), ("_id", DESCENDING)]),
+            # A mod's pin changes, removal and return in a pack (O8 tanda 2, user-walk N6).
+            IndexModel([("target.id", ASCENDING), ("details.project_id", ASCENDING), ("at", DESCENDING)]),
         ]
 
 class Facet(BaseModel):

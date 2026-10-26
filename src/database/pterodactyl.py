@@ -105,6 +105,22 @@ class PterodactylDatabase():
     async def scan_insert(self, scan: ServerScan) -> ServerScan:
         return await ServerScan.insert(scan)
 
+    async def scan_points(self, bundle_id: str, linked: list[str], project_id: str,
+                          directory: str) -> list[tuple[str, datetime, Optional[str]]]:
+        """Each scan of a pack's servers: its server, date and this mod's version id on it (None: not
+        installed), in one read projected to the mod (O8 tanda 2, user-walk N5, N6). A scan of another pack
+        never; one stored before scans knew their pack only for a server linked now (`linked`)."""
+        query = {"directory": directory, "$or": [
+            {"bundle_id": bundle_id},
+            {"bundle_id": None, "server_id": {"$in": [self._server_oid(s) for s in linked]}}]}
+        cursor = ServerScan.get_pymongo_collection().find(
+            query, {"server_id": 1, "scanned_at": 1, "files": {"$elemMatch": {"project_id": project_id}}})
+        found = []
+        async for row in cursor:
+            files = row.get("files") or []
+            found.append((str(row["server_id"]), row["scanned_at"], files[0].get("version_id") if files else None))
+        return found
+
     async def scan_find(self, server_id: str, directory: Optional[str] = None) -> list[ServerScan]:
         """A server's scans, newest first."""
         query = ServerScan.find(ServerScan.server_id == self._server_oid(server_id))

@@ -189,6 +189,14 @@
             </div>
             {% endif %}
 
+            {% if in_pack %}
+            {# Its history in the pack (O8 tanda 2, T2): asked for only when opened. #}
+            <details class="border-t border-line-soft pt-2" hx-get="/modpacks/{{ bundle_id }}/projects/{{ row.project_id }}/historia" hx-trigger="toggle once" hx-target="find div" hx-swap="innerHTML">
+              <summary class="cursor-pointer text-xs font-medium">Historia</summary>
+              <div class="mt-1"><p class="text-xs text-muted">Cargando historia…</p></div>
+            </details>
+            {% endif %}
+
             {% if row.origin == "pack" %}
             {# Only what the admin added is removed from here (O9 D12): this one says how. #}
             <p class="border-t border-line-soft pt-2 text-xs text-muted">Vino con el pack: desactívalo o crea un <a href="/replacements" class="font-medium text-link hover:underline">reemplazo vacío</a>.</p>

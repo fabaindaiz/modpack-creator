@@ -1262,6 +1262,37 @@ def approve_notice(number: int, result: ApproveResult) -> str:
         said += f" Hay builds posteriores: {', '.join(str(n) for n in result.newer)}."
     return said
 
+@router.get("/modpacks/{bundle_id}/projects/{project_id}/historia")
+@inject
+async def mod_history(
+        bundle_id: str,
+        project_id: str,
+        request: Request,
+        antes: Optional[datetime] = None,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        ):
+    """A mod's history in the pack (O8 tanda 2, T2, T3), loaded when opened; with `antes`, the next page
+    («Ver más»). Never asks Modrinth."""
+    page = await modpackService.mod_history(bundle_id, project_id, before=antes)
+    return render(request, "mods/_history.html", actor, bundle_id=bundle_id, project_id=project_id,
+                  entries=page.entries, more=page.more, page_more=antes is not None)
+
+@router.get("/modpacks/{bundle_id}/projects/{project_id}/changelog")
+@inject
+async def version_changelog(
+        bundle_id: str,
+        project_id: str,
+        request: Request,
+        version: str,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        ):
+    """A version's changelog when its history unfolds it (D12, P4): one request, then kept in the catalog."""
+    text, state = await modpackService.version_changelog(project_id, version)
+    return render(request, "mods/_changelog.html", actor, bundle_id=bundle_id, project_id=project_id,
+                  version_id=version, text=text, state=state)
+
 @router.get("/modpacks/{bundle_id}/builds/compare")
 @inject
 async def build_compare(

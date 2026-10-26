@@ -358,6 +358,21 @@ class ModpackDatabase():
             {"_id": self._bundle_oid(bundle_id)}, {"$set": {"recommended_build": number}})
         return await self.bundle_get(bundle_id)
 
+    async def build_points(self, bundle_id: str, project_id: str) -> list[tuple[int, datetime, tuple[bool, bool], Optional[str]]]:
+        """Each build's number, date, (test, stable) and this mod's version id in it (None: not in it), in
+        one read projected to the mod (O8 tanda 2, user-walk N6)."""
+        cursor = await ModpackBuild.get_pymongo_collection().aggregate([
+            {"$match": {"bundle_id": self._bundle_oid(bundle_id)}},
+            {"$project": {"number": 1, "created_at": 1, "test": 1, "stable": 1, "entries": {"$filter": {
+                "input": "$lock.entries", "cond": {"$eq": ["$$this.project_id", project_id]}}}}},
+        ])
+        found = []
+        async for row in cursor:
+            entries = row.get("entries") or []
+            found.append((row["number"], row["created_at"], (bool(row.get("test")), bool(row.get("stable"))),
+                          entries[0]["version_id"] if entries else None))
+        return found
+
     async def build_find(self, bundle_id: str) -> list[ModpackBuild]:
         """A bundle's builds, newest first."""
         return await ModpackBuild.find(ModpackBuild.bundle_id == self._bundle_oid(bundle_id)) \

@@ -80,4 +80,6 @@ def test_audit_has_only_the_index_its_page_can_use() -> None:
     `$facet`, and a `$facet` sub-pipeline uses no index; only the leading match and sort on `at` do.
     An index on a filter field would only cost on every write."""
     keys = [index.document["key"] for index in AuditEvent.Settings.indexes]
-    assert [list(key.items()) for key in keys] == [[("at", -1), ("_id", -1)]]
+    # And one for a mod's history (O8 tanda 2, user-walk N6): a plain find by pack and mod, not the page.
+    assert [list(key.items()) for key in keys] == [[("at", -1), ("_id", -1)],
+                                                   [("target.id", 1), ("details.project_id", 1), ("at", -1)]]

@@ -1,0 +1,89 @@
+"""A mod's history in a pack (O8 tanda 2: D2 of d-7985ee-a99db7, T2 and T3 of d-7985ee-16be41; user-walk
+N5, N6, N17): only what changed, runs of builds with the same version grouped, newest first."""
+from datetime import datetime, timedelta, timezone
+from typing import Any
+
+import pytest
+
+from src.library.history import BuildPoint, PinEvent, PresenceEvent, ScanPoint, mod_history
+from src.model.modpack import PastOrigin, PinOrigin, PinSource
+
+T0 = datetime(2026, 10, 1, tzinfo=timezone.utc)
+
+
+def day(n: int) -> datetime:
+    return T0 + timedelta(days=n)
+
+
+def texts(entries: list[Any]) -> list[str]:
+    return [e.text for e in entries]
+
+
+def test_history_keeps_only_changes_and_groups_runs() -> None:
+    builds = [BuildPoint(number=n, at=day(n), version=v, version_id="id-" + v if v else None, test=n == 5, stable=n == 2)
+              for n, v in ((1, "1.6.2"), (2, "1.6.4"), (3, "1.6.4"), (4, "1.6.4"), (5, "1.7.2"))]
+    scans = [ScanPoint(server="Survival", at=day(n), version=v) for n, v in ((2, "1.6.4"), (3, "1.6.4"), (6, "1.7.2"))]
+    assert texts(mod_history(builds, scans, [], [], [], [])) == [
+        "Servidor Survival · 1.6.4 → 1.7.2",
+        "Build 5 · 1.7.2 · prueba",
+        "Builds 2–4 · 1.6.4 · estable",
+        "Servidor Survival · 1.6.4",
+        "Build 1 · 1.6.2",
+    ]
+
+
+def test_history_says_pins_past_origins_and_removal() -> None:
+    pins = [PinEvent(at=day(3), author="Eddie", from_version="1.6.2", to_version="1.6.4", known=True),
+            PinEvent(at=day(5), author="Eddie", from_version=None, to_version=None, known=False)]
+    past = [PastOrigin(origin=PinOrigin(source=PinSource.pack, version_id="p", version_number="1.6.0", label="Pack.mrpack"),
+                       until=day(2))]
+    presence = [PresenceEvent(at=day(6), added=False), PresenceEvent(at=day(7), added=True)]
+    assert texts(mod_history([], [], pins, past, [], presence)) == [
+        "Vuelto a agregar al pack",
+        "Quitado del pack",
+        "Sin fijar · Eddie (antes: desconocida)",
+        "Fijado 1.6.4 · Eddie (antes: 1.6.2)",
+        "Origen pasado: Pack.mrpack 1.6.0",
+    ]
+
+
+def test_a_note_is_an_entry_with_its_note() -> None:
+    from tests.test_web_modpacks import note
+    found = note("fails", "pantalla negra", project_id="P", version_id="id-1.7.2", version_number="1.7.2")
+    [entry] = mod_history([], [], [], [], [found], [])
+    assert entry.kind == "note" and entry.note is found and entry.version == "1.7.2"
+
+
+@pytest.mark.network
+def test_mod_history_leaves_out_another_packs_scans_and_never_calls_modrinth(mongo: Any) -> None:
+    from src.database.pterodactyl import PterodactylDatabase
+    from src.library.scan import ScanFile
+    from src.model.pterodactyl import PterodactylServer, ServerScan
+    from src.model.modpack import ProjectOrigin
+    from tests._actors import EDITOR
+    from tests._modrinth import IRIS
+    from tests.test_builds import empty_bundle
+
+    def jar(version: str) -> ScanFile:
+        return ScanFile(path="/mods/iris.jar", size=1, modified_at=T0, status="identified", project_id=IRIS,
+                        version_id=version)
+
+    async def scenario() -> tuple[list[str], list[Any]]:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        db = PterodactylDatabase()
+        server = await db.server_insert(PterodactylServer(
+            identifier="1a2b3c4d", internal_id=1, uuid="1a2b3c4d-0000", name="Survival", node="n1", description="",
+            status=None, is_suspended=False, is_installing=False, is_transferring=False, bundle_id=bundle_id))
+        await db.scan_insert(ServerScan(server_id=server.id, directory="/mods", scanned_at=day(1), full=False,  # type: ignore[arg-type]
+                                        files=[jar("other-pack-version")], bundle_id="another-pack"))
+        await db.scan_insert(ServerScan(server_id=server.id, directory="/mods", scanned_at=day(2), full=False,  # type: ignore[arg-type]
+                                        files=[jar("this-pack-version")], bundle_id=bundle_id))
+        api = service.modrinthAPI
+        before = len(getattr(api, "calls", []))
+        page = await service.mod_history(bundle_id, IRIS)
+        return [e.text for e in page.entries], getattr(api, "calls", [])[before:]
+
+    entries, calls = mongo(scenario)
+    assert any("this-pack-version" in t for t in entries) and not any("other-pack-version" in t for t in entries)
+    assert calls == []

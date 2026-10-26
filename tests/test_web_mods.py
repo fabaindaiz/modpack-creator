@@ -329,3 +329,13 @@ def test_every_version_cell_carries_its_header_for_the_phone() -> None:
     client, _ = setup()
     assert assert_cells_labelled(client.get("/mods/AANobbMI").text) >= 5
     assert assert_cells_labelled(client.get("/mods/AANobbMI/versiones", headers=HTMX).text) >= 5
+
+
+def test_the_mod_page_from_a_pack_shows_its_history_there() -> None:
+    """O8 tanda 2, T2 (d-7985ee-16be41): the history in the mod's page too, opened from the pack."""
+    client, fake = setup()
+    fake.page = mod_page(pack=pack_mark())
+    text = client.get(f"/mods/AANobbMI?pack={PACK}").text
+    assert f'hx-get="/modpacks/{PACK}/projects/AANobbMI/historia"' in text and "Historia en" in text
+    fake.page = mod_page()
+    assert "/historia" not in client.get("/mods/AANobbMI").text

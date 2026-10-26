@@ -1,3 +1,4 @@
+from beanie.odm.enums import SortDirection
 from datetime import datetime
 from typing import Any, Optional
 from beanie import PydanticObjectId
@@ -8,6 +9,14 @@ from src.model.audit import AuditEvent, AuditPage, Facet
 TARGET_FACET_LIMIT = 200
 
 class AuditDatabase():
+    async def mod_events(self, bundle_id: str, project_id: str) -> list[AuditEvent]:
+        """A mod's pin changes, removal and return in a pack (O8 tanda 2), oldest first."""
+        return await AuditEvent.find({
+            "target.kind": "bundle", "target.id": bundle_id,
+            "action": {"$in": ["bundle.pin", "bundle.project.remove", "bundle.project.add"]},
+            "$or": [{"details.project_id": project_id}, {"details.project_ids": project_id}],
+        }).sort(("at", SortDirection.ASCENDING)).limit(500).to_list()
+
     async def insert(self, event: AuditEvent) -> AuditEvent:
         """Store an event."""
         return await AuditEvent.insert(event)

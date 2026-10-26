@@ -11,6 +11,14 @@
 {% else %}
 {% set compact = False %}
 {% include "mods/_card.html" %}
+{% if pack %}
+{# Its history in the pack it was opened from (O8 tanda 2, T2). #}
+{% call ui.section("Historia en " ~ (page.pack.name if page.pack and page.pack.name else "el pack")) %}
+<div hx-get="/modpacks/{{ pack }}/projects/{{ project_id }}/historia" hx-trigger="load" hx-swap="innerHTML">
+  <p class="text-sm text-muted">Cargando historia…</p>
+</div>
+{% endcall %}
+{% endif %}
 {% call ui.section("Versiones conocidas") %}
 {% with versions=page.versions, partial=page.versions_partial %}{% include "mods/_versions.html" %}{% endwith %}
 {% endcall %}

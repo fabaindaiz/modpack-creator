@@ -1,0 +1,10 @@
+{# A version's changelog, unfolded (D12, P4): Modrinth's Markdown as plain text, its links only;
+   «Reintentar» when Modrinth did not answer in time or failed. #}
+{% import "_macros.html" as ui %}
+{% if state == "ok" %}
+{% if text %}<pre class="max-h-60 overflow-auto rounded bg-surface p-2 font-sans text-xs break-words whitespace-pre-wrap text-ink-soft">{{ text[:4000] | linkify }}</pre>
+{% else %}<p class="text-muted">sin changelog</p>{% endif %}
+{% else %}
+<p class="flex flex-wrap items-center gap-2 text-warning">{{ "tardó demasiado" if state == "timed_out" else "changelog no disponible" }}
+  {{ ui.button("Reintentar", kind="secondary", small=True, attrs={"hx-get": "/modpacks/" ~ bundle_id ~ "/projects/" ~ project_id ~ "/changelog?version=" ~ version_id, "hx-target": "closest div", "hx-swap": "innerHTML"}) }}</p>
+{% endif %}
