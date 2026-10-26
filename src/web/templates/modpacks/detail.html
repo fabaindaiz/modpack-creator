@@ -22,9 +22,16 @@
 <div id="pack-main" hx-get="/modpacks/{{ bundle_id }}" hx-select="#pack-main" hx-trigger="job-finished from:body, job-started from:body" hx-swap="outerHTML" hx-disinherit="*">
 {% with steps=onboarding %}{% include "_onboarding.html" %}{% endwith %}
 
-{# Mods wide on the left and a side column (spec §5); below xl, one column in the same order. #}
-<div class="grid grid-cols-1 gap-6 xl:grid-cols-3">
-  <div class="min-w-0 space-y-6 xl:col-span-2">
+{# Mods wide on the left and a side column (spec §5). Below xl, one column with the builds first
+   (O9 D1): «Crear build» was under every mod. At xl the builds head the side column again. #}
+<div class="grid grid-cols-1 gap-6 xl:grid-cols-3 xl:grid-rows-[auto_1fr]">
+  <div class="min-w-0 xl:col-start-3 xl:row-start-1">
+    {% call ui.section("Builds", id="builds-section", help="builds") %}
+    {% include "modpacks/_builds.html" %}
+    {% endcall %}
+  </div>
+
+  <div class="min-w-0 space-y-6 xl:col-span-2 xl:col-start-1 xl:row-span-2 xl:row-start-1">
     {% call ui.section("Mods", id="mods-section", help="mods") %}
     <div class="space-y-3 rounded-xl border border-line bg-raised p-4">
       <div>
@@ -48,11 +55,7 @@
     {% endcall %}
   </div>
 
-  <div class="min-w-0 space-y-6">
-    {% call ui.section("Builds", id="builds-section", help="builds") %}
-    {% include "modpacks/_builds.html" %}
-    {% endcall %}
-
+  <div class="min-w-0 space-y-6 xl:col-start-3 xl:row-start-2">
     {% if servers %}
     {% call ui.section("Servidores vinculados", id="servers-section", help="servidores-vinculados") %}
     <ul class="divide-y divide-line-soft rounded-xl border border-line bg-raised text-sm">

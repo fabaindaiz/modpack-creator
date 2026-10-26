@@ -2107,7 +2107,8 @@ def test_detail_layout_has_linked_servers_and_renamed_updates_link() -> None:
     assert f'href="/servers/{linked.id}#actualizar"' in text
     assert "Buscar actualizaciones de mods" in text and ">Actualizaciones<" not in text
     assert "xl:grid-cols-3" in text and "xl:col-span-2" in text
-    order = [text.index(marker) for marker in ('id="mods-section"', 'id="builds-section"', "Servidores vinculados",
+    # The builds first, in one column (O9 D1).
+    order = [text.index(marker) for marker in ('id="builds-section"', 'id="mods-section"', "Servidores vinculados",
                                                'id="channels-section"', "Archivos locales")]
     assert order == sorted(order)
 
@@ -2962,3 +2963,15 @@ def test_a_mod_from_an_imported_pack_says_del_pack() -> None:
     client, modpack, _ = setup()
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
     assert "del .mrpack" not in text and "del pack" in visible(text)
+
+
+def test_below_1280_the_builds_come_before_the_mods() -> None:
+    """O9 D1 (owner, 2026-10-26): in one column «Crear build» was under every mod; at 1280 px and up
+    the side column holds them, as before."""
+    client, _, _ = setup()
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert text.index('id="builds-section"') < text.index('id="mods-section"')
+    grid = re.search(r'<div class="grid grid-cols-1[^"]*"', text).group(0)  # type: ignore[union-attr]
+    assert "xl:grid-cols-3" in grid and "xl:grid-rows-[auto_1fr]" in grid
+    builds = text[text.rindex('<div class="', 0, text.index('id="builds-section"')):]
+    assert "xl:col-start-3" in builds[:builds.index('>')] and "xl:row-start-1" in builds[:builds.index('>')]
