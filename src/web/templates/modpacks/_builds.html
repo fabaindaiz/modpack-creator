@@ -27,13 +27,22 @@
   <tr data-build="{{ build.number }}">
     <td data-label="Build" class="whitespace-nowrap">
       <span class="font-medium tabular-nums">#{{ build.number }}</span>
+      {% if build.test %}{{ ui.badge("Prueba", "warning") }}{% endif %}
       {% if bundle.recommended_build == build.number %}{{ ui.badge("Recomendado", "accent") }}{% endif %}
     </td>
     <td data-label="Creado">{{ ui.when(build.created_at) }}</td>
     <td data-label="Archivos" class="tabular-nums">{{ build.lock.entries | length }}</td>
     <td data-label="" class="text-right whitespace-nowrap">
       <div class="flex justify-end gap-1">
-        {% if bundle.recommended_build != build.number %}
+        {% if build.test %}
+        {# A test is approved, never recommended as it is (O8 B1, H2). #}
+        {{ ui.button("Aprobar", kind="ghost", small=True, attrs={
+          "hx-post": "/modpacks/" ~ bundle_id ~ "/builds/" ~ build.number ~ "/aprobar",
+          "hx-target": "#builds", "hx-swap": "outerHTML"}) }}
+        {{ ui.button("Aprobar y recomendar", kind="ghost", small=True, attrs={
+          "hx-post": "/modpacks/" ~ bundle_id ~ "/builds/" ~ build.number ~ "/aprobar",
+          "hx-vals": '{"recomendar": "1"}', "hx-target": "#builds", "hx-swap": "outerHTML"}) }}
+        {% elif bundle.recommended_build != build.number %}
         {{ ui.button("Recomendar", kind="ghost", small=True, attrs={
           "hx-post": "/modpacks/" ~ bundle_id ~ "/builds/" ~ build.number ~ "/recommend",
           "hx-target": "#builds", "hx-swap": "outerHTML"}) }}

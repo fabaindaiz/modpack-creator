@@ -393,3 +393,70 @@ def test_a_test_build_is_announced_as_a_test(mongo: MongoRunner) -> None:
 
     [message] = mongo(scenario)
     assert message.startswith("🧪 Survival: build de prueba 1 creado, ") and message.endswith(" archivos.")
+
+
+async def _normal_test_normal() -> tuple[ModpackService, str]:
+    """Builds 1 (normal), 2 (test) and 3 (normal) of one pack."""
+    service, bundle_id = await empty_bundle()
+    await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+    await service.build_create(bundle_id, actor=EDITOR)
+    await service.build_create(bundle_id, actor=EDITOR, test=True)
+    return service, bundle_id
+
+
+def test_approving_moves_latest_and_only_forward(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Any, ...]:
+        service, bundle_id = await _normal_test_normal()
+        first = await service.build_approve(bundle_id, 2, EDITOR)
+        latest_then = (await service.bundle_get(bundle_id)).latest_build
+        await service.build_create(bundle_id, actor=EDITOR, test=True)  # 3, a test
+        await service.build_create(bundle_id, actor=EDITOR)  # 4
+        old = await service.build_approve(bundle_id, 3, EDITOR)
+        return (first.approved, latest_then, (await service.build_get(bundle_id, 2)).test,
+                old.approved, old.in_force, old.newer, (await service.bundle_get(bundle_id)).latest_build)
+
+    assert mongo(scenario) == (True, 2, False, True, 4, [4], 4)
+
+
+def test_approve_and_recommend_does_both(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Any, ...]:
+        service, bundle_id = await _normal_test_normal()
+        result = await service.build_approve(bundle_id, 2, EDITOR, recommend=True)
+        return result.bundle.recommended_build, result.in_force, (await service.build_get(bundle_id, 2)).test
+
+    assert mongo(scenario) == (2, 2, False)
+
+
+def test_approving_twice_is_a_no_op_the_second_time(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Any, ...]:
+        service, bundle_id = await _normal_test_normal()
+        service.audit = audit = RecordingAudit()
+        first = await service.build_approve(bundle_id, 2, EDITOR)
+        second = await service.build_approve(bundle_id, 2, EDITOR)
+        return first.approved, second.approved, [e[0] for e in audit.events].count("build.approve")
+
+    assert mongo(scenario) == (True, False, 1)
+
+
+def test_recommending_a_test_is_refused(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[int, Any]:
+        service, bundle_id = await _normal_test_normal()
+        with pytest.raises(HTTPException) as refused:
+            await service.build_recommend(bundle_id, 2, EDITOR)
+        return refused.value.status_code, (await service.bundle_get(bundle_id)).recommended_build
+
+    assert mongo(scenario) == (409, None)
+
+
+def test_an_approved_build_is_announced(mongo: MongoRunner) -> None:
+    from tests.test_notify import Recorder
+
+    async def scenario() -> list[str]:
+        service, bundle_id = await _normal_test_normal()
+        recorder = Recorder()
+        service.notifier = cast(Any, recorder)
+        await service.build_approve(bundle_id, 2, EDITOR)
+        await service.build_approve(bundle_id, 2, EDITOR)  # nothing new: no second message
+        return recorder.sent
+
+    assert mongo(scenario) == ["📦 pack: build 2 aprobado."]

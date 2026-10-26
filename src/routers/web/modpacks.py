@@ -22,6 +22,7 @@ from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
 from src.library.utils import as_utc, getenv
 from src.library.import_uploads import UploadStore
+from src.services.modpack import ApproveResult
 from src.services.update_check import CHECK_RUNNING
 from src.library.upload_budget import UploadBudget, UploadBusy
 from src.web import BUNDLE_REF, JOB_STARTED, MODRINTH_REF, WebRoute, active_bridge, get_web_actor, render
@@ -1150,6 +1151,34 @@ async def build_recommend(
         ):
     await modpackService.build_recommend(bundle_id, number, actor)
     return await _builds(request, actor, modpackService, bundle_id)
+
+@router.post("/modpacks/{bundle_id}/builds/{number}/aprobar")
+@inject
+async def build_approve(
+        bundle_id: str,
+        number: int,
+        request: Request,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        ):
+    """Approve a test build (O8 B1), and recommend it too with `recomendar=1` (H2); #builds, with a
+    notice that says which build stays in force and whether newer ones exist (user-walk W11, W12)."""
+    recommend = (await request.form()).get("recomendar") == "1"
+    result = await modpackService.build_approve(bundle_id, number, actor, recommend=recommend)
+    return await _builds(request, actor, modpackService, bundle_id, success=approve_notice(number, result))
+
+
+def approve_notice(number: int, result: ApproveResult) -> str:
+    """The notice after approving build `number`."""
+    if not result.approved:
+        said = f"El build {number} ya estaba aprobado."
+    else:
+        said = f"Build {number} aprobado."
+        if result.in_force is not None and result.in_force != number:
+            said += f" El build {result.in_force} sigue vigente."
+    if result.newer:
+        said += f" Hay builds posteriores: {', '.join(str(n) for n in result.newer)}."
+    return said
 
 @router.get("/modpacks/{bundle_id}/builds/compare")
 @inject

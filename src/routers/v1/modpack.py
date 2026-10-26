@@ -15,6 +15,7 @@ from src.model.users import Actor
 from src.library.resolution import Lock
 from src.model.modpack import ModpackBuild, ModpackBundle, ModpackBundleCreate, ModpackBundlePatch, ModpackReplacement, PackProject, ProjectOrigin
 from src.dependences import *
+from src.services.modpack import ApproveResult
 
 router = APIRouter(
     tags=["modpack"],
@@ -178,6 +179,19 @@ async def build_mrpack(
     filename, data = await modpack.build_mrpack(bundle_id=id, number=number)
     return Response(content=data, media_type="application/x-modrinth-modpack+zip",
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+@router.post("/modpack/{id}/build/{number}/approve", response_model=ApproveResult)
+@inject
+async def build_approve(
+        id: str,
+        number: int,
+        recommend: bool = Query(False, description="recommend it too (H2: a test is never recommended unapproved)"),
+        modpack: ModpackService = Depends(Provide[Dependences.modpackService]),
+        actor: Actor = Depends(get_current_actor)
+        ):
+    """Approve a test build (O8 B1): latest moves to it if it is the newest; a second approval changes
+    nothing (`approved` false)."""
+    return await modpack.build_approve(bundle_id=id, number=number, actor=actor, recommend=recommend)
 
 @router.put("/modpack/{id}/recommended/{number}", response_model=ModpackBundle)
 @inject

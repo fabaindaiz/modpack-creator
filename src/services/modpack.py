@@ -84,6 +84,16 @@ CHANGELOG_DEADLINE = 10.0
 LOADER_VERSION_TTL = timedelta(hours=24)
 
 
+class ApproveResult(BaseModel):
+    """What approving a test build did (O8 B1): whether this call approved it (a second one does
+    nothing), the build in force after it (the recommended, else the latest) and the builds made after
+    it, for the notice (user-walk W11, W12)."""
+    bundle: ModpackBundle
+    approved: bool
+    in_force: Optional[int]
+    newer: list[int]
+
+
 # A build of the other kind is queued or running (O8 B1, user-walk W6): by whether that one is a test.
 BUILD_OTHER_KIND = {False: "Ya hay un build normal en curso: espera a que termine para construir una prueba.",
                     True: "Ya hay un build de prueba en curso: espera a que termine para construir uno normal."}
@@ -2104,11 +2114,36 @@ class ModpackService():
         return f"{safe}-{number}.mrpack", data
 
     async def build_recommend(self, bundle_id: str, number: int, actor: Actor) -> ModpackBundle:
-        """Point recommended at an existing build; going back is pointing at an older one."""
-        await self.modpackDB.build_get(bundle_id, number)
+        """Point recommended at an existing build; going back is pointing at an older one. Never at a
+        test build (H2, d-7985ee-3bb53b): it is approved first, or with `build_approve(recommend=True)`."""
+        if (await self.modpackDB.build_get(bundle_id, number)).test:
+            raise HTTP_409_CONFLICT(f"Build {number} is a test: approve it first")
         bundle = await self.modpackDB.bundle_recommend_build(bundle_id, number)
         await self.audit.record(actor, "build.recommend", _bundle(bundle_id), {"number": number})
         return bundle
+
+    async def build_approve(self, bundle_id: str, number: int, actor: Actor, recommend: bool = False) -> ApproveResult:
+        """
+        Approve a test build (O8 B1): it becomes a normal build, latest moves to it if it is the newest
+        ($max), and with `recommend` it is the recommended too. A build already approved, or never a
+        test, is left as it is (`approved` False), and recommended only if asked. 404 if it does not exist.
+        """
+        await self.modpackDB.build_get(bundle_id, number)
+        approved = await self.modpackDB.build_approve(bundle_id, number)
+        if approved:
+            await self.modpackDB.bundle_latest_build(bundle_id, number)
+            await self.audit.record(actor, "build.approve", _bundle(bundle_id), {"number": number, "recommend": recommend})
+        if recommend:
+            bundle = await self.modpackDB.bundle_recommend_build(bundle_id, number)
+            if not approved:
+                await self.audit.record(actor, "build.recommend", _bundle(bundle_id), {"number": number})
+        else:
+            bundle = await self.modpackDB.bundle_get(bundle_id)
+        if approved and self.notifier is not None:
+            await self.notifier.notify(f"📦 {bundle.name}: build {number} aprobado.")
+        newer = sorted(b.number for b in await self.modpackDB.build_find(bundle_id) if b.number > number)
+        return ApproveResult(bundle=bundle, approved=approved, in_force=bundle.recommended_build or bundle.latest_build,
+                             newer=newer)
 
     # Changes between locks (N3).
 

@@ -47,9 +47,9 @@ def bundle(projects: Optional[list[PackProject]] = None, decisions: Optional[dic
         local_files=[LocalFile(filename="custom.jar", sha512="ab12cd34ef56" + "0" * 100, sha1="x", size=1536)])
 
 
-def build(number: int) -> ModpackBuild:
+def build(number: int, **fields: Any) -> ModpackBuild:
     return ModpackBuild.model_construct(id=PydanticObjectId(), bundle_id=BUNDLE_ID, number=number, created_at=T0,
-                                        lock=lock(), loader_version="0.16")
+                                        lock=lock(), loader_version="0.16", **{"test": False, "name": None, "starred": False, **fields})
 
 
 def entry(project_id: str, server: str = "include", project_type: str = "mod") -> LockEntry:
@@ -96,6 +96,8 @@ class FakeModpack:
     def __init__(self) -> None:
         self.bundle = bundle()
         self.builds = [build(2), build(1)]
+        # What build_approve answers (O8 B1); None approves `number` with nothing newer.
+        self.approved: Any = None
         self.rules = [ModpackReplacement.model_construct(project_id="OLDMOD", replacement="NEWMOD"),
                       ModpackReplacement.model_construct(project_id="DROPPED", replacement=None)]
         self.lock = lock(entry("P1"), entry("P2", "admin"))
@@ -321,6 +323,12 @@ class FakeModpack:
     async def build_recommend(self, bundle_id: str, number: int, actor: Actor) -> ModpackBundle:
         self._record("build_recommend", bundle_id, number, actor)
         return self.bundle
+
+    async def build_approve(self, bundle_id: str, number: int, actor: Actor, recommend: bool = False) -> Any:
+        from src.services.modpack import ApproveResult
+        self._record("build_approve", bundle_id, number, actor, recommend)
+        return self.approved if self.approved is not None else \
+            ApproveResult(bundle=self.bundle, approved=True, in_force=number, newer=[])
 
     async def build_mrpack(self, bundle_id: str, number: int) -> tuple[str, bytes]:
         self._record("build_mrpack", bundle_id, number)
@@ -3060,3 +3068,36 @@ def test_build_as_test_queues_a_test_job() -> None:
     response = client.post(f"/modpacks/{BUNDLE_ID}/builds", data={"prueba": "1"}, headers=HTMX)
     assert response.status_code == 200 and response.headers["HX-Trigger"] == "job-started"
     assert call(modpack, "build_request")[1:] == (str(BUNDLE_ID), EDITOR, "test")
+
+
+def test_a_test_row_offers_approve_and_approve_and_recommend_never_recommend() -> None:
+    """O8 B1, H2 (d-7985ee-3bb53b): a test is never recommended without being approved."""
+    client, modpack, _ = setup()
+    modpack.builds = [build(3, test=True), build(2), build(1)]
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    row = text[text.index('data-build="3"'):]
+    row = row[:row.index("</tr>")]
+    assert "Prueba" in row and f'hx-post="/modpacks/{BUNDLE_ID}/builds/3/aprobar"' in row
+    assert "Aprobar y recomendar" in row and "/builds/3/recommend" not in row
+
+
+def test_approving_answers_the_builds_with_a_notice() -> None:
+    client, modpack, _ = setup()
+    response = client.post(f"/modpacks/{BUNDLE_ID}/builds/3/aprobar", data={"recomendar": "1"}, headers=HTMX)
+    assert response.status_code == 200 and 'id="builds"' in response.text and "Build 3 aprobado." in response.text
+    assert call(modpack, "build_approve")[1:] == (str(BUNDLE_ID), 3, EDITOR, True)
+
+
+def test_approving_an_old_test_says_which_build_stays_in_force() -> None:
+    from src.services.modpack import ApproveResult
+    client, modpack, _ = setup()
+    modpack.approved = ApproveResult(bundle=modpack.bundle, approved=True, in_force=4, newer=[4])
+    text = client.post(f"/modpacks/{BUNDLE_ID}/builds/3/aprobar", headers=HTMX).text
+    assert "Build 3 aprobado." in text and "El build 4 sigue vigente." in text and "Hay builds posteriores: 4." in text
+
+
+def test_approving_an_approved_build_says_so() -> None:
+    from src.services.modpack import ApproveResult
+    client, modpack, _ = setup()
+    modpack.approved = ApproveResult(bundle=modpack.bundle, approved=False, in_force=3, newer=[])
+    assert "El build 3 ya estaba aprobado." in client.post(f"/modpacks/{BUNDLE_ID}/builds/3/aprobar", headers=HTMX).text

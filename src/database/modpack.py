@@ -357,6 +357,13 @@ class ModpackDatabase():
             raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' has no build {number}")
         return build
 
+    async def build_approve(self, bundle_id: str, number: int) -> bool:
+        """Take the test mark off build `number` (O8 B1): only that field, and only while it is a test,
+        so two approvals at once change it once. True if this call changed it."""
+        result = await ModpackBuild.get_pymongo_collection().update_one(
+            {"bundle_id": self._bundle_oid(bundle_id), "number": number, "test": True}, {"$set": {"test": False}})
+        return result.modified_count == 1
+
     async def build_insert(self, build: ModpackBuild) -> ModpackBuild:
         """Store a build. Its number is unique per bundle: a build created at the same time with the
         same number is refused with 409, never stored twice."""

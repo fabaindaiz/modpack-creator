@@ -105,7 +105,8 @@ los dos, o una fila mal formada, hace fallar el test. El nombre del método no s
 | `ModpackService.mod_page` | editor | Arma la ficha local de un mod (identidad, dónde se usa, versiones del catálogo); guarda en el catálogo los proyectos que trajo de Modrinth en una llamada por lotes. No toca ningún bundle ni servidor. |
 | `ModpackService.mod_versions_all` | editor | Lista todas las versiones de un mod, pedidas a Modrinth sin filtros; las guarda en el catálogo. |
 | `ModpackService.build_create` | editor | Crea un build del bundle. |
-| `ModpackService.build_recommend` | editor | Marca un build como el recomendado. |
+| `ModpackService.build_recommend` | editor | Marca un build como el recomendado; nunca una prueba sin aprobar (409, H2 de d-7985ee-3bb53b). |
+| `ModpackService.build_approve` | editor | Aprueba un build de prueba (O8 B1): deja de ser prueba, «último» avanza si es el más nuevo y, si se pide, queda recomendado. |
 | `ModpackService.replacement_set` | editor | Fija el reemplazo de un mod. |
 | `ModpackService.replacement_delete` | editor | Borra el reemplazo de un mod. |
 | `ModrinthService.project_create` | editor | Trae un mod de Modrinth al catálogo local. |
