@@ -109,8 +109,8 @@ def note(verdict: str = "fails", text: str = "pantalla negra", **fields: Any) ->
     from src.model.modpack.note import VersionNote
     from src.model.users.actor import ActorRef
     return VersionNote.model_construct(id=PydanticObjectId(), bundle_id=str(BUNDLE_ID), verdict=verdict, text=text,
-                                       author=ActorRef(iss="i", sub="s", name="Eddie Editor"), at=T0,
-                                       rev=0, key="k", previous=[], **{"archived": False, "build_number": None, "project_id": None,
+                                       author=ActorRef(iss="i", sub="s", name="Eddie Editor"),
+                                       rev=0, key="k", previous=[], **{"at": T0, "archived": False, "build_number": None, "project_id": None,
                                        "version_id": None, "version_number": None, "server_id": None,
                                        "server_name": None, "error": None, "edited_at": None, **fields})
 
@@ -132,6 +132,7 @@ class FakeModpack:
         self.history_calls: list[tuple[str, Any]] = []
         self.changelog: tuple[Optional[str], str] = ("## Arreglos", "ok")
         self.changelog_calls: list[tuple[str, str]] = []
+        self.suggestion: Any = None
         # Whether the pack's last build job was a test (O8 B1: its blocked dialog stays a test's).
         self.last_test = False
         self.rules = [ModpackReplacement.model_construct(project_id="OLDMOD", replacement="NEWMOD"),
@@ -374,6 +375,9 @@ class FakeModpack:
     async def version_changelog(self, project_id: str, version_id: str) -> tuple[Optional[str], str]:
         self.changelog_calls.append((project_id, version_id))
         return self.changelog
+
+    async def suggestion_for(self, bundle_id: str, project_id: str) -> Any:
+        return self.suggestion
 
     async def build_verdicts(self, bundle_id: str) -> dict[int, tuple[str, int]]:
         return self.verdicts
@@ -3391,3 +3395,29 @@ def test_ver_mas_answers_the_next_entries_with_their_own_ver_mas() -> None:
     assert "Build 2 · 1.6.4" in text and "Ver más" in text and "data-mod-history" not in text
     assert modpack.history_calls[0][1] is not None
 
+
+# The suggestions in the panel (T4 of d-7985ee-16be41).
+
+
+def test_recommend_the_last_stable_asks_first_and_says_it_goes_back() -> None:
+    client, modpack, _ = setup()
+    modpack.builds = [build(3), build(2), build(1, stable=True)]
+    modpack.bundle.recommended_build = 3
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    builds = text[text.index('id="builds"'):]
+    assert "Recomendar el último estable (build 1)" in builds and 'data-dialog-open="recommend-stable"' in builds
+    assert "Es volver atrás: el build 1 es anterior al recomendado (3)." in builds
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/builds/1/recommend"' in builds
+
+
+def test_the_history_suggests_a_version_and_its_dialog_says_why() -> None:
+    from src.library.history import Suggested
+    client, modpack, _ = setup()
+    modpack.suggestion = Suggested(version_id="v164", version_number="1.6.4", source="stable", why="build 5 estable")
+    text = client.get(f"/modpacks/{BUNDLE_ID}/projects/P1/historia", headers=HTMX).text
+    assert "Fijar la versión del último build estable (1.6.4)" in text
+    dialog = client.get(f"/modpacks/{BUNDLE_ID}/projects/P1/sugerencia", headers=HTMX).text
+    assert "data-autoopen" in dialog and "Respaldo: build 5 estable" in dialog
+    assert 'name="version_id" value="v164"' in dialog and 'name="confirm_downgrade" value="1"' in dialog
+    modpack.suggestion = Suggested(version_id="v162", version_number="1.6.2", source="note", why="nota de Eddie")
+    assert "Fijar la última que funcionó (1.6.2)" in client.get(f"/modpacks/{BUNDLE_ID}/projects/P1/historia", headers=HTMX).text

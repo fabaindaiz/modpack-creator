@@ -87,3 +87,51 @@ def test_mod_history_leaves_out_another_packs_scans_and_never_calls_modrinth(mon
     entries, calls = mongo(scenario)
     assert any("this-pack-version" in t for t in entries) and not any("other-pack-version" in t for t in entries)
     assert calls == []
+
+
+# The suggestions (T4 of d-7985ee-16be41; user-walk N13, N19).
+
+
+def stable_build(number: int, version: str, *, game: str = "1.21.1", loader: str = "fabric", via: str | None = None,
+                 stable: bool = True, test: bool = False) -> Any:
+    from src.library.resolution import Lock, LockEntry, ResolveRequest, Target
+    from src.model.modpack import ModpackBuild
+    entry = LockEntry(project_id="P", origin="pack", version_id="id-" + version, version_number=version, file=None,
+                      environment=None, server="include", reason="r", requested_by=[], via=via)  # type: ignore[arg-type]
+    return ModpackBuild.model_construct(
+        number=number, created_at=day(number), stable=stable, test=test,
+        request=ResolveRequest(target=Target(game_version=game, loader=loader), projects=[]),
+        lock=Lock(entries=[entry], problems=[], suggestions=[], needs_projects=set(), needs_types=set(), needs_versions=set()))
+
+
+def mod_note(verdict: str, version: str, days: int, archived: bool = False) -> Any:
+    from tests.test_web_modpacks import note
+    return note(verdict, "x", project_id="P", version_id="id-" + version, version_number=version, at=day(days), archived=archived)
+
+
+def suggest(builds: list[Any], notes: list[Any], via: str | None = None, fits: Any = None) -> Any:
+    from src.library.history import suggested_version
+    return suggested_version("P", builds, notes, "1.21.1", "fabric", via, fits or (lambda version_id: True))
+
+
+def test_the_suggestion_prefers_the_last_stable_build() -> None:
+    found = suggest([stable_build(3, "1.6.2"), stable_build(5, "1.6.4"), stable_build(6, "1.7.2", stable=False)],
+                    [mod_note("works", "1.7.2", 9)])
+    assert (found.version_number, found.source, found.why) == ("1.6.4", "stable", "build 5 estable")
+
+
+def test_without_stable_builds_the_last_works_note() -> None:
+    found = suggest([], [mod_note("works", "1.6.2", 1), mod_note("works", "1.6.4", 2), mod_note("fails", "1.7.2", 3)])
+    assert (found.version_number, found.source) == ("1.6.4", "note") and "Eddie Editor" in found.why
+
+
+def test_a_later_fails_note_wins_and_archived_notes_do_not_count() -> None:
+    found = suggest([], [mod_note("works", "1.6.4", 1), mod_note("fails", "1.6.4", 2), mod_note("works", "1.6.2", 1),
+                         mod_note("works", "1.7.0", 5, archived=True)])
+    assert found.version_number == "1.6.2"
+
+
+def test_another_target_or_way_is_never_suggested() -> None:
+    assert suggest([stable_build(5, "1.6.4", game="1.20.1")], []) is None
+    assert suggest([stable_build(5, "1.6.4", via="connector")], []) is None
+    assert suggest([], [mod_note("works", "1.6.4", 1)], fits=lambda version_id: False) is None

@@ -29,6 +29,11 @@
 {% if more %}<li><button type="button" class="text-sm text-link hover:underline" hx-get="/modpacks/{{ bundle_id }}/projects/{{ project_id }}/historia?antes={{ entries[-1].at.isoformat() | urlencode }}" hx-target="closest li" hx-swap="outerHTML">Ver más</button></li>{% endif %}
 {% else %}
 <div class="space-y-2" data-mod-history>
+  {% if suggestion is defined and suggestion %}
+  {# What to pin it to (T4 of d-7985ee-16be41): the dialog says what backs it, and asks first. #}
+  {{ ui.button(("Fijar la versión del último build estable (" if suggestion.source == "stable" else "Fijar la última que funcionó (") ~ suggestion.version_number ~ ")",
+    kind="secondary", small=True, attrs={"hx-get": "/modpacks/" ~ bundle_id ~ "/projects/" ~ project_id ~ "/sugerencia", "hx-target": "#note-dialog", "hx-swap": "innerHTML"}) }}
+  {% endif %}
   <div id="notes-mod-{{ project_id }}" class="space-y-2"></div>
   {% if entries %}
   <ul class="divide-y divide-line-soft">

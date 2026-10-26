@@ -3,7 +3,7 @@ changed, from the builds that carry it, the scans of the pack's servers, the pin
 past origins, its notes, and its removal and return. Pure."""
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence
 
 from src.model.modpack import PastOrigin
 
@@ -112,3 +112,50 @@ def mod_history(builds: Sequence[BuildPoint], scans: Sequence[ScanPoint], pins: 
     entries += [HistoryEntry(at=e.at, kind="added" if e.added else "removed",
                              text="Vuelto a agregar al pack" if e.added else "Quitado del pack") for e in presence]
     return sorted(entries, key=lambda e: e.at, reverse=True)
+
+
+@dataclass(frozen=True)
+class Suggested:
+    """A version to pin a mod to (T4 of d-7985ee-16be41), and what backs it: a stable build of the pack
+    («stable»), or a note that it worked («note»); `why` says which."""
+    version_id: str
+    version_number: str
+    source: str
+    why: str
+
+
+def last_stable(builds: Sequence[Any], game_version: str, loader: str) -> Optional[Any]:
+    """The newest build marked stable, not a test, for the pack's Minecraft version and loader now."""
+    fitting = [b for b in builds if b.stable and not b.test
+               and (b.request.target.game_version, b.request.target.loader) == (game_version, loader)]
+    return max(fitting, key=lambda b: b.number, default=None)
+
+
+def suggested_version(project_id: str, builds: Sequence[Any], notes: Sequence[Any], game_version: str, loader: str,
+                      via: Optional[str], fits: Callable[[str], bool]) -> Optional[Suggested]:
+    """The version to suggest for a mod (T4; user-walk N13, N19): its version in the last stable build when
+    it runs the same way there (`via`); else the newest version whose latest note of the mod says it worked,
+    and that fits the pack now (`fits`). A note on a whole build counts for the mod's version in it only when
+    no note of the mod says otherwise. Archived notes never count."""
+    stable = last_stable(builds, game_version, loader)
+    entry = next((e for e in stable.lock.entries if e.project_id == project_id), None) if stable else None
+    if stable is not None and entry is not None and entry.via == via:
+        return Suggested(entry.version_id, entry.version_number, "stable", f"build {stable.number} estable")
+    live = [n for n in notes if not n.archived]
+    latest: dict[str, Any] = {}
+    for note in sorted((n for n in live if n.project_id == project_id and n.version_id), key=lambda n: n.at):
+        latest[note.version_id] = note
+    by_number = {b.number: b for b in builds}
+    for note in sorted((n for n in live if n.build_number is not None and n.verdict == "works"), key=lambda n: n.at):
+        build = by_number.get(note.build_number)
+        found = next((e for e in build.lock.entries if e.project_id == project_id), None) if build else None
+        if found is not None and found.version_id not in latest:
+            latest[found.version_id] = note.model_copy(update={"version_id": found.version_id,
+                                                               "version_number": found.version_number})
+    worked = [n for n in latest.values() if n.verdict == "works" and fits(n.version_id)]
+    if not worked:
+        return None
+    best = max(worked, key=lambda n: n.at)
+    return Suggested(best.version_id, best.version_number or best.version_id, "note",
+                     f"nota de {best.author.name} · {best.at:%d-%m}: funcionó")
+

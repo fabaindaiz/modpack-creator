@@ -15,7 +15,7 @@ from src.library.changes import ChangeSet, VersionFacts, diff_entries, direction
 from src.library.scan import Unexplained, compare, unexplained_for
 from src.library.mrpack import mrpack_index, write_mrpack
 from src.library.builds import build_name
-from src.library.history import BuildPoint, PinEvent, PresenceEvent, ScanPoint, mod_history
+from src.library.history import BuildPoint, PinEvent, PresenceEvent, ScanPoint, Suggested, mod_history, suggested_version
 from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink, installed_of
 from src.library.pins import past_origins
 from src.database.jobs import JobDatabase
@@ -1801,6 +1801,28 @@ class ModpackService():
             [PresenceEvent(at=as_utc(e.at), added=e.action == "bundle.project.add") for e in events if e.action != "bundle.pin"])
         older = [e for e in entries if before is None or e.at < as_utc(before)]
         return HistoryPage(entries=older[:limit], more=len(older) > limit)
+
+    async def suggestion_for(self, bundle_id: str, project_id: str) -> Optional[Suggested]:
+        """The version suggested for a mod of the pack (T4 of d-7985ee-16be41): from the last stable build, or
+        from its notes, for the pack's target and the way it runs now; None when there is none, or it is the
+        version pinned already. Only MongoDB."""
+        bundle = await self.modpackDB.bundle_get(bundle_id)
+        builds = await self.modpackDB.build_find(bundle_id)
+        notes = [*await self.noteDB.find(bundle_id, project_id=project_id), *await self.noteDB.find(bundle_id, builds_only=True)]
+        resolution = await self.modpackDB.resolution_get(bundle.id)  # type: ignore[arg-type]
+        now = next((e for e in resolution.lock.entries if e.project_id == project_id), None) if resolution else None
+        ids = sorted({n.version_id for n in notes if n.version_id})
+        catalog = {v.version_id: v for v in await self.modrinthDB.version_find_by_version_ids(ids)} if ids else {}
+        loader = str(bundle.loader.value)
+
+        def fits(version_id: str) -> bool:
+            found = catalog.get(version_id)
+            return found is not None and bundle.version in found.game_versions and loader in found.loaders
+
+        suggested = suggested_version(project_id, builds, notes, bundle.version, loader, now.via if now else None, fits)
+        if suggested is None or bundle.pins.get(project_id) == suggested.version_id:
+            return None
+        return suggested
 
     async def version_changelog(self, project_id: str, version_id: str) -> tuple[Optional[str], str]:
         """A version's changelog when its history unfolds it (D12, P4 of d-7985ee-a68b5c): from the

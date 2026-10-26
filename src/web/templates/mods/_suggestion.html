@@ -1,0 +1,24 @@
+{# Pinning the suggested version (T4 of d-7985ee-16be41): asked first, always, with what backs it. The pin
+   is sent confirmed, as the downgrade dialog sends it: this dialog is that confirmation. #}
+{% import "_macros.html" as ui %}
+{% if suggestion %}
+<dialog data-autoopen aria-labelledby="suggestion-title"
+  class="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-xl border border-line bg-raised p-0 text-ink shadow-xl backdrop:bg-scrim/50">
+  <form class="space-y-4 p-5" hx-post="/modpacks/{{ bundle_id }}/pins" hx-target="#mods" hx-swap="outerHTML">
+    <h2 id="suggestion-title" class="text-base font-semibold" autofocus tabindex="-1">Fijar {{ title }} {{ suggestion.version_number }}</h2>
+    <div class="space-y-2 text-sm text-ink-soft">
+      <p>Respaldo: {{ suggestion.why }}</p>
+      <p class="text-warning">Si es anterior a la que corre el pack, bajar un mod puede romper mundos y configs.</p>
+    </div>
+    <input type="hidden" name="project_id" value="{{ project_id }}">
+    <input type="hidden" name="version_id" value="{{ suggestion.version_id }}">
+    <input type="hidden" name="confirm_downgrade" value="1">
+    <div class="flex justify-end gap-2">
+      {{ ui.button("Cancelar", kind="secondary", attrs={"data-dialog-close": ""}) }}
+      {{ ui.button("Fijar", type="submit") }}
+    </div>
+  </form>
+</dialog>
+{% else %}
+<div id="notices" hx-swap-oob="beforeend">{{ ui.notice("Ya no hay una versión que sugerir.", "info", autoclose=True) }}</div>
+{% endif %}

@@ -1275,8 +1275,26 @@ async def mod_history(
     """A mod's history in the pack (O8 tanda 2, T2, T3), loaded when opened; with `antes`, the next page
     («Ver más»). Never asks Modrinth."""
     page = await modpackService.mod_history(bundle_id, project_id, before=antes)
+    # What to pin it to, from a stable build or its notes (T4): only on the first page.
+    suggestion = await modpackService.suggestion_for(bundle_id, project_id) if antes is None else None
     return render(request, "mods/_history.html", actor, bundle_id=bundle_id, project_id=project_id,
-                  entries=page.entries, more=page.more, page_more=antes is not None)
+                  entries=page.entries, more=page.more, page_more=antes is not None, suggestion=suggestion)
+
+@router.get("/modpacks/{bundle_id}/projects/{project_id}/sugerencia")
+@inject
+async def suggestion_dialog(
+        bundle_id: str,
+        project_id: str,
+        request: Request,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        modrinthService: ModrinthService = Depends(Provide[Dependences.modrinthService]),
+        ):
+    """The dialog that confirms the suggested version, always (T4): what backs it, and the pin it sends."""
+    suggestion = await modpackService.suggestion_for(bundle_id, project_id)
+    title = (await _titles(modrinthService, [project_id]))[project_id]
+    return render(request, "mods/_suggestion.html", actor, bundle_id=bundle_id, project_id=project_id,
+                  suggestion=suggestion, title=title)
 
 @router.get("/modpacks/{bundle_id}/projects/{project_id}/changelog")
 @inject

@@ -83,6 +83,19 @@
     {% for server in next_servers %}{{ ui.next_step("Simular instalación del build " ~ builds[0].number ~ " en " ~ server.name, "/servers/" ~ server.id ~ "?build=" ~ builds[0].number ~ "#actualizar") }}{% endfor %}
   </div>
   {% endif %}
+  {# «Recomendar el último estable» when the recommended one is not stable (T4): asks first, and says when
+     it goes back. #}
+  {% set stables = builds | selectattr("stable") | rejectattr("test") | list %}
+  {% set in_force = bundle.recommended_build or bundle.latest_build %}
+  {% if stables and bundle.recommended_build not in stables | map(attribute="number") | list %}
+  {% set last = stables | sort(attribute="number") | last %}
+  {{ ui.button("Recomendar el último estable (build " ~ last.number ~ ")", kind="secondary", small=True, attrs={"data-dialog-open": "recommend-stable"}) }}
+  {% call ui.confirm_dialog("recommend-stable", "Recomendar el build " ~ last.number, "Recomendar", "secondary",
+      {"hx-post": "/modpacks/" ~ bundle_id ~ "/builds/" ~ last.number ~ "/recommend", "hx-target": "#builds", "hx-swap": "outerHTML"}) %}
+  <p>Pasa a ser el que se instala por defecto y el piso de versiones.</p>
+  {% if in_force and last.number < in_force %}<p class="text-warning">Es volver atrás: el build {{ last.number }} es anterior al recomendado ({{ in_force }}).</p>{% endif %}
+  {% endcall %}
+  {% endif %}
   {% if not builds %}
   <p class="text-sm text-muted">Todavía no hay builds.</p>
   {% else %}

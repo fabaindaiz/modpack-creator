@@ -518,3 +518,21 @@ def test_a_test_is_approved_before_stable(mongo: MongoRunner) -> None:
         return refused.value.status_code, refused.value.detail, (await service.build_get(bundle_id, 2)).stable
 
     assert mongo(scenario) == (409, "Aprueba la prueba antes de marcarla estable.", False)
+
+
+def test_a_stable_build_suggests_its_version_of_a_mod_unless_pinned_to_it(mongo: MongoRunner) -> None:
+    """T4 (d-7985ee-16be41): «Fijar la versión del último build estable»."""
+    async def scenario() -> tuple[Any, Any]:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        build = await service.build_create(bundle_id, actor=EDITOR)
+        await service.build_stable(bundle_id, build.number, True, EDITOR)
+        found = await service.suggestion_for(bundle_id, IRIS)
+        assert found is not None
+        iris = next(e for e in build.lock.entries if e.project_id == IRIS)
+        await service.pin_set(bundle_id, IRIS, iris.version_id, EDITOR)
+        return (found.source, found.version_id == iris.version_id, found.why), await service.suggestion_for(bundle_id, IRIS)
+
+    found, after_pin = mongo(scenario)
+    assert found == ("stable", True, "build 1 estable") and after_pin is None
+
