@@ -324,6 +324,14 @@ class FakeModpack:
         self._record("build_recommend", bundle_id, number, actor)
         return self.bundle
 
+    async def build_name(self, bundle_id: str, number: int, name: Optional[str], actor: Actor) -> ModpackBuild:
+        self._record("build_name", bundle_id, number, name, actor)
+        return self.builds[0]
+
+    async def build_star(self, bundle_id: str, number: int, starred: bool, actor: Actor) -> ModpackBuild:
+        self._record("build_star", bundle_id, number, starred, actor)
+        return self.builds[0]
+
     async def build_approve(self, bundle_id: str, number: int, actor: Actor, recommend: bool = False) -> Any:
         from src.services.modpack import ApproveResult
         self._record("build_approve", bundle_id, number, actor, recommend)
@@ -3101,3 +3109,31 @@ def test_approving_an_approved_build_says_so() -> None:
     client, modpack, _ = setup()
     modpack.approved = ApproveResult(bundle=modpack.bundle, approved=False, in_force=3, newer=[])
     assert "El build 3 ya estaba aprobado." in client.post(f"/modpacks/{BUNDLE_ID}/builds/3/aprobar", headers=HTMX).text
+
+
+def test_naming_and_starring_a_build_answer_the_builds() -> None:
+    """O8 B2, B3: the star is sent as a state, never toggled (user-walk W14)."""
+    client, modpack, _ = setup()
+    named = client.post(f"/modpacks/{BUNDLE_ID}/builds/2/nombre", data={"nombre": "con Iris"}, headers=HTMX)
+    starred = client.post(f"/modpacks/{BUNDLE_ID}/builds/2/destacar", data={"estado": "si"}, headers=HTMX)
+    unstarred = client.post(f"/modpacks/{BUNDLE_ID}/builds/2/destacar", data={"estado": "no"}, headers=HTMX)
+    assert all(r.status_code == 200 and 'id="builds"' in r.text for r in (named, starred, unstarred))
+    assert call(modpack, "build_name")[1:] == (str(BUNDLE_ID), 2, "con Iris", EDITOR)
+    assert [c[3] for c in modpack.calls if c[0] == "build_star"] == [True, False]
+
+
+def test_a_build_shows_its_name_its_star_and_the_form_for_each() -> None:
+    client, modpack, _ = setup()
+    modpack.builds = [build(2, name="con Iris", starred=True), build(1)]
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    row = text[text.index('data-build="2"'):]
+    row = row[:row.index("</tr>")]
+    assert "con Iris" in row and 'name="nombre"' in row and 'maxlength="60"' in row
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/builds/2/destacar"' in row and "hx-vals='{\"estado\": \"no\"}'" in row
+
+
+def test_a_name_with_html_is_escaped_everywhere() -> None:
+    client, modpack, _ = setup()
+    modpack.builds = [build(2, name="<b>x</b>"), build(1)]
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert "<b>x</b>" not in text and "&lt;b&gt;x&lt;/b&gt;" in text

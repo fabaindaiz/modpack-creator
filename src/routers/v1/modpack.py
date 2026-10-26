@@ -193,6 +193,33 @@ async def build_approve(
     nothing (`approved` false)."""
     return await modpack.build_approve(bundle_id=id, number=number, actor=actor, recommend=recommend)
 
+class BuildPatch(BaseModel):
+    """What changes in a build after it is made (O8 B2, B3): its name (empty or null takes it away)
+    and its star. Nothing it froze."""
+    name: Optional[str] = None
+    starred: Optional[bool] = None
+
+
+@router.patch("/modpack/{id}/build/{number}", response_model=ModpackBuild)
+@inject
+async def build_patch(
+        id: str,
+        number: int,
+        patch: BuildPatch,
+        modpack: ModpackService = Depends(Provide[Dependences.modpackService]),
+        actor: Actor = Depends(get_current_actor)
+        ):
+    """Name or star a build; a field left out is left as it is."""
+    sent = patch.model_fields_set
+    if not sent:
+        raise HTTP_422_UNPROCESSABLE_ENTITY("Send `name`, `starred` or both")
+    build = await modpack.build_get(bundle_id=id, number=number)
+    if "name" in sent:
+        build = await modpack.build_name(id, number, patch.name, actor)
+    if "starred" in sent and patch.starred is not None:
+        build = await modpack.build_star(id, number, patch.starred, actor)
+    return build
+
 @router.put("/modpack/{id}/recommended/{number}", response_model=ModpackBundle)
 @inject
 async def build_recommend(

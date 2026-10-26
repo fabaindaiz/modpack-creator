@@ -1152,6 +1152,33 @@ async def build_recommend(
     await modpackService.build_recommend(bundle_id, number, actor)
     return await _builds(request, actor, modpackService, bundle_id)
 
+@router.post("/modpacks/{bundle_id}/builds/{number}/nombre")
+@inject
+async def build_name_set(
+        bundle_id: str,
+        number: int,
+        request: Request,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        ):
+    """Name a build (O8 B2); an empty name takes it away. #builds."""
+    name = (await request.form()).get("nombre")
+    await modpackService.build_name(bundle_id, number, name if isinstance(name, str) else None, actor)
+    return await _builds(request, actor, modpackService, bundle_id)
+
+@router.post("/modpacks/{bundle_id}/builds/{number}/destacar")
+@inject
+async def build_star(
+        bundle_id: str,
+        number: int,
+        request: Request,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        ):
+    """Star a build, or take the star away (O8 B3): `estado` is «si» or «no», never a toggle. #builds."""
+    await modpackService.build_star(bundle_id, number, (await request.form()).get("estado") == "si", actor)
+    return await _builds(request, actor, modpackService, bundle_id)
+
 @router.post("/modpacks/{bundle_id}/builds/{number}/aprobar")
 @inject
 async def build_approve(

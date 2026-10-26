@@ -14,6 +14,7 @@ from src.library.api.client.modrinth import ID_CHUNK, ModrinthAPI
 from src.library.changes import ChangeSet, VersionFacts, diff_entries, direction
 from src.library.scan import Unexplained, compare, unexplained_for
 from src.library.mrpack import mrpack_index, write_mrpack
+from src.library.builds import build_name
 from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink, installed_of
 from src.database.jobs import JobDatabase
 from src.model.jobs import Job
@@ -2130,6 +2131,18 @@ class ModpackService():
         bundle = await self.modpackDB.bundle_recommend_build(bundle_id, number)
         await self.audit.record(actor, "build.recommend", _bundle(bundle_id), {"number": number})
         return bundle
+
+    async def build_name(self, bundle_id: str, number: int, name: Optional[str], actor: Actor) -> ModpackBuild:
+        """Name a build (O8 B2): trimmed, at most 60 characters; empty takes the name away."""
+        build = await self.modpackDB.build_set(bundle_id, number, {"name": build_name(name)})
+        await self.audit.record(actor, "build.name", _bundle(bundle_id), {"number": number, "name": build.name})
+        return build
+
+    async def build_star(self, bundle_id: str, number: int, starred: bool, actor: Actor) -> ModpackBuild:
+        """Star a build or take its star away (O8 B3): the state is said, never toggled (user-walk W14)."""
+        build = await self.modpackDB.build_set(bundle_id, number, {"starred": starred})
+        await self.audit.record(actor, "build.star", _bundle(bundle_id), {"number": number, "starred": starred})
+        return build
 
     async def build_approve(self, bundle_id: str, number: int, actor: Actor, recommend: bool = False) -> ApproveResult:
         """

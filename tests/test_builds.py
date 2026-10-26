@@ -460,3 +460,34 @@ def test_an_approved_build_is_announced(mongo: MongoRunner) -> None:
         return recorder.sent
 
     assert mongo(scenario) == ["📦 pack: build 2 aprobado."]
+
+
+# Nombre y estrella (O8 B2, B3; user-walk W13, W14).
+
+
+def test_naming_a_build_never_rewrites_its_lock(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[Any, ...]:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        before = await service.build_create(bundle_id, actor=EDITOR)
+        await service.build_name(bundle_id, 1, "  con Iris 1.7 ", EDITOR)
+        await service.build_star(bundle_id, 1, True, EDITOR)
+        after = await service.build_get(bundle_id, 1)
+        with pytest.raises(ValueError):
+            await ModpackDatabase().build_set(bundle_id, 1, {"lock": None})
+        return (after.name, after.starred, after.lock == before.lock, after.request == before.request,
+                after.created_at == before.created_at)
+
+    assert mongo(scenario) == ("con Iris 1.7", True, True, True, True)
+
+
+def test_starring_twice_stays_starred(mongo: MongoRunner) -> None:
+    async def scenario() -> tuple[bool, bool]:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        await service.build_create(bundle_id, actor=EDITOR)
+        await service.build_star(bundle_id, 1, True, EDITOR)
+        twice = (await service.build_star(bundle_id, 1, True, EDITOR)).starred
+        return twice, (await service.build_star(bundle_id, 1, False, EDITOR)).starred
+
+    assert mongo(scenario) == (True, False)

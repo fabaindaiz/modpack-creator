@@ -357,6 +357,15 @@ class ModpackDatabase():
             raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' has no build {number}")
         return build
 
+    async def build_set(self, bundle_id: str, number: int, fields: dict[str, Any]) -> ModpackBuild:
+        """Write a build's name or star (O8 B2, B3) with a $set of only those fields: what it froze is
+        never written again (user-walk W13). Any other field is a ValueError; 404 if it does not exist."""
+        if not fields or set(fields) - {"name", "starred"}:
+            raise ValueError(f"Only a build's name and star are written after it is made, not {sorted(fields)}")
+        await ModpackBuild.get_pymongo_collection().update_one(
+            {"bundle_id": self._bundle_oid(bundle_id), "number": number}, {"$set": fields})
+        return await self.build_get(bundle_id, number)
+
     async def build_approve(self, bundle_id: str, number: int) -> bool:
         """Take the test mark off build `number` (O8 B1): only that field, and only while it is a test,
         so two approvals at once change it once. True if this call changed it."""
