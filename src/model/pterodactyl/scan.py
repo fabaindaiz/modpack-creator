@@ -1,3 +1,4 @@
+from pymongo import ASCENDING, IndexModel
 from beanie import Document, Indexed, PydanticObjectId
 from datetime import datetime
 from typing import Annotated, Optional
@@ -19,6 +20,10 @@ class ServerScan(Document):
     # The pack the server was linked to when scanned (O8 tanda 2, user-walk N5): a mod's history only
     # counts its own pack's scans. None for a server without a pack, and for scans stored before.
     bundle_id: Optional[str] = None
+
+    class Settings:
+        # A mod's history reads the scans of a pack (O8 tanda 2, final review).
+        indexes = [IndexModel([("bundle_id", ASCENDING), ("directory", ASCENDING)])]
     # How the scan compared with the server's build, as announced; None if it was not linked.
     drift: Optional[str] = None
     # Why it was full (a `FullReason` code of src/library/scan.py); None when it read only what changed,

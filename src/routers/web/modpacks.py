@@ -851,6 +851,9 @@ async def pin_add(
             response.headers["HX-Retarget"] = "#pin-dialog"
             response.headers["HX-Reswap"] = "innerHTML"
             return response
+    if (await request.form()).get("recargar") == "1":
+        # From a mod's suggested version (O8 tanda 2, T4): on the pack's card or the mod's page alike.
+        return Response(status_code=200, headers={"HX-Refresh": "true"})
     if fila is not None:
         context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request), _filters_from(request), actor)
         return render(request, "modpacks/_mods.html", actor, success=None, info=None, hit=None,

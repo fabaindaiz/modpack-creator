@@ -471,7 +471,8 @@
       form.querySelectorAll('[name="' + name + '"]').forEach(function (field) {
         if (field.type === 'radio') {
           field.checked = field.value === saved[name];
-        } else if (!field.value) {
+        } else {
+          // Over what the dialog brought too: an edit's draft is newer than the note (final review).
           field.value = saved[name];
         }
       });

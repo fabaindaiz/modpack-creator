@@ -15,7 +15,7 @@ from dependency_injector import providers
 from fastapi.testclient import TestClient
 
 from src.exceptions import CatalogPending, BuildBlocked, DowngradeRefused, ViaChangeRefused, HTTP_404_NOT_FOUND, HTTP_409_CONFLICT, UpstreamError
-from src.library.resolution import Alternative, Lock, LockEntry, Problem, Suggestion
+from src.library.resolution import Alternative, Lock, LockEntry, Problem, ResolveRequest, Suggestion, Target
 from src.library.scan import LocalFile
 from src.model.modpack import (AvailableUpdate, ModpackBuild, ModpackBundle, ModpackReplacement, ModpackResolution,
                                PackProject, ProjectOrigin, UpdateCheck)
@@ -50,6 +50,7 @@ def bundle(projects: Optional[list[PackProject]] = None, decisions: Optional[dic
 def build(number: int, **fields: Any) -> ModpackBuild:
     return ModpackBuild.model_construct(id=PydanticObjectId(), bundle_id=BUNDLE_ID, number=number, created_at=T0,
                                         loader_version="0.16", **{"lock": lock(), "test": False, "name": None, "starred": False,
+                                                                    "request": ResolveRequest(target=Target(game_version="1.21.1", loader="fabric"), projects=[]),
                                                                     "stable": False, **fields})
 
 
@@ -3442,3 +3443,35 @@ def test_compare_shows_each_builds_verdict_and_each_versions_notes() -> None:
     change = change[:change.index("</li>")]
     assert "falla con shaders" in change and f'href="/mods/P1?pack={BUNDLE_ID}"' in change and "Historia" in change
 
+
+# The final review of batch 2 (2026-10-26).
+
+
+def test_fixing_from_the_suggestion_reloads_whatever_page_it_is_on() -> None:
+    """Important 2: its form targeted #mods, which the mod's page does not have: nothing was sent."""
+    from src.library.history import Suggested
+    client, modpack, _ = setup()
+    modpack.suggestion = Suggested(version_id="v164", version_number="1.6.4", source="stable", why="build 5 estable")
+    dialog = client.get(f"/modpacks/{BUNDLE_ID}/projects/P1/sugerencia", headers=HTMX).text
+    assert 'hx-target="#mods"' not in dialog and 'name="recargar" value="1"' in dialog
+    response = client.post(f"/modpacks/{BUNDLE_ID}/pins", headers=HTMX,
+                           data={"project_id": "P1", "version_id": "v164", "confirm_downgrade": "1", "recargar": "1"})
+    assert response.headers.get("HX-Refresh") == "true"
+
+
+def test_a_version_number_with_a_plus_reaches_the_note_dialog_whole() -> None:
+    """Important 6: «0.5.8+1.21» arrived as «0.5.8 1.21»."""
+    client, modpack, _ = setup()
+    modpack.history = [history_entry("Build 2 · 0.5.8+1.21", "0.5.8+1.21", "v058")]
+    text = client.get(f"/modpacks/{BUNDLE_ID}/projects/P1/historia", headers=HTMX).text
+    assert "numero=0.5.8%2B1.21" in text
+
+
+def test_recommend_the_last_stable_is_only_for_this_minecraft_version() -> None:
+    """Minor 17: after a Minecraft change it offered a build of the old version."""
+    from src.library.resolution import ResolveRequest, Target
+    client, modpack, _ = setup()
+    old = ResolveRequest(target=Target(game_version="1.20.1", loader="fabric"), projects=[])
+    modpack.builds = [build(3), build(2), build(1, stable=True, request=old)]
+    modpack.bundle.recommended_build = 3
+    assert "Recomendar el último estable" not in client.get(f"/modpacks/{BUNDLE_ID}").text

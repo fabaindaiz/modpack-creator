@@ -4,7 +4,9 @@
 {% if suggestion %}
 <dialog data-autoopen aria-labelledby="suggestion-title"
   class="m-auto w-[min(32rem,calc(100vw-2rem))] rounded-xl border border-line bg-raised p-0 text-ink shadow-xl backdrop:bg-scrim/50">
-  <form class="space-y-4 p-5" hx-post="/modpacks/{{ bundle_id }}/pins" hx-target="#mods" hx-swap="outerHTML">
+  {# From the pack's card or the mod's page: the answer reloads whichever it is (final review, important 2). #}
+  <form class="space-y-4 p-5" hx-post="/modpacks/{{ bundle_id }}/pins" hx-swap="none">
+    <input type="hidden" name="recargar" value="1">
     <h2 id="suggestion-title" class="text-base font-semibold" autofocus tabindex="-1">Fijar {{ title }} {{ suggestion.version_number }}</h2>
     <div class="space-y-2 text-sm text-ink-soft">
       <p>Respaldo: {{ suggestion.why }}</p>

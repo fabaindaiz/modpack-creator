@@ -25,6 +25,8 @@ class ScanPoint:
     server: str
     at: datetime
     version: Optional[str]
+    # Its id: two servers may share a name (final review, important 7).
+    server_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -83,14 +85,15 @@ def _scans(scans: Sequence[ScanPoint]) -> list[HistoryEntry]:
     found: list[HistoryEntry] = []
     last: dict[str, Optional[str]] = {}
     for point in sorted(scans, key=lambda s: s.at):
-        if point.server in last and last[point.server] == point.version:
+        key = point.server_id or point.server
+        if key in last and last[key] == point.version:
             continue
         shown = point.version or "sin este mod"
-        before = last.get(point.server, "")
-        text = f"Servidor {point.server} · {before or 'sin este mod'} → {shown}" if point.server in last \
+        before = last.get(key, "")
+        text = f"Servidor {point.server} · {before or 'sin este mod'} → {shown}" if key in last \
             else f"Servidor {point.server} · {shown}"
         found.append(HistoryEntry(at=point.at, kind="server", text=text, version=point.version))
-        last[point.server] = point.version
+        last[key] = point.version
     return found
 
 

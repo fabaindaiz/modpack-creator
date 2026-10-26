@@ -536,3 +536,20 @@ def test_a_stable_build_suggests_its_version_of_a_mod_unless_pinned_to_it(mongo:
     found, after_pin = mongo(scenario)
     assert found == ("stable", True, "build 1 estable") and after_pin is None
 
+
+def test_a_works_note_on_a_build_suggests_its_version_of_the_mod(mongo: MongoRunner) -> None:
+    """Final review, important 3: a build's note never suggested anything, its version was not in the check."""
+    from src.database.note import NoteDatabase
+    from src.model.modpack.note import NoteTarget
+    from src.services.notes import NoteService
+
+    async def scenario() -> Any:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        build = await service.build_create(bundle_id, actor=EDITOR)
+        await NoteService(noteDB=NoteDatabase(), audit=RecordingAudit()).create(
+            bundle_id, NoteTarget(build_number=build.number), "works", "anda", None, None, "k", EDITOR)
+        found = await service.suggestion_for(bundle_id, IRIS)
+        return found.source if found else None
+
+    assert mongo(scenario) == "note"

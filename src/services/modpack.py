@@ -1798,12 +1798,14 @@ class ModpackService():
             return numbers.get(version_id, version_id) if version_id else None
         entries = mod_history(
             [BuildPoint(number=n, at=as_utc(at), version=number(v), version_id=v, test=t, stable=st) for n, at, (t, st), v in builds],
-            [ScanPoint(server=names.get(server, "un servidor"), at=as_utc(at), version=number(v)) for server, at, v in scans],
+            [ScanPoint(server=names.get(server, "un servidor"), server_id=server, at=as_utc(at), version=number(v))
+             for server, at, v in scans],
             [PinEvent(at=as_utc(e.at), author=e.actor.name, from_version=number(e.details.get("from_version_id")),
                       to_version=number(e.details.get("version_id")), known="from_version_id" in e.details)
              for e in events if e.action == "bundle.pin"],
-            past_origins(bundle.pin_history.get(project_id, [])),
-            notes,
+            # MongoDB gives dates back without a timezone (final review, critical 1).
+            [p.model_copy(update={"until": as_utc(p.until)}) for p in past_origins(bundle.pin_history.get(project_id, []))],
+            [n.model_copy(update={"at": as_utc(n.at)}) for n in notes],
             [PresenceEvent(at=as_utc(e.at), added=e.action == "bundle.project.add") for e in events if e.action != "bundle.pin"])
         older = [e for e in entries if before is None or e.at < as_utc(before)]
         return HistoryPage(entries=older[:limit], more=len(older) > limit)
@@ -1817,7 +1819,9 @@ class ModpackService():
         notes = [*await self.noteDB.find(bundle_id, project_id=project_id), *await self.noteDB.find(bundle_id, builds_only=True)]
         resolution = await self.modpackDB.resolution_get(bundle.id)  # type: ignore[arg-type]
         now = next((e for e in resolution.lock.entries if e.project_id == project_id), None) if resolution else None
-        ids = sorted({n.version_id for n in notes if n.version_id})
+        noted = {n.build_number for n in notes if n.build_number is not None}
+        ids = sorted({n.version_id for n in notes if n.version_id}
+                     | {e.version_id for b in builds if b.number in noted for e in b.lock.entries if e.project_id == project_id})
         catalog = {v.version_id: v for v in await self.modrinthDB.version_find_by_version_ids(ids)} if ids else {}
         loader = str(bundle.loader.value)
 

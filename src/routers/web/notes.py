@@ -43,7 +43,9 @@ async def note_new(
         f"{(await _titles(modrinthService, [mod or '']))[mod or '']} {numero or version or ''}".strip()
     servers = [s for s in await pterodactylService.server_find() if s.bundle_id == bundle_id]
     return render(request, "notes/_dialog.html", actor, bundle_id=bundle_id, target=target, about=about,
-                  servers=servers, key=secrets.token_urlsafe(16), draft=f"{bundle_id}:{list_id(target)[6:]}", found=None)
+                  servers=servers, key=secrets.token_urlsafe(16), found=None,
+                  # Per build, or per mod and version (final review, important 5).
+                  draft=f"{bundle_id}:{list_id(target)[6:]}" + (f"-{version}" if version else ""))
 
 
 @router.post("/modpacks/{bundle_id}/notas")

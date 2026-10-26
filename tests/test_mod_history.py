@@ -135,3 +135,46 @@ def test_another_target_or_way_is_never_suggested() -> None:
     assert suggest([stable_build(5, "1.6.4", game="1.20.1")], []) is None
     assert suggest([stable_build(5, "1.6.4", via="connector")], []) is None
     assert suggest([], [mod_note("works", "1.6.4", 1)], fits=lambda version_id: False) is None
+
+
+# The final review (2026-10-26).
+
+
+@pytest.mark.network
+def test_a_history_with_a_note_and_a_replaced_origin_draws_and_pages(mongo: Any) -> None:
+    """Critical 1: notes and past origins come back from MongoDB without a timezone; the history mixed them
+    with aware dates and failed with a 500."""
+    from src.database.note import NoteDatabase
+    from src.model.modpack import PinOrigin, PinRecord, PinSource, ProjectOrigin
+    from src.model.modpack.note import NoteTarget
+    from src.services.notes import NoteService
+    from tests._actors import EDITOR, RecordingAudit
+    from tests._modrinth import IRIS
+    from tests.test_builds import empty_bundle
+
+    async def scenario() -> tuple[int, int]:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        await service.build_create(bundle_id, actor=EDITOR)
+        notes = NoteService(noteDB=NoteDatabase(), audit=RecordingAudit())
+        await notes.create(bundle_id, NoteTarget(project_id=IRIS, version_id="v", version_number="1.0"), "fails", "x",
+                           None, None, "k", EDITOR)
+        db = service.modpackDB
+        await db.bundle_pin_set(bundle_id, IRIS, "a")
+        first = PinRecord(origins=[PinOrigin(source=PinSource.admin, version_id="a")], selected=PinSource.admin)
+        await db.bundle_pin_record_set(bundle_id, IRIS, first, "a")
+        read = (await db.bundle_get(bundle_id)).pin_origins[IRIS]
+        await db.bundle_pin_record_set(bundle_id, IRIS, read.model_copy(update={"origins": []}), None)
+        page = await service.mod_history(bundle_id, IRIS)
+        older = await service.mod_history(bundle_id, IRIS, before=page.entries[0].at.replace(tzinfo=None))
+        return len(page.entries), len(older.entries)
+
+    total, older = mongo(scenario)
+    assert total >= 3 and older == total - 1
+
+
+def test_two_servers_with_one_name_are_two_servers() -> None:
+    """Important 7: scans were grouped by the server's name."""
+    scans = [ScanPoint(server="Survival", server_id=s, at=day(n), version=v)
+             for n, s, v in ((1, "a", "1.6"), (2, "b", "1.7"), (3, "a", "1.6"), (4, "b", "1.7"))]
+    assert texts(mod_history([], scans, [], [], [], [])) == ["Servidor Survival · 1.7", "Servidor Survival · 1.6"]

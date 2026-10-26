@@ -117,3 +117,12 @@ def test_the_build_page_offers_add_note() -> None:
     modpack.builds = [build(15)]
     text = client.get(f"/modpacks/{BUNDLE_ID}/builds/15").text
     assert f'hx-get="/modpacks/{BUNDLE_ID}/notas/nueva?build=15"' in text and 'id="notes-build-15"' in text
+
+
+def test_a_draft_is_per_version() -> None:
+    """Final review, important 5: a draft of 1.6.4 came back in 1.7.2's dialog."""
+    client, _, _, _ = notes_setup()
+    one = client.get(f"/modpacks/{BUNDLE_ID}/notas/nueva", params={"mod": "P1", "version": "v164", "numero": "1.6.4"}, headers=HTMX).text
+    two = client.get(f"/modpacks/{BUNDLE_ID}/notas/nueva", params={"mod": "P1", "version": "v172", "numero": "1.7.2"}, headers=HTMX).text
+    keys = [text.split('data-draft="')[1].split('"')[0] for text in (one, two)]
+    assert keys[0] != keys[1] and keys[0].endswith("v164")

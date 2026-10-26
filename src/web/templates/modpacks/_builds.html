@@ -85,7 +85,9 @@
   {% endif %}
   {# «Recomendar el último estable» when the recommended one is not stable (T4): asks first, and says when
      it goes back. #}
-  {% set stables = builds | selectattr("stable") | rejectattr("test") | list %}
+  {% set stables = builds | selectattr("stable") | rejectattr("test")
+       | selectattr("request.target.game_version", "equalto", bundle.version)
+       | selectattr("request.target.loader", "equalto", bundle.loader.value) | list %}
   {% set in_force = bundle.recommended_build or bundle.latest_build %}
   {% if stables and bundle.recommended_build not in stables | map(attribute="number") | list %}
   {% set last = stables | sort(attribute="number") | last %}

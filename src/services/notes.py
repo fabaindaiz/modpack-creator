@@ -63,8 +63,9 @@ class NoteService:
         if (note.author.iss, note.author.sub) != (actor.iss, actor.sub):
             raise HTTP_403_FORBIDDEN("Solo quien escribió la nota la edita")
         before = NoteVersion(verdict=note.verdict, text=note.text, error=note.error, at=note.edited_at or note.at)
+        kept = note.error if (error or None) == note.error else _error(error)
         if not await self.noteDB.update(note_id, rev, {"verdict": verdict, "text": text.strip()[:TEXT_MAX],
-                                                       "error": _error(error), "edited_at": self.clock()}, before):
+                                                       "error": kept, "edited_at": self.clock()}, before):
             raise HTTP_409_CONFLICT(NOTE_BUSY)
         await self.audit.record(actor, "note.edit", _bundle(note.bundle_id), {"note_id": note_id})
         return await self.noteDB.get(note_id)
@@ -75,7 +76,8 @@ class NoteService:
         # Not `operator_only`: an editor archives their own note; only another's is an operator's.
         if (note.author.iss, note.author.sub) != (actor.iss, actor.sub) and not actor.is_operator:
             raise HTTP_403_FORBIDDEN("Solo un operador archiva la nota de otra persona")
-        await self.noteDB.update(str(note.id), note.rev, {"archived": archived})
+        if not await self.noteDB.update(str(note.id), note.rev, {"archived": archived}):
+            raise HTTP_409_CONFLICT(NOTE_BUSY)
         await self.audit.record(actor, "note.archive" if archived else "note.unarchive", _bundle(note.bundle_id),
                                 {"note_id": str(note.id)})
         return await self.noteDB.get(str(note.id))
