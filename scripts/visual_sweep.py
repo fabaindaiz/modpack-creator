@@ -454,6 +454,8 @@ def pages(ids: dict[str, str]) -> dict[str, str]:
     """Every page the sweep shoots whole, in every context: its name in the capture, and its path."""
     return {"home": "/", "modpacks": "/modpacks", "modpack": f"/modpacks/{ids['bundle']}",
              "compare": f"/modpacks/{ids['bundle']}/builds/compare?de=1&a=2",
+             # O8 tanda 2 (T1): a build's page.
+             "build": f"/modpacks/{ids['bundle']}/builds/2",
              "updates": f"/modpacks/{ids['bundle']}/actualizaciones",
              "modpack-pending": f"/modpacks/{ids['pending']}", "modpack-downgrade": f"/modpacks/{ids['downgrade']}",
              # Batch A (2026-10-13): the filter bar with a filter on, and the suggestions tab.
@@ -529,6 +531,7 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
                             report.update(shoot_build_dialog(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                             report.update(shoot_pin_dialog(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                             report.update(shoot_via_dialog(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
+                            report.update(check_notes(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                             if (scheme, width) in MOD_CARD_CONTEXTS:
                                 prefix = f"{who}-{scheme}-{width}"
                                 # The tabs first: they resolve the pack, so the catalog has the
@@ -950,6 +953,51 @@ def _set_all_sends_nothing(page: Any) -> list[str]:
     if sent:
         problems.append(f"«Todos al servidor» hizo peticiones: {sent}")
     return problems
+
+
+def check_notes(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
+                errors: list[str]) -> dict[str, dict[str, Any]]:
+    """O8 tanda 2: «Agregar nota» on a build's page opens its dialog; what is typed there comes back after a
+    reload (the draft, P1); and a mod's history opens in its card in the pack (T2). Nothing is saved."""
+    report: dict[str, dict[str, Any]] = {}
+    problems: list[str] = []
+    response = page.goto(base + f"/modpacks/{ids['bundle']}/builds/2")
+    page.wait_for_load_state("networkidle")
+    page.locator('button[hx-get*="/notas/nueva"]').first.click()
+    page.wait_for_selector("#note-dialog dialog[open]", timeout=10_000)
+    page.locator('#note-dialog textarea[name="text"]').fill("borrador del barrido")
+    key = f"{prefix}-note-dialog"
+    page.screenshot(path=str(out / f"{key}.png"))
+    report[key] = {"status": response.status if response else None, "overflow_px": page.evaluate(
+        "document.documentElement.scrollWidth - document.documentElement.clientWidth"), "console_errors": list(errors),
+        "problems": []}
+    page.reload()
+    page.wait_for_load_state("networkidle")
+    page.locator('button[hx-get*="/notas/nueva"]').first.click()
+    page.wait_for_selector("#note-dialog dialog[open]", timeout=10_000)
+    if page.locator('#note-dialog textarea[name="text"]').input_value() != "borrador del barrido":
+        problems.append("el borrador de la nota no volvió al recargar")
+    page.keyboard.press("Escape")
+    response = page.goto(base + f"/modpacks/{ids['bundle']}?vista=todos")
+    page.wait_for_load_state("networkidle")
+    row = page.locator("#mods li[data-project] > details").first
+    row.locator("summary").first.click()
+    history = row.locator('details[hx-get$="/historia"]').first
+    if history.count():
+        history.locator("summary").click()
+        try:
+            history.locator("[data-mod-history]").wait_for(timeout=10_000)
+        except Exception:
+            problems.append("la historia del mod no se cargó al abrirla")
+    else:
+        problems.append("la tarjeta no ofrece su historia")
+    key = f"{prefix}-mod-history"
+    page.screenshot(path=str(out / f"{key}.png"), full_page=True)
+    report[key] = {"status": response.status if response else None, "overflow_px": page.evaluate(
+        "document.documentElement.scrollWidth - document.documentElement.clientWidth"), "console_errors": list(errors),
+        "problems": problems}
+    errors.clear()
+    return report
 
 
 def check_mod_drawer(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
