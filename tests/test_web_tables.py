@@ -29,7 +29,13 @@ def table_blocks() -> list[tuple[str, list[str], str]]:
                 if depth == 0:
                     end = tag.start()
                     break
-            found.append((str(path.relative_to(TEMPLATES)), ast.literal_eval(match.group(1)), text[match.end():end]))
+            block = text[match.end():end]
+            # Rows drawn by a macro of the same template (the builds, O8 B3): its body is the block.
+            for name in re.findall(r"\{\{\s*(\w+)\(", block):
+                body = re.search(r"\{%-?\s*macro " + name + r"\(.*?%\}(.*?)\{%-?\s*endmacro", text, re.S)
+                if body:
+                    block += body.group(1)
+            found.append((str(path.relative_to(TEMPLATES)), ast.literal_eval(match.group(1)), block))
     return found
 
 

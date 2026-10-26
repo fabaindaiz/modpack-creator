@@ -98,6 +98,8 @@ class FakeModpack:
         self.builds = [build(2), build(1)]
         # What build_approve answers (O8 B1); None approves `number` with nothing newer.
         self.approved: Any = None
+        # The builds installed on the pack's servers (O8 B3: never folded).
+        self.installed: set[int] = set()
         self.rules = [ModpackReplacement.model_construct(project_id="OLDMOD", replacement="NEWMOD"),
                       ModpackReplacement.model_construct(project_id="DROPPED", replacement=None)]
         self.lock = lock(entry("P1"), entry("P2", "admin"))
@@ -323,6 +325,9 @@ class FakeModpack:
     async def build_recommend(self, bundle_id: str, number: int, actor: Actor) -> ModpackBundle:
         self._record("build_recommend", bundle_id, number, actor)
         return self.bundle
+
+    async def installed_builds(self, bundle_id: str) -> set[int]:
+        return self.installed
 
     async def build_name(self, bundle_id: str, number: int, name: Optional[str], actor: Actor) -> ModpackBuild:
         self._record("build_name", bundle_id, number, name, actor)
@@ -3137,3 +3142,28 @@ def test_a_name_with_html_is_escaped_everywhere() -> None:
     modpack.builds = [build(2, name="<b>x</b>"), build(1)]
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
     assert "<b>x</b>" not in text and "&lt;b&gt;x&lt;/b&gt;" in text
+
+
+def test_builds_offer_build_as_test() -> None:
+    """O8 B1: «Construir como prueba» next to «Crear build»."""
+    client, _, _ = setup()
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    builds = text[text.index('id="builds"'):]
+    assert "Construir como prueba" in builds and "{&#34;prueba&#34;: &#34;1&#34;}" in builds
+
+
+def test_compare_with_previous_links_the_existing_previous() -> None:
+    client, modpack, _ = setup()
+    modpack.builds = [build(4), build(2), build(1)]
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert f'href="/modpacks/{BUNDLE_ID}/builds/compare?de=2&amp;a=4"' in text
+    assert f'/builds/compare?de=0' not in text  # the first has none
+
+
+def test_old_builds_fold_and_only_starred_is_a_filter() -> None:
+    client, modpack, _ = setup()
+    modpack.builds = [build(n, starred=n == 2) for n in range(8, 0, -1)]
+    text = client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert "3 builds anteriores" in text  # shown: 2 (starred), 8, 7, 6 and 1 (the recommended)
+    only = client.get(f"/modpacks/{BUNDLE_ID}/builds", params={"destacados": "1"}, headers=HTMX).text
+    assert 'id="builds"' in only and "7 builds anteriores" in only

@@ -1708,16 +1708,27 @@ class ModpackService():
             build = read[in_force] if read is not None and in_force in read \
                 else await self.modpackDB.build_get(str(bundle.id), in_force)
         servers = await self.pterodactylDB.server_find_by_bundle(str(bundle.id))
-        installed: dict[str, int] = {}
-        for last in await self.jobDB.last_real_updates([f"server:{server.id}" for server in servers]) if servers else []:
-            number = installed_of(last)
-            if number is not None and last.payload.get("bundle_id") == str(bundle.id):
-                installed[str(last.payload.get("server_id"))] = number
+        installed = await self._installed_by_server(str(bundle.id), servers)
         tests = {b.number for b in await self.modpackDB.build_find_numbers(
             [(bundle.id, n) for n in set(installed.values())]) if b.test} if installed else set()  # type: ignore[misc]
         linked = [(server.name, await self.pterodactylDB.scan_latest(str(server.id), SCAN_DIRECTORY))
                   for server in servers if installed.get(str(server.id)) not in tests]
         return _floor_sources_of(in_force, build, linked)
+
+    async def _installed_by_server(self, bundle_id: str, servers: Sequence[PterodactylServer]) -> dict[str, int]:
+        """The build of this pack the panel last installed on each of these servers, by server id, in
+        one query (`installed_of`); a server it never installed one of this pack on is absent."""
+        installed: dict[str, int] = {}
+        for last in await self.jobDB.last_real_updates([f"server:{server.id}" for server in servers]) if servers else []:
+            number = installed_of(last)
+            if number is not None and last.payload.get("bundle_id") == bundle_id:
+                installed[str(last.payload.get("server_id"))] = number
+        return installed
+
+    async def installed_builds(self, bundle_id: str) -> set[int]:
+        """The builds of the pack installed on its linked servers (O8 B3: the list never folds them)."""
+        servers = await self.pterodactylDB.server_find_by_bundle(bundle_id)
+        return set((await self._installed_by_server(bundle_id, servers)).values())
 
     async def _versions_known(self, version_ids: Sequence[str]) -> dict[str, ModrinthVersion]:
         """These versions from the catalog, and the ones it lacks from Modrinth in one request (then

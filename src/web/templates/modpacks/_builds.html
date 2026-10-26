@@ -1,29 +1,11 @@
 {# The bundle's builds; the fragment htmx swaps into #builds. `oob` sends it out of band (after
    decisions are saved); `ready` highlights "Crear build" as the next step (nothing left to decide).
    Its button (#build-create) takes the focus when the build dialog closes and the button that
-   opened it was redrawn meanwhile. #}
+   opened it was redrawn meanwhile. `view` (a BuildsView, O8 B3) says which builds are shown and
+   which fold, starred first. #}
 {% import "_macros.html" as ui %}
 {% set ready = ready is defined and ready %}
-<div id="builds" class="space-y-3"{% if oob is defined and oob %} hx-swap-oob="true"{% endif %}>
-  <div class="flex flex-wrap items-center justify-between gap-2{{ ' rounded-xl border border-success-line bg-success-soft p-3' if ready else '' }}"{% if ready %} data-ready{% endif %}>
-    {% if ready %}
-    <p class="text-sm font-medium text-success-ink">No quedan mods por decidir: ya puedes crear el build.</p>
-    {% else %}
-    <p class="text-sm text-muted">Crear build vuelve a resolver y congela ese lock; no cambia después.</p>
-    {% endif %}
-    {{ ui.button("Decidir y crear build…" if pending else "Crear build", icon_name="hammer", attrs={"id": "build-create",
-      "hx-post": "/modpacks/" ~ bundle_id ~ "/builds", "hx-target": "#builds", "hx-swap": "outerHTML"}) }}
-  </div>
-  {% if next_servers is defined and next_servers %}
-  <div class="flex flex-wrap gap-2">
-    {% for server in next_servers %}{{ ui.next_step("Simular instalación del build " ~ builds[0].number ~ " en " ~ server.name, "/servers/" ~ server.id ~ "?build=" ~ builds[0].number ~ "#actualizar") }}{% endfor %}
-  </div>
-  {% endif %}
-  {% if not builds %}
-  <p class="text-sm text-muted">Todavía no hay builds.</p>
-  {% else %}
-  {% call ui.table(["Build", "Creado", "Archivos", ""], caption="Builds") %}
-  {% for build in builds %}
+{% macro build_row(build) %}
   <tr data-build="{{ build.number }}">
     <td data-label="Build" class="whitespace-nowrap">
       {# The star says its state and sends the other one, never a toggle (O8 B3, user-walk W14). #}
@@ -33,9 +15,10 @@
         hx-target="#builds" hx-swap="outerHTML">{{ "★" if build.starred else "☆" }}</button>
       <span class="font-medium tabular-nums">#{{ build.number }}</span>
       {% if build.test %}{{ ui.badge("Prueba", "warning") }}{% endif %}
-      {% if build.name %}<span class="break-words">«{{ build.name }}»</span>{% endif %}
+      {% if bundle.recommended_build == build.number %}{{ ui.badge("Recomendado", "accent") }}{% endif %}
+      {% if build.name %}<span class="whitespace-normal break-words">«{{ build.name }}»</span>{% endif %}
       {# Its name (O8 B2), edited in place. #}
-      <details class="inline-block align-middle">
+      <details class="whitespace-normal">
         <summary class="cursor-pointer text-xs text-link">{{ "Renombrar" if build.name else "Nombrar" }}</summary>
         <form hx-post="/modpacks/{{ bundle_id }}/builds/{{ build.number }}/nombre" hx-target="#builds" hx-swap="outerHTML" class="mt-1 flex flex-wrap gap-1">
           <input type="text" name="nombre" value="{{ build.name or '' }}" maxlength="60" aria-label="Nombre del build {{ build.number }}"
@@ -43,12 +26,11 @@
           {{ ui.button("Guardar", type="submit", kind="secondary", small=True) }}
         </form>
       </details>
-      {% if bundle.recommended_build == build.number %}{{ ui.badge("Recomendado", "accent") }}{% endif %}
     </td>
     <td data-label="Creado">{{ ui.when(build.created_at) }}</td>
     <td data-label="Archivos" class="tabular-nums">{{ build.lock.entries | length }}</td>
-    <td data-label="" class="text-right whitespace-nowrap">
-      <div class="flex justify-end gap-1">
+    <td data-label="" class="text-right">
+      <div class="flex flex-wrap justify-end gap-1">
         {% if build.test %}
         {# A test is approved, never recommended as it is (O8 B1, H2). #}
         {{ ui.button("Aprobar", kind="ghost", small=True, attrs={
@@ -62,12 +44,59 @@
           "hx-post": "/modpacks/" ~ bundle_id ~ "/builds/" ~ build.number ~ "/recommend",
           "hx-target": "#builds", "hx-swap": "outerHTML"}) }}
         {% endif %}
+        {% if build.number in view.previous %}
+        {# The build before it that exists (user-walk W20). #}
+        {{ ui.link_button("Comparar con el anterior", "/modpacks/" ~ bundle_id ~ "/builds/compare?de=" ~ view.previous[build.number] ~ "&a=" ~ build.number, small=True) }}
+        {% endif %}
         {{ ui.link_button(".mrpack", "/modpacks/" ~ bundle_id ~ "/builds/" ~ build.number ~ "/mrpack", small=True) }}
       </div>
     </td>
   </tr>
-  {% endfor %}
+{% endmacro %}
+<div id="builds" class="space-y-3"{% if oob is defined and oob %} hx-swap-oob="true"{% endif %}>
+  <div class="flex flex-wrap items-center justify-between gap-2{{ ' rounded-xl border border-success-line bg-success-soft p-3' if ready else '' }}"{% if ready %} data-ready{% endif %}>
+    {% if ready %}
+    <p class="text-sm font-medium text-success-ink">No quedan mods por decidir: ya puedes crear el build.</p>
+    {% else %}
+    <p class="text-sm text-muted">Crear build vuelve a resolver y congela ese lock; no cambia después.</p>
+    {% endif %}
+    <div class="flex flex-wrap gap-2">
+      {{ ui.button("Decidir y crear build…" if pending else "Crear build", icon_name="hammer", attrs={"id": "build-create",
+        "hx-post": "/modpacks/" ~ bundle_id ~ "/builds", "hx-target": "#builds", "hx-swap": "outerHTML"}) }}
+      {# A test build (O8 B1): never the latest nor the recommended until approved. #}
+      {{ ui.button("Construir como prueba", kind="secondary", attrs={
+        "hx-post": "/modpacks/" ~ bundle_id ~ "/builds", "hx-vals": '{"prueba": "1"}', "hx-target": "#builds", "hx-swap": "outerHTML"}) }}
+    </div>
+  </div>
+  {% if next_servers is defined and next_servers %}
+  <div class="flex flex-wrap gap-2">
+    {% for server in next_servers %}{{ ui.next_step("Simular instalación del build " ~ builds[0].number ~ " en " ~ server.name, "/servers/" ~ server.id ~ "?build=" ~ builds[0].number ~ "#actualizar") }}{% endfor %}
+  </div>
+  {% endif %}
+  {% if not builds %}
+  <p class="text-sm text-muted">Todavía no hay builds.</p>
+  {% else %}
+  {# «Solo destacados» is a filter of the moment, never remembered (O8 B3). #}
+  <label class="flex items-center gap-2 text-sm">
+    <input type="checkbox" name="destacados" value="1"{% if starred_only is defined and starred_only %} checked{% endif %}
+      hx-get="/modpacks/{{ bundle_id }}/builds" hx-trigger="change" hx-target="#builds" hx-swap="outerHTML">
+    Solo destacados
+  </label>
+  {% if view.shown %}
+  {% call ui.table(["Build", "Creado", "Archivos", ""], caption="Builds") %}
+  {% for build in view.shown %}{{ build_row(build) }}{% endfor %}
   {% endcall %}
+  {% else %}
+  <p class="text-sm text-muted">Ningún build destacado.</p>
+  {% endif %}
+  {% if view.folded %}
+  <details data-folded-builds>
+    <summary class="cursor-pointer text-sm font-medium text-link">{{ view.folded | length }} builds anteriores</summary>
+    {% call ui.table(["Build", "Creado", "Archivos", ""], caption="Builds anteriores") %}
+    {% for build in view.folded %}{{ build_row(build) }}{% endfor %}
+    {% endcall %}
+  </details>
+  {% endif %}
   {% endif %}
   {% if builds | length > 1 %}
   <form method="get" action="/modpacks/{{ bundle_id }}/builds/compare" class="flex flex-wrap items-end gap-2">

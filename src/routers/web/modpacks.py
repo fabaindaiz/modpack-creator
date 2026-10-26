@@ -22,6 +22,7 @@ from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
 from src.library.utils import as_utc, getenv
 from src.library.import_uploads import UploadStore
+from src.library.builds import BuildsView, builds_view
 from src.services.modpack import ApproveResult
 from src.services.update_check import CHECK_RUNNING
 from src.library.upload_budget import UploadBudget, UploadBusy
@@ -245,8 +246,9 @@ async def _resolved(request: Request, actor: Actor, modpackService: ModpackServi
     pending = _has_pending(saved)
     lock = mods.resolution.lock if mods.resolution else None
     ready = lock is not None and not mods.stale and not pending and not lock.problems and lock.complete
-    return render(request, "modpacks/_mods.html", actor, success=success, builds_oob=True,
-                  builds=await modpackService.build_find(bundle_id), pending=pending, ready=ready, **context)
+    builds = await modpackService.build_find(bundle_id)
+    return render(request, "modpacks/_mods.html", actor, success=success, builds_oob=True, builds=builds,
+                  view=await _builds_view(modpackService, context["bundle"], builds), pending=pending, ready=ready, **context)
 
 async def _decided(request: Request, actor: Actor, modpackService: ModpackService,
                    updateCheckService: UpdateCheckService, bundle_id: str, vista: str = "todos") -> Response:
@@ -271,8 +273,9 @@ async def _acted(request: Request, actor: Actor, modpackService: ModpackService,
         # resolution it reads is the one just saved, this lock.
         context = await _mods_context(modpackService, updateCheckService, bundle_id, _vista_from(request), _filters_from(request), actor)
         mods = context["mods"]
-        return _dialog(request, actor, lock, done=success, mods_oob=True, builds_oob=True,
-                       builds=await modpackService.build_find(bundle_id),
+        builds = await modpackService.build_find(bundle_id)
+        return _dialog(request, actor, lock, done=success, mods_oob=True, builds_oob=True, builds=builds,
+                       view=await _builds_view(modpackService, context["bundle"], builds),
                        pending=_has_pending((mods.resolution, mods.stale) if mods.resolution else None), **context)
     return await _resolved(request, actor, modpackService, updateCheckService, bundle_id, success, vista="problemas")
 
@@ -323,12 +326,20 @@ def _blocked_reason(lock: Lock, titles: dict[str, str]) -> str:
     return "\n".join(["No se puede crear el build:", *lines])
 
 async def _builds(request: Request, actor: Actor, modpackService: ModpackService, bundle_id: str,
-                  success: Optional[str] = None, next_servers: Optional[list[Any]] = None) -> Response:
+                  success: Optional[str] = None, next_servers: Optional[list[Any]] = None,
+                  starred_only: bool = False) -> Response:
     bundle = await modpackService.bundle_get(bundle_id)
     builds = await modpackService.build_find(bundle_id)
     pending = _has_pending(await modpackService.resolution(bundle_id))
     return render(request, "modpacks/_builds.html", actor, bundle_id=bundle_id, bundle=bundle, builds=builds,
-                  pending=pending, success=success, next_servers=next_servers)
+                  pending=pending, success=success, next_servers=next_servers,
+                  view=await _builds_view(modpackService, bundle, builds, starred_only), starred_only=starred_only)
+
+
+async def _builds_view(modpackService: ModpackService, bundle: Any, builds: list[Any], starred_only: bool = False) -> BuildsView:
+    """The builds as the list shows them (O8 B3)."""
+    return builds_view(builds, bundle.recommended_build, bundle.latest_build,
+                       await modpackService.installed_builds(str(bundle.id)) if builds else set(), starred_only)
 
 async def _replacements(request: Request, actor: Actor, modpackService: ModpackService,
                         modrinthService: ModrinthService, fragment: bool) -> Response:
@@ -523,7 +534,8 @@ async def modpack_detail(
         problems=problem_count((saved, context["mods"].stale) if saved else None), latest_build=bundle.latest_build,
         linked_servers=tuple((str(s.id), s.name) for s in servers),
         simulated=bundle.latest_build is not None and bundle.latest_build in simulated), operator=actor.is_operator)
-    return render(request, "modpacks/detail.html", actor, onboarding=onboarding, **_bridges_context(bundle), builds=builds, servers=servers, channel_names=CHANNELS,
+    return render(request, "modpacks/detail.html", actor, onboarding=onboarding, **_bridges_context(bundle), builds=builds,
+                  view=await _builds_view(modpackService, bundle, builds), servers=servers, channel_names=CHANNELS,
                   pending=_has_pending((saved, context["mods"].stale) if saved else None),
                   # Simulating is an operator's (O9 user-walk, A10).
                   next_servers=servers if fresh and actor.is_operator else None,
@@ -781,10 +793,12 @@ async def modpack_bridges(
     pending = _has_pending((mods.resolution, mods.stale) if mods.resolution else None)
     lock = mods.resolution.lock if mods.resolution else None
     ready = lock is not None and not mods.stale and not pending and not lock.problems and lock.complete
+    builds = await modpackService.build_find(bundle_id)
     return render(request, "modpacks/_bridges.html", actor, **{
         **context, "bundle_id": bundle_id, "bundle": updated, "mods_oob": True, **_bridges_context(updated),
         # #builds too, like every answer that resolved again (_resolved).
-        "builds_oob": True, "builds": await modpackService.build_find(bundle_id), "pending": pending, "ready": ready,
+        "builds_oob": True, "builds": builds, "view": await _builds_view(modpackService, updated, builds),
+        "pending": pending, "ready": ready,
         # Saved on change (O9 D12): the notice undoes it.
         "undo_values": list(before), "undo_name": "bridge", "undo_said": "Loaders secundarios guardados",
         "undo_action": f"/modpacks/{bundle_id}/bridges", "undo_target": "#bridges"})
@@ -1151,6 +1165,18 @@ async def build_recommend(
         ):
     await modpackService.build_recommend(bundle_id, number, actor)
     return await _builds(request, actor, modpackService, bundle_id)
+
+@router.get("/modpacks/{bundle_id}/builds")
+@inject
+async def builds_list(
+        bundle_id: str,
+        request: Request,
+        destacados: Optional[str] = None,
+        actor: Actor = Depends(get_web_actor),
+        modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
+        ):
+    """#builds, only the starred with `destacados=1` (O8 B3): a filter of the moment, never remembered."""
+    return await _builds(request, actor, modpackService, bundle_id, starred_only=destacados == "1")
 
 @router.post("/modpacks/{bundle_id}/builds/{number}/nombre")
 @inject
