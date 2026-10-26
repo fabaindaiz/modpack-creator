@@ -71,6 +71,13 @@ class PinRecord(BaseModel):
             return self.by_key(self.selected_key)
         return self.origin(self.selected)
 
+class PastOrigin(BaseModel):
+    """An origin a pin no longer has (O8 D2): replaced, dropped, or gone with its mod (`removed_mod`,
+    P5 of d-7985ee-a68b5c), and when (`until`)."""
+    origin: PinOrigin
+    until: datetime
+    removed_mod: bool = False
+
 class PackProject(BaseModel):
     """A Modrinth project in a bundle, by its Modrinth id: a reference, not a copy of the project
     that would go stale as the catalog refreshes (i-7985ee-a17c2c)."""
@@ -136,6 +143,9 @@ class ModpackBundle(Document):
     # Modrinth project id → the origins of its pin (O2): where each candidate version came from and
     # which one is in use. A pin without a record (every pin stored before O2) reads as the admin's.
     pin_origins: dict[str, PinRecord] = Field(default_factory=dict)
+    # Modrinth project id → what its pin's origins replaced or dropped, oldest first (O8 D2): written
+    # with each record, and kept when the mod is removed (P5). The history shows it (`past_origins`).
+    pin_history: dict[str, list[PastOrigin]] = Field(default_factory=dict)
     # Modrinth project id → substitute project id, or None to drop it. Added to the global
     # rules, and wins over them for the same project (d-7985ee-86fffa).
     replacements: dict[str, Optional[str]] = Field(default_factory=dict)

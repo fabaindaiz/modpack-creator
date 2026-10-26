@@ -18,7 +18,7 @@ from typing import Optional
 from src.library.bridges import bridge as find_bridge
 from src.library.changes import VersionFacts, direction
 from src.library.resolution import CHANNEL_RANK, OUTSIDE_TAGS, Candidate, Target
-from src.model.modpack import ModpackBundle, PinOrigin, PinRecord, PinSource
+from src.model.modpack import ModpackBundle, PastOrigin, PinOrigin, PinRecord, PinSource
 
 __all__ = ["ORIGIN_LABEL", "OUTSIDE_TAGS", "PIN_WRITE_TRIES", "PinView", "import_is_safe", "import_selects", "pin_view", "resolution_inputs",
            "pack_target", "server_origins", "server_origins_dropped", "version_problem"]
@@ -226,3 +226,25 @@ def server_origins_dropped(bundle: ModpackBundle, server_id: str, server_name: s
         if len(kept) != len(record.origins):
             found[project_id] = record.model_copy(update={"origins": kept})
     return found
+
+
+# How many past origins the history shows (O8 D2).
+PAST_SHOWN = 20
+
+
+def past_origins(history: list[PastOrigin]) -> list[PastOrigin]:
+    """What a mod's history shows of its past origins, newest first: one per source, server and version
+    (a server going back and forth is not a new entry each time, user-walk N3), the PAST_SHOWN newest,
+    and the newest of each source always, so the imported pack's own version is never pushed out."""
+    newest: dict[tuple[str, str, str], PastOrigin] = {}
+    for item in history:
+        key = (item.origin.source.value, item.origin.server_id or "", item.origin.version_id)
+        if key not in newest or item.until > newest[key].until:
+            newest[key] = item
+    ordered = sorted(newest.values(), key=lambda p: p.until, reverse=True)
+    shown = ordered[:PAST_SHOWN]
+    for source in {p.origin.source for p in ordered}:
+        if not any(p.origin.source == source for p in shown):
+            shown.append(next(p for p in ordered if p.origin.source == source))
+    return sorted(shown, key=lambda p: p.until, reverse=True)
+

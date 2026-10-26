@@ -1,7 +1,7 @@
 from beanie import PydanticObjectId, SortDirection
 from beanie.operators import In
 from beanie.odm.documents import FindMany, DeleteResult
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Iterable, Optional
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
@@ -16,6 +16,7 @@ from src.model.modpack import (
     ModpackReplacement,
     ModpackResolution,
     PackProject,
+    PinOrigin,
     PinRecord,
     ProjectOrigin,
 )
@@ -23,6 +24,16 @@ from src.exceptions import *
 
 # `when_pin` left out: write whatever the pin is now.
 ANY_PIN = object()
+
+# How many past origins a mod keeps (O8 D2): twice what the history shows, which dedupes them.
+HISTORY_KEPT = 40
+# An origin's identity in its history: source, server and version, as in a stored document.
+_ORIGIN_KEY = {"$concat": ["$$this.source", "|", {"$ifNull": ["$$this.server_id", ""]}, "|", "$$this.version_id"]}
+
+
+def _origin_key_of(origin: PinOrigin) -> str:
+    return f"{origin.source.value}|{origin.server_id or ''}|{origin.version_id}"
+
 
 class ModpackDatabase():
     def bundle_find(self,
@@ -156,6 +167,12 @@ class ModpackDatabase():
             update["$unset"] = {f"{field}.{project_id}": "" for field in ("pins", "pin_origins", "server_decisions", "channel_exceptions")}
         before = await ModpackBundle.get_pymongo_collection().find_one_and_update(
             {"_id": oid, "projects.project_id": project_id}, update, return_document=ReturnDocument.BEFORE)
+        gone = ((before or {}).get("pin_origins") or {}).get(project_id) if clear_keys else None
+        if gone and gone.get("origins"):
+            # Its history outlives the mod (P5 of d-7985ee-a68b5c): its origins, marked as gone with it.
+            await ModpackBundle.get_pymongo_collection().update_one({"_id": oid}, {"$push": {
+                f"pin_history.{project_id}": {"$each": [{"origin": o, "until": datetime.now(timezone.utc), "removed_mod": True}
+                                                        for o in gone["origins"]], "$slice": -HISTORY_KEPT}}})
         if before is None:
             raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' has no project '{project_id}'")
         return (await self.bundle_get(bundle_id)).projects, before
@@ -230,11 +247,23 @@ class ModpackDatabase():
         """
         oid = self._bundle_oid(bundle_id)
         written = record.model_copy(update={"rev": record.rev + 1})
-        update: dict[str, Any] = {"$set": {f"pin_origins.{project_id}": written.model_dump()}}
-        if pin is not None:
-            update["$set"][f"pins.{project_id}"] = pin
-        else:
-            update["$unset"] = {f"pins.{project_id}": ""}
+        # One pipeline update: what the stored record has and this one does not goes to the mod's
+        # history first, read from the very document the revision check matched (O8 D2).
+        kept = [_origin_key_of(o) for o in written.origins]
+        stored = f"$pin_origins.{project_id}.origins"
+        history = f"pin_history.{project_id}"
+        update: list[dict[str, Any]] = [
+            {"$set": {history: {"$slice": [{"$concatArrays": [
+                {"$ifNull": [f"${history}", []]},
+                {"$map": {"input": {"$filter": {"input": {"$ifNull": [stored, []]},
+                                                "cond": {"$not": [{"$in": [_ORIGIN_KEY, kept]}]}}},
+                          "in": {"origin": "$$this", "until": "$$NOW", "removed_mod": False}}},
+            ]}, -HISTORY_KEPT]}}},
+            {"$set": {f"pin_origins.{project_id}": {"$literal": written.model_dump()},
+                      **({f"pins.{project_id}": {"$literal": pin}} if pin is not None else {})}},
+        ]
+        if pin is None:
+            update.append({"$unset": f"pins.{project_id}"})
         query: dict[str, Any] = {"_id": oid, f"pin_origins.{project_id}.rev": {"$in": [0, None]} if not record.rev else record.rev}
         if when_pin is not ANY_PIN:
             query[f"pins.{project_id}"] = when_pin if when_pin is not None else {"$exists": False}
