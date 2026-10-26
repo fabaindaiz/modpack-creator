@@ -59,6 +59,8 @@
   <main id="main" class="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:px-6">
     {% block content %}{% endblock %}
   </main>
+  {# A note's dialog (O8 tanda 2, P1): outside #main, so no redraw of a page's lists takes it. #}
+  <div id="note-dialog" hx-disinherit="*"></div>
 
   <footer class="mx-auto max-w-7xl px-4 pb-6 text-xs text-muted sm:px-6">
     Modpack Creator no está afiliado a Modrinth. <a href="/static/LICENSES.html" class="underline-offset-2 hover:underline">Licencias</a>

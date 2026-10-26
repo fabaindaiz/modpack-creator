@@ -109,8 +109,8 @@ def note(verdict: str = "fails", text: str = "pantalla negra", **fields: Any) ->
     from src.model.modpack.note import VersionNote
     from src.model.users.actor import ActorRef
     return VersionNote.model_construct(id=PydanticObjectId(), bundle_id=str(BUNDLE_ID), verdict=verdict, text=text,
-                                       author=ActorRef(iss="i", sub="s", name="Eddie Editor"), at=T0, archived=False,
-                                       rev=0, key="k", previous=[], **{"build_number": None, "project_id": None,
+                                       author=ActorRef(iss="i", sub="s", name="Eddie Editor"), at=T0,
+                                       rev=0, key="k", previous=[], **{"archived": False, "build_number": None, "project_id": None,
                                        "version_id": None, "version_number": None, "server_id": None,
                                        "server_name": None, "error": None, "edited_at": None, **fields})
 

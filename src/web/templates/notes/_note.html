@@ -1,13 +1,19 @@
 {# One note (O8 tanda 2): `found` is a VersionNote. Its verdict, where and by whom, its comment, and its
    error folded, shown as text only (escaped, P3). #}
 {% import "_macros.html" as ui %}
-<article id="note-{{ found.id }}" data-note class="space-y-1 rounded-xl border border-line bg-raised p-3 text-sm">
+<article id="note-{{ found.id }}" data-note{% if oob is defined and oob %} hx-swap-oob="outerHTML"{% endif %} class="space-y-1 rounded-xl border border-line bg-raised p-3 text-sm">
   <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
     {{ ui.verdict(found.verdict) }}
     {% if found.version_number %}<span class="font-medium tabular-nums">{{ found.version_number }}</span>{% endif %}
     {% if found.server_name %}<span class="text-muted">{{ found.server_name }}</span>{% endif %}
     <span class="text-xs text-muted">{{ found.author.name }} · {{ ui.when(found.at) }}{% if found.edited_at %} · editada{% endif %}</span>
     {% if found.archived %}{{ ui.badge("archivada") }}{% endif %}
+    {# Its author edits it; archiving is its author's, or an operator's (D10, D11). #}
+    {% set mine = actor is defined and actor and (found.author.iss, found.author.sub) == (actor.iss, actor.sub) %}
+    <span class="ml-auto flex gap-1">
+      {% if mine %}{{ ui.button("Editar", kind="ghost", small=True, attrs={"hx-get": "/notas/" ~ found.id ~ "/editar", "hx-target": "#note-dialog", "hx-swap": "innerHTML"}) }}{% endif %}
+      {% if (mine or (actor is defined and actor and actor.is_operator)) and not found.archived %}{{ ui.button("Archivar", kind="ghost", small=True, attrs={"hx-post": "/notas/" ~ found.id ~ "/archivar", "hx-swap": "none"}) }}{% endif %}
+    </span>
   </div>
   {% if found.text %}<p class="break-words whitespace-pre-line">{{ found.text }}</p>{% endif %}
   {% if found.error %}

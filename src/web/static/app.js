@@ -435,6 +435,57 @@
     }
   });
 
+  // A note's draft (O8 tanda 2, user-walk N7, N8): a form marked data-draft keeps what is typed in this
+  // browser, puts it back when the same dialog opens again (a reload, an expired session), and forgets it
+  // once saved. Storage may be off or full: then there is simply no draft.
+  function draftKey(form) {
+    return 'draft:' + form.getAttribute('data-draft');
+  }
+  document.addEventListener('input', function (evt) {
+    var form = evt.target instanceof Element ? evt.target.closest('form[data-draft]') : null;
+    if (!form) {
+      return;
+    }
+    var fields = {};
+    form.querySelectorAll('textarea, input[type=radio]:checked, select').forEach(function (field) {
+      fields[field.name] = field.value;
+    });
+    try {
+      localStorage.setItem(draftKey(form), JSON.stringify(fields));
+    } catch (e) { /* no draft */ }
+  });
+  document.addEventListener('htmx:afterSwap', function (evt) {
+    var target = evt.detail.target;
+    var form = target instanceof Element ? target.querySelector('form[data-draft]') : null;
+    if (!form) {
+      return;
+    }
+    var saved = null;
+    try {
+      saved = JSON.parse(localStorage.getItem(draftKey(form)) || 'null');
+    } catch (e) { /* no draft */ }
+    if (!saved) {
+      return;
+    }
+    Object.keys(saved).forEach(function (name) {
+      form.querySelectorAll('[name="' + name + '"]').forEach(function (field) {
+        if (field.type === 'radio') {
+          field.checked = field.value === saved[name];
+        } else if (!field.value) {
+          field.value = saved[name];
+        }
+      });
+    });
+  });
+  document.addEventListener('htmx:afterRequest', function (evt) {
+    var form = evt.detail.elt instanceof Element ? evt.detail.elt.closest('form[data-draft]') : null;
+    if (form && evt.detail.successful) {
+      try {
+        localStorage.removeItem(draftKey(form));
+      } catch (e) { /* no draft */ }
+    }
+  });
+
   // A plain form marked data-submit-on-change is sent when one of its fields changes (O9 D12: the
   // jobs' filters, as the mods' do through htmx).
   document.addEventListener('change', function (evt) {

@@ -27,7 +27,8 @@
     {% if counts %}
     <p class="flex flex-wrap gap-2">{% for kind in ["works", "fails", "issues", "untested"] if counts.get(kind) %}{{ ui.verdict(kind, counts[kind]) }}{% endfor %}</p>
     {% endif %}
-    <div id="build-notes" class="space-y-2">
+    {{ ui.button("Agregar nota", kind="secondary", small=True, attrs={"hx-get": "/modpacks/" ~ bundle_id ~ "/notas/nueva?build=" ~ build.number, "hx-target": "#note-dialog", "hx-swap": "innerHTML"}) }}
+    <div id="notes-build-{{ build.number }}" class="space-y-2">
       {% for found in notes %}{% include "notes/_note.html" %}{% else %}
       <p class="text-sm text-muted">{{ "Ninguna nota archivada." if archived else "Todavía no hay notas." }}</p>
       {% endfor %}

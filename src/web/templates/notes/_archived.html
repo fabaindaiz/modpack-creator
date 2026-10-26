@@ -1,0 +1,12 @@
+{# A note archived (D11): it leaves its list, and the notice puts it back. #}
+{% import "_macros.html" as ui %}
+<article id="note-{{ found.id }}" hx-swap-oob="delete"></article>
+<div id="notices" hx-swap-oob="beforeend">
+<div data-notice data-notice-tone="success" role="status" class="flex items-start gap-3 rounded-xl border px-3 py-2 text-sm shadow-sm {{ ui.NOTICE_TONES['success'] }}">
+  <p class="min-w-0 flex-1 break-words">Nota archivada.</p>
+  <form hx-post="/notas/{{ found.id }}/recuperar" hx-swap="none" class="shrink-0">
+    <button type="submit" class="rounded px-1 text-sm font-medium underline underline-offset-2">Deshacer</button>
+  </form>
+  <button type="button" data-notice-close class="-my-0.5 shrink-0 rounded px-1 text-base leading-none opacity-70 hover:opacity-100" aria-label="Cerrar aviso">&times;</button>
+</div>
+</div>

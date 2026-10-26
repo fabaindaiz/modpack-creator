@@ -1,0 +1,56 @@
+{# The dialog of a note (O8 tanda 2, P1 of d-7985ee-a68b5c): written here, outside the page's lists, so no
+   redraw of #mods takes it. `target` for a new one, `found` (a VersionNote) to edit one. The form keeps
+   a draft in this browser (`data-draft`, app.js) until it is saved; `key` makes it one note if sent
+   twice. #}
+{% import "_macros.html" as ui %}
+{% set editing = found is not none %}
+<dialog data-autoopen aria-labelledby="note-dialog-title"
+  class="m-auto max-h-[calc(100dvh-2rem)] w-[min(36rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-line bg-raised p-0 text-ink shadow-xl backdrop:bg-scrim/50">
+  <form class="space-y-4 p-5" data-draft="{{ draft }}"
+    {%- if editing %} hx-post="/notas/{{ found.id }}"{% else %} hx-post="/modpacks/{{ bundle_id }}/notas"{% endif %}
+    hx-target="#note-dialog" hx-swap="innerHTML">
+    <h2 id="note-dialog-title" class="text-base font-semibold" autofocus tabindex="-1">{{ "Editar la nota sobre " if editing else "Nota sobre " }}{{ about }}</h2>
+    {% if editing %}
+    <input type="hidden" name="rev" value="{{ found.rev }}">
+    {% else %}
+    <input type="hidden" name="key" value="{{ key }}">
+    {% if target.build_number is not none %}<input type="hidden" name="build" value="{{ target.build_number }}">
+    {% else %}
+    <input type="hidden" name="mod" value="{{ target.project_id }}">
+    <input type="hidden" name="version" value="{{ target.version_id }}">
+    <input type="hidden" name="numero" value="{{ target.version_number or '' }}">
+    {% endif %}
+    {% endif %}
+    {% set chosen = found.verdict if editing else "fails" %}
+    <fieldset class="space-y-1 text-sm">
+      <legend class="font-medium">Veredicto</legend>
+      <div class="flex flex-wrap gap-x-4 gap-y-1">
+        {% for value, label in [("fails", "Falló"), ("issues", "Con problemas"), ("works", "Funcionó"), ("untested", "Sin probar")] %}
+        <label class="inline-flex items-center gap-1.5"><input type="radio" name="verdict" value="{{ value }}"{% if value == chosen %} checked{% endif %}> {{ label }}</label>
+        {% endfor %}
+      </div>
+    </fieldset>
+    {% if servers %}
+    <label class="block space-y-1 text-sm">
+      <span class="font-medium">Servidor (opcional)</span>
+      <select name="server" class="block w-full max-w-full min-w-0 rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control">
+        <option value="">Ninguno</option>
+        {% for server in servers %}<option value="{{ server.id }}">{{ server.name }}</option>{% endfor %}
+      </select>
+    </label>
+    {% endif %}
+    <label class="block space-y-1 text-sm">
+      <span class="font-medium">Comentario</span>
+      <textarea name="text" rows="3" maxlength="4000" class="block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control">{{ found.text if editing else "" }}</textarea>
+    </label>
+    <label class="block space-y-1 text-sm">
+      <span class="font-medium">Error (opcional)</span>
+      <span class="block text-xs text-muted">No pegues contraseñas; los tokens y las IPs se ocultan. Si pasa de 64 KiB se guardan el principio y el final.</span>
+      <textarea name="error" rows="5" class="block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 font-mono text-xs ring-1 ring-inset ring-control">{{ (found.error or "") if editing else "" }}</textarea>
+    </label>
+    <div class="flex justify-end gap-2">
+      {{ ui.button("Cancelar", kind="secondary", attrs={"data-dialog-close": ""}) }}
+      {{ ui.button("Guardar", type="submit") }}
+    </div>
+  </form>
+</dialog>
