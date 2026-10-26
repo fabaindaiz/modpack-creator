@@ -26,13 +26,13 @@
 <div class="flex flex-wrap items-center gap-2 text-sm text-muted">
   {% if panel.failed %}{{ ui.notice("El panel no respondió; lista de " ~ (panel.fetched_at | ago), "warning") }}
   {% else %}<span>Lista del panel de {{ panel.fetched_at | ago }}</span><span aria-hidden="true">·</span>{% endif %}
-  {{ ui.button("Actualizar lista", kind="secondary", small=True, attrs={"hx-post": "/servers/lista", "hx-swap": "none"}) }}
+  {{ ui.button("Recargar lista", kind="secondary", small=True, attrs={"hx-post": "/servers/lista", "hx-swap": "none"}) }}
 </div>
 {% endif %}
 {% if panel_failed %}
 <div class="flex flex-wrap items-center gap-2">
 {{ ui.notice("No se pudo consultar el panel de Pterodactyl. La lista de arriba sigue siendo válida; vuelve a intentarlo en un momento.", "warning") }}
-{{ ui.button("Actualizar lista", kind="secondary", small=True, attrs={"hx-post": "/servers/lista", "hx-swap": "none"}) }}
+{{ ui.button("Recargar lista", kind="secondary", small=True, attrs={"hx-post": "/servers/lista", "hx-swap": "none"}) }}
 </div>
 {% else %}
 {% call ui.table(["Servidor", "Nodo", ""], empty="Todos los servidores del panel ya están aquí.", caption="Servidores del panel que faltan") %}

@@ -50,8 +50,10 @@ class FakeModpack:
     async def bundle_get(self, bundle_id: str) -> ModpackBundle:
         return self.bundle
 
+    jobs: list[Any] = []
+
     async def active_jobs(self, bundle_id: str) -> list[Any]:
-        return []
+        return list(self.jobs)
 
     async def resolve_current(self, bundle_id: str, actor: Any = None) -> None:
         return None  # a pack the catalog lacks: it stays as it is (O9 D2)
@@ -306,7 +308,7 @@ def test_the_detail_links_to_the_page() -> None:
     client, _, _ = setup()
 
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
-    assert f'href="/modpacks/{BUNDLE_ID}/actualizaciones"' in text and "Buscar actualizaciones de mods" in text
+    assert f'hx-post="/modpacks/{BUNDLE_ID}/actualizaciones/buscar?abrir=1"' in text and "Buscar actualizaciones de mods" in text
 
 
 def test_the_dashboard_badge_counts_without_the_pinned_ones_in_one_query() -> None:
@@ -357,3 +359,25 @@ def test_a_beta_and_a_stable_that_ends_one_carry_their_badge() -> None:
 
     assert ">beta<" in row("A") and ">estable: deja la beta<" in row("B")
     assert "beta" not in row("C")
+
+
+def test_searching_from_the_pack_queues_the_check_and_opens_its_page() -> None:
+    """O9 D6 (owner, 2026-10-26): «Buscar actualizaciones de mods» starts the check as a job and
+    opens its page, where it shows how far it is; one already running is opened the same."""
+    client, _, checks = setup()
+    response = client.post(f"/modpacks/{BUNDLE_ID}/actualizaciones/buscar", params={"abrir": "1"}, headers=HTMX)
+    assert response.status_code == 200 and response.headers["HX-Redirect"] == f"/modpacks/{BUNDLE_ID}/actualizaciones"
+    assert checks.calls == [("enqueue", str(BUNDLE_ID), EDITOR)]
+    checks.busy = True
+    again = client.post(f"/modpacks/{BUNDLE_ID}/actualizaciones/buscar", params={"abrir": "1"}, headers=HTMX)
+    assert again.status_code == 200 and again.headers["HX-Redirect"] == f"/modpacks/{BUNDLE_ID}/actualizaciones"
+
+
+def test_the_updates_page_shows_the_check_in_progress() -> None:
+    client, modpack, checks = setup()
+    import asyncio
+
+    modpack.jobs = [asyncio.run(checks.enqueue(str(BUNDLE_ID), EDITOR))]
+    text = client.get(f"/modpacks/{BUNDLE_ID}/actualizaciones").text
+    part = text[text.index('id="check-job"'):text.index('id="updates-main"')]
+    assert "Revisión de actualizaciones" in part and 'hx-trigger="every 2s"' in part

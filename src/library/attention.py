@@ -135,7 +135,7 @@ def attention(servers: Sequence[ServerFact], packs: Sequence[PackFact], failed: 
         items.append(Attention(FAILED, text, "Ver", f"/jobs/{job.id}", job.at))
     for server in servers:
         if server.state == "drift":
-            label, href = ("Simular", f"/servers/{server.id}#actualizar") if operator else ("Ver", f"/servers/{server.id}")
+            label, href = ("Simular instalación", f"/servers/{server.id}#actualizar") if operator else ("Ver", f"/servers/{server.id}")
             items.append(Attention(BLOCKING, f"{server.name} no coincide con su build.", label, href, server.scanned_at))
         if server.state == "none":
             items.append(Attention(AVAILABLE, f"{server.name} nunca se ha escaneado.", "Escanear",

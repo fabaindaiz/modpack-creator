@@ -21,11 +21,13 @@ def tag_with(text: str, needle: str) -> str:
     return found.group(0)
 
 
-def test_the_pack_s_updates_link_says_it_is_loading_once_clicked() -> None:
+def test_the_pack_searches_its_updates_with_a_job_not_a_slow_page() -> None:
+    """O9 D6 (owner, 2026-10-26): the button queues the check and opens its page with the progress."""
     client, _, _ = modpacks_setup()
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
-    link = tag_with(text, f'href="/modpacks/{BUNDLE_ID}/actualizaciones"')
-    assert 'data-loading="Cargando actualizaciones…"' in link
+    button = text[text.index(f'hx-post="/modpacks/{BUNDLE_ID}/actualizaciones/buscar?abrir=1"'):]
+    assert button[button.index(">") + 1:].startswith("Buscar actualizaciones de mods")
+    assert f'href="/modpacks/{BUNDLE_ID}/actualizaciones" data-loading' not in text
 
 
 def test_comparing_two_builds_says_it_is_loading_once_sent() -> None:

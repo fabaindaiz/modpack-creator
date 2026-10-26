@@ -10,20 +10,20 @@
 {% import "_macros.html" as ui %}
 {% set reason = None if actor.is_operator else "requiere operador" %}
 <div class="space-y-3 rounded-xl border border-line bg-raised p-4 text-sm">
-  <p class="text-muted">Simular muestra qué jars cambiarían y qué escribiría en el servidor, sin tocarlo. Actualizar lo cambia de verdad, al build que elijas, sin simular antes.</p>
+  <p class="text-muted">Simular la instalación muestra qué jars cambiarían y qué escribiría en el servidor, sin tocarlo. Instalar lo cambia de verdad, al build que elijas, sin simular antes.</p>
   <div class="flex flex-wrap gap-2">
     {% if actor.is_operator %}
-    {{ ui.button("Simular actualización", kind="secondary", attrs={"hx-post": "/servers/" ~ server_id ~ "/update/preview", "hx-target": "#server-job", "hx-swap": "innerHTML"}) }}
+    {{ ui.button("Simular instalación", kind="secondary", attrs={"hx-post": "/servers/" ~ server_id ~ "/update/preview", "hx-target": "#server-job", "hx-swap": "innerHTML"}) }}
     {% else %}
-    {{ ui.button("Simular actualización", kind="secondary", disabled_reason=reason) }}
+    {{ ui.button("Simular instalación", kind="secondary", disabled_reason=reason) }}
     {% endif %}
     {% set direct_reason = reason or (None if bundle and builds else ("el servidor está sin modpack" if not bundle else "el modpack está sin builds")) %}
     {% if direct_reason %}
-    {{ ui.button("Actualizar…", kind="danger", disabled_reason=direct_reason) }}
+    {{ ui.button("Instalar build…", kind="danger", disabled_reason=direct_reason) }}
     {% else %}
     {% set direct = "update-dialog-direct" %}
-    {{ ui.button("Actualizar…", kind="danger", attrs={"data-dialog-open": direct}) }}
-    {% call ui.confirm_dialog(direct, "Actualizar " ~ server.name, "Actualizar al build elegido", "danger",
+    {{ ui.button("Instalar build…", kind="danger", attrs={"data-dialog-open": direct}) }}
+    {% call ui.confirm_dialog(direct, "Instalar en " ~ server.name, "Instalar el build elegido", "danger",
         {"hx-post": "/servers/" ~ server_id ~ "/update", "hx-target": "#server-job", "hx-swap": "innerHTML"}) %}
     <p>Esto apaga el servidor de juego, hace un backup, cambia los jars y lo vuelve a arrancar. Los jugadores serán desconectados.</p>
     {{ ui.discards_rollback(rollback) }}

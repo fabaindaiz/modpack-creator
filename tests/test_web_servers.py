@@ -396,7 +396,7 @@ def test_the_panel_list_says_its_age_and_offers_the_refresh() -> None:
     client, _ = setup()
     text = client.get("/servers").text
     section = " ".join(visible(text[text.index('id="altas"'):]).split())
-    assert "Lista del panel de hace 12 min" in section and "Actualizar lista" in section
+    assert "Lista del panel de hace 12 min" in section and "Recargar lista" in section
     assert 'hx-post="/servers/lista"' in text
 
 
@@ -893,17 +893,17 @@ def test_operator_sees_both_update_buttons() -> None:
     client, _ = setup(OPERATOR)
     text = client.get(f"/servers/{SERVER_ID}").text
     assert f'hx-post="/servers/{SERVER_ID}/update/preview"' in text and f'hx-post="/servers/{SERVER_ID}/import"' in text
-    assert "Simular actualización" in text and "Actualizar…" in text and "requiere operador" not in text
+    assert "Simular instalación" in text and "Instalar build…" in text and "requiere operador" not in text
 
 
 def test_direct_update_dialog_lists_builds_with_recommended_selected() -> None:
     client, fakes = setup(OPERATOR)
     fakes.modpack.recommended = 4
     text = client.get(f"/servers/{SERVER_ID}").text
-    assert f'hx-post="/servers/{SERVER_ID}/update"' in text and "Actualizar Survival" in text
+    assert f'hx-post="/servers/{SERVER_ID}/update"' in text and "Instalar en Survival" in text
     assert text.index("Build 5 (último)") < text.index("Build 4 (recomendado)") < text.index("Build 3")
     assert re.search(r'<option value="4" selected>\s*Build 4 \(recomendado\)', text)
-    assert len(re.findall(r'<option value="\d+" selected>', text)) == 1 and "Actualizar al build elegido" in text
+    assert len(re.findall(r'<option value="\d+" selected>', text)) == 1 and "Instalar el build elegido" in text
     assert 'name="build"' in text and 'name="confirm"' in text and "<code" in text
     # Sin recomendado, el último.
     fakes.modpack.recommended = None
@@ -923,7 +923,7 @@ def test_direct_update_disabled_without_builds() -> None:
     fakes.modpack.builds = False
     text = client.get(f"/servers/{SERVER_ID}").text
     assert "update-dialog" not in text and f'hx-post="/servers/{SERVER_ID}/update"' not in text
-    assert "Actualizar…" in text and "sin builds" in text
+    assert "Instalar build…" in text and "sin builds" in text
     fakes.modpack.builds = True
     fakes.ptero.server = server(bundle_id=None)
     text = client.get(f"/servers/{SERVER_ID}").text
@@ -933,7 +933,7 @@ def test_direct_update_disabled_without_builds() -> None:
 def test_direct_update_is_disabled_for_an_editor() -> None:
     client, _ = setup(EDITOR)
     text = client.get(f"/servers/{SERVER_ID}").text
-    assert "Actualizar…" in text and "requiere operador" in text and "update-dialog" not in text
+    assert "Instalar build…" in text and "requiere operador" in text and "update-dialog" not in text
 
 
 @pytest.mark.parametrize("error", [HTTP_404_NOT_FOUND("Build 9 not found"), HTTP_409_CONFLICT("El servidor no tiene modpack")])
@@ -1648,7 +1648,7 @@ def test_the_server_page_lists_what_is_left_to_set_up_with_each_action() -> None
     assert "Escaneado" in shown and "1 mods identificados" in shown and "Pack Uno" in shown
     assert "1 por decidir o con problemas" in shown
     assert f'href="/modpacks/{BUNDLE_ID}?vista=decidir"' in part
-    assert "Simular muestra qué cambia" in shown and "Un build congela" not in shown  # a done step says no why
+    assert "Simular la instalación muestra qué cambia" in shown and "Un build congela" not in shown  # a done step says no why
 
 
 def test_a_set_up_server_folds_its_list_into_one_line() -> None:
@@ -1714,3 +1714,16 @@ def test_v1_the_latest_scan_says_why_it_was_full_and_the_node() -> None:
     answer = TestClient(app, base_url="https://testserver").get(f"/v1/server/{SERVER_ID}/scan")
     assert answer.status_code == 200, answer.text
     assert (answer.json()["full_reason"], answer.json()["node"]) == ("node_changed", "n2")
+
+
+def test_one_verb_per_thing_on_the_servers_pages() -> None:
+    """O9 D6 (owner, 2026-10-26): installing a build is «Instalar», its dry run «Simular
+    instalación», reading again «Recargar»; «Actualizar» named three things."""
+    from tests._actors import OPERATOR
+
+    client, _ = setup(OPERATOR)
+    shown = " ".join(visible(client.get(f"/servers/{SERVER_ID}").text).split())
+    assert "Simular instalación" in shown and "Instalar build…" in shown and "Recargar desde el panel" in shown
+    assert "Simular actualización" not in shown and "Actualizar…" not in shown and "Refrescar" not in shown
+    listed = " ".join(visible(client.get("/servers").text).split())
+    assert "Recargar lista" in listed and "Actualizar lista" not in listed

@@ -49,7 +49,7 @@ def test_the_server_pages_have_their_help() -> None:
     client, _ = servers_page.setup()
     assert {"Servidores", "En el panel de Pterodactyl"} <= set(helps(client.get("/servers").text))
     found = helps(client.get(f"/servers/{servers_page.SERVER_ID}").text)
-    for topic in ("Modpack", "Actualizar", "Último escaneo", "Comparación con el build"):
+    for topic in ("Modpack", "Instalar", "Último escaneo", "Comparación con el build"):
         assert topic in found, topic
 
 
@@ -70,7 +70,7 @@ def test_every_help_names_an_anchor_of_the_how_it_works_page() -> None:
 
 @pytest.mark.parametrize("title", [
     "Qué es un modpack", "Qué es un build", "Qué es resolver", "Qué es fijar una versión", "Los orígenes de una versión fijada",
-    "Qué es un puente", "Vincular un servidor", "Qué es escanear", "Qué es actualizar", "Qué es un rollback",
+    "Qué es un puente", "Vincular un servidor", "Qué es escanear", "Qué es instalar", "Qué es un rollback",
     "Una sesión típica"])
 def test_how_it_works_explains_each_concept(title: str) -> None:
     response = base_client(EDITOR).get("/como-funciona")

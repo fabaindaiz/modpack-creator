@@ -36,6 +36,7 @@ DISCORD_LIMIT = 2000
 # How the notice marks an update whose channel matters (M2; owner, 2026-10-12).
 KIND_NOTE = {"beta": " (beta)", "alpha": " (alpha)", "leaves_beta": " (estable: deja la beta)"}
 NO_BUILD = "Este modpack todavía no tiene build: crea uno para poder buscar actualizaciones."
+CHECK_RUNNING = "Ya hay una revisión en curso para este modpack"
 DEFAULT_TZ = "America/Santiago"
 CHECK_AT = re.compile(r"([01]\d|2[0-3]):([0-5]\d)")
 logger = logging.getLogger("modpack.update_check")
@@ -215,7 +216,7 @@ class UpdateCheckService():
                                            payload={"bundle_id": bundle_id},
                                            requested_by=actor.ref() if actor is not None else None)
         except HTTP_409_CONFLICT as error:
-            raise HTTP_409_CONFLICT("Ya hay una revisión en curso para este modpack") from error
+            raise HTTP_409_CONFLICT(CHECK_RUNNING) from error
         if actor is not None:
             await self.audit.record(actor, "bundle.update_check", AuditTarget(kind="bundle", id=bundle_id), {})
         return job

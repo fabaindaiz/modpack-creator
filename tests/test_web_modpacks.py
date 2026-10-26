@@ -1211,9 +1211,9 @@ def test_a_new_build_offers_simulating_on_linked_servers() -> None:
                      PterodactylServer.model_construct(id="srv2", name="Otro", bundle_id="x", is_suspended=False, status=None)]
     modpack.builds[0].created_at = datetime.now(timezone.utc) - timedelta(seconds=20)  # its job just made it
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
-    assert "Simular en Survival" in text and 'href="/servers/srv1#actualizar"' in text and "Otro" not in text
+    assert "Simular instalación en Survival" in text and 'href="/servers/srv1#actualizar"' in text and "Otro" not in text
     modpack.builds[0].created_at = datetime.now(timezone.utc) - timedelta(minutes=10)
-    assert "Simular en Survival" not in client.get(f"/modpacks/{BUNDLE_ID}").text
+    assert "Simular instalación en Survival" not in client.get(f"/modpacks/{BUNDLE_ID}").text
 
 
 def test_the_pack_page_reads_its_servers_simulations_together_and_its_pack_once() -> None:
@@ -2908,7 +2908,7 @@ def test_an_editor_is_never_offered_a_simulation_on_the_pack_page() -> None:
     servers = text[text.index('id="servers-section"'):]
     servers = servers[:servers.index("</section>")]
     assert "Simular" not in servers and ">Ver<" in servers and 'href="/servers/srv1"' in servers
-    assert "Simular en Survival" not in text
+    assert "Simular instalación en Survival" not in text
 
 
 def test_the_pack_resolves_by_itself_when_its_resolution_is_missing_or_old() -> None:

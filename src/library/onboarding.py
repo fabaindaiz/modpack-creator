@@ -30,7 +30,7 @@ WHY = {
     "resolve": "El pack se resuelve solo con cada cambio: elige una versión para cada mod y sus dependencias; lo que queda por decidir es tuyo.",
     "build": "Un build congela lo que se instala: lo que se prueba es exactamente lo que se instala.",
     "server": "El build se prueba e instala en un servidor vinculado al pack.",
-    "simulate": "Simular muestra qué cambia, las bajas y los jars sin explicar, antes de tocar el servidor.",
+    "simulate": "Simular la instalación muestra qué cambia, las bajas y los jars sin explicar, antes de tocar el servidor.",
 }
 
 
@@ -136,7 +136,7 @@ def server_steps(server_id: str, facts: ServerFacts, operator: bool = True) -> l
          f"Build {facts.latest_build}" if facts.latest_build is not None else "",
          ("Crear build", f"/modpacks/{facts.bundle_id}#builds")),
         ("simulate", "Simulado en este servidor", simulated, "",
-         ("Simular", f"/servers/{server_id}#actualizar")),
+         ("Simular instalación", f"/servers/{server_id}#actualizar")),
     ], NEEDS["server"], OPERATOR_STEPS["server"], operator)
 
 
@@ -155,7 +155,7 @@ def pack_steps(bundle_id: str, facts: PackFacts, operator: bool = True) -> list[
         ("server", "Servidor vinculado", bool(facts.linked_servers),
          ", ".join(name for _, name in facts.linked_servers), ("Vincular un servidor", "/servers")),
         ("simulate", "Simulado", facts.simulated, "",
-         ("Simular", f"/servers/{first}#actualizar") if first else ("Vincular un servidor", "/servers")),
+         ("Simular instalación", f"/servers/{first}#actualizar") if first else ("Vincular un servidor", "/servers")),
     ], NEEDS["pack"], OPERATOR_STEPS["pack"], operator)
 
 

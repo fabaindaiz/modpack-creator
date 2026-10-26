@@ -6,7 +6,8 @@
 
 {% block content %}
 {% call ui.page_header(bundle.name, bundle.version ~ " · " ~ bundle.loader.value) %}
-{{ ui.link_button("Buscar actualizaciones de mods", "/modpacks/" ~ bundle_id ~ "/actualizaciones", loading="Cargando actualizaciones…") }}
+{# Starts the check as a job and opens its page, which shows how far it is (O9 D6). #}
+{{ ui.button("Buscar actualizaciones de mods", kind="secondary", attrs={"hx-post": "/modpacks/" ~ bundle_id ~ "/actualizaciones/buscar?abrir=1"}) }}
 {{ ui.link_button("Todos los modpacks", "/modpacks") }}
 {% endcall %}
 {% if bundle.description %}<p class="max-w-3xl text-sm break-words text-muted">{{ bundle.description }}</p>{% endif %}
@@ -60,7 +61,7 @@
         <a href="/servers/{{ server.id }}" class="min-w-0 flex-1 font-medium break-words hover:text-link hover:underline">{{ server.name }}</a>
         {% if server.is_suspended %}{{ ui.badge("suspendido", "danger") }}{% elif server.status %}{{ ui.badge(server.status, "warning") }}{% else %}{{ ui.badge("sin estado especial") }}{% endif %}
         {# Simulating is an operator's (O9 user-walk, A10): an editor reads the server, as on the dashboard. #}
-        {% if actor.is_operator %}{{ ui.link_button("Simular", "/servers/" ~ server.id ~ "#actualizar", small=True) }}{% else %}{{ ui.link_button("Ver", "/servers/" ~ server.id, small=True) }}{% endif %}
+        {% if actor.is_operator %}{{ ui.link_button("Simular instalación", "/servers/" ~ server.id ~ "#actualizar", small=True) }}{% else %}{{ ui.link_button("Ver", "/servers/" ~ server.id, small=True) }}{% endif %}
       </li>
       {% endfor %}
     </ul>

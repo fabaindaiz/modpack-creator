@@ -43,9 +43,9 @@ HELP: dict[str, tuple[str, str]] = {
     "panel-pterodactyl": ("Los servidores de tu panel de Pterodactyl que todavía no están registrados aquí. "
                           "Registrarlo no cambia nada en el servidor.", "vincular"),
     "servidor-modpack": ("El modpack que usa este servidor. Vincularlo no instala nada: dice con qué pack "
-                         "compararlo y qué builds ofrecer al actualizar.", "vincular"),
-    "actualizar": ("Instala un build en el servidor. «Simular actualización» muestra qué cambiaría sin tocar "
-                   "nada; actualizar de verdad apaga el servidor, hace un respaldo y cambia los mods. Si algo "
+                         "compararlo y qué builds ofrecer al instalar.", "vincular"),
+    "actualizar": ("Instala un build en el servidor. «Simular instalación» muestra qué cambiaría sin tocar "
+                   "nada; instalar de verdad apaga el servidor, hace un respaldo y cambia los mods. Si algo "
                    "sale mal, el rollback vuelve atrás.", "actualizar"),
     "ultimo-escaneo": ("Escanear lee los mods instalados en el servidor y los identifica en Modrinth. Solo lee: "
                        "no cambia nada.", "escanear"),

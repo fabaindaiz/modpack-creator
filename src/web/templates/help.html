@@ -15,7 +15,7 @@
     <ul class="flex flex-wrap gap-x-3 gap-y-1">
       {% for anchor, label in [("sesion", "Una sesión típica"), ("modpack", "Modpack"), ("resolver", "Resolver"),
                                ("fijar", "Fijar"), ("origenes", "Orígenes"), ("build", "Build"), ("puente", "Puente"),
-                               ("vincular", "Vincular"), ("escanear", "Escanear"), ("actualizar", "Actualizar"),
+                               ("vincular", "Vincular"), ("escanear", "Escanear"), ("actualizar", "Instalar"),
                                ("rollback", "Rollback")] %}
       <li><a href="#{{ anchor }}" class="font-medium text-link hover:underline">{{ label }}</a></li>
       {% endfor %}
@@ -26,12 +26,12 @@
     <h2 id="sesion" class="{{ H2 }}">Una sesión típica</h2>
     <ol class="list-inside list-decimal {{ TEXT }}">
       <li>Crea un modpack, o impórtalo con «Importar modpack…» en Modpacks.</li>
-      <li>Agrega o quita mods y pulsa «Resolver».</li>
+      <li>Agrega o quita mods: el pack se resuelve solo.</li>
       <li>Arregla los problemas que aparezcan y decide los mods «por decidir»: si van en el servidor o solo en el cliente.</li>
       <li>Crea un build.</li>
-      <li>En la página del servidor: vincúlalo al modpack (una sola vez), escanéalo y simula la actualización.</li>
-      <li>Si la simulación se ve bien, actualiza.</li>
-      <li>Más adelante, «Buscar actualizaciones de mods», resuelve de nuevo y crea otro build.</li>
+      <li>En la página del servidor: escanéalo, vincúlalo al modpack (una sola vez) y simula la instalación del build.</li>
+      <li>Si la simulación se ve bien, instálalo.</li>
+      <li>Más adelante, «Buscar actualizaciones de mods» y crea otro build.</li>
     </ol>
   </section>
 
@@ -49,6 +49,7 @@
       <p>Resolver es elegir una versión para cada mod y traer sus dependencias. Se elige la más estable y nueva que sirva para la versión de Minecraft y el loader del pack, dentro de sus canales: release, beta o alpha.</p>
       <p>Nunca baja un mod: si un build o un servidor ya usa una versión, no elige una anterior.</p>
       <p>Lo que no se puede resolver aparece como problema, con las acciones que lo arreglan. Algunos mods quedan «por decidir»: tú eliges si van en el servidor o solo en el cliente. Resolver solo calcula: no cambia ningún servidor.</p>
+      <p>El pack se resuelve solo cada vez que cambia, con lo que ya se sabe de Modrinth; «Traer de Modrinth» pide lo más nuevo.</p>
     </div>
   </section>
 
@@ -107,10 +108,10 @@
   </section>
 
   <section class="space-y-2" aria-labelledby="actualizar">
-    <h2 id="actualizar" class="{{ H2 }}">Qué es actualizar</h2>
+    <h2 id="actualizar" class="{{ H2 }}">Qué es instalar</h2>
     <div class="{{ TEXT }}">
-      <p>Actualizar instala un build en un servidor. Primero conviene «Simular actualización»: muestra qué mods se agregan, se quitan o cambian, sin tocar nada.</p>
-      <p>Actualizar de verdad apaga el servidor, hace un respaldo, cambia los mods y lo vuelve a encender. Solo un operador puede hacerlo.</p>
+      <p>Instalar pone un build en un servidor. Primero conviene «Simular instalación»: muestra qué mods se agregan, se quitan o cambian, sin tocar nada.</p>
+      <p>Instalar de verdad apaga el servidor, hace un respaldo, cambia los mods y lo vuelve a encender. Solo un operador puede hacerlo.</p>
     </div>
   </section>
 

@@ -50,7 +50,7 @@
   {% elif actor is defined and actor.is_operator %}
   {% set dialog = "update-dialog-" ~ job.id %}
   {{ ui.button("Ejecutar de verdad…", kind="danger", attrs={"data-dialog-open": dialog}) }}
-  {% call ui.confirm_dialog(dialog, "Ejecutar la actualización al build " ~ plan.build, "Actualizar servidor", "danger",
+  {% call ui.confirm_dialog(dialog, "Instalar el build " ~ plan.build, "Instalar en el servidor", "danger",
       {"hx-post": "/servers/" ~ job.payload.server_id ~ "/update", "hx-target": "closest [data-job]", "hx-swap": "outerHTML"}) %}
   <p>Esto apaga el servidor de juego, hace un backup, cambia los jars y lo vuelve a arrancar. Los jugadores serán desconectados.</p>
   {{ ui.discards_rollback(rollback if rollback is defined else None) }}

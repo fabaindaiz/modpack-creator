@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Optional
 from urllib.parse import parse_qs, urlsplit
 from dependency_injector.wiring import Provide, inject
-from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from starlette.datastructures import FormData, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from src.exceptions import BuildBlocked, DowngradeRefused, HTTP_404_NOT_FOUND, HTTP_413_CONTENT_TOO_LARGE, HTTP_422_UNPROCESSABLE_ENTITY, QuotaExceeded, UpstreamError, ViaChangeRefused
@@ -22,6 +22,7 @@ from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
 from src.library.utils import as_utc, getenv
 from src.library.import_uploads import UploadStore
+from src.services.update_check import CHECK_RUNNING
 from src.library.upload_budget import UploadBudget, UploadBusy
 from src.web import BUNDLE_REF, JOB_STARTED, MODRINTH_REF, WebRoute, active_bridge, get_web_actor, render
 
@@ -1047,7 +1048,10 @@ async def update_page(
     preview = await modpackService.update_preview(counted) if counted else None
     if counted or pinned:
         await modrinthService.projects_filled([u.project_id for u in counted + pinned])
+    # The check in progress shows in #check-job with its progress (O9 D6).
+    running = [j for j in await modpackService.active_jobs(bundle_id) if j.kind == "update_check"]
     return render(request, "modpacks/updates.html", actor, bundle=bundle, bundle_id=bundle_id, check=check,
+                  check_job=running[0] if running else None,
                   preview=preview, pinned=pinned, titles={u.project_id: u.title for u in counted},
                   kinds={u.project_id: u.kind for u in counted if u.kind}, nav_active="modpacks")
 
@@ -1056,12 +1060,22 @@ async def update_page(
 async def update_search(
         bundle_id: str,
         request: Request,
+        abrir: Annotated[Optional[str], Query()] = None,
         actor: Actor = Depends(get_web_actor),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
         ):
     """Queue a check now; the answer is its row, which polls until it finishes. A 409 (the modpack
-    has an active job) is shown as a notice."""
-    job = await updateCheckService.enqueue(bundle_id, actor)
+    has an active job) is shown as a notice. With `abrir` (the pack's «Buscar actualizaciones de
+    mods», O9 D6) it goes to the updates page, where the check shows how far it is; one already
+    running is opened the same."""
+    try:
+        job = await updateCheckService.enqueue(bundle_id, actor)
+    except HTTPException as error:
+        if not abrir or error.detail != CHECK_RUNNING:
+            raise
+        job = None
+    if abrir:
+        return Response(status_code=200, headers={"HX-Redirect": f"/modpacks/{bundle_id}/actualizaciones"})
     return render(request, "activity/_job_row.html", actor, job=job)
 
 @router.post("/modpacks/{bundle_id}/actualizaciones/build")

@@ -9,7 +9,9 @@
 
 {# The check's row polls in #check-job, outside #updates-main: when the check ends, its row sends
    `job-finished` and the sections reload from the page (F19), without restarting the polling. #}
-<div id="check-job" class="space-y-2" aria-live="polite"></div>
+<div id="check-job" class="space-y-2" aria-live="polite">
+  {%- if check_job %}{% with job=check_job %}{% include "activity/_job_row.html" %}{% endwith %}{% endif -%}
+</div>
 
 <div id="updates-main" class="space-y-6" hx-get="/modpacks/{{ bundle_id }}/actualizaciones" hx-select="#updates-main" hx-trigger="job-finished from:body" hx-swap="outerHTML" hx-disinherit="*">
   {% call ui.section("Revisión", id="revision", help="revision") %}

@@ -12,7 +12,7 @@
 {% block content %}
 {% call ui.page_header(server.name, server.node ~ " · " ~ (server.status or "sin estado especial")) %}
 {{ ui.link_button("Servidores", "/servers") }}
-{{ ui.button("Refrescar desde el panel", kind="secondary", attrs={"hx-post": "/servers/" ~ server_id ~ "/refresh"}) }}
+{{ ui.button("Recargar desde el panel", kind="secondary", attrs={"hx-post": "/servers/" ~ server_id ~ "/refresh"}) }}
 {% endcall %}
 
 <div id="server-job" class="space-y-2" aria-live="polite" data-reveal>
@@ -69,7 +69,7 @@
     <div class="min-w-0 space-y-6">
       {% if not server.bundle_id %}{{ modpack_section }}{% endif %}
 
-      {% call ui.section("Actualizar", id="actualizar", help="actualizar") %}
+      {% call ui.section("Instalar", id="actualizar", help="actualizar") %}
       {% include "servers/_update.html" %}
       {% endcall %}
 

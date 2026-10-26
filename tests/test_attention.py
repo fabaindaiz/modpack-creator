@@ -26,7 +26,7 @@ def test_nothing_to_attend_is_an_empty_list() -> None:
 
 def test_a_drifted_server_asks_to_simulate_on_its_page() -> None:
     [item] = attention([srv(state="drift")], [], [], NOW)
-    assert item.action_label == "Simular"
+    assert item.action_label == "Simular instalación"
     assert item.href == "/servers/id-Survival#actualizar"
     assert "Survival" in item.text and item.at == NOW
 
@@ -91,7 +91,7 @@ def test_order_is_by_severity_then_newest_first() -> None:
         [pack(updates=1, checked_at=NOW)],
         [FailedJob(id="j1", kind="build_create", about="Pack Uno", at=NOW - timedelta(hours=20))],
         NOW)
-    assert [i.action_label for i in items] == ["Ver", "Simular", "Simular", "Ver actualizaciones", "Vincular"]
+    assert [i.action_label for i in items] == ["Ver", "Simular instalación", "Simular instalación", "Ver actualizaciones", "Vincular"]
     assert "Nuevo" in items[1].text and "Viejo" in items[2].text
     assert items == sorted(items, key=lambda i: i.severity)
 
