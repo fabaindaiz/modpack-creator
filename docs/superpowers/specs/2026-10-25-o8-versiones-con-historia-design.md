@@ -349,6 +349,8 @@ Con `decision-review`, una por turno. Las del dueño, todas la recomendada salvo
 
 Del agente (s-7985ee-2b8b13): **D13** A (`/v1` también, mismos roles). Nombre, estrella y marca de prueba
 se guardan junto al build sin tocar su `lock` ni su `request` («un build nunca se edita» es su contenido) y
-quedan en la auditoría. Topes: 20 orígenes pasados por mod, 64 KiB por error. La simulación (O9 D3)
+quedan en la auditoría. Topes: 20 orígenes pasados por mod, 64 KiB por error.
+
+**Enmienda (dueño, 2026-10-27, d-7985ee-57d185):** el estado `resolved` de §3.3 pasa a `rejected` (falsa alarma); que se arregló es el campo «Arreglado en» de cada mod (`fixed_in`, la primera versión buena), no un estado. `b` es opcional (una versión rota sola, K-Q4). Una sospecha no avisa en los packs (K-Q1), y los avisos también salen al actualizar (K-Q3). User-walk: `docs/research/2026-10-27-user-walk-o8-conocimiento.md`. La simulación (O9 D3)
 preselecciona el build más nuevo, prueba incluida.
 
