@@ -77,3 +77,11 @@ def test_minecraft_of_the_issue_must_match_when_set() -> None:
     found = issue(IssueSide(project_id="iris", title="Iris"), game_version="1.21.1")
     assert issue_applies(found, {"iris": facts(10)}, "1.21.1", "fabric")
     assert not issue_applies(found, {"iris": facts(10, mc="1.20.1")}, "1.20.1", "fabric")
+
+
+def test_a_fix_on_another_branch_keeps_warning_where_it_broke() -> None:
+    """Review 1: «Arreglado en» is set to a 1.21 version of an entry with no start; a 1.20.1 version, where it
+    broke and no fix is known, still falls inside."""
+    side = IssueSide(project_id="iris", title="Iris", fixed_in=version("1.8.0", 20, mc="1.21.1"))
+    assert side_state(side, facts(25, mc="1.20.1")) == "in"
+    assert side_state(side, facts(25)) == "out" and side_state(side, facts(15)) == "in"

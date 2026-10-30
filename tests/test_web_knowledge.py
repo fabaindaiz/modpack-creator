@@ -280,3 +280,14 @@ def test_the_menu_has_knowledge_after_servers() -> None:
     client, _ = base_setup([])
     nav = client.get("/conocimiento").text.split('aria-label="Secciones"')[1].split("</nav>")[0]
     assert nav.index("Servidores") < nav.index("Conocimiento") < nav.index("Trabajos")
+
+
+def test_the_edit_dialog_keeps_a_fix_the_catalog_does_not_offer() -> None:
+    """Review 2: a «Arreglado en» missing from the choices (set through /v1, or older than the ones offered) stays
+    chosen, so saving the summary never clears it."""
+    fixed = IssueVersion(version_id="v180", version_number="1.8.0", published=AT, game_versions=["1.21.1"], loaders=["fabric"])
+    entry = issue()
+    entry.a = entry.a.model_copy(update={"fixed_in": fixed})
+    client, _ = base_setup([entry])
+    text = client.get("/conocimiento/6ae40b7c8901bede28d46601/editar", headers=HTMX).text
+    assert '<option value="v180" selected>1.8.0</option>' in text

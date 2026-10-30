@@ -226,3 +226,15 @@ def test_the_dashboard_counts_known_and_an_operator_the_suspicions() -> None:
     editor = strip(client(EDITOR, (pterodactyl, modpack, jobs), suspected=3).get("/").text)
     assert "2 combinaciones conocidas en la base" in operator and "2 combinaciones conocidas en la base" in editor
     assert "3 sospechas por revisar" in operator and "3 sospechas por revisar" not in editor
+
+
+def test_the_dashboard_stands_when_the_knowledge_base_fails() -> None:
+    """Review 4: what the base warns of is best-effort on the dashboard; a failing read never makes it a 500."""
+    pterodactyl, modpack, jobs = calm_fakes()
+
+    async def known_counts(bundles: Any) -> dict[str, int]:
+        raise RuntimeError("base caída")
+
+    modpack.known_counts = known_counts  # type: ignore[method-assign]
+    response = client(OPERATOR, (pterodactyl, modpack, jobs)).get("/")
+    assert response.status_code == 200

@@ -18,12 +18,13 @@ def _same_branch(end: IssueVersion, version: VersionFacts) -> bool:
 
 def side_state(side: IssueSide, version: VersionFacts) -> SideState:
     """Whether `version` is in the side's range: "branch" when it shares no Minecraft version or loader with
-    the range's end; "out" before `broken_from` or from `fixed_in` on; "in" otherwise, and with no ends."""
+    «Rota desde» («in» when the only end is «Arreglado en»); "out" before `broken_from` or from `fixed_in` on; "in" otherwise, and with no ends."""
     end = side.broken_from or side.fixed_in
     if end is None:
         return "in"
     if not _same_branch(end, version):
-        return "branch"
+        # With only «Arreglado en», a version of another branch has no fix known: it is still broken (review 1).
+        return "in" if side.broken_from is None else "branch"
     published = as_utc(version.published)
     if side.broken_from is not None and published < as_utc(side.broken_from.published):
         return "out"

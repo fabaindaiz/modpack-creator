@@ -134,3 +134,23 @@ def test_a_card_never_shows_a_suspicion(mongo: MongoRunner) -> None:
         return await service.pack_warnings(bundle), (await service.known_counts([bundle])).get(bundle_id, 0)
 
     assert mongo(scenario) == ({}, 0)
+
+
+@pytest.mark.network
+def test_entries_with_a_mod_outside_the_pack_never_crowd_out_a_warning(mongo: MongoRunner, monkeypatch: Any) -> None:
+    """Review 3: the read is capped; entries that name one of the pack's mods and another it lacks are not read,
+    so an older confirmed pair still warns."""
+    import src.services.knowledge as knowledge_module
+    monkeypatch.setattr(knowledge_module, "WARNINGS_READ", 3)
+
+    async def scenario() -> list[str]:
+        await seed("confirmed")
+        for n in range(3):
+            later = NOW.replace(hour=n + 1)
+            await KnownIssue.insert(KnownIssue(a=IssueSide(project_id="lithium", title="Lithium"),
+                                               b=IssueSide(project_id=f"absent-{n}", title="Otro"), status="confirmed",
+                                               summary="x", author=EDITOR.ref(), at=later, updated_at=later, key=f"x{n}"))
+        return sorted(await warnings_for(KnowledgeDatabase(), ModrinthDatabase(), PACK, "26.3", "fabric"))
+
+    assert mongo(scenario) == sorted([IRIS, SODIUM])
+

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
@@ -75,7 +76,12 @@ async def home(
     failed = unresolved(failed, done)
     server_names = {str(row.server.id): row.server.name for row in servers}
     # What the knowledge base confirmed in each pack, and an operator's suspicions to review (O8 tanda 3, K-Q1).
-    known = await modpackService.known_counts([bundle for bundle, _ in builds])
+    try:
+        known = await modpackService.known_counts([bundle for bundle, _ in builds])
+    except Exception:
+        # Best-effort, as in the daily notice: the dashboard stands without the base's count (review 4).
+        logging.getLogger("modpack.web").warning("dashboard: the knowledge base could not be read", exc_info=True)
+        known = {}
     suspicions = await knowledgeService.suspected_count() if actor.is_operator else 0
     checked_at = {str(bundle_id): check.checked_at for bundle_id, check in checks.items()}
     items = attention(

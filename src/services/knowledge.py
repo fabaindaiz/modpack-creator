@@ -38,7 +38,7 @@ async def warnings_for(knowledgeDB: KnowledgeDatabase, modrinthDB: ModrinthDatab
     if not versions:
         return {}
     statuses = ["confirmed", "suspected"] if suspected else ["confirmed"]
-    issues = [i for i in await knowledgeDB.find(projects=sorted(versions), status=statuses, limit=WARNINGS_READ)
+    issues = [i for i in await knowledgeDB.find(within=sorted(versions), status=statuses, limit=WARNINGS_READ)
               if i.a.project_id in versions and (i.b is None or i.b.project_id in versions)]
     if not issues:
         return {}

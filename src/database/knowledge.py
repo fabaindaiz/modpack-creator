@@ -51,14 +51,19 @@ class KnowledgeDatabase:
         return result.modified_count == 1
 
     async def find(self, *, project: Optional[str] = None, projects: Optional[list[str]] = None,
-                   status: Optional[list[str]] = None, game_version: Optional[str] = None,
-                   before: Optional[datetime] = None, limit: int = 20) -> list[KnownIssue]:
+                   within: Optional[list[str]] = None, status: Optional[list[str]] = None,
+                   game_version: Optional[str] = None, before: Optional[datetime] = None,
+                   limit: int = 20) -> list[KnownIssue]:
         """Entries newest first: of a mod, or of any of `projects` (either side), in these states, seen on this
-        Minecraft version (or on any)."""
+        Minecraft version (or on any); with `within`, only entries whose every mod is one of them (review 3: the
+        read is capped, and an entry naming a mod the pack lacks must not use it up)."""
         query: dict[str, Any] = {}
         ids = [project] if project is not None else projects
         if ids is not None:
             query["$or"] = [{"a.project_id": {"$in": ids}}, {"b.project_id": {"$in": ids}}]
+        if within is not None:
+            query["a.project_id"] = {"$in": within}
+            query["$and"] = [{"$or": [{"b": None}, {"b.project_id": {"$in": within}}]}]
         if status is not None:
             query["status"] = {"$in": status}
         if game_version is not None:

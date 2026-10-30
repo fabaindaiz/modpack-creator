@@ -31,6 +31,7 @@ from src.model.jobs import Job
 from src.library.scan import LocalFile, ScanFile, full_reason_text
 from src.library.resolution import Lock, LockEntry, ResolveRequest, Target
 from src.model.modpack import AvailableUpdate, ModpackBuild, ModpackBundle, ModpackReplacement, ModpackResolution, PackProject, PinOrigin, PinRecord, PinSource, ProjectOrigin, UpdateCheck
+from src.model.modpack.known_issue import IssueSide, IssueVersion, KnownIssue
 from src.model.modrinth import ModrinthProject, ModrinthVersion
 from src.model.pterodactyl import PterodactylServer, ServerScan
 from src.model.users.actor import ActorRef
@@ -242,10 +243,27 @@ async def seed_builds(bundle: ModpackBundle) -> None:
              "new-1": "<script>alert(1)</script> <b>no es HTML</b> " + "x" * 5000, "gone-1": ""}
     for version_id, text in texts.items():
         await ModrinthVersion.parse(
-            id=version_id, project_id=version_id.split("-")[0], author_id="a", name=version_id,
+            id=version_id, project_id={"sod": "sodium", "new": "new-mod", "gone": "gone-mod"}[version_id.split("-")[0]], author_id="a", name=version_id,
             version_number=version_id, version_type="release", status="listed", downloads=1,
             game_versions=["26.3"], loaders=["fabric"], featured=False, date_published="2026-01-01T00:00:00Z",
             dependencies=[], files=[], changelog=text).insert()
+
+
+async def seed_knowledge(bundle: ModpackBundle) -> dict[str, str]:
+    """O8 tanda 3: a confirmed pair in build 2's versions (a card, the build's page and the comparison warn of it)
+    and a suspicion of a version alone (only in «Conocimiento» and the comparison)."""
+    now = datetime.now(timezone.utc)
+    start = IssueVersion(version_id="sod-2", version_number="sod-2", published=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                         game_versions=["26.3"], loaders=["fabric"])
+    confirmed = await KnownIssue(a=IssueSide(project_id="new-mod", title="Un mod nuevo con un nombre bastante largo"),
+                                 b=IssueSide(project_id="sodium", title="Sodium", broken_from=start), status="confirmed",
+                                 summary="el mundo carga en negro y el servidor se cae al entrar el segundo jugador",
+                                 seen_in=[str(bundle.id), "6ae40b7c8901bede28d46600"], author=EDDIE, at=now,
+                                 updated_at=now, key="sweep-1").insert()
+    suspected = await KnownIssue(a=IssueSide(project_id="steady", title="Steady"), status="suspected",
+                                 summary="se queda colgado al guardar", seen_in=[str(bundle.id)], author=EDDIE,
+                                 at=now, updated_at=now, key="sweep-2").insert()
+    return {"issue": str(confirmed.id), "suspicion": str(suspected.id)}
 
 
 async def seed_bridged(sodium: dict[str, Any], now: datetime) -> str:
@@ -311,6 +329,7 @@ async def seed(mongo_uri: str) -> dict[str, str]:
                                        "title": f"Mod de ejemplo {i} con un título algo largo",
                                        "downloads": 12_345 * i}).insert()
     await seed_builds(big)
+    issues = await seed_knowledge(big)
     big.latest_build = big.recommended_build = 2
     await big.save()
     # sod-1, the version the servers run, published after sod-2: the comparison, the updates and the
@@ -435,7 +454,8 @@ async def seed(mongo_uri: str) -> dict[str, str]:
     await client.close()
     return {"server": survival, "server_new": str(bare.id), "bundle": str(big.id), "pending": str(pending.id),
             "empty": str(empty.id), "job": str(failed.id), "dryrun": str(jobs[0].id), "problems": str(problems.id),
-            "fix": str(fix.id), "import_job": str(jobs[-1].id), "downgrade": str(downgrade.id), "bridged": bridged}
+            "fix": str(fix.id), "import_job": str(jobs[-1].id), "downgrade": str(downgrade.id), "bridged": bridged,
+            **issues}
 
 
 def wait_ready(base: str, app: "subprocess.Popen[bytes]") -> None:
@@ -468,7 +488,10 @@ def pages(ids: dict[str, str]) -> dict[str, str]:
              "jobs": "/jobs", "job": f"/jobs/{ids['job']}", "dryrun": f"/jobs/{ids['dryrun']}", "audit": "/audit",
              "import": "/modpacks/importar", "import-job": f"/jobs/{ids['import_job']}",
              # The token migration (d-7985ee-cc655d): the help page the «?» link to.
-             "help": "/como-funciona"}
+             "help": "/como-funciona",
+             # O8 tanda 3: the knowledge base, a confirmed entry and a suspicion.
+             "knowledge": "/conocimiento", "knowledge-entry": f"/conocimiento/{ids['issue']}",
+             "knowledge-suspicion": f"/conocimiento/{ids['suspicion']}"}
 
 
 def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) -> dict[str, dict[str, Any]]:
@@ -532,6 +555,7 @@ def shoot(base: str, out: Path, ids: dict[str, str], cookies: dict[str, str]) ->
                             report.update(shoot_pin_dialog(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                             report.update(shoot_via_dialog(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                             report.update(check_notes(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
+                            report.update(check_knowledge(page, base, out, ids, f"{who}-{scheme}-{width}", errors))
                             if (scheme, width) in MOD_CARD_CONTEXTS:
                                 prefix = f"{who}-{scheme}-{width}"
                                 # The tabs first: they resolve the pack, so the catalog has the
@@ -997,6 +1021,44 @@ def check_notes(page: Any, base: str, out: Path, ids: dict[str, str], prefix: st
         "document.documentElement.scrollWidth - document.documentElement.clientWidth"), "console_errors": list(errors),
         "problems": problems}
     errors.clear()
+    return report
+
+
+def check_knowledge(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
+                    errors: list[str]) -> dict[str, dict[str, Any]]:
+    """O8 tanda 3: a build's page warns of the confirmed pair; «Marcar como sospechoso» opens its dialog from the
+    comparison; «Editar» opens «Arreglado en» on an entry. Nothing is saved."""
+    report: dict[str, dict[str, Any]] = {}
+    problems: list[str] = []
+    response = page.goto(base + f"/modpacks/{ids['bundle']}/builds/2")
+    page.wait_for_load_state("networkidle")
+    # The demo pack's cards are other mods; build 2 carries the confirmed pair (its cards: the HTML tests).
+    if not page.locator("[data-known]").count():
+        problems.append("el build 2 no avisa de la combinación confirmada")
+    key = f"{prefix}-known-build"
+    page.screenshot(path=str(out / f"{key}.png"), full_page=True)
+    report[key] = {"status": response.status if response else None, "overflow_px": _overflow(page),
+                   "console_errors": list(errors), "problems": problems}
+    errors.clear()
+    for name, path, button in (("mark-dialog", f"/modpacks/{ids['bundle']}/builds/compare?de=1&a=2", 'button[hx-get*="/conocimiento/marcar"]'),
+                               ("edit-issue-dialog", f"/conocimiento/{ids['issue']}", 'button[hx-get$="/editar"]')):
+        problems = []
+        response = page.goto(base + path)
+        page.wait_for_load_state("networkidle")
+        if page.locator(button).count():
+            page.locator(button).first.click()
+            try:
+                page.wait_for_selector("#note-dialog dialog[open]", timeout=10_000)
+            except Exception:
+                problems.append("el diálogo no se abrió")
+        else:
+            problems.append("falta el botón que abre el diálogo")
+        key = f"{prefix}-{name}"
+        page.screenshot(path=str(out / f"{key}.png"))
+        report[key] = {"status": response.status if response else None, "overflow_px": _overflow(page),
+                       "console_errors": list(errors), "problems": problems}
+        page.keyboard.press("Escape")
+        errors.clear()
     return report
 
 

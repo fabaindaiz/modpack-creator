@@ -12,6 +12,10 @@
       <span class="font-medium">{{ side.title }}: Arreglado en</span>
       <select name="fixed_{{ side.project_id }}" class="block w-full max-w-full min-w-0 rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control">
         <option value="">Sin arreglo conocido</option>
+        {# The fix set already stays chosen even when the catalog does not offer it (set by /v1, or older). #}
+        {% if side.fixed_in and side.fixed_in.version_id not in choices.get(side.project_id, []) | map(attribute="version_id") | list %}
+        <option value="{{ side.fixed_in.version_id }}" selected>{{ side.fixed_in.version_number }}</option>
+        {% endif %}
         {% for version in choices.get(side.project_id, []) %}<option value="{{ version.version_id }}"{% if side.fixed_in and side.fixed_in.version_id == version.version_id %} selected{% endif %}>{{ version.version_number }}</option>{% endfor %}
       </select>
     </label>

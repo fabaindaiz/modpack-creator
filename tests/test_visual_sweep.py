@@ -9,7 +9,7 @@ from src.model.modpack import ModpackBundle
 from src.model.utils import MinecraftLoaders
 
 IDS = {key: f"id-{key}" for key in ("server", "server_new", "bundle", "pending", "empty", "job", "dryrun", "problems",
-                                    "fix", "import_job", "downgrade", "bridged")}
+                                    "fix", "import_job", "downgrade", "bridged", "issue", "suspicion")}
 
 
 def test_the_sweep_visits_como_funciona() -> None:
@@ -33,3 +33,8 @@ def test_the_seeded_pin_has_several_origins_on_its_card() -> None:
     assert view is not None and len(view.origins) >= 2
     assert view.selected == record.selected  # the pinned version is the origin in use, not «elegida a mano»
     assert any(o.valid is False and o.problem for o in view.origins)  # a line that says why it does not pass
+
+
+def test_the_sweep_visits_the_knowledge_base() -> None:
+    """O8 tanda 3: the base, a confirmed entry and a suspicion are shot whole."""
+    assert {"knowledge", "knowledge-entry", "knowledge-suspicion"} <= set(sweep.pages(IDS))

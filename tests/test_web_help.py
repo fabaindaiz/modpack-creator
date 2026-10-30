@@ -134,4 +134,5 @@ def test_how_it_works_says_what_the_knowledge_base_is() -> None:
                      "Confirmada, avisa en cualquier pack que tenga esa combinación, también al actualizar. Solo avisa: nunca cambia ni bloquea nada.",
                      "Cuando una versión nueva lo arregla, anótala en «Arreglado en»: deja de avisar a quien ya la tiene."):
         assert sentence in text
+    assert 'href="#conocimiento"' in text  # the page's index links it, as every section
     assert 'id="conocimiento"' in text and text.index('id="build"') < text.index('id="conocimiento"') < text.index('id="puente"')
