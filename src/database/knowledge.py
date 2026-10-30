@@ -53,23 +53,28 @@ class KnowledgeDatabase:
     async def find(self, *, project: Optional[str] = None, projects: Optional[list[str]] = None,
                    within: Optional[list[str]] = None, status: Optional[list[str]] = None,
                    game_version: Optional[str] = None, before: Optional[datetime] = None,
-                   limit: int = 20) -> list[KnownIssue]:
+                   before_id: Optional[str] = None, limit: int = 20) -> list[KnownIssue]:
         """Entries newest first: of a mod, or of any of `projects` (either side), in these states, seen on this
         Minecraft version (or on any); with `within`, only entries whose every mod is one of them (review 3: the
-        read is capped, and an entry naming a mod the pack lacks must not use it up)."""
-        query: dict[str, Any] = {}
+        read is capped, and an entry naming a mod the pack lacks must not use it up). The next page starts after
+        (`before`, `before_id`), the order's own key: entries written at one moment are never skipped (review B5)."""
+        clauses: list[dict[str, Any]] = []
         ids = [project] if project is not None else projects
         if ids is not None:
-            query["$or"] = [{"a.project_id": {"$in": ids}}, {"b.project_id": {"$in": ids}}]
+            clauses.append({"$or": [{"a.project_id": {"$in": ids}}, {"b.project_id": {"$in": ids}}]})
         if within is not None:
-            query["a.project_id"] = {"$in": within}
-            query["$and"] = [{"$or": [{"b": None}, {"b.project_id": {"$in": within}}]}]
+            clauses.append({"a.project_id": {"$in": within}})
+            clauses.append({"$or": [{"b": None}, {"b.project_id": {"$in": within}}]})
         if status is not None:
-            query["status"] = {"$in": status}
+            clauses.append({"status": {"$in": status}})
         if game_version is not None:
-            query["game_version"] = {"$in": [game_version, None]}
-        if before is not None:
-            query["updated_at"] = {"$lt": before}
+            clauses.append({"game_version": {"$in": [game_version, None]}})
+        if before is not None and before_id is not None:
+            clauses.append({"$or": [{"updated_at": {"$lt": before}},
+                                    {"updated_at": before, "_id": {"$lt": self._oid(before_id)}}]})
+        elif before is not None:
+            clauses.append({"updated_at": {"$lt": before}})
+        query: dict[str, Any] = {"$and": clauses} if clauses else {}
         return await KnownIssue.find(query).sort(("updated_at", SortDirection.DESCENDING),
                                                  ("_id", SortDirection.DESCENDING)).limit(limit).to_list()
 

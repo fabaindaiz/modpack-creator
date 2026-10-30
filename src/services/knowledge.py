@@ -2,12 +2,14 @@
 version alone, as a suspicion; an operator confirms or rejects it. It only warns (D8)."""
 import asyncio
 from datetime import datetime, timezone
-from typing import Callable, Literal, Mapping, Optional
+from typing import Callable, Literal, Mapping, Optional, Sequence
 
 from pydantic import BaseModel
 
 from src.database.knowledge import KnowledgeDatabase
+from src.database.modpack import ModpackDatabase
 from src.database.modrinth import ModrinthDatabase
+from src.database.note import NoteDatabase
 from src.exceptions import *
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.auth.roles import operator_only
@@ -35,23 +37,41 @@ async def warnings_for(knowledgeDB: KnowledgeDatabase, modrinthDB: ModrinthDatab
     project they name: one read of the base for these mods, then the catalog's dates of only the versions of the
     mods that match; never Modrinth (user-walk K5, K6). Confirmed entries only, and suspicions if asked (the
     comparison, K-Q1); a version the catalog lacks warns of nothing. It only warns (D8)."""
-    if not versions:
-        return {}
+    return (await warnings_many(knowledgeDB, modrinthDB, [(versions, game_version, loader)], suspected=suspected))[0]
+
+
+def _projects(issue: KnownIssue) -> list[str]:
+    return [issue.a.project_id] + ([issue.b.project_id] if issue.b else [])
+
+
+async def warnings_many(knowledgeDB: KnowledgeDatabase, modrinthDB: ModrinthDatabase,
+                        sources: Sequence[tuple[Mapping[str, str], str, str]], *,
+                        suspected: bool = False) -> list[dict[str, list[KnownWarning]]]:
+    """`warnings_for` of several sets of versions (versions, Minecraft version, loader), in their order: one read of
+    the base for all their mods and one of the catalog for all the versions that match, whatever the number of sets
+    (the dashboard, review B8). The read's cap grows with the sets: an entry whose mods are in different sets is read
+    and warns in none."""
+    found: list[dict[str, list[KnownWarning]]] = [{} for _ in sources]
+    every = sorted({p for versions, _, _ in sources for p in versions})
+    if not every:
+        return found
     statuses = ["confirmed", "suspected"] if suspected else ["confirmed"]
-    issues = [i for i in await knowledgeDB.find(within=sorted(versions), status=statuses, limit=WARNINGS_READ)
-              if i.a.project_id in versions and (i.b is None or i.b.project_id in versions)]
-    if not issues:
-        return {}
-    wanted = sorted({versions[p] for i in issues for p in [i.a.project_id] + ([i.b.project_id] if i.b else [])})
-    facts = {v.project_id: VersionFacts(published=v.date_published, game_versions=tuple(v.game_versions),
-                                        loaders=tuple(v.loaders))
-             for v in await modrinthDB.version_find_by_version_ids(wanted) if versions.get(v.project_id) == v.version_id}
-    found: dict[str, list[KnownWarning]] = {}
-    for issue in issues:
-        if issue_applies(issue, facts, game_version, loader):
-            warning = warning_of(issue)
-            for project_id in warning.project_ids:
-                found.setdefault(project_id, []).append(warning)
+    read = await knowledgeDB.find(within=every, status=statuses, limit=WARNINGS_READ * len(sources))
+    issues = [[i for i in read if all(p in versions for p in _projects(i))] for versions, _, _ in sources]
+    wanted = sorted({versions[p] for (versions, _, _), mine in zip(sources, issues) for i in mine for p in _projects(i)})
+    if not wanted:
+        return found
+    catalog = {v.version_id: v for v in await modrinthDB.version_find_by_version_ids(wanted)}
+    for n, ((versions, game_version, loader), mine) in enumerate(zip(sources, issues)):
+        facts = {p: VersionFacts(published=v.date_published, game_versions=tuple(v.game_versions),
+                                 loaders=tuple(v.loaders))
+                 for p in {p for i in mine for p in _projects(i)}
+                 if (v := catalog.get(versions[p])) is not None and v.project_id == p}
+        for issue in mine:
+            if issue_applies(issue, facts, game_version, loader):
+                warning = warning_of(issue)
+                for project_id in warning.project_ids:
+                    found[n].setdefault(project_id, []).append(warning)
     return found
 
 
@@ -93,12 +113,27 @@ def _mine(issue: KnownIssue, actor: Actor) -> bool:
 
 class KnowledgeService:
     def __init__(self, knowledgeDB: KnowledgeDatabase, modrinthDB: ModrinthDatabase, modrinthAPI: ModrinthAPI,
-                 audit: AuditSink, clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
+                 audit: AuditSink, modpackDB: ModpackDatabase, noteDB: NoteDatabase,
+                 clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
         self.knowledgeDB = knowledgeDB
         self.modrinthDB = modrinthDB
         self.modrinthAPI = modrinthAPI
         self.audit = audit
+        self.modpackDB = modpackDB
+        self.noteDB = noteDB
         self.clock = clock
+
+    async def _of_pack(self, bundle_id: str, note_ids: list[str]) -> list[str]:
+        """These notes, once each, after checking the pack exists (404) and each note is one of its own, not
+        archived (422, review B7): an entry backed by another pack's note would show it under the wrong pack."""
+        await self.modpackDB.bundle_get(bundle_id)
+        wanted = list(dict.fromkeys(note_ids))
+        if not wanted:
+            return []
+        own = {str(n.id) for n in await self.noteDB.find_by_ids(wanted) if n.bundle_id == bundle_id}
+        if any(n not in own for n in wanted):
+            raise HTTP_422_UNPROCESSABLE_ENTITY("Una de las notas no es de este pack")
+        return wanted
 
     async def _versions(self, ids: list[str]) -> dict[str, ModrinthVersion]:
         """These versions from the catalog, and the ones it lacks from Modrinth (a read, never a write)."""
@@ -150,6 +185,7 @@ class KnowledgeService:
         The same `key` is the same entry; a pair already in the base, not rejected, is a 409 that names it."""
         if not summary.strip():
             raise HTTP_422_UNPROCESSABLE_ENTITY("Escribe en una línea qué pasa")
+        note_ids = await self._of_pack(bundle_id, note_ids)
         first, second = await self._sides(a, b)
         existing = await self.knowledgeDB.find_pair(first.project_id, second.project_id if second else None)
         if existing is not None and existing.key != key:
@@ -157,13 +193,14 @@ class KnowledgeService:
         now = self.clock()
         issue = await self.knowledgeDB.insert(KnownIssue(
             a=first, b=second, game_version=game_version or None, loader=loader or None, status="suspected",
-            summary=summary.strip()[:SUMMARY_MAX], note_ids=list(dict.fromkeys(note_ids)), seen_in=[bundle_id],
+            summary=summary.strip()[:SUMMARY_MAX], note_ids=note_ids, seen_in=[bundle_id],
             author=actor.ref(), at=now, updated_at=now, key=key))
         await self.audit.record(actor, "knowledge.mark", _target(str(issue.id)), {"bundle_id": bundle_id})
         return issue
 
     async def issue_join(self, issue_id: str, bundle_id: str, note_ids: list[str], actor: Actor) -> KnownIssue:
         """Add this pack and these notes to an entry, without repeating them (editor)."""
+        note_ids = await self._of_pack(bundle_id, note_ids)
         issue = await self.knowledgeDB.get(issue_id)
         if not await self.knowledgeDB.update(issue_id, issue.rev, {"updated_at": self.clock()},
                                              add={"seen_in": [bundle_id], "note_ids": note_ids}):
@@ -216,10 +253,11 @@ class KnowledgeService:
 
     async def find(self, project: Optional[str] = None, status: Optional[str] = None,
                    game_version: Optional[str] = None, before: Optional[datetime] = None,
-                   limit: int = 20) -> list[KnownIssue]:
-        """Entries newest first, of a mod, in a state, on a Minecraft version (a read)."""
+                   before_id: Optional[str] = None, limit: int = 20) -> list[KnownIssue]:
+        """Entries newest first, of a mod, in a state, on a Minecraft version (a read); a page after (`before`,
+        `before_id`)."""
         return await self.knowledgeDB.find(project=project, status=[status] if status else None,
-                                           game_version=game_version, before=before, limit=limit)
+                                           game_version=game_version, before=before, before_id=before_id, limit=limit)
 
     async def range_choices(self, issue: KnownIssue) -> dict[str, list[IssueVersion]]:
         """For «Arreglado en», by project: the catalog's versions of each side's mod, newest first, after its

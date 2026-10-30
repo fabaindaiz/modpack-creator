@@ -92,7 +92,7 @@ class Dependences(containers.DeclarativeContainer):
     # O8 tanda 2: notes on builds and mods' versions.
     noteService = providers.Singleton(NoteService, noteDatabase, auditService, pterodactylDatabase)
     # O8 tanda 3: the knowledge base.
-    knowledgeService = providers.Singleton(KnowledgeService, knowledgeDatabase, modrinthDatabase, modrinthAPI, auditService)
+    knowledgeService = providers.Singleton(KnowledgeService, knowledgeDatabase, modrinthDatabase, modrinthAPI, auditService, modpackDatabase, noteDatabase)
 
 async def close_clients(container: Dependences) -> None:
     """Close the HTTP session each client keeps (i-7985ee-57034c); the lifespan calls it on shutdown."""

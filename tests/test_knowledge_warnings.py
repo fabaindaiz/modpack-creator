@@ -154,3 +154,29 @@ def test_entries_with_a_mod_outside_the_pack_never_crowd_out_a_warning(mongo: Mo
 
     assert mongo(scenario) == sorted([IRIS, SODIUM])
 
+
+@pytest.mark.network
+def test_the_dashboard_reads_the_base_once_for_every_pack(mongo: MongoRunner) -> None:
+    """Review B8: the dashboard's counts read the base and the catalog once for all packs and their sources,
+    not once per pack and source; each pack keeps its own count."""
+    from tests.test_builds import empty_bundle
+    from src.model.modpack import ProjectOrigin
+
+    async def scenario() -> tuple[int, int, dict[str, int], list[str]]:
+        bundles = []
+        for _ in range(3):
+            service, bundle_id = await empty_bundle()
+            await service.project_add(bundle_id, ["sodium", "iris"], ProjectOrigin.pack, actor=EDITOR)
+            await service.build_create(bundle_id, actor=EDITOR)
+            bundles.append(await service.bundle_get(bundle_id))
+        _, lonely = await empty_bundle()
+        bundles.append(await service.bundle_get(lonely))
+        await seed("confirmed")
+        knowledge, catalog = CountingKnowledge(), CountingCatalog()
+        service.knowledgeDB, service.modrinthDB = knowledge, catalog
+        counts = await service.known_counts(bundles)
+        return knowledge.reads, len(catalog.asked), counts, [str(b.id) for b in bundles]
+
+    reads, asked, counts, ids = mongo(scenario)
+    assert (reads, asked) == (1, 1) and counts == {ids[0]: 1, ids[1]: 1, ids[2]: 1}
+

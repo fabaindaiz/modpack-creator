@@ -27,13 +27,15 @@ class Knowledge:
         self.marked: list[tuple[Any, ...]] = []
         self.joined: list[tuple[Any, ...]] = []
         self.exists: Optional[str] = None
+        # The state of the entry a mark answers with: a form sent again may meet it decided since.
+        self.mark_status = "suspected"
 
     async def issue_mark(self, bundle_id: str, a: SideInput, b: Optional[SideInput], game_version: Optional[str],
                          loader: Optional[str], summary: str, note_ids: list[str], key: str, actor: Actor) -> Any:
         if self.exists:
             raise IssueExists(self.exists)
         self.marked.append((bundle_id, a, b, game_version, loader, summary, note_ids, key))
-        return type("Issue", (), {"id": "i9", "summary": summary})()
+        return type("Issue", (), {"id": "i9", "summary": summary, "status": self.mark_status})()
 
     async def issue_join(self, issue_id: str, bundle_id: str, note_ids: list[str], actor: Actor) -> Any:
         self.joined.append((issue_id, bundle_id, note_ids))
@@ -186,8 +188,9 @@ class Base(Knowledge):
         self.withdrawn: list[str] = []
 
     async def find(self, project: Optional[str] = None, status: Optional[str] = None, game_version: Optional[str] = None,
-                   before: Optional[datetime] = None, limit: int = 20) -> list[KnownIssue]:
-        self.asked.append((project, status, game_version, before))
+                   before: Optional[datetime] = None, before_id: Optional[str] = None,
+                   limit: int = 20) -> list[KnownIssue]:
+        self.asked.append((project, status, game_version, before) + ((before_id,) if before_id else ()))
         return self.entries[:limit]
 
     async def get(self, issue_id: str) -> Any:
@@ -237,6 +240,10 @@ def test_knowledge_lists_filters_and_pages() -> None:
     assert base.asked == [("P1", "suspected", "1.21.1", None)]
     assert "Iris 1.7.0+ ✕ Sodium" in text and "pantalla negra" in text and "Ver más" in text
     assert 'href="/conocimiento/6ae40b7c8901bede28d46601"' in text
+    # Review B5: the next page starts after the last entry shown, by moment and id.
+    assert "antes_id=6ae40b7c8901bede28d46619" in text
+    client.get("/conocimiento", params={"antes": AT.isoformat(), "antes_id": "6ae40b7c8901bede28d46619"})
+    assert base.asked[-1][3:] == (AT, "6ae40b7c8901bede28d46619")
 
 
 def test_an_entry_never_shows_a_notes_error() -> None:
@@ -303,3 +310,16 @@ def test_a_malformed_form_is_refused_not_a_crash() -> None:
     marked = client.post(f"/modpacks/{BUNDLE_ID}/conocimiento", headers=HTMX, data={
         "de": "1", "a": "x", "mod": "P1", "summary": "negro", "key": "k1"})
     assert (edited.status_code, marked.status_code) == (422, 422)
+
+
+def test_a_mark_sent_again_after_it_was_decided_says_so() -> None:
+    """Review B3: the same form sent again answers with the entry it made; rejected or confirmed since, the
+    notice says that, never «Marcada como sospecha»."""
+    client, knowledge, _ = knowledge_setup()
+    form = {"de": "1", "a": "2", "mod": "P1", "b": "P2", "summary": "negro", "key": "k1"}
+    said = {}
+    for status in ("rejected", "confirmed"):
+        knowledge.mark_status = status
+        said[status] = client.post(f"/modpacks/{BUNDLE_ID}/conocimiento", headers=HTMX, data=form).text
+    assert "Marcada como sospecha" not in said["rejected"] and "después se descartó" in said["rejected"]
+    assert "Marcada como sospecha" not in said["confirmed"] and "un operador la confirmó" in said["confirmed"]

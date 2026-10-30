@@ -49,7 +49,7 @@
   {% endfor %}
 </ul>
 {% if more %}
-<p><a href="/conocimiento?antes={{ more | urlencode }}{% for name, value in filters.items() if value %}&amp;{{ name }}={{ value | urlencode }}{% endfor %}"
+<p><a href="/conocimiento?antes={{ more[0] | urlencode }}&amp;antes_id={{ more[1] | urlencode }}{% for name, value in filters.items() if value %}&amp;{{ name }}={{ value | urlencode }}{% endfor %}"
   class="text-sm font-medium text-link hover:underline">Ver más</a></p>
 {% endif %}
 {% else %}

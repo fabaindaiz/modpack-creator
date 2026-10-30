@@ -63,11 +63,13 @@ async def knowledge_find(
         status: Optional[Literal["suspected", "confirmed", "rejected"]] = Query(None),
         game_version: Optional[str] = Query(None, description="seen on this Minecraft version, or on any"),
         before: Optional[datetime] = Query(None, description="updated before this, for the next page"),
+        before_id: Optional[str] = Query(None, description="with `before`, the id of the last entry read: one of "
+                                                            "the same moment and a lower id is on the next page"),
         knowledge: KnowledgeService = Depends(Provide[Dependences.knowledgeService]),
         actor: Actor = Depends(get_current_actor)
         ):
     """The base, newest first, 20 at a time."""
-    return await knowledge.find(project, status, game_version, before)
+    return await knowledge.find(project, status, game_version, before, before_id)
 
 
 @router.get("/knowledge/{issue_id}", response_model=KnownIssue)

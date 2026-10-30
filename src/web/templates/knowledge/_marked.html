@@ -1,4 +1,5 @@
-{# An entry marked or joined (O8 tanda 3): a notice that links it, and the dialog emptied (it closes). #}
+{# An entry marked or joined (O8 tanda 3): a notice that links it, and the dialog emptied (it closes). `tone` is set
+   when the entry was decided since (a form sent again, review B3): that notice stays until it is closed. #}
 {% import "_macros.html" as ui %}
-<div id="notices" hx-swap-oob="beforeend">{{ ui.success(message) }}</div>
+<div id="notices" hx-swap-oob="beforeend">{% if tone is defined and tone %}{{ ui.notice(message, tone) }}{% else %}{{ ui.success(message) }}{% endif %}</div>
 <div id="note-dialog" hx-swap-oob="innerHTML"></div>

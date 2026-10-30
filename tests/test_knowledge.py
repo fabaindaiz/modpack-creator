@@ -22,10 +22,25 @@ IRIS_BROKEN, IRIS_FIXED, SODIUM_V = "bAdKrpw8", "vTN4NRGW", "v4PSXean"
 OTHER = "op-2"
 
 
-def service() -> tuple[KnowledgeService, RecordingAudit]:
+class Packs:
+    """The packs and notes an entry names (review B7): packs b1 and b2, note n1 of b1 and n2 of b2."""
+    NOTES = {"n1": "b1", "n2": "b2"}
+
+    async def bundle_get(self, bundle_id: str) -> Any:
+        if bundle_id not in ("b1", "b2"):
+            raise HTTPException(404, "Bundle not found")
+        return type("Bundle", (), {"id": bundle_id})()
+
+    async def find_by_ids(self, note_ids: list[str]) -> list[Any]:
+        return [type("Note", (), {"id": n, "bundle_id": self.NOTES[n]})() for n in note_ids if n in self.NOTES]
+
+
+def service(packs: Any = None) -> tuple[KnowledgeService, RecordingAudit]:
     audit = RecordingAudit()
+    packs = packs or Packs()
     return KnowledgeService(knowledgeDB=KnowledgeDatabase(), modrinthDB=ModrinthDatabase(),
-                            modrinthAPI=RecordedModrinthAPI(), audit=audit), audit  # type: ignore[arg-type]
+                            modrinthAPI=RecordedModrinthAPI(), audit=audit,  # type: ignore[arg-type]
+                            modpackDB=packs, noteDB=packs), audit
 
 
 async def mark(knowledge: KnowledgeService, key: str = "k1", actor: Any = EDITOR, **sides: Any) -> Any:
@@ -86,7 +101,7 @@ def test_joining_adds_the_pack_and_notes_once(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[list[str], list[str]]:
         knowledge, _ = service()
         found = await mark(knowledge)
-        await knowledge.issue_join(str(found.id), "b2", ["n1", "n2"], EDITOR)
+        await knowledge.issue_join(str(found.id), "b2", ["n2"], EDITOR)
         joined = await knowledge.issue_join(str(found.id), "b2", ["n2"], EDITOR)
         return joined.seen_in, joined.note_ids
 
@@ -188,3 +203,67 @@ def test_fixed_in_is_offered_from_the_catalog_after_the_start_and_on_its_branch(
         return [v.version_id for v in (await knowledge.range_choices(found))[IRIS]]
 
     assert mongo(scenario) == ["i3"]
+
+
+# The minors of the final review of O8 tanda 3.
+
+
+def stored(project_id: str, status: str = "suspected", at: Any = None, b: Any = None, key: str = "") -> Any:
+    from datetime import datetime, timezone
+    from src.model.modpack.known_issue import IssueSide, KnownIssue
+    when = at or datetime(2026, 10, 27, tzinfo=timezone.utc)
+    return KnownIssue(a=IssueSide(project_id=project_id, title=project_id),
+                      b=IssueSide(project_id=b, title=b) if b else None, status=status, summary="negro",  # type: ignore[arg-type]
+                      author=EDITOR.ref(), at=when, updated_at=when, key=key or f"k-{project_id}-{b}-{status}")
+
+
+@pytest.mark.network
+def test_the_next_page_keeps_entries_written_at_the_same_moment(mongo: MongoRunner) -> None:
+    """Review B5: «Ver más» pages on (updated_at, id): three entries of one moment, two a page, are all shown."""
+    async def scenario() -> tuple[int, int, int]:
+        from src.model.modpack.known_issue import KnownIssue
+        knowledge, _ = service()
+        for n in range(3):
+            await KnownIssue.insert(stored(f"m{n}"))
+        first = await knowledge.find(limit=2)
+        rest = await knowledge.find(before=first[-1].updated_at, before_id=str(first[-1].id), limit=2)
+        return len(first), len(rest), len({str(i.id) for i in first + rest})
+
+    assert mongo(scenario) == (2, 1, 3)
+
+
+@pytest.mark.network
+def test_notes_of_another_pack_are_refused(mongo: MongoRunner) -> None:
+    """Review B7: marking and joining name a pack that exists, and notes of that pack only (422 otherwise: an
+    entry backed by another pack's note would show it under the wrong pack)."""
+    from datetime import datetime, timezone
+    from src.database.modpack import ModpackDatabase
+    from src.database.note import NoteDatabase
+    from src.model.modpack.note import VersionNote
+    from tests.test_builds import empty_bundle
+
+    async def scenario() -> tuple[int, ...]:
+        _, mine = await empty_bundle()
+        _, other = await empty_bundle()
+        when = datetime(2026, 10, 27, tzinfo=timezone.utc)
+        notes = {}
+        for pack in (mine, other):
+            notes[pack] = str((await VersionNote.insert(VersionNote(
+                bundle_id=pack, build_number=1, verdict="fails", text="x", author=EDITOR.ref(), at=when,
+                key=f"n-{pack}"))).id)
+        real = type("Real", (), {})()
+        real.bundle_get, real.find_by_ids = ModpackDatabase().bundle_get, NoteDatabase().find_by_ids
+        knowledge, _ = service(real)
+        side = SideInput(project_id=IRIS)
+
+        async def marking(pack: str, note_ids: list[str], key: str) -> int:
+            return await refused(knowledge.issue_mark(pack, side, None, None, None, "negro", note_ids, key, EDITOR))
+
+        alien = await marking(mine, [notes[other]], "k1")
+        unknown = await marking(mine, ["6ae40b7c8901bede28d46699"], "k2")
+        no_pack = await marking("6ae40b7c8901bede28d46600", [], "k3")
+        made = await knowledge.issue_mark(mine, side, None, None, None, "negro", [notes[mine]], "k4", EDITOR)
+        joined = await refused(knowledge.issue_join(str(made.id), other, [notes[mine]], EDITOR))
+        return alien, unknown, no_pack, joined
+
+    assert mongo(scenario) == (422, 422, 404, 422)

@@ -20,6 +20,10 @@ router = APIRouter()
 # The base's pages show 20 entries at a time; «Ver más» asks for the older ones.
 PAGE = 20
 STATUSES = {"suspected": "Sospecha", "confirmed": "Confirmada", "rejected": "Descartada"}
+# What a mark answers, by the state of the entry it made: a form sent again may meet it decided since (review B3).
+MARKED = {"suspected": ("Marcada como sospecha. Un operador la confirma o la descarta en «Conocimiento».", None),
+          "confirmed": ("Esta marca ya se había enviado y un operador la confirmó.", "info"),
+          "rejected": ("Esta marca ya se había enviado y después se descartó: no se volvió a marcar.", "warning")}
 
 
 def _mine(issue: KnownIssue, actor: Actor) -> bool:
@@ -39,17 +43,20 @@ async def knowledge_list(
         estado: Optional[Literal["suspected", "confirmed", "rejected"]] = None,
         mc: Optional[str] = None,
         antes: Optional[datetime] = None,
+        antes_id: Optional[str] = None,
         actor: Actor = Depends(get_web_actor),
         knowledgeService: KnowledgeService = Depends(Provide[Dependences.knowledgeService]),
         ):
-    """The knowledge base (K-Q5): every entry, newest first, by mod, state and Minecraft version, 20 at a time."""
+    """The knowledge base (K-Q5): every entry, newest first, by mod, state and Minecraft version, 20 at a time;
+    «Ver más» starts after the last one shown, by moment and id (review B5)."""
     entries = await knowledgeService.find(project=mod or None, status=estado, game_version=mc or None, before=antes,
-                                          limit=PAGE)
+                                          before_id=antes_id or None, limit=PAGE)
     named = {s.project_id: s.title for e in entries for s in ([e.a] + ([e.b] if e.b else []))}
     filters = {"mod": mod or "", "estado": estado or "", "mc": mc or ""}
     return render(request, "knowledge/list.html", actor, entries=[(e, warning_of(e)) for e in entries],
                   filters=filters, mod_title=named.get(mod or "", mod), statuses=STATUSES,
-                  more=entries[-1].updated_at.isoformat() if len(entries) == PAGE else None, nav_active="knowledge")
+                  more=(entries[-1].updated_at.isoformat(), str(entries[-1].id)) if len(entries) == PAGE else None,
+                  nav_active="knowledge")
 
 
 @router.get("/conocimiento/{issue_id}")
@@ -207,9 +214,8 @@ async def mark(
     except IssueExists as exists:
         return render(request, "knowledge/_exists.html", actor, issue=await knowledgeService.get(exists.issue_id),
                       bundle_id=bundle_id, note_ids=note_ids)
-    return render(request, "knowledge/_marked.html", actor,
-                  message="Marcada como sospecha. Un operador la confirma o la descarta en «Conocimiento».",
-                  issue=issue)
+    message, tone = MARKED[issue.status]
+    return render(request, "knowledge/_marked.html", actor, message=message, tone=tone, issue=issue)
 
 
 @router.post("/conocimiento/{issue_id}/sumarse")
