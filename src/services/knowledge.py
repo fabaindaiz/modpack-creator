@@ -25,6 +25,8 @@ from src.services.audit import AuditSink
 SUMMARY_MAX = 200
 # The entries read for one set of versions: far more than a pack meets.
 WARNINGS_READ = 500
+# How many of those reads run at once when the dashboard's shared read comes back full.
+READ_AT_ONCE = 10
 # How many of a mod's catalog versions «Arreglado en» offers.
 RANGE_CHOICES = 200
 ISSUE_BUSY = "La entrada cambió mientras tanto; vuelve a abrirla"
@@ -49,15 +51,21 @@ async def warnings_many(knowledgeDB: KnowledgeDatabase, modrinthDB: ModrinthData
                         suspected: bool = False) -> list[dict[str, list[KnownWarning]]]:
     """`warnings_for` of several sets of versions (versions, Minecraft version, loader), in their order: one read of
     the base for all their mods and one of the catalog for all the versions that match, whatever the number of sets
-    (the dashboard, review B8). The read's cap grows with the sets: an entry whose mods are in different sets is read
-    and warns in none."""
+    (the dashboard, review B8). The read's cap grows with the sets, but an entry whose mods are in different sets is
+    read and warns in none, so a read that comes back full may lack a set's own entries: then each set of mods is read
+    again with its own cap, at once (`_read_each`). One read when the base fits; one more per distinct set of mods
+    when it does not (about 50–150 with ~50 packs, in waves of `READ_AT_ONCE`)."""
     found: list[dict[str, list[KnownWarning]]] = [{} for _ in sources]
     every = sorted({p for versions, _, _ in sources for p in versions})
     if not every:
         return found
     statuses = ["confirmed", "suspected"] if suspected else ["confirmed"]
-    read = await knowledgeDB.find(within=every, status=statuses, limit=WARNINGS_READ * len(sources))
-    issues = [[i for i in read if all(p in versions for p in _projects(i))] for versions, _, _ in sources]
+    cap = WARNINGS_READ * len(sources)
+    read = await knowledgeDB.find(within=every, status=statuses, limit=cap)
+    if len(read) >= cap and len(sources) > 1:
+        issues = await _read_each(knowledgeDB, [versions for versions, _, _ in sources], statuses)
+    else:
+        issues = [[i for i in read if all(p in versions for p in _projects(i))] for versions, _, _ in sources]
     wanted = sorted({versions[p] for (versions, _, _), mine in zip(sources, issues) for i in mine for p in _projects(i)})
     if not wanted:
         return found
@@ -73,6 +81,22 @@ async def warnings_many(knowledgeDB: KnowledgeDatabase, modrinthDB: ModrinthData
                 for project_id in warning.project_ids:
                     found[n].setdefault(project_id, []).append(warning)
     return found
+
+
+async def _read_each(knowledgeDB: KnowledgeDatabase, sets: Sequence[Mapping[str, str]],
+                     statuses: list[str]) -> list[list[KnownIssue]]:
+    """The entries of each set of mods, each read with its own cap, so no set's volume hides another's warnings; a
+    set of mods shared by several sources is read once, and at most `READ_AT_ONCE` reads run at a time."""
+    keys = [tuple(sorted(versions)) for versions in sets]
+    gate = asyncio.Semaphore(READ_AT_ONCE)
+
+    async def one(projects: tuple[str, ...]) -> list[KnownIssue]:
+        async with gate:
+            return await knowledgeDB.find(within=list(projects), status=statuses, limit=WARNINGS_READ)
+
+    distinct = list(dict.fromkeys(keys))
+    by_key = dict(zip(distinct, await asyncio.gather(*(one(k) for k in distinct))))
+    return [by_key[k] for k in keys]
 
 
 def merge_warnings(sources: list[tuple[str, dict[str, list[KnownWarning]]]]) -> dict[str, list[KnownWarning]]:

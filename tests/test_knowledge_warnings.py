@@ -180,3 +180,28 @@ def test_the_dashboard_reads_the_base_once_for_every_pack(mongo: MongoRunner) ->
     reads, asked, counts, ids = mongo(scenario)
     assert (reads, asked) == (1, 1) and counts == {ids[0]: 1, ids[1]: 1, ids[2]: 1}
 
+
+@pytest.mark.network
+def test_entries_across_packs_never_crowd_out_another_packs_warning(mongo: MongoRunner, monkeypatch: Any) -> None:
+    """The dashboard's one read is capped: newer entries whose mods sit in different packs (they warn in none) must
+    not use it up and hide a pack's own warning. A read that comes back full is read again pack by pack, each with
+    its own cap, at once: one read when the base fits, one more per set of versions when it does not."""
+    import src.services.knowledge as knowledge_module
+    from src.services.knowledge import warnings_many
+    monkeypatch.setattr(knowledge_module, "WARNINGS_READ", 2)
+    other = {f"other-{n}": f"other-v{n}" for n in range(4)}
+
+    async def scenario() -> tuple[list[str], dict[str, Any], int]:
+        await seed("confirmed")
+        for n in range(4):
+            later = NOW.replace(hour=n + 1)
+            await KnownIssue.insert(KnownIssue(a=IssueSide(project_id="lithium", title="Lithium"),
+                                               b=IssueSide(project_id=f"other-{n}", title="Otro"), status="confirmed",
+                                               summary="x", author=EDITOR.ref(), at=later, updated_at=later, key=f"c{n}"))
+        knowledge = CountingKnowledge()
+        found = await warnings_many(knowledge, ModrinthDatabase(), [(PACK, "26.3", "fabric"), (other, "26.3", "fabric")])
+        return sorted(found[0]), found[1], knowledge.reads
+
+    mine, theirs, reads = mongo(scenario)
+    assert mine == sorted([IRIS, SODIUM]) and theirs == {} and reads == 3
+
