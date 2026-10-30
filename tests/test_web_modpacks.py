@@ -140,7 +140,7 @@ class FakeModpack:
         # A mod's history (O8 tanda 2): its entries, whether more remain, and what was asked.
         self.history: list[Any] = []
         self.history_more = False
-        self.history_calls: list[tuple[str, Any]] = []
+        self.history_calls: list[tuple[str, Any, Any]] = []
         self.changelog: tuple[Optional[str], str] = ("## Arreglos", "ok")
         # What the knowledge base warns of (O8 tanda 3): in the pack, and in a build.
         self.known: dict[str, list[Any]] = {}
@@ -387,9 +387,9 @@ class FakeModpack:
     async def installed_builds(self, bundle_id: str) -> set[int]:
         return self.installed
 
-    async def mod_history(self, bundle_id: str, project_id: str, before: Any = None) -> Any:
+    async def mod_history(self, bundle_id: str, project_id: str, before: Any = None, after_key: Any = None) -> Any:
         from src.services.modpack import HistoryPage
-        self.history_calls.append((project_id, before))
+        self.history_calls.append((project_id, before, after_key))
         return HistoryPage(entries=self.history, more=self.history_more)
 
     async def version_changelog(self, project_id: str, version_id: str) -> tuple[Optional[str], str]:
@@ -3469,6 +3469,19 @@ def test_ver_mas_answers_the_next_entries_with_their_own_ver_mas() -> None:
                       headers=HTMX).text
     assert "Build 2 · 1.6.4" in text and "Ver más" in text and "data-mod-history" not in text
     assert modpack.history_calls[0][1] is not None
+
+
+def test_ver_mas_carries_the_last_entrys_key_and_sends_it_back() -> None:
+    """Review of tanda 2: entries of the same time were lost at a page's edge; the page goes on from (at, key)."""
+    from src.library.history import HistoryEntry
+    client, modpack, _ = setup()
+    modpack.history = [HistoryEntry(at=T0, kind="pin", text="Fijado 1.6.4", key="note:abc+1")]
+    modpack.history_more = True
+    text = client.get(f"/modpacks/{BUNDLE_ID}/projects/P1/historia", headers=HTMX).text
+    assert "&tras=note%3Aabc%2B1" in text
+    client.get(f"/modpacks/{BUNDLE_ID}/projects/P1/historia",
+               params={"antes": "2026-10-01T00:00:00+00:00", "tras": "note:abc+1"}, headers=HTMX)
+    assert modpack.history_calls[-1][2] == "note:abc+1"
 
 
 # The suggestions in the panel (T4 of d-7985ee-16be41).

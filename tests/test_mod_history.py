@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from src.library.history import BuildPoint, PinEvent, PresenceEvent, ScanPoint, mod_history
+from src.library.history import BuildPoint, PinEvent, PresenceEvent, ScanPoint, history_page, mod_history
 from src.model.modpack import PastOrigin, PinOrigin, PinSource
 
 T0 = datetime(2026, 10, 1, tzinfo=timezone.utc)
@@ -52,6 +52,26 @@ def test_a_note_is_an_entry_with_its_note() -> None:
     found = note("fails", "pantalla negra", project_id="P", version_id="id-1.7.2", version_number="1.7.2")
     [entry] = mod_history([], [], [], [], [found], [])
     assert entry.kind == "note" and entry.note is found and entry.version == "1.7.2"
+
+
+def test_ver_mas_never_loses_entries_with_the_same_time() -> None:
+    """Review of tanda 2: «Ver más» asked for what was older than the last entry shown, so entries at the
+    same time past the page's edge were lost. Pages follow (time, key): every entry once, none twice."""
+    from tests.test_web_modpacks import note
+    notes = [note("works", f"nota {i}", project_id="P", version_id="v", at=day(1)) for i in range(5)]
+    pins = [PinEvent(at=day(1), author="Eddie", from_version=None, to_version=f"1.{i}") for i in range(3)]
+    entries = mod_history([BuildPoint(number=1, at=day(1), version="1.0", version_id="v")], [], pins, [], notes, [])
+    keys = [e.key for e in entries]
+    assert len(set(keys)) == len(keys) == 9
+    seen: list[str] = []
+    page = history_page(entries, None, None, limit=4)
+    while True:
+        seen += [e.key for e in page.entries]
+        if not page.more:
+            break
+        last = page.entries[-1]
+        page = history_page(entries, last.at, last.key, limit=4)
+    assert seen == keys
 
 
 @pytest.mark.network

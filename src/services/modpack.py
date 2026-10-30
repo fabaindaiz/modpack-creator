@@ -17,7 +17,7 @@ from src.library.changes import ChangeSet, VersionFacts, diff_entries, direction
 from src.library.scan import Unexplained, compare, unexplained_for
 from src.library.mrpack import mrpack_index, write_mrpack
 from src.library.builds import build_name
-from src.library.history import BuildPoint, PinEvent, PresenceEvent, ScanPoint, Suggested, mod_history, suggested_version
+from src.library.history import BuildPoint, PinEvent, PresenceEvent, ScanPoint, Suggested, history_page, mod_history, suggested_version
 from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink, installed_of
 from src.library.pins import past_origins
 from src.database.jobs import JobDatabase
@@ -1843,9 +1843,9 @@ class ModpackService():
         return found
 
     async def mod_history(self, bundle_id: str, project_id: str, before: Optional[datetime] = None,
-                          limit: int = HISTORY_PAGE) -> HistoryPage:
+                          limit: int = HISTORY_PAGE, after_key: Optional[str] = None) -> HistoryPage:
         """A mod's history in the pack (O8 tanda 2, D2, T2, T3): only what changed, newest first, `limit`
-        entries older than `before`. One read per source, each projected to this mod (user-walk N6): the
+        entries after the one at `before` with `after_key` (review of tanda 2). One read per source, each projected to this mod (user-walk N6): the
         builds, the scans of the pack (a scan of another pack never; one stored before scans knew their
         pack only if its server is linked now, N5), the audit, the notes. Only MongoDB: never Modrinth."""
         bundle = await self.modpackDB.bundle_get(bundle_id)
@@ -1866,14 +1866,15 @@ class ModpackService():
             [ScanPoint(server=names.get(server, "un servidor"), server_id=server, at=as_utc(at), version=number(v))
              for server, at, v in scans],
             [PinEvent(at=as_utc(e.at), author=e.actor.name, from_version=number(e.details.get("from_version_id")),
-                      to_version=number(e.details.get("version_id")), known="from_version_id" in e.details)
+                      to_version=number(e.details.get("version_id")), known="from_version_id" in e.details, id=str(e.id))
              for e in events if e.action == "bundle.pin"],
             # MongoDB gives dates back without a timezone (final review, critical 1).
             [p.model_copy(update={"until": as_utc(p.until)}) for p in past_origins(bundle.pin_history.get(project_id, []))],
             [n.model_copy(update={"at": as_utc(n.at)}) for n in notes],
-            [PresenceEvent(at=as_utc(e.at), added=e.action == "bundle.project.add") for e in events if e.action != "bundle.pin"])
-        older = [e for e in entries if before is None or e.at < as_utc(before)]
-        return HistoryPage(entries=older[:limit], more=len(older) > limit)
+            [PresenceEvent(at=as_utc(e.at), added=e.action == "bundle.project.add", id=str(e.id))
+             for e in events if e.action != "bundle.pin"])
+        page = history_page(entries, as_utc(before) if before is not None else None, after_key, limit)
+        return HistoryPage(entries=page.entries, more=page.more)
 
     async def suggestion_for(self, bundle_id: str, project_id: str) -> Optional[Suggested]:
         """The version suggested for a mod of the pack (T4 of d-7985ee-16be41): from the last stable build, or

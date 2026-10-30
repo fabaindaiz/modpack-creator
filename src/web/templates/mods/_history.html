@@ -26,7 +26,7 @@
 {% endmacro %}
 {% if page_more is defined and page_more %}
 {% for entry in entries %}{{ entry_item(entry) }}{% endfor %}
-{% if more %}<li><button type="button" class="text-sm text-link hover:underline" hx-get="/modpacks/{{ bundle_id }}/projects/{{ project_id }}/historia?antes={{ entries[-1].at.isoformat() | urlencode }}" hx-target="closest li" hx-swap="outerHTML">Ver más</button></li>{% endif %}
+{% if more %}<li><button type="button" class="text-sm text-link hover:underline" hx-get="/modpacks/{{ bundle_id }}/projects/{{ project_id }}/historia?antes={{ entries[-1].at.isoformat() | urlencode }}&tras={{ entries[-1].key | urlencode }}" hx-target="closest li" hx-swap="outerHTML">Ver más</button></li>{% endif %}
 {% else %}
 <div class="space-y-2" data-mod-history>
   {% if suggestion is defined and suggestion %}
@@ -39,7 +39,7 @@
   <ul class="divide-y divide-line-soft">
     {% for entry in entries %}{{ entry_item(entry) }}{% endfor %}
     {% if more %}
-    <li><button type="button" class="text-sm text-link hover:underline" hx-get="/modpacks/{{ bundle_id }}/projects/{{ project_id }}/historia?antes={{ entries[-1].at.isoformat() | urlencode }}" hx-target="closest li" hx-swap="outerHTML">Ver más</button></li>
+    <li><button type="button" class="text-sm text-link hover:underline" hx-get="/modpacks/{{ bundle_id }}/projects/{{ project_id }}/historia?antes={{ entries[-1].at.isoformat() | urlencode }}&tras={{ entries[-1].key | urlencode }}" hx-target="closest li" hx-swap="outerHTML">Ver más</button></li>
     {% endif %}
   </ul>
   {% else %}

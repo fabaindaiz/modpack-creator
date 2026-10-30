@@ -1296,12 +1296,13 @@ async def mod_history(
         project_id: str,
         request: Request,
         antes: Optional[datetime] = None,
+        tras: Annotated[Optional[str], Query(max_length=200)] = None,
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         ):
-    """A mod's history in the pack (O8 tanda 2, T2, T3), loaded when opened; with `antes`, the next page
-    («Ver más»). Never asks Modrinth."""
-    page = await modpackService.mod_history(bundle_id, project_id, before=antes)
+    """A mod's history in the pack (O8 tanda 2, T2, T3), loaded when opened; with `antes` and `tras` (the
+    last entry's time and key), the next page («Ver más»). Never asks Modrinth."""
+    page = await modpackService.mod_history(bundle_id, project_id, before=antes, after_key=tras)
     # What to pin it to, from a stable build or its notes (T4): only on the first page.
     suggestion = await modpackService.suggestion_for(bundle_id, project_id) if antes is None else None
     return render(request, "mods/_history.html", actor, bundle_id=bundle_id, project_id=project_id,
