@@ -27,6 +27,25 @@ ANY_PIN = object()
 
 # How many past origins a mod keeps (O8 D2): twice what the history shows, which dedupes them.
 HISTORY_KEPT = 40
+
+
+def _kept_history(combined: Any) -> dict[str, Any]:
+    """A mod's past origins as stored (O8 D2): the last HISTORY_KEPT of `combined` (an aggregation expression,
+    oldest first), and before them the newest of each source they leave out, so a server going back and forth
+    never pushes the pack's own past version out of what is stored (review of tanda 2; `past_origins` keeps
+    one per source of what it is given)."""
+    return {"$let": {"vars": {"all": combined}, "in": {"$let": {
+        "vars": {"tail": {"$slice": ["$$all", -HISTORY_KEPT]},
+                 "head": {"$cond": [{"$gt": [{"$size": "$$all"}, HISTORY_KEPT]},
+                                  {"$slice": ["$$all", 0, {"$subtract": [{"$size": "$$all"}, HISTORY_KEPT]}]}, []]}},
+        "in": {"$concatArrays": [
+            {"$filter": {"input": "$$head", "as": "old", "cond": {"$and": [
+                {"$not": [{"$in": ["$$old.origin.source", {"$map": {"input": "$$tail", "as": "t", "in": "$$t.origin.source"}}]}]},
+                {"$eq": ["$$old", {"$last": {"$filter": {"input": "$$head", "as": "same",
+                                                         "cond": {"$eq": ["$$same.origin.source", "$$old.origin.source"]}}}}]},
+            ]}}},
+            "$$tail",
+        ]}}}}}
 # An origin's identity in its history: source, server and version, as in a stored document.
 _ORIGIN_KEY = {"$concat": ["$$this.source", "|", {"$ifNull": ["$$this.server_id", ""]}, "|", "$$this.version_id"]}
 
@@ -170,9 +189,11 @@ class ModpackDatabase():
         gone = ((before or {}).get("pin_origins") or {}).get(project_id) if clear_keys else None
         if gone and gone.get("origins"):
             # Its history outlives the mod (P5 of d-7985ee-a68b5c): its origins, marked as gone with it.
-            await ModpackBundle.get_pymongo_collection().update_one({"_id": oid}, {"$push": {
-                f"pin_history.{project_id}": {"$each": [{"origin": o, "until": datetime.now(timezone.utc), "removed_mod": True}
-                                                        for o in gone["origins"]], "$slice": -HISTORY_KEPT}}})
+            history = f"pin_history.{project_id}"
+            await ModpackBundle.get_pymongo_collection().update_one({"_id": oid}, [{"$set": {history: _kept_history(
+                {"$concatArrays": [{"$ifNull": [f"${history}", []]},
+                                   {"$literal": [{"origin": o, "until": datetime.now(timezone.utc), "removed_mod": True}
+                                                 for o in gone["origins"]]}]})}}])
         if before is None:
             raise HTTP_404_NOT_FOUND(f"Bundle '{bundle_id}' has no project '{project_id}'")
         return (await self.bundle_get(bundle_id)).projects, before
@@ -253,12 +274,12 @@ class ModpackDatabase():
         stored = f"$pin_origins.{project_id}.origins"
         history = f"pin_history.{project_id}"
         update: list[dict[str, Any]] = [
-            {"$set": {history: {"$slice": [{"$concatArrays": [
+            {"$set": {history: _kept_history({"$concatArrays": [
                 {"$ifNull": [f"${history}", []]},
                 {"$map": {"input": {"$filter": {"input": {"$ifNull": [stored, []]},
                                                 "cond": {"$not": [{"$in": [_ORIGIN_KEY, kept]}]}}},
                           "in": {"origin": "$$this", "until": "$$NOW", "removed_mod": False}}},
-            ]}, -HISTORY_KEPT]}}},
+            ]})}},
             {"$set": {f"pin_origins.{project_id}": {"$literal": written.model_dump()},
                       **({f"pins.{project_id}": {"$literal": pin}} if pin is not None else {})}},
         ]

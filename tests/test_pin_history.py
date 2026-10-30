@@ -78,6 +78,37 @@ def test_pinning_by_hand_again_keeps_the_replaced_choice_and_the_others_keep_the
 
 
 @pytest.mark.network
+def test_forty_replacements_by_a_server_never_push_the_packs_origin_out_of_what_is_stored(mongo: MongoRunner) -> None:
+    """Review of tanda 2: the history kept the last HISTORY_KEPT (40) replaced origins, so a server going back
+    and forth pushed the pack's own past version out of storage, and `past_origins` could only keep what was
+    stored. The newest of each source is kept besides the last 40."""
+    from src.database.modpack import HISTORY_KEPT
+
+    async def scenario() -> tuple[Any, ...]:
+        s = Scenario()
+        bundle_id = await s.bundle()
+        mod = SODIUM[0]
+
+        async def write(*origins: PinOrigin) -> None:
+            read = (await s.modpackDB.bundle_get(bundle_id)).pin_origins.get(mod) or PinRecord(origins=[], selected=PinSource.pack)
+            assert await s.modpackDB.bundle_pin_record_set(
+                bundle_id, mod, read.model_copy(update={"origins": list(origins)}), origins[0].version_id)
+
+        await write(PinOrigin(source=PinSource.pack, version_id="p-1"))
+        await write(PinOrigin(source=PinSource.pack, version_id="p-2"))  # p-1 is now past
+        for i in range(HISTORY_KEPT + 5):
+            await write(PinOrigin(source=PinSource.pack, version_id="p-2"),
+                        PinOrigin(source=PinSource.server, version_id=f"s-{i % 2}", server_id="srv"))
+        stored = (await s.modpackDB.bundle_get(bundle_id)).pin_history[mod]
+        return (len(stored), [p.origin.version_id for p in stored if p.origin.source == PinSource.pack],
+                [p.origin.version_id for p in past_origins(stored) if p.origin.source == PinSource.pack])
+
+    size, stored_pack, shown_pack = mongo(scenario)
+    assert stored_pack == ["p-1"] and shown_pack == ["p-1"]
+    assert size == 41  # the last 40, and the pack's newest besides
+
+
+@pytest.mark.network
 def test_removing_the_mod_keeps_its_history_and_marks_it(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[Any, ...]:
         s = Scenario()
