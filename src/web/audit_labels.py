@@ -53,6 +53,7 @@ ACTIONS: dict[str, tuple[str, str]] = {
     "server.import.confirm": ("Confirmó una importación", "Servidores"),
     "server.update": ("Actualizó un servidor", "Servidores"),
     "server.rollback": ("Hizo rollback", "Servidores"),
+    "diagnostics.download": ("Descargó el diagnóstico", "Servidores"),
 }
 
 # The detail keys: the spec's, and the rest of what each `audit.record` writes.
@@ -65,6 +66,7 @@ DETAILS: dict[str, str] = {
     "downgrade": "Baja",
     "cleared": "Limpiado",
     "number": "Build",
+    "days": "Días",
     "dry_run": "Simulación",
     "reason": "Motivo",
     "replacement": "Reemplazo",
@@ -88,7 +90,8 @@ DETAILS: dict[str, str] = {
 }
 
 # A target's kind, as the closed card names it.
-KINDS = {"bundle": "Pack", "server": "Servidor", "replacement": "Reemplazo", "knowledge": "Conocimiento"}
+KINDS = {"bundle": "Pack", "server": "Servidor", "replacement": "Reemplazo", "knowledge": "Conocimiento",
+         "diagnostics": "Diagnóstico"}
 
 # The keys whose value is one id the catalog may name ("Título (id)").
 _NAMED_IDS = frozenset({"project_id", "version_id", "replacement"})

@@ -437,3 +437,15 @@ def test_the_audit_page_offers_the_download_to_an_operator_only(panel: Any) -> N
     client, _ = panel(EDITOR)
     page = client.get("/audit").text
     assert "Descargar diagnóstico" not in page and "/audit/diagnostico" not in page
+
+
+def test_downloading_the_diagnostics_is_audited() -> None:
+    """Owner, 2026-10-30 (d-7985ee-c0cbfb): who took the file out, and of how many days, is in the audit."""
+    from tests._actors import RecordingAudit
+    audit = RecordingAudit()
+    service = DiagnosticsService(FakeDiagnosticsDB([]), version="0.3.2", clock=lambda: T0, audit=audit)
+
+    async def scenario() -> list[dict[str, Any]]:
+        return await collect(await service.export(30, actor=OPERATOR))
+    asyncio.run(scenario())
+    assert [(e[0], e[2]) for e in audit.events] == [("diagnostics.download", {"days": 30})]

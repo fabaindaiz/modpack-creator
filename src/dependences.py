@@ -82,7 +82,7 @@ class Dependences(containers.DeclarativeContainer):
     targetNames = providers.Singleton(TargetNames, modpackDatabase, pterodactylDatabase, modrinthDatabase)
     auditService = providers.Singleton(AuditService, auditDatabase, targetNames)
     # O7: the file of usage and errors; the version is the one the image was built with.
-    diagnosticsService = providers.Singleton(DiagnosticsService, diagnosticsDatabase, version=getenv("VERSION", "dev"), recorder=providers.Object(RECORDER))
+    diagnosticsService = providers.Singleton(DiagnosticsService, diagnosticsDatabase, version=getenv("VERSION", "dev"), recorder=providers.Object(RECORDER), audit=auditService)
     pterodactylService = providers.Singleton(PterodactylService, pterodactylAPI, pterodactylDatabase, modrinthAPI, modrinthDatabase, modpackDatabase, auditService, jobDB=jobDatabase)
     modpackService = providers.Singleton(ModpackService, modpackDatabase, modrinthDatabase, modrinthAPI, loaderAPI, auditService, notifier, pterodactylDatabase, jobDB=jobDatabase)
     jobService = providers.Singleton(JobService, jobDatabase, pterodactylService, pterodactylDatabase, auditService, notifier)

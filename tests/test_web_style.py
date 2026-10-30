@@ -254,3 +254,12 @@ def test_notices_and_alerts_take_the_panel_s_corners() -> None:
             if tinted and "rounded-md" in classes.split():
                 found.append(f"{source.name}: {classes[:80]}")
     assert found == []
+
+
+def test_the_feather_list_names_only_icons_the_panel_uses() -> None:
+    """Owner, 2026-10-30 (d-7985ee-c0cbfb): the list stays true when an icon is dropped, not only added."""
+    licenses = (web.STATIC_DIR / "LICENSES.html").read_text()
+    paragraph = licenses[licenses.index("Feather"):]
+    paragraph = paragraph[:paragraph.index("</li>")]
+    named = set(re.findall(r"<code>([a-z0-9-]+)</code>", paragraph))
+    assert named == set(ICONS.read_text().split()) & FEATHER

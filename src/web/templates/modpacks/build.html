@@ -24,7 +24,10 @@
   </div>
 
   <section class="space-y-2" aria-labelledby="worked">
-    <h2 id="worked" class="text-base font-semibold">¿Funcionó?</h2>
+    <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <h2 id="worked" class="text-base font-semibold">¿Funcionó?</h2>
+      {{ ui.help_toggle("¿Funcionó?", "notas-build") }}
+    </div>
     {% if counts %}
     <p class="flex flex-wrap gap-2">{% for kind in ["works", "fails", "issues", "untested"] if counts.get(kind) %}{{ ui.verdict(kind, counts[kind]) }}{% endfor %}</p>
     {% endif %}

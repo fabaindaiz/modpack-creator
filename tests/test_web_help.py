@@ -137,3 +137,25 @@ def test_how_it_works_says_what_the_knowledge_base_is() -> None:
         assert sentence in text
     assert 'href="#conocimiento"' in text  # the page's index links it, as every section
     assert 'id="conocimiento"' in text and text.index('id="build"') < text.index('id="conocimiento"') < text.index('id="puente"')
+
+
+def test_the_owner_s_help_texts_of_2026_10_30() -> None:
+    """d-7985ee-c0cbfb: the pack resolves itself (no «resolver»), and the knowledge base and a build's notes
+    have their «?»."""
+    assert HELP["modpacks"][0] == ("Cada modpack es una lista de mods para una versión de Minecraft y un loader. "
+                                   "Ábrelo para agregar mods y crear builds: se resuelve solo.")
+    assert HELP["con-version-nueva"][0] == "Mods con una versión más nueva para este pack. Para usarla, crea un build nuevo."
+    assert HELP["conocimiento"] == ("Las combinaciones de mods que fallan, en todos los packs. Se marcan al comparar dos "
+                                    "builds y un operador las confirma. Solo avisan: nunca cambian ni bloquean nada.",
+                                    "conocimiento")
+    assert HELP["notas-build"] == ("Anota si este build funcionó, falló o tuvo problemas, con lo que viste y el error si "
+                                   "lo hay. Las notas ayudan a comparar builds y a marcar sospechas en «Conocimiento».",
+                                   "build")
+
+
+def test_the_knowledge_page_and_a_build_s_notes_have_their_help() -> None:
+    from tests.test_web_knowledge import base_setup
+    client, _ = base_setup([])
+    assert "Conocimiento" in helps(client.get("/conocimiento").text)
+    page = modpacks_page.setup_all()[0].get(f"/modpacks/{BUNDLE_ID}/builds/2").text
+    assert "¿Funcionó?" in helps(page)

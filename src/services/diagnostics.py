@@ -6,6 +6,7 @@ from src.exceptions import HTTP_422_UNPROCESSABLE_ENTITY
 from src.library.auth.roles import operator_only
 from src.library.diagnostics import EXPORT_DAYS, DiagnosticsRecorder, header, jsonl
 from src.library.utils import utcnow
+from src.model.audit import AuditTarget
 from src.model.jobs import Job
 from src.model.users import Actor
 from src.services.jobs import Handler, JobContext, JobFailed, LeaseLost
@@ -24,11 +25,14 @@ class DiagnosticsService():
             version: str = "dev",
             clock: Callable[[], datetime] = utcnow,
             recorder: Optional[DiagnosticsRecorder] = None,
+            audit: Optional[Any] = None,
             ) -> None:
         self.diagnosticsDB = diagnosticsDB
         self.version = version
         self.clock = clock
         self.recorder = recorder
+        # Who takes the file out, and of how many days (owner, 2026-10-30, d-7985ee-c0cbfb).
+        self.audit = audit
 
     @operator_only
     async def export(self, days: int, actor: Actor) -> AsyncIterator[str]:
@@ -40,6 +44,9 @@ class DiagnosticsService():
             raise HTTP_422_UNPROCESSABLE_ENTITY(f"Los días del diagnóstico son {', '.join(map(str, EXPORT_DAYS))}")
         now = self.clock()
         since = now - timedelta(days=days)
+        if self.audit is not None:
+            await self.audit.record(actor, "diagnostics.download", AuditTarget(kind="diagnostics", id="panel"),
+                                    {"days": days})
 
         async def lines() -> AsyncIterator[str]:
             yield jsonl(header(self.version, days, since, now))

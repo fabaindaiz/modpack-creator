@@ -2,13 +2,13 @@
 
 Each entry is the text and the anchor of the «Cómo funciona» page (`templates/help.html`) that says
 more. A template asks for one by its key (`ui.section(..., help="mods")`): a key that is not here
-fails the render, so a typo shows in the tests. The owner reviews this copy.
+fails the render, so a typo shows in the tests. The owner reviewed this copy (2026-10-30, d-7985ee-c0cbfb).
 """
 
 HELP: dict[str, tuple[str, str]] = {
     # Modpacks.
     "modpacks": ("Cada modpack es una lista de mods para una versión de Minecraft y un loader. Ábrelo para "
-                 "agregar mods, resolverlo y crear builds.", "modpack"),
+                 "agregar mods y crear builds: se resuelve solo.", "modpack"),
     "nuevo-modpack": ("Elige la versión de Minecraft y el loader. Los mods se agregan después, uno a uno o "
                       "importando un pack.", "modpack"),
     "mods": ("Los mods del pack y las dependencias que trajo la última resolución. Agrega mods buscándolos o "
@@ -34,10 +34,15 @@ HELP: dict[str, tuple[str, str]] = {
     # Updates of a modpack's mods.
     "revision": ("Busca en Modrinth versiones nuevas de los mods del build. Solo mira: no cambia el pack.",
                  "resolver"),
-    "con-version-nueva": ("Mods con una versión más nueva para este pack. Para usarla, resuelve y crea un build "
-                          "nuevo.", "resolver"),
+    "con-version-nueva": ("Mods con una versión más nueva para este pack. Para usarla, crea un build nuevo.",
+                          "resolver"),
     "fijadas": ("Mods fijados a una versión: hay una más nueva, pero el pack sigue con la fijada hasta que la "
                 "cambies en su tarjeta.", "fijar"),
+    # A build's notes and the knowledge base (O8; owner, 2026-10-30).
+    "notas-build": ("Anota si este build funcionó, falló o tuvo problemas, con lo que viste y el error si lo hay. "
+                    "Las notas ayudan a comparar builds y a marcar sospechas en «Conocimiento».", "build"),
+    "conocimiento": ("Las combinaciones de mods que fallan, en todos los packs. Se marcan al comparar dos builds y "
+                     "un operador las confirma. Solo avisan: nunca cambian ni bloquean nada.", "conocimiento"),
     # Servers.
     "servidores": ("Los servidores registrados aquí. Ábrelo para vincularlo a un modpack, escanearlo o "
                    "actualizarlo.", "vincular"),

@@ -4,7 +4,7 @@
 {% block title %}Conocimiento{% endblock %}
 
 {% block content %}
-{{ ui.page_header("Conocimiento", "Las combinaciones que fallan, en todos los packs. Solo avisan: nunca cambian ni bloquean nada.") }}
+{% call ui.page_header("Conocimiento", "Las combinaciones que fallan, en todos los packs. Solo avisan: nunca cambian ni bloquean nada.") %}{{ ui.help_toggle("Conocimiento", "conocimiento") }}{% endcall %}
 {% set FIELD_CLASS = "mt-1 block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control focus-visible:outline-2 focus-visible:outline-accent" %}
 {% set LABEL_CLASS = "block text-xs font-medium text-muted" %}
 <form method="get" action="/conocimiento" class="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end">
