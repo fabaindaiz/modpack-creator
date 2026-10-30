@@ -46,7 +46,9 @@
     <label class="block space-y-1 text-sm">
       <span class="font-medium">Error (opcional)</span>
       <span class="block text-xs text-muted">No pegues contraseñas; los tokens y las IPs se ocultan. Si pasa de 64 KiB se guardan el principio y el final.</span>
-      <textarea name="error" rows="5" class="block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 font-mono text-xs ring-1 ring-inset ring-control">{{ (found.error or "") if editing else "" }}</textarea>
+      {# app.js shows the notice below when what is pasted passes the limit, with how much is cut (P2). #}
+      <textarea name="error" rows="5" data-error-limit="{{ error_limits.limit }}" data-error-head="{{ error_limits.head }}" data-error-tail="{{ error_limits.tail }}" class="block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 font-mono text-xs ring-1 ring-inset ring-control">{{ (found.error or "") if editing else "" }}</textarea>
+      <p data-error-over hidden role="status" class="text-xs font-medium text-warning">Este error pasa de 64 KiB: se guardarán el principio y el final, sin unos <span data-error-cut></span> KB del medio.</p>
     </label>
     <div class="flex justify-end gap-2">
       {{ ui.button("Cancelar", kind="secondary", attrs={"data-dialog-close": ""}) }}

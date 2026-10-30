@@ -79,6 +79,23 @@ def test_the_dialog_warns_about_secrets_and_size() -> None:
     assert "Si pasa de 64 KiB se guardan el principio y el final." in text
 
 
+def test_the_size_notice_reacts_to_what_is_pasted() -> None:
+    """Review of tanda 2: the 64 KiB notice was fixed text. The error field carries its limits and a notice,
+    hidden until app.js sees a paste over the limit and says how much is cut (P2 of d-7985ee-a68b5c); without
+    JavaScript the fixed text still says it."""
+    from pathlib import Path
+    client, _, _, _ = notes_setup()
+    text = client.get(f"/modpacks/{BUNDLE_ID}/notas/nueva", params={"build": 15}, headers=HTMX).text
+    assert 'data-error-limit="65536" data-error-head="49152" data-error-tail="16384"' in text
+    notice = text[text.index("data-error-over"):]
+    notice = notice[:notice.index("</p>")]
+    assert "hidden" in notice and 'role="status"' in notice
+    assert "Este error pasa de 64 KiB: se guardarán el principio y el final, sin unos" in text
+    assert '<span data-error-cut></span> KB del medio.' in text
+    js = (Path(__file__).resolve().parent.parent / "src/web/static/app.js").read_text()
+    assert "textarea[data-error-limit]" in js and "[data-error-over]" in js and "[data-error-cut]" in js
+
+
 def test_the_form_carries_a_draft_key_and_an_idempotency_key() -> None:
     client, _, _, _ = notes_setup()
     first = client.get(f"/modpacks/{BUNDLE_ID}/notas/nueva", params={"build": 15}, headers=HTMX).text

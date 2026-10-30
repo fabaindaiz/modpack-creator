@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
 
 from src.dependences import Dependences, ModrinthService, NoteService, PterodactylService
+from src.library.notes import ERROR_HEAD, ERROR_MAX, ERROR_TAIL
 from src.model.modpack.note import NoteTarget, VersionNote
 from src.model.users import Actor
 from src.routers.web.modpacks import _titles
@@ -16,6 +17,8 @@ from src.web import get_web_actor, render
 router = APIRouter()
 
 VERDICTS = {"works", "fails", "issues", "untested"}
+# What the dialog's error field tells app.js, so its notice says how much a paste over the limit loses (P2).
+ERROR_LIMITS = {"limit": ERROR_MAX, "head": ERROR_HEAD, "tail": ERROR_TAIL}
 
 
 def list_id(note: VersionNote | NoteTarget) -> str:
@@ -43,7 +46,7 @@ async def note_new(
         f"{(await _titles(modrinthService, [mod or '']))[mod or '']} {numero or version or ''}".strip()
     servers = [s for s in await pterodactylService.server_find() if s.bundle_id == bundle_id]
     return render(request, "notes/_dialog.html", actor, bundle_id=bundle_id, target=target, about=about,
-                  servers=servers, key=secrets.token_urlsafe(16), found=None,
+                  servers=servers, key=secrets.token_urlsafe(16), found=None, error_limits=ERROR_LIMITS,
                   # Per build, or per mod and version (final review, important 5).
                   draft=f"{bundle_id}:{list_id(target)[6:]}" + (f"-{version}" if version else ""))
 
@@ -81,7 +84,7 @@ async def note_edit_dialog(
     found = await noteService.get(note_id)
     about = f"el build {found.build_number}" if found.build_number is not None else (found.version_number or "")
     return render(request, "notes/_dialog.html", actor, bundle_id=found.bundle_id, target=None, about=about, servers=[],
-                  key="", draft=f"{found.bundle_id}:note-{note_id}", found=found)
+                  key="", draft=f"{found.bundle_id}:note-{note_id}", found=found, error_limits=ERROR_LIMITS)
 
 
 @router.post("/notas/{note_id}")

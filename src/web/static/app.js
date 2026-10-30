@@ -441,7 +441,26 @@
   function draftKey(form) {
     return 'draft:' + form.getAttribute('data-draft');
   }
+  // An error over the limit says, as it is pasted or typed, how many KB of its middle are cut (P2 of
+  // d-7985ee-a68b5c): the same count the server makes, by characters.
+  function errorSize(field) {
+    var notice = field.parentElement ? field.parentElement.querySelector('[data-error-over]') : null;
+    if (!notice) {
+      return;
+    }
+    var limit = Number(field.getAttribute('data-error-limit'));
+    var kept = Number(field.getAttribute('data-error-head')) + Number(field.getAttribute('data-error-tail'));
+    var length = Array.from(field.value).length;
+    var cut = notice.querySelector('[data-error-cut]');
+    if (cut) {
+      cut.textContent = String(Math.round((length - kept) / 1024));
+    }
+    notice.hidden = length <= limit;
+  }
   document.addEventListener('input', function (evt) {
+    if (evt.target instanceof Element && evt.target.matches('textarea[data-error-limit]')) {
+      errorSize(evt.target);
+    }
     var form = evt.target instanceof Element ? evt.target.closest('form[data-draft]') : null;
     if (!form) {
       return;
@@ -477,6 +496,8 @@
         }
       });
     });
+    // A draft brought back may be over the limit too.
+    form.querySelectorAll('textarea[data-error-limit]').forEach(errorSize);
   });
   document.addEventListener('htmx:afterRequest', function (evt) {
     var form = evt.detail.elt instanceof Element ? evt.detail.elt.closest('form[data-draft]') : null;
