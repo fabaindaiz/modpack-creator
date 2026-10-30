@@ -3,7 +3,7 @@ changed, from the builds that carry it, the scans of the pack's servers, the pin
 past origins, its notes, and its removal and return. Pure."""
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable, Optional, Sequence
+from typing import Any, Callable, Collection, Optional, Sequence
 
 from src.model.modpack import PastOrigin
 
@@ -111,12 +111,21 @@ def _pin(event: PinEvent, index: int) -> HistoryEntry:
                         key=f"pin:{event.id or index}")
 
 
+def origin_key(origin: Any) -> tuple[str, str, str]:
+    """An origin as `past_origins` tells them apart: its source, server and version."""
+    return origin.source.value, origin.server_id or "", origin.version_id
+
+
 def mod_history(builds: Sequence[BuildPoint], scans: Sequence[ScanPoint], pins: Sequence[PinEvent],
-                past: Sequence[PastOrigin], notes: Sequence[Any], presence: Sequence[PresenceEvent]) -> list[HistoryEntry]:
-    """Everything that changed for the mod in the pack, newest first."""
+                past: Sequence[PastOrigin], notes: Sequence[Any], presence: Sequence[PresenceEvent],
+                in_use: Collection[tuple[str, str, str]] = ()) -> list[HistoryEntry]:
+    """Everything that changed for the mod in the pack, newest first. A past origin that is one of the mod's
+    origins now (`in_use`, by `origin_key`) keeps its entry, the day it was replaced, but is not called past
+    (review of tanda 2)."""
     entries = [*_builds(builds), *_scans(scans), *(_pin(e, i) for i, e in enumerate(pins))]
     entries += [HistoryEntry(at=p.until, kind="origin", version=p.origin.version_number or p.origin.version_id,
-                             text=f"Origen pasado: {p.origin.label or p.origin.source.value} "
+                             text=f"{'Origen otra vez en uso' if origin_key(p.origin) in in_use else 'Origen pasado'}: "
+                                  f"{p.origin.label or p.origin.source.value} "
                                   f"{p.origin.version_number or p.origin.version_id}", key=f"origin:{p.until.isoformat()}:{p.origin.version_id}")
                 for p in past if not p.removed_mod]
     entries += [HistoryEntry(at=n.at, kind="note", text=n.text, version=n.version_number, version_id=n.version_id, note=n,

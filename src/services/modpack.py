@@ -17,7 +17,7 @@ from src.library.changes import ChangeSet, VersionFacts, diff_entries, direction
 from src.library.scan import Unexplained, compare, unexplained_for
 from src.library.mrpack import mrpack_index, write_mrpack
 from src.library.builds import build_name
-from src.library.history import BuildPoint, PinEvent, PresenceEvent, ScanPoint, Suggested, history_page, mod_history, suggested_version
+from src.library.history import BuildPoint, PinEvent, PresenceEvent, ScanPoint, Suggested, history_page, mod_history, origin_key, suggested_version
 from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink, installed_of
 from src.library.pins import past_origins
 from src.database.jobs import JobDatabase
@@ -1872,7 +1872,8 @@ class ModpackService():
             [p.model_copy(update={"until": as_utc(p.until)}) for p in past_origins(bundle.pin_history.get(project_id, []))],
             [n.model_copy(update={"at": as_utc(n.at)}) for n in notes],
             [PresenceEvent(at=as_utc(e.at), added=e.action == "bundle.project.add", id=str(e.id))
-             for e in events if e.action != "bundle.pin"])
+             for e in events if e.action != "bundle.pin"],
+            in_use={origin_key(o) for o in (bundle.pin_origins[project_id].origins if project_id in bundle.pin_origins else [])})
         page = history_page(entries, as_utc(before) if before is not None else None, after_key, limit)
         return HistoryPage(entries=page.entries, more=page.more)
 

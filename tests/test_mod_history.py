@@ -47,6 +47,19 @@ def test_history_says_pins_past_origins_and_removal() -> None:
     ]
 
 
+def test_a_past_origin_in_use_again_is_not_called_past() -> None:
+    """Review of tanda 2: an origin replaced and then used again still read «Origen pasado». The entry stays
+    (it was replaced that day) and says it is in use again; another past origin is still past."""
+    past = [PastOrigin(origin=PinOrigin(source=PinSource.pack, version_id="p", version_number="1.6.0", label="Pack.mrpack"),
+                       until=day(2)),
+            PastOrigin(origin=PinOrigin(source=PinSource.server, version_id="s", version_number="1.5.0", server_id="srv"),
+                       until=day(3))]
+    assert texts(mod_history([], [], [], past, [], [], in_use={("pack", "", "p")})) == [
+        "Origen pasado: server 1.5.0",
+        "Origen otra vez en uso: Pack.mrpack 1.6.0",
+    ]
+
+
 def test_a_note_is_an_entry_with_its_note() -> None:
     from tests.test_web_modpacks import note
     found = note("fails", "pantalla negra", project_id="P", version_id="id-1.7.2", version_number="1.7.2")
