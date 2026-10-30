@@ -176,6 +176,9 @@ class PackPins:
     offered: list[str] = field(default_factory=list)
     # Left alone: someone pinned the mod while the import ran.
     kept: list[str] = field(default_factory=list)
+    # Not written: every one of PIN_WRITE_TRIES writes met another write of the mod's record (contention, not
+    # anyone's choice); the pack's version is neither in use nor offered, and importing again offers it.
+    busy: list[str] = field(default_factory=list)
 
 
 def _version_facts(found: ModrinthVersion) -> VersionFacts:
@@ -754,20 +757,24 @@ class ModpackService():
                 bundle = await self.modpackDB.bundle_get(bundle_id)
                 if bundle.pins.get(project_id) != pinned:
                     # A pin someone set meanwhile is left alone.
+                    result.kept.append(project_id)
                     break
                 # Only its record changed (a scan's origin): written again, from a fresh read.
+            else:
+                # Every try met another write of its record: not written, and nobody's choice either.
+                result.busy.append(project_id)
             if not written:
-                result.kept.append(project_id)
-            elif selects:
+                continue
+            if selects:
                 result.pinned.append(project_id)
                 if problem is not None:
                     result.outside[project_id] = problem
             else:
                 result.offered.append(project_id)
-        if result.pinned or result.offered:
+        if result.pinned or result.offered or result.busy:
             await self.audit.record(actor, "bundle.pin.import", _bundle(bundle_id),
                                     {"source": label, "pinned": len(result.pinned), "outside": sorted(result.outside),
-                                     "offered": result.offered})
+                                     "offered": result.offered, **({"busy": result.busy} if result.busy else {})})
         return result
 
     async def _pin_checked(self, bundle: ModpackBundle, project_id: str, version_id: str,

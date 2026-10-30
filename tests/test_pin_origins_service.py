@@ -284,3 +284,25 @@ def test_pinning_a_mod_whose_record_an_import_stores_meanwhile_keeps_both(mongo:
     record = bundle.pin_origins[SODIUM[0]]
     assert bundle.pins[SODIUM[0]] == "sod-1" and record.selected == PinSource.admin
     assert [o.source for o in record.origins] == [PinSource.pack, PinSource.admin]
+
+
+def test_a_pack_pin_never_written_for_contention_is_not_reported_as_kept(mongo: MongoRunner) -> None:
+    """Review of 2026-10-26: after PIN_WRITE_TRIES writes, each meeting another write of the record (nobody
+    changed the pin), the pack's version was reported as «kept», which is another user's choice. It is busy."""
+    async def scenario() -> Any:
+        s = Scenario()
+        bundle_id = await s.bundle()
+        tries: list[str] = []
+
+        async def contended(bundle_id: str, project_id: str, *args: Any, **kwargs: Any) -> bool:
+            tries.append(project_id)
+            return False
+
+        s.modpackDB.bundle_pin_record_set = contended  # type: ignore[method-assign]
+        found = ModrinthVersion.parse(**version("sod-1", SODIUM[0], SODIUM[2]))
+        result = await s.service.modpackService.pins_from_pack(bundle_id, {SODIUM[0]: found}, "Aventura", EDITOR)
+        return result, len(tries)
+
+    result, tries = mongo(scenario)
+    assert tries > 1 and result.kept == [] and result.busy == [SODIUM[0]]
+    assert (result.pinned, result.offered) == ([], [])

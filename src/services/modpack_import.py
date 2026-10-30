@@ -80,6 +80,9 @@ class ImportReport:
     pinned: list[str] = field(default_factory=list)
     outside: dict[str, str] = field(default_factory=dict)
     offered: list[str] = field(default_factory=list)
+    # Those whose pack version was not written at all: every try met another write of the mod's record
+    # (`PackPins.busy`). Reports saved before load without it.
+    busy: list[str] = field(default_factory=list)
 
 
 def _import_key(actor: Actor) -> str:
@@ -453,7 +456,7 @@ class ModpackImportService():
         return ImportReport(bundle_id=bundle_id, created=into is None, source=source, projects=project_ids,
                             unknown=unknown, overrides=dict(content.overrides), decisions=decided,
                             channel_exceptions=excepted, disabled=len(disabled), pinned=pinned.pinned,
-                            outside=pinned.outside, offered=pinned.offered)
+                            outside=pinned.outside, offered=pinned.offered, busy=pinned.busy)
 
     async def _hinted(self, version_ids: list[str]) -> list[ModrinthVersion]:
         """The versions packwiz metafiles name for jars the archive lacks (T6/P4): the catalog first,
