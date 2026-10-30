@@ -75,6 +75,63 @@ def test_the_same_key_is_one_note(mongo: MongoRunner) -> None:
 
 
 @pytest.mark.network
+def test_a_repeated_key_never_answers_another_persons_or_another_packs_note(mongo: MongoRunner) -> None:
+    """Review of tanda 2: a `key` already used returned that note, whoever wrote it and in whatever pack.
+    The same author in the same pack gets their note back; anyone else, a 409 and nothing written."""
+    async def scenario() -> tuple[Any, ...]:
+        notes, _ = service()
+        mine = await notes.create("b1", BUILD, "fails", "mía", None, None, "same", EDITOR)
+        refused = []
+        for bundle_id, actor in (("b1", OPERATOR), ("b2", EDITOR)):
+            with pytest.raises(HTTPException) as error:
+                await notes.create(bundle_id, BUILD, "works", "otra", None, None, "same", actor)
+            refused.append(error.value.status_code)
+        return refused, (await notes.get(str(mine.id))).text, len(await notes.find("b2", build_number=15))
+
+    assert mongo(scenario) == ([409, 409], "mía", 0)
+
+
+@pytest.mark.network
+def test_a_note_names_only_a_build_and_a_server_of_its_pack(mongo: MongoRunner) -> None:
+    """Review of tanda 2: `create` took any build number and any server. A build the pack does not have,
+    or a server linked to another pack (or to none), is a 422 and nothing is written."""
+    from src.database.modpack import ModpackDatabase
+    from src.database.pterodactyl import PterodactylDatabase
+    from src.model.pterodactyl import PterodactylServer
+    from tests.test_builds import empty_bundle
+    from src.model.modpack import ProjectOrigin
+
+    async def scenario() -> tuple[Any, ...]:
+        modpack, bundle_id = await empty_bundle()
+        await modpack.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        await modpack.build_create(bundle_id, actor=EDITOR)  # build 1
+        _, other_id = await empty_bundle()
+        servers = PterodactylDatabase()
+
+        async def server(identifier: str, linked: str | None) -> str:
+            made = await servers.server_insert(PterodactylServer(
+                identifier=identifier, internal_id=1, uuid=f"{identifier}-0", name=identifier, node="n1", description="",
+                status=None, is_suspended=False, is_installing=False, is_transferring=False, bundle_id=linked))
+            return str(made.id)
+
+        ours, theirs, loose = await server("ours", bundle_id), await server("theirs", other_id), await server("loose", None)
+        notes = NoteService(noteDB=NoteDatabase(), audit=RecordingAudit(), pterodactylDB=servers, modpackDB=ModpackDatabase())
+        refused: list[tuple[int, Any]] = []
+        for target, server_id in ((NoteTarget(build_number=7), None), (NoteTarget(build_number=1), theirs),
+                                  (NoteTarget(build_number=1), loose)):
+            with pytest.raises(HTTPException) as error:
+                await notes.create(bundle_id, target, "fails", "x", None, server_id, f"k-{len(refused)}", EDITOR)
+            refused.append((error.value.status_code, error.value.detail))
+        kept = await notes.create(bundle_id, NoteTarget(build_number=1), "works", "anda", None, ours, "k-ok", EDITOR)
+        return refused, kept.server_name, len(await notes.find(bundle_id))
+
+    refused, server_name, stored = mongo(scenario)
+    assert refused == [(422, "El build 7 no es de este pack"), (422, "Ese servidor no está vinculado a este pack"),
+                       (422, "Ese servidor no está vinculado a este pack")]
+    assert server_name == "ours" and stored == 1
+
+
+@pytest.mark.network
 def test_only_the_author_edits_and_the_old_text_is_kept(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[Any, ...]:
         notes, _ = service()

@@ -90,7 +90,7 @@ class Dependences(containers.DeclarativeContainer):
     modpackImportService = providers.Singleton(ModpackImportService, modpackService, modpackDatabase, modrinthDatabase, modrinthAPI, downloader, auditService, jobDB=jobDatabase, curseforge=curseforgeAPI)
     updateCheckService = providers.Singleton(UpdateCheckService, modpackDatabase, modrinthAPI, modrinthDatabase, updateCheckDatabase, jobDatabase, auditService, notifier)
     # O8 tanda 2: notes on builds and mods' versions.
-    noteService = providers.Singleton(NoteService, noteDatabase, auditService, pterodactylDatabase)
+    noteService = providers.Singleton(NoteService, noteDatabase, auditService, pterodactylDatabase, modpackDatabase)
     # O8 tanda 3: the knowledge base.
     knowledgeService = providers.Singleton(KnowledgeService, knowledgeDatabase, modrinthDatabase, modrinthAPI, auditService, modpackDatabase, noteDatabase)
 

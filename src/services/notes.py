@@ -3,6 +3,7 @@ d-7985ee-a68b5c)."""
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
+from src.database.modpack import ModpackDatabase
 from src.database.note import NoteDatabase
 from src.database.pterodactyl import PterodactylDatabase
 from src.exceptions import *
@@ -15,6 +16,8 @@ from src.services.audit import AuditSink
 # A comment's length; the error has its own cut (`cut_error`).
 TEXT_MAX = 4000
 NOTE_BUSY = "La nota cambió mientras tanto; vuelve a abrirla"
+# A key already used by another person, or in another pack (review of tanda 2): never their note.
+KEY_TAKEN = "Esa clave ya es de otra nota: vuelve a abrir el formulario"
 
 
 def _bundle(bundle_id: str) -> AuditTarget:
@@ -30,25 +33,41 @@ def _error(error: Optional[str]) -> Optional[str]:
 
 class NoteService:
     def __init__(self, noteDB: NoteDatabase, audit: AuditSink, pterodactylDB: Optional[PterodactylDatabase] = None,
+                 modpackDB: Optional[ModpackDatabase] = None,
                  clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc)) -> None:
         self.noteDB = noteDB
         self.audit = audit
         self.pterodactylDB = pterodactylDB
+        self.modpackDB = modpackDB
         self.clock = clock
 
     async def create(self, bundle_id: str, target: NoteTarget, verdict: Verdict, text: str, error: Optional[str],
                      server_id: Optional[str], key: str, actor: Actor) -> VersionNote:
         """Write a note on a build or a mod's version (editor). The same `key` is the same note: a form
-        sent twice writes one (user-walk N14). The server's name is kept as it is now (N22)."""
+        sent twice writes one (user-walk N14), but only for its author in its pack; anyone else is a 409
+        (review of tanda 2). The build and the server are the pack's (422); the server's name is kept as
+        it is now (N22)."""
         if target.build_number is None and not (target.project_id and target.version_id):
             raise HTTP_422_UNPROCESSABLE_ENTITY("Una nota es de un build o de la versión de un mod")
+        if target.build_number is not None and self.modpackDB is not None:
+            try:
+                await self.modpackDB.build_get(bundle_id, target.build_number)
+            except HTTPException as missing:
+                if missing.status_code != 404:
+                    raise
+                raise HTTP_422_UNPROCESSABLE_ENTITY(f"El build {target.build_number} no es de este pack") from None
         server_name = None
         if server_id and self.pterodactylDB is not None:
-            server_name = (await self.pterodactylDB.server_get(server_id)).name
+            server = await self.pterodactylDB.server_get(server_id)
+            if server.bundle_id != bundle_id:
+                raise HTTP_422_UNPROCESSABLE_ENTITY("Ese servidor no está vinculado a este pack")
+            server_name = server.name
         note = await self.noteDB.insert(VersionNote(
             bundle_id=bundle_id, **target.model_dump(), server_id=server_id or None, server_name=server_name,
             verdict=verdict, text=text.strip()[:TEXT_MAX], error=_error(error), author=actor.ref(), at=self.clock(),
             key=key))
+        if (note.bundle_id, note.author.iss, note.author.sub) != (bundle_id, actor.iss, actor.sub):
+            raise HTTP_409_CONFLICT(KEY_TAKEN)
         await self.audit.record(actor, "note.create", _bundle(bundle_id), {"note_id": str(note.id), "verdict": verdict})
         return note
 
