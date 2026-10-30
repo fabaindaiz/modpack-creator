@@ -9,7 +9,7 @@ from typing import Any, Optional, Sequence
 from beanie import PydanticObjectId
 from pydantic import BaseModel
 from src.library.knowledge import KnownWarning
-from src.services.knowledge import warnings_for
+from src.services.knowledge import merge_warnings, warnings_for
 from src.database import ModpackDatabase, ModrinthDatabase, PterodactylDatabase
 from src.library.api.client.loaders import LoaderMetaAPI
 from src.library.api.client.modrinth import ID_CHUNK, ModrinthAPI
@@ -1771,6 +1771,45 @@ class ModpackService():
             if number is not None and last.payload.get("bundle_id") == bundle_id:
                 installed[str(last.payload.get("server_id"))] = number
         return installed
+
+    async def pack_warnings(self, bundle: ModpackBundle) -> dict[str, list[KnownWarning]]:
+        """What the knowledge base confirmed in this pack (O8 tanda 3, K-Q1), by project: in its build in force
+        and in the latest scan of each linked server (the jars that really run, user-walk K7), each warning with
+        where. Suspicions never show here. It only warns (D8). Never Modrinth."""
+        sources: list[tuple[str, dict[str, list[KnownWarning]]]] = []
+        in_force = bundle.recommended_build or bundle.latest_build
+        if in_force is not None:
+            build = await self.modpackDB.build_get(str(bundle.id), in_force)
+            target = build.request.target
+            sources.append((f"build {in_force}", await warnings_for(
+                self.knowledgeDB, self.modrinthDB, {e.project_id: e.version_id for e in build.lock.entries},
+                target.game_version, target.loader)))
+        for server in await self.pterodactylDB.server_find_by_bundle(str(bundle.id)):
+            scan = await self.pterodactylDB.scan_latest(str(server.id), SCAN_DIRECTORY)
+            if scan is None:
+                continue
+            running = {f.project_id: f.version_id for f in scan.files
+                       if f.status == "identified" and f.project_id and f.version_id}
+            sources.append((server.name, await warnings_for(self.knowledgeDB, self.modrinthDB, running,
+                                                            bundle.version, str(bundle.loader.value))))
+        return merge_warnings(sources)
+
+    async def build_warnings(self, bundle_id: str, number: int) -> dict[str, list[KnownWarning]]:
+        """What the base confirmed in this build's own versions (user-walk K24): an old build keeps its warning."""
+        build = await self.modpackDB.build_get(bundle_id, number)
+        target = build.request.target
+        return await warnings_for(self.knowledgeDB, self.modrinthDB, {e.project_id: e.version_id for e in build.lock.entries},
+                                  target.game_version, target.loader)
+
+    async def known_counts(self, bundles: Sequence[ModpackBundle]) -> dict[str, int]:
+        """How many confirmed entries apply to each pack (the dashboard), from its build in force and its
+        servers' scans; a pack without any is absent."""
+        counts: dict[str, int] = {}
+        for bundle in bundles:
+            warned = {w.issue_id for listed in (await self.pack_warnings(bundle)).values() for w in listed}
+            if warned:
+                counts[str(bundle.id)] = len(warned)
+        return counts
 
     async def build_verdicts(self, bundle_id: str) -> dict[int, tuple[str, int]]:
         """Each build's verdict, from its notes not archived (O8 tanda 2, T5): the newest note's, and how

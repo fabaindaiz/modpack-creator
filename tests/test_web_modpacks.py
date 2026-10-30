@@ -116,6 +116,16 @@ def note(verdict: str = "fails", text: str = "pantalla negra", **fields: Any) ->
                                        "server_name": None, "error": None, "edited_at": None, **fields})
 
 
+class FakeKnowledgeBase:
+    """KnowledgeService where a page only counts its suspicions (O8 tanda 3)."""
+
+    def __init__(self, suspected: int = 0) -> None:
+        self.suspected = suspected
+
+    async def suspected_count(self) -> int:
+        return self.suspected
+
+
 class FakeModpack:
     def __init__(self) -> None:
         self.bundle = bundle()
@@ -132,6 +142,9 @@ class FakeModpack:
         self.history_more = False
         self.history_calls: list[tuple[str, Any]] = []
         self.changelog: tuple[Optional[str], str] = ("## Arreglos", "ok")
+        # What the knowledge base warns of (O8 tanda 3): in the pack, and in a build.
+        self.known: dict[str, list[Any]] = {}
+        self.build_known: dict[str, list[Any]] = {}
         self.changelog_calls: list[tuple[str, str]] = []
         self.suggestion: Any = None
         # Whether the pack's last build job was a test (O8 B1: its blocked dialog stays a test's).
@@ -361,6 +374,12 @@ class FakeModpack:
     async def build_find(self, bundle_id: str) -> list[ModpackBuild]:
         return self.builds
 
+    async def pack_warnings(self, bundle: Any) -> dict[str, list[Any]]:
+        return self.known
+
+    async def build_warnings(self, bundle_id: str, number: int) -> dict[str, list[Any]]:
+        return self.build_known
+
     async def build_recommend(self, bundle_id: str, number: int, actor: Actor) -> ModpackBundle:
         self._record("build_recommend", bundle_id, number, actor)
         return self.bundle
@@ -511,6 +530,7 @@ def setup_all(actor: Optional[Actor] = EDITOR) -> tuple[TestClient, FakeModpack,
     main.container.pterodactylService.override(providers.Object(ptero))
     main.container.jobService.override(providers.Object(FakeJobs()))
     main.container.noteService.override(providers.Object(modpack.notes))
+    main.container.knowledgeService.override(providers.Object(FakeKnowledgeBase()))
     # Sin `with`: el lifespan abriría MongoDB y el proveedor OIDC.
     client = TestClient(main.app, base_url="https://testserver", follow_redirects=False)
     if actor is not None:

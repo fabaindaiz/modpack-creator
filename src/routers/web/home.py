@@ -5,7 +5,7 @@ from typing import Optional
 from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse
-from src.dependences import Dependences, JobService, ModpackService, PterodactylService, UpdateCheckService
+from src.dependences import Dependences, JobService, KnowledgeService, ModpackService, PterodactylService, UpdateCheckService
 from src.library.attention import VISIBLE, PackFact, ServerFact, attention, failed_job_fact, unresolved
 from src.library.utils import as_utc, utcnow
 from src.model.pterodactyl import PterodactylServer
@@ -53,6 +53,7 @@ async def home(
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         jobService: JobService = Depends(Provide[Dependences.jobService]),
         updateCheckService: UpdateCheckService = Depends(Provide[Dependences.updateCheckService]),
+        knowledgeService: KnowledgeService = Depends(Provide[Dependences.knowledgeService]),
         ):
     """The dashboard: what needs attention first (B2), then the servers with their bundle and drift,
     each bundle's latest build, and the most recent jobs."""
@@ -73,6 +74,9 @@ async def home(
     done = await jobService.find(server_id=None, kind=None, status="done", before_id=None, limit=DONE_LOOKUP)
     failed = unresolved(failed, done)
     server_names = {str(row.server.id): row.server.name for row in servers}
+    # What the knowledge base confirmed in each pack, and an operator's suspicions to review (O8 tanda 3, K-Q1).
+    known = await modpackService.known_counts([bundle for bundle, _ in builds])
+    suspicions = await knowledgeService.suspected_count() if actor.is_operator else 0
     checked_at = {str(bundle_id): check.checked_at for bundle_id, check in checks.items()}
     items = attention(
         [ServerFact(id=str(row.server.id), name=row.server.name, state=row.state, has_pack=row.bundle_name is not None,
@@ -85,9 +89,11 @@ async def home(
                   problems=len(resolutions[bundle_id].lock.problems) if bundle_id in resolutions else 0,
                   updates=update_counts.get(bundle_id, 0), checked_at=checked_at.get(bundle_id),
                   resolved_at=resolutions[bundle_id].resolved_at if bundle_id in resolutions else None,
-                  native_ready=len(resolutions[bundle_id].lock.native_available) if bundle_id in resolutions else 0)
+                  native_ready=len(resolutions[bundle_id].lock.native_available) if bundle_id in resolutions else 0,
+                  known=known.get(bundle_id, 0))
          for bundle_id in bundle_ids],
-        [failed_job_fact(job, server_names, bundle_names) for job in failed], utcnow(), operator=actor.is_operator)
+        [failed_job_fact(job, server_names, bundle_names) for job in failed], utcnow(), operator=actor.is_operator,
+        suspicions=suspicions)
     last_check = max((as_utc(check.checked_at) for check in checks.values()), default=None)
     return render(request, "home.html", actor, servers=servers, builds=builds, jobs=jobs, update_counts=update_counts,
                   server_names=server_names, attention=items, visible=VISIBLE, last_check=last_check)

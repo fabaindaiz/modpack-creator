@@ -69,6 +69,8 @@ class PackFact:
     resolved_at: Optional[datetime] = None
     # Bridged mods whose native version caught up (batch C, C7): offered, never moved alone.
     native_ready: int = 0
+    # Entries the knowledge base confirmed in it (O8 tanda 3): a warning, never a block (D8).
+    known: int = 0
 
 
 @dataclass(frozen=True)
@@ -117,7 +119,7 @@ def _pending(fact: PackFact) -> str:
 
 
 def attention(servers: Sequence[ServerFact], packs: Sequence[PackFact], failed: Sequence[FailedJob],
-              now: datetime, operator: bool = True) -> list[Attention]:
+              now: datetime, operator: bool = True, suspicions: int = 0) -> list[Attention]:
     """Every item that needs attention, by severity and then newest first (undated last). Simulating
     and linking are an operator's (d-7985ee-edef1e): an editor gets those cards to look, not to act
     (user walk, 2026-10-13)."""
@@ -160,6 +162,15 @@ def attention(servers: Sequence[ServerFact], packs: Sequence[PackFact], failed: 
             ready = ("1 mod ya tiene" if pack.native_ready == 1 else f"{pack.native_ready} mods ya tienen")
             items.append(Attention(AVAILABLE, f"{pack.name}: {ready} versión nativa.", "Ver",
                                    f"/modpacks/{pack.id}?vista=puente", pack.resolved_at))
+        if pack.known:
+            known = _plural(pack.known, "combinación conocida", "combinaciones conocidas")
+            items.append(Attention(AVAILABLE, f"{pack.name} tiene {known} en la base.", "Ver", f"/modpacks/{pack.id}",
+                                   pack.resolved_at))
+    if operator and suspicions:
+        # K-Q1 (d-7985ee-57d185): suspicions are reviewed by an operator, and only counted here.
+        pending = _plural(suspicions, "sospecha por revisar", "sospechas por revisar")
+        items.append(Attention(AVAILABLE, f"{pending} en la base.".capitalize(), "Revisar",
+                               "/conocimiento?estado=suspected", None))
     # Stable: within a severity and a date, the order the facts came in.
     items.sort(key=lambda i: -as_utc(i.at).timestamp() if i.at else float("inf"))
     items.sort(key=lambda i: i.severity)

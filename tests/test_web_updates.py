@@ -47,6 +47,12 @@ class FakeModpack:
         self.failed: set[str] = set()
         self.changelogs: dict[str, Optional[str]] = {}
 
+    async def pack_warnings(self, bundle: Any) -> dict[str, list[Any]]:
+        return {}
+
+    async def known_counts(self, bundles: list[Any]) -> dict[str, int]:
+        return {}
+
     async def bundle_get(self, bundle_id: str) -> ModpackBundle:
         return self.bundle
 
@@ -160,6 +166,8 @@ def setup_all(actor: Optional[Actor] = EDITOR) -> tuple[TestClient, FakeModpack,
     main.container.jobService.override(providers.Object(FakeJobs()))
     main.container.pterodactylService.override(providers.Object(FakePtero()))
     main.container.modrinthService.override(providers.Object(modrinth))
+    from tests.test_web_modpacks import FakeKnowledgeBase
+    main.container.knowledgeService.override(providers.Object(FakeKnowledgeBase()))
     client = TestClient(main.app, base_url="https://testserver", follow_redirects=False)
     if actor is not None:
         client.cookies.set("session", session_cookie(session_for(actor)))

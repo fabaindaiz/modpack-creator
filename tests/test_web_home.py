@@ -216,3 +216,13 @@ def test_the_first_time_the_empty_lists_say_what_to_do() -> None:
     builds = text[text.index('id="builds"'):]
     assert "No hay servidores." in visible(servers) and 'href="/servers"' in servers and "Traer del panel" in visible(servers)
     assert "No hay modpacks." in visible(builds) and 'href="/modpacks#nuevo"' in builds and 'href="/modpacks/importar"' in builds
+
+
+def test_the_dashboard_counts_known_and_an_operator_the_suspicions() -> None:
+    """O8 tanda 3 (K-Q1): a pack's confirmed combinations for everyone, the suspicions to review for an operator."""
+    pterodactyl, modpack, jobs = calm_fakes()
+    modpack.known = {str(BUNDLE_ID): 2}
+    operator = strip(client(OPERATOR, (pterodactyl, modpack, jobs), suspected=3).get("/").text)
+    editor = strip(client(EDITOR, (pterodactyl, modpack, jobs), suspected=3).get("/").text)
+    assert "2 combinaciones conocidas en la base" in operator and "2 combinaciones conocidas en la base" in editor
+    assert "3 sospechas por revisar" in operator and "3 sospechas por revisar" not in editor

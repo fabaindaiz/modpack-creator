@@ -42,6 +42,9 @@ class Knowledge:
     async def get(self, issue_id: str) -> Any:
         return type("Issue", (), {"id": issue_id, "summary": "pantalla negra", "status": "confirmed"})()
 
+    async def suspected_count(self) -> int:
+        return 0
+
 
 def knowledge_setup() -> tuple[Any, Knowledge, Any]:
     import main
@@ -124,3 +127,28 @@ def test_marking_an_existing_pair_offers_to_join() -> None:
 
 def test_issue_exists_is_a_conflict() -> None:
     assert isinstance(IssueExists("i7"), HTTP_409_CONFLICT) and IssueExists("i7").issue_id == "i7"
+
+
+# Where the base warns (Task 6: K7, K24, K-Q1, K-Q4).
+
+
+def test_a_card_warns_of_a_confirmed_pair() -> None:
+    client, _, modpack = knowledge_setup()
+    modpack.known = {"P1": [warning().model_copy(update={"where": ["build 2", "Survival"]})]}
+    text = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "todos"}).text
+    card = text.split('data-project="P1"')[1].split("</li>")[0]
+    assert "⚠ Conocida" in card and "Iris 1.7+ ✕ Sodium" in card and "build 2, Survival" in card
+
+
+def test_a_broken_version_links_the_suggestion() -> None:
+    client, _, modpack = knowledge_setup()
+    modpack.known = {"P1": [warning(broken=True)]}
+    text = client.get(f"/modpacks/{BUNDLE_ID}", params={"vista": "todos"}).text
+    assert f'hx-get="/modpacks/{BUNDLE_ID}/projects/P1/sugerencia"' in text and "Fijar la anterior que funcionó" in text
+
+
+def test_an_old_build_page_keeps_its_warning() -> None:
+    client, _, modpack = knowledge_setup()
+    modpack.build_known = {"P1": [warning()]}
+    text = client.get(f"/modpacks/{BUNDLE_ID}/builds/2").text
+    assert "⚠ Conocida" in text and "Iris 1.7+ ✕ Sodium" in text

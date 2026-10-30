@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "knowledge/_warning.html" import known as known_warning %}
 {% set nav_active = "modpacks" %}
 {% block title %}Build {{ build.number }} de {{ bundle.name }}{% endblock %}
 
@@ -47,6 +48,10 @@
       <li class="flex flex-wrap items-baseline justify-between gap-x-3 px-3 py-1.5">
         <span class="min-w-0 break-words">{{ ui.mod_link(entry.project_id, titles.get(entry.project_id, entry.project_id), pack=bundle_id) }}</span>
         <span class="text-xs tabular-nums text-muted">{{ entry.version_number }}</span>
+        {# What the base confirmed in this build's versions (O8 tanda 3, user-walk K24). #}
+        {% for warning in (known.get(entry.project_id, []) if known is defined else []) %}
+        <div class="w-full">{{ known_warning(warning, bundle_id, entry.project_id) }}</div>
+        {% endfor %}
       </li>
       {% endfor %}
     </ul>

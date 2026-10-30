@@ -200,7 +200,9 @@ async def _mods_context(modpackService: ModpackService, updateCheckService: Upda
             "origins": {p.project_id: p.origin.value for p in bundle.projects},
             "humanize": humanize, "environment_label": environment_label,
             # A queued or running job of the pack: its buttons say "En curso…" (E8).
-            "busy": bool(await modpackService.active_jobs(bundle_id))}
+            "busy": bool(await modpackService.active_jobs(bundle_id)),
+            # What the knowledge base confirmed in the pack (O8 tanda 3), on each mod's card.
+            "known": await modpackService.pack_warnings(bundle)}
 
 async def _mods(request: Request, actor: Actor, modpackService: ModpackService, updateCheckService: UpdateCheckService,
                 bundle_id: str, success: Optional[str] = None, info: Optional[str] = None,
@@ -1366,7 +1368,8 @@ async def build_page(
     previous = max((b.number for b in builds if b.number < number), default=None)
     return render(request, "modpacks/build.html", actor, bundle=bundle, bundle_id=bundle_id, build=build,
                   notes=notes if todas == "1" else notes[:NOTES_SHOWN], more=len(notes) > NOTES_SHOWN and todas != "1",
-                  counts=counts, archived=archivadas == "1", titles=titles, previous=previous, nav_active="modpacks")
+                  counts=counts, archived=archivadas == "1", titles=titles, previous=previous, nav_active="modpacks",
+                  known=await modpackService.build_warnings(bundle_id, number))
 
 # The notes a build page shows before «Ver todas» (user-walk N20).
 NOTES_SHOWN = 5

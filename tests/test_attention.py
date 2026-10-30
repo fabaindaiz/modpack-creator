@@ -198,3 +198,18 @@ def test_bridged_mods_whose_native_version_caught_up_are_suggested_never_moved()
     assert item.severity == 2 and item.at == NOW
     [one] = attention([], [pack(native_ready=1)], [], NOW)
     assert one.text == "Pack Uno: 1 mod ya tiene versión nativa."
+
+
+def test_known_combinations_warn_without_blocking() -> None:
+    """O8 tanda 3 (D8): what the base confirmed in a pack is a warning, never a block."""
+    from src.library.attention import AVAILABLE
+    [item] = attention([], [pack(known=2)], [], NOW)
+    assert item.severity == AVAILABLE and item.text == "Pack Uno tiene 2 combinaciones conocidas en la base."
+    assert item.href == "/modpacks/id-Pack Uno"
+
+
+def test_only_an_operator_sees_suspicions_to_review() -> None:
+    """K-Q1: suspicions are an operator's to review, counted on the dashboard."""
+    [item] = attention([], [], [], NOW, operator=True, suspicions=3)
+    assert item.text == "3 sospechas por revisar en la base." and item.href == "/conocimiento?estado=suspected"
+    assert attention([], [], [], NOW, operator=False, suspicions=3) == []

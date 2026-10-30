@@ -89,3 +89,48 @@ def test_a_rejected_entry_never_warns(mongo: MongoRunner) -> None:
         return len(await warnings_for(KnowledgeDatabase(), ModrinthDatabase(), PACK, "26.3", "fabric", suspected=True))
 
     assert mongo(scenario) == 0
+
+
+# A pack's warnings (Task 6: K1, K7, K-Q1).
+
+
+def test_where_a_warning_was_seen_is_merged_by_entry() -> None:
+    """A pack's warnings come from its build in force and each linked server's scan: one per entry, with where."""
+    from src.library.knowledge import KnownWarning
+    from src.services.knowledge import merge_warnings
+
+    one = KnownWarning(issue_id="i1", status="confirmed", summary="x", project_ids=["a", "b"], text="A ✕ B", broken=False)
+    merged = merge_warnings([("build 14", {"a": [one], "b": [one]}), ("Survival", {"a": [one], "b": [one]})])
+    assert [w.where for w in merged["a"]] == [["build 14", "Survival"]] and set(merged) == {"a", "b"}
+
+
+@pytest.mark.network
+def test_a_confirmed_issue_never_blocks_a_build_and_its_card_warns(mongo: MongoRunner) -> None:
+    from tests.test_builds import empty_bundle
+    from src.model.modpack import ProjectOrigin
+
+    async def scenario() -> tuple[int, list[str]]:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["sodium", "iris"], ProjectOrigin.pack, actor=EDITOR)
+        await seed("confirmed")
+        build = await service.build_create(bundle_id, actor=EDITOR)
+        warned = await service.pack_warnings(await service.bundle_get(bundle_id))
+        return build.number, warned[IRIS][0].where
+
+    assert mongo(scenario) == (1, ["build 1"])
+
+
+@pytest.mark.network
+def test_a_card_never_shows_a_suspicion(mongo: MongoRunner) -> None:
+    from tests.test_builds import empty_bundle
+    from src.model.modpack import ProjectOrigin
+
+    async def scenario() -> tuple[dict[str, Any], int]:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["sodium", "iris"], ProjectOrigin.pack, actor=EDITOR)
+        await seed("suspected")
+        await service.build_create(bundle_id, actor=EDITOR)
+        bundle = await service.bundle_get(bundle_id)
+        return await service.pack_warnings(bundle), (await service.known_counts([bundle])).get(bundle_id, 0)
+
+    assert mongo(scenario) == ({}, 0)

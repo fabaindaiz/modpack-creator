@@ -58,9 +58,15 @@ class FakeModpack:
                  resolutions: Optional[dict[str, Any]] = None) -> None:
         self.rows = rows
         self.resolutions = resolutions or {}
+        # What the knowledge base confirmed in each pack, by pack id (O8 tanda 3).
+        self.known: dict[str, int] = {}
 
     async def latest_builds(self) -> list[tuple[ModpackBundle, Optional[ModpackBuild]]]:
         return self.rows
+
+    async def known_counts(self, bundles: list[ModpackBundle]) -> dict[str, int]:
+        """What the base confirmed in each pack (O8 tanda 3): `known`, by pack id."""
+        return {str(b.id): self.known[str(b.id)] for b in bundles if str(b.id) in self.known}
 
     async def current_resolutions(self, bundles: list[ModpackBundle]) -> dict[str, Any]:
         """`resolutions` holds the current ones: the service leaves a stale one out."""
@@ -115,14 +121,16 @@ def reset_overrides() -> Any:
 
 
 def client(actor: Optional[Actor], fakes: Optional[tuple[FakePterodactyl, FakeModpack, FakeJobs]] = None,
-           checks: Optional[FakeChecks] = None) -> TestClient:
+           checks: Optional[FakeChecks] = None, suspected: int = 0) -> TestClient:
     import main
+    from tests.test_web_modpacks import FakeKnowledgeBase
 
     pterodactyl, modpack, jobs = fakes or default_fakes()
     main.container.pterodactylService.override(providers.Object(pterodactyl))
     main.container.modpackService.override(providers.Object(modpack))
     main.container.jobService.override(providers.Object(jobs))
     main.container.updateCheckService.override(providers.Object(checks or FakeChecks()))
+    main.container.knowledgeService.override(providers.Object(FakeKnowledgeBase(suspected)))
     # Sin `with`: el lifespan abriría MongoDB y el proveedor OIDC.
     test_client = TestClient(main.app, base_url="https://testserver", follow_redirects=False)
     if actor is not None:

@@ -53,6 +53,19 @@ async def warnings_for(knowledgeDB: KnowledgeDatabase, modrinthDB: ModrinthDatab
     return found
 
 
+def merge_warnings(sources: list[tuple[str, dict[str, list[KnownWarning]]]]) -> dict[str, list[KnownWarning]]:
+    """The warnings of several sources of a pack (its build in force, each linked server's scan, user-walk K7), one
+    per entry and project, each with where it applies, in the sources' order."""
+    found: dict[str, dict[str, KnownWarning]] = {}
+    for where, warnings in sources:
+        for project_id, listed in warnings.items():
+            for warning in listed:
+                kept = found.setdefault(project_id, {}).setdefault(warning.issue_id, warning.model_copy(update={"where": []}))
+                if where not in kept.where:
+                    kept.where.append(where)
+    return {project_id: list(by_issue.values()) for project_id, by_issue in found.items()}
+
+
 class IssueExists(HTTP_409_CONFLICT):
     """A pair already in the base, not rejected: its id, so the editor joins it (user-walk K10)."""
 
