@@ -3,7 +3,7 @@ from dependency_injector.wiring import Provide, inject
 from fastapi import APIRouter, Depends, Query, Request
 from starlette.datastructures import UploadFile
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from fastapi import Response
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -190,7 +190,8 @@ async def build_approve(
         actor: Actor = Depends(get_current_actor)
         ):
     """Approve a test build (O8 B1): latest moves to it if it is the newest; a second approval changes
-    nothing (`approved` false)."""
+    nothing (`approved` false), `recommend` included: `recommended` says whether it is the recommended,
+    and PUT /recommended moves it."""
     return await modpack.build_approve(bundle_id=id, number=number, actor=actor, recommend=recommend)
 
 class BuildPatch(BaseModel):
@@ -199,6 +200,14 @@ class BuildPatch(BaseModel):
     name: Optional[str] = None
     starred: Optional[bool] = None
     stable: Optional[bool] = None
+
+    @field_validator("starred", "stable")
+    @classmethod
+    def a_mark_is_true_or_false(cls, value: Optional[bool]) -> bool:
+        """A mark sent as null is refused (422), never a 200 that does nothing (review of tanda 1)."""
+        if value is None:
+            raise ValueError("send true or false, or leave the field out")
+        return value
 
 
 @router.patch("/modpack/{id}/build/{number}", response_model=ModpackBuild)
@@ -217,9 +226,9 @@ async def build_patch(
     build = await modpack.build_get(bundle_id=id, number=number)
     if "name" in sent:
         build = await modpack.build_name(id, number, patch.name, actor)
-    if "starred" in sent and patch.starred is not None:
+    if patch.starred is not None:
         build = await modpack.build_star(id, number, patch.starred, actor)
-    if "stable" in sent and patch.stable is not None:
+    if patch.stable is not None:
         build = await modpack.build_stable(id, number, patch.stable, actor)
     return build
 
