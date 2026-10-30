@@ -30,6 +30,25 @@ class BuildsView:
     verdicts: dict[int, tuple[str, int]] = field(default_factory=dict)
 
 
+def _kept(ordered: Sequence[ModpackBuild], recommended: Optional[int], latest: Optional[int]) -> set[int]:
+    """The builds never folded whatever is installed: the recommended, the latest, the newest and the
+    stable (T3b: «Recomendar el último estable» reads it here)."""
+    newest = {b.number for b in ordered[:NEWEST_SHOWN]}
+    return {n for n in (recommended, latest) if n is not None} | newest | {b.number for b in ordered if b.stable}
+
+
+def installed_matters(builds: Sequence[ModpackBuild], recommended: Optional[int], latest: Optional[int],
+                      starred_only: bool) -> bool:
+    """Whether the installed builds change the list: only when a build would fold without them, and never
+    with `starred_only`. Each redraw of #builds asks first, so the read of the servers' jobs is skipped
+    when it cannot change anything (review of tanda 1), never cached."""
+    if starred_only:
+        return False
+    ordered = sorted(builds, key=lambda b: b.number, reverse=True)
+    kept = _kept(ordered, recommended, latest)
+    return any(not b.starred and b.number not in kept for b in ordered)
+
+
 def builds_view(builds: Sequence[ModpackBuild], recommended: Optional[int], latest: Optional[int],
                 installed: set[int], starred_only: bool,
                 verdicts: Optional[dict[int, tuple[str, int]]] = None) -> BuildsView:
@@ -38,9 +57,7 @@ def builds_view(builds: Sequence[ModpackBuild], recommended: Optional[int], late
     newest builds, a test among them (H3: an older test folds like any other). With `starred_only`
     only the starred are shown."""
     ordered = sorted(builds, key=lambda b: b.number, reverse=True)
-    newest = {b.number for b in ordered[:NEWEST_SHOWN]}
-    # A stable build too (T3b): «Recomendar el último estable» reads it here.
-    kept = {n for n in (recommended, latest) if n is not None} | installed | newest | {b.number for b in ordered if b.stable}
+    kept = _kept(ordered, recommended, latest) | installed
 
     def shown(build: ModpackBuild) -> bool:
         return build.starred if starred_only else build.starred or build.number in kept

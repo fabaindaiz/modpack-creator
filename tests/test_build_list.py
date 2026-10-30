@@ -4,7 +4,7 @@ from typing import Any
 
 from beanie import PydanticObjectId
 
-from src.library.builds import BUILD_NAME_MAX, build_name, builds_view
+from src.library.builds import BUILD_NAME_MAX, build_name, builds_view, installed_matters
 from src.model.modpack import ModpackBuild
 
 
@@ -64,3 +64,17 @@ def test_a_stable_build_never_folds() -> None:
     """T3b (d-7985ee-16be41): «Recomendar el último estable» reads it from the list."""
     view = builds_view(builds(*range(1, 11), stable={2}), recommended=None, latest=10, installed=set(), starred_only=False)
     assert 2 in numbers(view.shown)
+
+
+def test_the_installed_builds_matter_only_when_some_build_would_fold() -> None:
+    """Each redraw of #builds read the installed builds (review of tanda 1): only needed when a build
+    would fold without them; never with «Solo destacados», where only the star counts."""
+    assert not installed_matters(builds(3, 2, 1), recommended=1, latest=3, starred_only=False)
+    assert not installed_matters(builds(5, 4, 3, 2, 1, starred={1, 2}), recommended=None, latest=5, starred_only=False)
+    assert installed_matters(builds(5, 4, 3, 2, 1), recommended=5, latest=5, starred_only=False)
+    assert not installed_matters(builds(5, 4, 3, 2, 1), recommended=5, latest=5, starred_only=True)
+    # The decision agrees with the view: what it skips never changes what shows.
+    for marks in ({}, {"starred": {1, 2}}, {"stable": {2}}):
+        listed = builds(5, 4, 3, 2, 1, **marks)
+        if not installed_matters(listed, recommended=1, latest=5, starred_only=False):
+            assert builds_view(listed, 1, 5, set(), False) == builds_view(listed, 1, 5, {2}, False)

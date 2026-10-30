@@ -22,7 +22,7 @@ from src.model.users import Actor
 from src.model.utils import MinecraftLoaders
 from src.library.utils import as_utc, getenv
 from src.library.import_uploads import UploadStore
-from src.library.builds import BuildsView, builds_view
+from src.library.builds import BuildsView, builds_view, installed_matters
 from src.services.modpack import ApproveResult
 from src.services.update_check import CHECK_RUNNING
 from src.library.upload_budget import UploadBudget, UploadBusy
@@ -348,8 +348,9 @@ async def _builds(request: Request, actor: Actor, modpackService: ModpackService
 
 async def _builds_view(modpackService: ModpackService, bundle: Any, builds: list[Any], starred_only: bool = False) -> BuildsView:
     """The builds as the list shows them (O8 B3)."""
-    return builds_view(builds, bundle.recommended_build, bundle.latest_build,
-                       await modpackService.installed_builds(str(bundle.id)) if builds else set(), starred_only,
+    installed = await modpackService.installed_builds(str(bundle.id)) \
+        if installed_matters(builds, bundle.recommended_build, bundle.latest_build, starred_only) else set()
+    return builds_view(builds, bundle.recommended_build, bundle.latest_build, installed, starred_only,
                        await modpackService.build_verdicts(str(bundle.id)) if builds else {})
 
 async def _replacements(request: Request, actor: Actor, modpackService: ModpackService,
