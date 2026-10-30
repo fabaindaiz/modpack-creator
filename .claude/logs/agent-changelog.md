@@ -23,7 +23,9 @@ Textos visibles nuevos, para el dueño: «Esta marca ya se había enviado y un o
 
 Qué salió mal: crear los worktrees dentro de `.claude/worktrees` falló (el sandbox no deja escribir `.claude/agents` del checkout) y se movieron a `/tmp`; un `python3 -` y un `cat > /dev/null` sin sentido, contra la regla de stdin (sin efecto); los dos agentes cuentan cada uno un comando que esperó stdin; el primer barrido mostró que en Chromium el hijo flexible de un `<details>` con `display: contents` es su `::details-content`, no el `<p>` (lo había advertido la revisión); el barrido de roles y el de arranque fallan si los tests del panel corren antes en el mismo proceso (fakes que quedan puestos; ya pasaba).
 
-**Sin hacer.** Los menores de la última revisión, en el roadmap.
+**Después, los menores diferidos («continúa»).** Merge a `main` en local como avance rápido sin cambiar de rama (`git fetch . feat/ronda-3:main`): el `git checkout main` falla dentro del sandbox, que no deja escribir `.agents/`, y dejó dos veces la copia de trabajo a medias (91 archivos borrados, nada perdido; el dueño la restauró, a mí se me negó `git restore`). El push tampoco sale del sandbox (no lee la clave SSH): lo hace el dueño. Dos agentes en paralelo en worktrees bajo `/tmp`, integrados con cherry-pick sin conflictos (92fdee2..d3c40a2): los seis menores de la revisión del 2026-10-30 y los dos del 2026-10-26, cada uno con su test visto fallar; ningún texto visible nuevo. Qué salió mal: los dos agentes cuentan comandos contra la regla de stdin (un `python3 -` que colgó y se detuvo; un heredoc `cat >>`; un `python -` sin efecto) y uno escribió por error un `git reset -p` interactivo, detenido antes de hacer nada.
+
+**Sin hacer.** Los cursores mal formados de la actividad, el conteo con secretos del aviso de 64 KiB y el texto de los pins `busy` (del dueño), en el roadmap. No verificado: el aviso en un navegador real (qué saltos de línea envía), contención real, el tablero contra una base grande real.
 
 **Sin verificar.** El aspecto con datos reales; el aviso diario contra Discord real; el rendimiento del tablero con muchos packs (estimado por la revisión, no medido).
 
