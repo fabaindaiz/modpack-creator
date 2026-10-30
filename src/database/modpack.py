@@ -6,6 +6,7 @@ from typing import Any, Iterable, Optional
 from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 from src.library.scan import ClaimedFile, LocalFile
+from src.model.modpack.note import VersionNote
 from src.model.modpack import (
     BUNDLE_KEYED_FIELDS,
     BUNDLE_NULL_REMOVES,
@@ -136,11 +137,15 @@ class ModpackDatabase():
 
     async def bundle_delete_empty(self, bundle_id: str) -> bool:
         """Delete a bundle only while it is empty (no projects, local or claimed files, nor builds),
-        in one atomic delete: what undoes a pack created a moment ago (d-7985ee-b8e927). Whether
-        it was deleted."""
+        in one atomic delete: what undoes a pack created a moment ago (d-7985ee-b8e927). Its notes are
+        archived with it (N18 of the notes' user-walk; deleting a note is archiving it, D11), each as its
+        next revision, so an edit read before is refused. Whether it was deleted."""
         result = await ModpackBundle.get_pymongo_collection().delete_one({
             "_id": self._bundle_oid(bundle_id), "latest_build": None, "recommended_build": None,
             "projects": {"$size": 0}, "local_files": {"$size": 0}, "claimed_files": {"$size": 0}})
+        if result.deleted_count:
+            await VersionNote.get_pymongo_collection().update_many(
+                {"bundle_id": bundle_id, "archived": False}, {"$set": {"archived": True}, "$inc": {"rev": 1}})
         return bool(result.deleted_count)
 
     async def bundle_projects_add(self, bundle_id: str, projects: list[PackProject]) -> list[PackProject]:

@@ -223,3 +223,27 @@ def test_deleting_an_empty_pack_refuses_one_with_projects_or_builds(mongo: Mongo
 
     deleted, deleted_built, deleted_used, left = mongo(scenario)
     assert deleted and not deleted_built and not deleted_used and left == 2
+
+
+@pytest.mark.network
+def test_deleting_a_pack_archives_its_notes_and_no_other_packs(mongo: MongoRunner) -> None:
+    """N18 of the notes' user-walk: a deleted pack left its notes live, reachable from the knowledge base by id.
+    They are archived with it (deleting is archiving, D11); another pack's notes are left as they are."""
+    from datetime import datetime, timezone
+    from src.database.note import NoteDatabase
+    from src.model.modpack.note import VersionNote
+    from tests._actors import EDITOR
+
+    async def scenario() -> tuple[bool, list[tuple[str, bool, int]]]:
+        db, notes = ModpackDatabase(), NoteDatabase()
+        gone = await db.bundle_insert(ModpackBundle(name="a", description="", version="26.3", loader=MinecraftLoaders.fabric))
+        kept = await db.bundle_insert(ModpackBundle(name="b", description="", version="26.3", loader=MinecraftLoaders.fabric))
+        for bundle, key in ((gone, "k1"), (kept, "k2")):
+            await notes.insert(VersionNote(bundle_id=str(bundle.id), project_id=SODIUM, version_id="v", verdict="fails",
+                                           text="x", author=EDITOR.ref(), at=datetime.now(timezone.utc), key=key))
+        deleted = await db.bundle_delete_empty(str(gone.id))
+        found = await VersionNote.find_all().sort("key").to_list()
+        return deleted, [(n.key, n.archived, n.rev) for n in found]
+
+    deleted, found = mongo(scenario)
+    assert deleted and found == [("k1", True, 1), ("k2", False, 0)]
