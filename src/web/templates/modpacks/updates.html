@@ -16,7 +16,9 @@
 <div id="updates-main" class="space-y-6" hx-get="/modpacks/{{ bundle_id }}/actualizaciones" hx-select="#updates-main" hx-trigger="job-finished from:body" hx-swap="outerHTML" hx-disinherit="*">
   {% call ui.section("Revisión", id="revision", help="revision") %}
   <div class="space-y-3 rounded-xl border border-line bg-raised p-4 text-sm">
-    {% if (bundle.recommended_build or bundle.latest_build) is none %}
+    {% if (bundle.recommended_build or bundle.latest_build) is none and test_builds %}
+    <p class="text-muted">Este modpack solo tiene builds de prueba ({{ test_builds | join(", ") }}): aprueba uno para poder buscar actualizaciones.</p>
+    {% elif (bundle.recommended_build or bundle.latest_build) is none %}
     <p class="text-muted">Este modpack todavía no tiene build: crea uno para poder buscar actualizaciones.</p>
     {% elif check is none %}
     <p class="text-muted">Todavía no se ha revisado este modpack. La revisión compara el build recomendado (o el último) con lo más nuevo que hay en Modrinth.</p>

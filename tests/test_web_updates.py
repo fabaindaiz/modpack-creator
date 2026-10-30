@@ -241,6 +241,21 @@ def test_a_modpack_without_a_build_says_to_create_one_and_offers_no_search() -> 
     assert "#0" not in text and "HTTP_409" not in text
 
 
+def test_a_modpack_with_only_test_builds_says_to_approve_one_not_that_it_has_none() -> None:
+    # O8 user-walk W9: «no tiene build» was false for a pack with only tests.
+    client, modpack, checks = setup()
+    modpack.bundle.latest_build = modpack.bundle.recommended_build = None
+
+    async def only_tests(bundle_id: str) -> list[ModpackBuild]:
+        return [ModpackBuild.model_construct(id=PydanticObjectId(), bundle_id=BUNDLE_ID, number=n, created_at=T0, test=True)
+                for n in (1, 2)]
+    modpack.build_find = only_tests  # type: ignore[method-assign]
+    text = client.get(f"/modpacks/{BUNDLE_ID}/actualizaciones").text
+    assert "no tiene build" not in text
+    assert "Este modpack solo tiene builds de prueba (1, 2): aprueba uno para poder buscar actualizaciones." in text
+    assert "actualizaciones/buscar" not in text
+
+
 def test_a_stored_check_without_a_build_number_does_not_show_build_0() -> None:
     client, _, checks = setup()
     checks.latest_check = UpdateCheck.model_construct(

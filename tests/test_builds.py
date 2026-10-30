@@ -427,6 +427,32 @@ def test_approve_and_recommend_does_both(mongo: MongoRunner) -> None:
     assert mongo(scenario) == (2, 2, False)
 
 
+def test_approving_says_when_the_build_was_made(mongo: MongoRunner) -> None:
+    """O8 user-walk W12: the notice says the build's age; the result carries its date."""
+    async def scenario() -> bool:
+        service, bundle_id = await _normal_test_normal()
+        result = await service.build_approve(bundle_id, 2, EDITOR)
+        return result.created_at == (await service.build_get(bundle_id, 2)).created_at
+
+    assert mongo(scenario) is True
+
+
+def test_approve_and_recommend_on_an_already_approved_build_never_moves_the_recommended(mongo: MongoRunner) -> None:
+    """From a stale page, «Aprobar y recomendar» on a build someone already approved: it was a test's
+    action, so the recommended stays where it is and the result says so (review of tanda 1)."""
+    async def scenario() -> tuple[Any, ...]:
+        service, bundle_id = await _normal_test_normal()
+        await service.build_approve(bundle_id, 2, EDITOR)
+        await service.build_create(bundle_id, actor=EDITOR)  # 3
+        await service.build_recommend(bundle_id, 3, EDITOR)
+        service.audit = audit = RecordingAudit()
+        stale = await service.build_approve(bundle_id, 2, EDITOR, recommend=True)
+        return (stale.approved, stale.recommended, stale.in_force,
+                (await service.bundle_get(bundle_id)).recommended_build, [e[0] for e in audit.events])
+
+    assert mongo(scenario) == (False, False, 3, 3, [])
+
+
 def test_approving_twice_is_a_no_op_the_second_time(mongo: MongoRunner) -> None:
     async def scenario() -> tuple[Any, ...]:
         service, bundle_id = await _normal_test_normal()

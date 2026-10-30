@@ -26,7 +26,7 @@ from src.library.builds import BuildsView, builds_view
 from src.services.modpack import ApproveResult
 from src.services.update_check import CHECK_RUNNING
 from src.library.upload_budget import UploadBudget, UploadBusy
-from src.web import BUNDLE_REF, JOB_STARTED, MODRINTH_REF, WebRoute, active_bridge, get_web_actor, render
+from src.web import BUNDLE_REF, JOB_STARTED, MODRINTH_REF, WebRoute, active_bridge, ago, get_web_actor, render
 
 logger = logging.getLogger("modpack.web")
 # The event a pack hears when its last job ended: it reloads.
@@ -1132,8 +1132,11 @@ async def update_page(
         await modrinthService.projects_filled([u.project_id for u in counted + pinned])
     # The check in progress shows in #check-job with its progress (O9 D6).
     running = [j for j in await modpackService.active_jobs(bundle_id) if j.kind == "update_check"]
+    # A pack with only test builds says so, not that it has none (O8 user-walk W9): read only then.
+    test_builds = sorted(b.number for b in await modpackService.build_find(bundle_id) if b.test) \
+        if (bundle.recommended_build or bundle.latest_build) is None else []
     return render(request, "modpacks/updates.html", actor, bundle=bundle, bundle_id=bundle_id, check=check,
-                  check_job=running[0] if running else None,
+                  check_job=running[0] if running else None, test_builds=test_builds,
                   preview=preview, pinned=pinned, titles={u.project_id: u.title for u in counted},
                   kinds={u.project_id: u.kind for u in counted if u.kind}, nav_active="modpacks")
 
@@ -1254,15 +1257,31 @@ async def build_approve(
     notice that says which build stays in force and whether newer ones exist (user-walk W11, W12)."""
     recommend = (await request.form()).get("recomendar") == "1"
     result = await modpackService.build_approve(bundle_id, number, actor, recommend=recommend)
-    return await _builds(request, actor, modpackService, bundle_id, success=approve_notice(number, result))
+    return await _builds(request, actor, modpackService, bundle_id,
+                         success=approve_notice(number, result, recommend=recommend))
 
 
-def approve_notice(number: int, result: ApproveResult) -> str:
-    """The notice after approving build `number`."""
-    if not result.approved:
-        said = f"El build {number} ya estaba aprobado."
+def build_age(created_at: datetime, now: datetime) -> str:
+    """How old a build is, for the approve notice (user-walk W12): minutes or hours within a day, then days."""
+    days = (now - as_utc(created_at)).days
+    if days < 1:
+        return f"creado {ago(created_at, now)}"
+    return f"creado hace {days} {'día' if days == 1 else 'días'}"
+
+
+def approve_notice(number: int, result: ApproveResult, recommend: bool = False, now: Optional[datetime] = None) -> str:
+    """The notice after approving build `number`: with its age (W12), and, when «Aprobar y recomendar»
+    found it already approved, that the recommended did not move (review of tanda 1)."""
+    if not result.approved and recommend and not result.recommended:
+        current = result.bundle.recommended_build
+        said = (f"El build {number} ya estaba aprobado: el recomendado no cambió "
+                f"({f'sigue el build {current}' if current is not None else 'no hay ninguno'}). "
+                "Para recomendarlo, usa «Recomendar».")
+    elif not result.approved:
+        said = f"El build {number} ya estaba aprobado{' y es el recomendado' if recommend else ''}."
     else:
-        said = f"Build {number} aprobado."
+        age = f" ({build_age(result.created_at, now or datetime.now(timezone.utc))})" if result.created_at else ""
+        said = f"Build {number} aprobado{age}."
         if result.in_force is not None and result.in_force != number:
             said += f" El build {result.in_force} sigue vigente."
     if result.newer:

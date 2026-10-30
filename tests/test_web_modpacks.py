@@ -3212,6 +3212,30 @@ def test_approving_an_approved_build_says_so() -> None:
     assert "El build 3 ya estaba aprobado." in client.post(f"/modpacks/{BUNDLE_ID}/builds/3/aprobar", headers=HTMX).text
 
 
+def test_approve_and_recommend_on_an_approved_build_says_the_recommended_did_not_move() -> None:
+    """A stale page's «Aprobar y recomendar» on a build someone already approved (review of tanda 1)."""
+    from src.services.modpack import ApproveResult
+    client, modpack, _ = setup()
+    modpack.approved = ApproveResult(bundle=modpack.bundle.model_copy(update={"recommended_build": 4}), approved=False,
+                                     in_force=4, newer=[4])
+    text = client.post(f"/modpacks/{BUNDLE_ID}/builds/3/aprobar", data={"recomendar": "1"}, headers=HTMX).text
+    assert ("El build 3 ya estaba aprobado: el recomendado no cambió (sigue el build 4). "
+            "Para recomendarlo, usa «Recomendar».") in text
+
+
+def test_approving_says_the_builds_age() -> None:
+    """O8 user-walk W12: approving days later says how old the build is."""
+    from src.routers.web.modpacks import approve_notice
+    from src.services.modpack import ApproveResult
+    now = datetime(2026, 10, 30, 12, 0, tzinfo=timezone.utc)
+    days = ApproveResult(bundle=bundle(), approved=True, in_force=3, newer=[], created_at=now - timedelta(days=3, hours=2))
+    hours = ApproveResult(bundle=bundle(), approved=True, in_force=3, newer=[], created_at=now - timedelta(hours=5))
+    one = ApproveResult(bundle=bundle(), approved=True, in_force=3, newer=[], created_at=now - timedelta(days=1))
+    assert approve_notice(3, days, now=now) == "Build 3 aprobado (creado hace 3 días)."
+    assert approve_notice(3, hours, now=now) == "Build 3 aprobado (creado hace 5 h)."
+    assert approve_notice(3, one, now=now) == "Build 3 aprobado (creado hace 1 día)."
+
+
 def test_naming_and_starring_a_build_answer_the_builds() -> None:
     """O8 B2, B3: the star is sent as a state, never toggled (user-walk W14)."""
     client, modpack, _ = setup()
@@ -3238,6 +3262,36 @@ def test_a_name_with_html_is_escaped_everywhere() -> None:
     modpack.builds = [build(2, name="<b>x</b>"), build(1)]
     text = client.get(f"/modpacks/{BUNDLE_ID}").text
     assert "<b>x</b>" not in text and "&lt;b&gt;x&lt;/b&gt;" in text
+
+
+EVIL = "<b>x</b>"
+
+
+def assert_escaped(text: str, where: str) -> None:
+    assert EVIL not in text, where
+    assert "&lt;b&gt;x&lt;/b&gt;" in text, where
+
+
+def test_a_name_and_a_note_with_html_are_escaped_on_the_build_page_and_the_comparison() -> None:
+    """The escape test only looked at the pack's page (review of tanda 1): a build's name, a note's text,
+    error and server, on the build's page and in the comparison, by name and next to a change."""
+    client, modpack, _ = setup()
+    modpack.builds = [build(2, name=EVIL, lock=lock(entry("P1"))), build(1, name=EVIL)]
+    modpack.notes.notes = [note("fails", EVIL, build_number=2, server_name=EVIL, error=EVIL)]
+    page = client.get(f"/modpacks/{BUNDLE_ID}/builds/2").text
+    assert_escaped(page, "build page")
+    assert page.count("&lt;b&gt;x&lt;/b&gt;") >= 3  # the name, the text and the server at least
+
+    async def compare(bundle_id: str, de: int, a: int) -> Any:
+        shown = preview()
+        shown.notes = {"P1": [note("fails", EVIL, project_id="P1", version_id="v-p1", server_name=EVIL)]}
+        return shown
+
+    modpack.compare_builds = compare  # type: ignore[attr-defined]
+    compared = client.get(f"/modpacks/{BUNDLE_ID}/builds/compare", params={"de": 1, "a": 2}).text
+    assert_escaped(compared, "comparison")
+    change = compared[compared.index('data-change="P1"'):]
+    assert_escaped(change[:change.index("</li>")], "a change's note")
 
 
 def test_builds_offer_build_as_test() -> None:

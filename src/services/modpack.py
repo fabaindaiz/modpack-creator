@@ -95,11 +95,14 @@ LOADER_VERSION_TTL = timedelta(hours=24)
 class ApproveResult(BaseModel):
     """What approving a test build did (O8 B1): whether this call approved it (a second one does
     nothing), the build in force after it (the recommended, else the latest) and the builds made after
-    it, for the notice (user-walk W11, W12)."""
+    it, for the notice (user-walk W11, W12): whether it is the recommended after the call, and when it
+    was made."""
     bundle: ModpackBundle
     approved: bool
     in_force: Optional[int]
     newer: list[int]
+    recommended: bool = False
+    created_at: Optional[datetime] = None
 
 
 class HistoryPage(BaseModel):
@@ -2356,24 +2359,25 @@ class ModpackService():
         """
         Approve a test build (O8 B1): it becomes a normal build, latest moves to it if it is the newest
         ($max), and with `recommend` it is the recommended too. A build already approved, or never a
-        test, is left as it is (`approved` False), and recommended only if asked. 404 if it does not exist.
+        test, is left as it is (`approved` False), and never recommended by this call: «Aprobar y
+        recomendar» was a test's action, and from a stale page it would move the recommended silently
+        (review of tanda 1); `recommended` says whether it is the recommended, and `build_recommend`
+        moves it. 404 if it does not exist.
         """
-        await self.modpackDB.build_get(bundle_id, number)
+        build = await self.modpackDB.build_get(bundle_id, number)
         approved = await self.modpackDB.build_approve(bundle_id, number)
         if approved:
             await self.modpackDB.bundle_latest_build(bundle_id, number)
             await self.audit.record(actor, "build.approve", _bundle(bundle_id), {"number": number, "recommend": recommend})
-        if recommend:
+        if recommend and approved:
             bundle = await self.modpackDB.bundle_recommend_build(bundle_id, number)
-            if not approved:
-                await self.audit.record(actor, "build.recommend", _bundle(bundle_id), {"number": number})
         else:
             bundle = await self.modpackDB.bundle_get(bundle_id)
         if approved and self.notifier is not None:
             await self.notifier.notify(f"📦 {bundle.name}: build {number} aprobado.")
         newer = sorted(b.number for b in await self.modpackDB.build_find(bundle_id) if b.number > number)
         return ApproveResult(bundle=bundle, approved=approved, in_force=bundle.recommended_build or bundle.latest_build,
-                             newer=newer)
+                             newer=newer, recommended=bundle.recommended_build == number, created_at=build.created_at)
 
     # Changes between locks (N3).
 
