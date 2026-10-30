@@ -159,3 +159,14 @@ def test_the_knowledge_page_and_a_build_s_notes_have_their_help() -> None:
     assert "Conocimiento" in helps(client.get("/conocimiento").text)
     page = modpacks_page.setup_all()[0].get(f"/modpacks/{BUNDLE_ID}/builds/2").text
     assert "¿Funcionó?" in helps(page)
+
+
+def test_an_open_help_keeps_its_question_mark_beside_the_title() -> None:
+    """Owner, 2026-10-30 (d-7985ee-c0cbfb): the <details> lays its parts in the title's row (display: contents),
+    the explanation takes a row of its own below; opening it no longer moves the «?» (the sweep measures it)."""
+    text = modpacks_page.setup_all()[0].get(f"/modpacks/{BUNDLE_ID}").text
+    block = re.search(r'<details class="([^"]*)" data-help>.*?<p class="([^"]*)"', text, re.S)
+    assert block is not None
+    assert "contents" in block.group(1).split() and "open:basis-full" not in block.group(1)
+    assert "basis-full" in block.group(2).split()
+

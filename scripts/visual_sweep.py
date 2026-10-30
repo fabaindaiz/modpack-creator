@@ -671,14 +671,23 @@ def shoot_help_open(page: Any, base: str, out: Path, ids: dict[str, str], prefix
     response = page.goto(base + f"/modpacks/{ids['bundle']}")
     page.wait_for_load_state("networkidle")
     toggle = page.locator("#mods-section > div > details[data-help]").first
+    # Owner, 2026-10-30: closed, its text is hidden; open, the «?» stays in the title's row and the text goes below.
+    hidden_closed = not toggle.locator("p").is_visible()
     toggle.locator("summary").click()
     page.wait_for_selector("#mods-section > div > details[data-help][open] a[href^='/como-funciona#']", timeout=10_000)
     toggle.scroll_into_view_if_needed()
     page.wait_for_timeout(200)
     key = f"{prefix}-help-open"
     page.screenshot(path=str(out / f"{key}.png"))
+    title = toggle.locator("xpath=preceding-sibling::*[1]").bounding_box()
+    mark, text = toggle.locator("summary").bounding_box(), toggle.locator("p").bounding_box()
+    moved = not (title and mark and abs((mark["y"] + mark["height"] / 2) - (title["y"] + title["height"] / 2)) < 8)
+    below = bool(mark and text and text["y"] >= mark["y"] + mark["height"] - 1)
     problems = [p for p, bad in (("el «?» no se abrió", not toggle.evaluate("d => d.open")),
-                                 ("la página desborda", _overflow(page) > 0)) if bad]
+                                 ("la página desborda", _overflow(page) > 0),
+                                 ("cerrado, su texto se ve", not hidden_closed),
+                                 ("al abrirlo, el «?» bajó de la fila del título", moved),
+                                 ("la explicación no quedó debajo", not below)) if bad]
     return {key: _report(response, errors, problems)}
 
 
