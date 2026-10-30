@@ -247,3 +247,36 @@ def test_deleting_a_pack_archives_its_notes_and_no_other_packs(mongo: MongoRunne
 
     deleted, found = mongo(scenario)
     assert deleted and found == [("k1", True, 1), ("k2", False, 0)]
+
+
+@pytest.mark.network
+def test_a_failed_archive_of_the_notes_puts_the_pack_back(mongo: MongoRunner) -> None:
+    """Review of 2026-10-30: deleting and archiving are two writes. If archiving the notes fails, the pack is put
+    back as it was and the error rises: a pack is never left deleted with live notes."""
+    from datetime import datetime, timezone
+    from src.database.note import NoteDatabase
+    from src.model.modpack.note import VersionNote
+    from tests._actors import EDITOR
+
+    class Failing:
+        async def update_many(self, *args: Any, **kwargs: Any) -> Any:
+            raise RuntimeError("mongo hiccup")
+
+    async def scenario() -> tuple[str, list[str], list[tuple[bool, int]]]:
+        db = ModpackDatabase()
+        pack = await db.bundle_insert(ModpackBundle(name="a", description="", version="26.3", loader=MinecraftLoaders.fabric))
+        await NoteDatabase().insert(VersionNote(bundle_id=str(pack.id), project_id=SODIUM, version_id="v", verdict="fails",
+                                                text="x", author=EDITOR.ref(), at=datetime.now(timezone.utc), key="k1"))
+        real = VersionNote.get_pymongo_collection
+        VersionNote.get_pymongo_collection = classmethod(lambda cls: Failing())  # type: ignore[method-assign, assignment]
+        try:
+            with pytest.raises(RuntimeError) as caught:
+                await db.bundle_delete_empty(str(pack.id))
+        finally:
+            VersionNote.get_pymongo_collection = real  # type: ignore[method-assign]
+        names = [b.name for b in await ModpackBundle.find_all().to_list()]
+        notes = [(n.archived, n.rev) for n in await VersionNote.find_all().to_list()]
+        return str(caught.value), names, notes
+
+    error, names, notes = mongo(scenario)
+    assert error == "mongo hiccup" and names == ["a"] and notes == [(False, 0)]

@@ -139,14 +139,24 @@ class ModpackDatabase():
         """Delete a bundle only while it is empty (no projects, local or claimed files, nor builds),
         in one atomic delete: what undoes a pack created a moment ago (d-7985ee-b8e927). Its notes are
         archived with it (N18 of the notes' user-walk; deleting a note is archiving it, D11), each as its
-        next revision, so an edit read before is refused. Whether it was deleted."""
-        result = await ModpackBundle.get_pymongo_collection().delete_one({
+        next revision, so an edit read before is refused. Whether it was deleted.
+
+        Two writes, without a transaction: if archiving fails, the deleted document is put back as it was
+        and the error rises (review of 2026-10-30), so a pack is never left deleted with live notes. An
+        empty pack has nothing another write could have added meanwhile: it was gone."""
+        collection = ModpackBundle.get_pymongo_collection()
+        deleted = await collection.find_one_and_delete({
             "_id": self._bundle_oid(bundle_id), "latest_build": None, "recommended_build": None,
             "projects": {"$size": 0}, "local_files": {"$size": 0}, "claimed_files": {"$size": 0}})
-        if result.deleted_count:
+        if deleted is None:
+            return False
+        try:
             await VersionNote.get_pymongo_collection().update_many(
                 {"bundle_id": bundle_id, "archived": False}, {"$set": {"archived": True}, "$inc": {"rev": 1}})
-        return bool(result.deleted_count)
+        except BaseException:
+            await collection.insert_one(deleted)
+            raise
+        return True
 
     async def bundle_projects_add(self, bundle_id: str, projects: list[PackProject]) -> list[PackProject]:
         """
