@@ -1071,12 +1071,30 @@ def check_knowledge(page: Any, base: str, out: Path, ids: dict[str, str], prefix
     return report
 
 
+# The pack's banner while a job of it is queued or running (it polls every 2 s); empty otherwise.
+JOB_POLLING = "#job-banner [hx-trigger^='every']"
+
+
+def _pack_quiet(page: Any, problems: list[str]) -> None:
+    """Wait until the pack has no job in its banner, then for what its end sends: `job-finished` redraws
+    #pack-main and the banner leaves, which moves everything under it. networkidle alone is reached between
+    two polls, while the job still runs. A job still there after a minute is a problem, and the check goes on."""
+    try:
+        page.wait_for_function(f"() => !document.querySelector(\"{JOB_POLLING}\")", timeout=60_000)
+    except Exception:
+        problems.append("el pack siguió con un trabajo activo más de un minuto")
+    page.wait_for_load_state("networkidle")
+    page.wait_for_timeout(300)
+
+
 def check_mod_drawer(page: Any, base: str, out: Path, ids: dict[str, str], prefix: str,
                      errors: list[str]) -> dict[str, dict[str, Any]]:
     """A mod's name in the pack's list (spec §2): Ctrl/Cmd+click and the middle button open its
     page in another tab and leave the panel closed; a plain click opens #mod-drawer as a modal with
     its card; a mod clicked inside it replaces the card and offers "← {the first}"; Escape closes it
-    and the focus goes back to the name clicked."""
+    and the focus goes back to the name clicked. Each click waits for the pack to be quiet: the tabs just
+    before resolve it and may queue its catalog job, whose end redraws the list (it failed at random widths
+    when the link moved under a click)."""
     path = f"/modpacks/{ids['problems']}?vista=todos"
     response = page.goto(base + path)
     page.wait_for_load_state("networkidle")
@@ -1085,6 +1103,7 @@ def check_mod_drawer(page: Any, base: str, out: Path, ids: dict[str, str], prefi
     clicks: tuple[tuple[str, dict[str, Any]], ...] = (("Ctrl/Cmd+clic", {"modifiers": ["ControlOrMeta"]}),
                                                       ("el clic central", {"button": "middle"}))
     for label, options in clicks:
+        _pack_quiet(page, problems)
         try:
             with page.context.expect_page(timeout=10_000) as opened:
                 link.click(**options)
@@ -1103,6 +1122,7 @@ def check_mod_drawer(page: Any, base: str, out: Path, ids: dict[str, str], prefi
         if page.url != base + path:
             problems.append(f"{label} cambió la página a {page.url}")
 
+    _pack_quiet(page, problems)
     link.click()
     page.wait_for_selector(f'#mod-drawer[open] [data-mod-card="{NEEDS_BETA}"]', timeout=10_000)
     page.wait_for_load_state("networkidle")
