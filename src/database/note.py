@@ -44,8 +44,9 @@ class NoteDatabase:
         result = await VersionNote.get_pymongo_collection().update_one({"_id": self._oid(note_id), "rev": rev}, update)
         return result.modified_count == 1
 
-    async def find_by_ids(self, note_ids: list[str]) -> list[VersionNote]:
-        """These notes, archived ones left out, newest first; an id that is not one is skipped."""
+    async def find_by_ids(self, note_ids: list[str], archived_too: bool = False) -> list[VersionNote]:
+        """These notes, archived ones left out (unless `archived_too`), newest first; an id that is not one is
+        skipped."""
         oids = []
         for note_id in note_ids:
             try:
@@ -54,7 +55,8 @@ class NoteDatabase:
                 continue
         if not oids:
             return []
-        return await VersionNote.find({"_id": {"$in": oids}, "archived": False}) \
+        query: dict[str, Any] = {"_id": {"$in": oids}} if archived_too else {"_id": {"$in": oids}, "archived": False}
+        return await VersionNote.find(query) \
             .sort(("at", SortDirection.DESCENDING)).to_list()
 
     async def find(self, bundle_id: str, *, build_number: Optional[int] = None, project_id: Optional[str] = None,

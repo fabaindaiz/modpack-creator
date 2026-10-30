@@ -164,14 +164,21 @@ class KnowledgeService:
         self.noteDB = noteDB
         self.clock = clock
 
-    async def _of_pack(self, bundle_id: str, note_ids: list[str]) -> list[str]:
+    async def _of_pack(self, bundle_id: str, note_ids: list[str], already: Sequence[str] = ()) -> list[str]:
         """These notes, once each, after checking the pack exists (404) and each note is one of its own, not
-        archived (422, review B7): an entry backed by another pack's note would show it under the wrong pack."""
+        archived (422, review B7): an entry backed by another pack's note would show it under the wrong pack.
+        A note the entry `already` has may be archived by now: a form sent again after that is the repeat it is,
+        not an invalid note (review of 2026-10-30); it is still checked to be of this pack."""
         await self.modpackDB.bundle_get(bundle_id)
         wanted = list(dict.fromkeys(note_ids))
         if not wanted:
             return []
-        own = {str(n.id) for n in await self.noteDB.find_by_ids(wanted) if n.bundle_id == bundle_id}
+        repeated = [n for n in wanted if n in already]
+        new = [n for n in wanted if n not in already]
+        own = {str(n.id) for n in await self.noteDB.find_by_ids(new) if n.bundle_id == bundle_id} if new else set()
+        if repeated:
+            own |= {str(n.id) for n in await self.noteDB.find_by_ids(repeated, archived_too=True)
+                    if n.bundle_id == bundle_id}
         if any(n not in own for n in wanted):
             raise HTTP_422_UNPROCESSABLE_ENTITY("Una de las notas no es de este pack")
         return wanted
@@ -226,7 +233,8 @@ class KnowledgeService:
         The same `key` is the same entry; a pair already in the base, not rejected, is a 409 that names it."""
         if not summary.strip():
             raise HTTP_422_UNPROCESSABLE_ENTITY("Escribe en una línea qué pasa")
-        note_ids = await self._of_pack(bundle_id, note_ids)
+        repeat = await self.knowledgeDB.find_by_key(key)
+        note_ids = await self._of_pack(bundle_id, note_ids, repeat.note_ids if repeat is not None else ())
         first, second = await self._sides(a, b)
         existing = await self.knowledgeDB.find_pair(first.project_id, second.project_id if second else None)
         if existing is not None and existing.key != key:
@@ -262,8 +270,8 @@ class KnowledgeService:
         joins at once both land (review B4). With `also_game_version`, the entry widens to that Minecraft version
         too (K10 of d-7985ee-c0cbfb), as an edit would: a suspicion by its author or an operator, a confirmed or
         rejected entry by an operator (403); nothing widens unless asked (D8)."""
-        note_ids = await self._of_pack(bundle_id, note_ids)
         issue = await self.knowledgeDB.get(issue_id)
+        note_ids = await self._of_pack(bundle_id, note_ids, issue.note_ids)
         add: dict[str, list[str]] = {"seen_in": [bundle_id], "note_ids": note_ids}
         where: dict[str, Any] = {}
         widen = also_game_version or None

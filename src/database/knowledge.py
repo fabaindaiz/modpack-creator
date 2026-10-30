@@ -40,6 +40,10 @@ class KnowledgeDatabase:
             raise HTTP_404_NOT_FOUND(f"Issue '{issue_id}' not found")
         return found
 
+    async def find_by_key(self, key: str) -> Optional[KnownIssue]:
+        """The entry a form with this key wrote, if any (a form sent twice is the same entry)."""
+        return await KnownIssue.find_one(KnownIssue.key == key)
+
     async def find_pair(self, a: str, b: Optional[str]) -> Optional[KnownIssue]:
         """The entry of this pair (or of `a` alone) that is not rejected, if there is one."""
         return await KnownIssue.find_one({"a.project_id": a, "b.project_id" if b else "b": b,
@@ -91,8 +95,11 @@ class KnowledgeDatabase:
             clauses.append({"$or": [{"game_version": {"$in": [game_version, None]}},
                                     {"also_game_versions": game_version}]})
         if before is not None and before_id is not None:
+            # A cursor that is not an id is a bad request, not a missing entry (review of 2026-10-30).
+            if not PydanticObjectId.is_valid(before_id):
+                raise HTTP_422_UNPROCESSABLE_ENTITY(f"'{before_id}' is not a page cursor")
             clauses.append({"$or": [{"updated_at": {"$lt": before}},
-                                    {"updated_at": before, "_id": {"$lt": self._oid(before_id)}}]})
+                                    {"updated_at": before, "_id": {"$lt": PydanticObjectId(before_id)}}]})
         elif before is not None:
             clauses.append({"updated_at": {"$lt": before}})
         query: dict[str, Any] = {"$and": clauses} if clauses else {}

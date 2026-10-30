@@ -31,7 +31,7 @@ class Packs:
             raise HTTPException(404, "Bundle not found")
         return type("Bundle", (), {"id": bundle_id})()
 
-    async def find_by_ids(self, note_ids: list[str]) -> list[Any]:
+    async def find_by_ids(self, note_ids: list[str], archived_too: bool = False) -> list[Any]:
         return [type("Note", (), {"id": n, "bundle_id": self.NOTES[n]})() for n in note_ids if n in self.NOTES]
 
 
@@ -107,6 +107,33 @@ def test_joining_adds_the_pack_and_notes_once(mongo: MongoRunner) -> None:
 
     seen, notes = mongo(scenario)
     assert seen == ["b1", "b2"] and notes == ["n1", "n2"]
+
+
+@pytest.mark.network
+def test_a_repeated_mark_or_join_whose_note_was_archived_is_the_repeat(mongo: MongoRunner) -> None:
+    """Review of 2026-10-30: a mark or a join sent again after one of its notes was archived was refused (422) as
+    naming an invalid note. A note the entry already has is the repeat it is; a new archived note is still refused."""
+    class Archiving(Packs):
+        archived: set[str] = set()
+
+        async def find_by_ids(self, note_ids: list[str], archived_too: bool = False) -> list[Any]:
+            return [n for n in await super().find_by_ids(note_ids) if archived_too or n.id not in self.archived]
+
+    async def scenario() -> tuple[Any, ...]:
+        packs = Archiving()
+        knowledge, _ = service(packs)
+        first = await mark(knowledge)
+        joined = await knowledge.issue_join(str(first.id), "b2", ["n2"], EDITOR)
+        packs.archived = {"n1", "n2"}
+        again = await mark(knowledge)
+        rejoined = await knowledge.issue_join(str(first.id), "b2", ["n2"], EDITOR)
+        new_mark = await refused(knowledge.issue_mark("b1", SideInput(project_id=IRIS), None, None, None, "negro",
+                                                      ["n1"], "k2", EDITOR))
+        other = await knowledge.issue_mark("b2", SideInput(project_id=SODIUM), None, None, None, "negro", [], "k3", EDITOR)
+        new_join = await refused(knowledge.issue_join(str(other.id), "b1", ["n1"], EDITOR))
+        return str(again.id) == str(first.id), rejoined.note_ids == joined.note_ids, new_mark, new_join
+
+    assert mongo(scenario) == (True, True, 422, 422)
 
 
 @pytest.mark.network
@@ -230,6 +257,22 @@ def test_the_next_page_keeps_entries_written_at_the_same_moment(mongo: MongoRunn
         return len(first), len(rest), len({str(i.id) for i in first + rest})
 
     assert mongo(scenario) == (2, 1, 3)
+
+
+@pytest.mark.network
+def test_a_malformed_page_cursor_is_a_bad_request(mongo: MongoRunner) -> None:
+    """Review of 2026-10-30: «Ver más» with a cursor that is not an id answered 404, as if an entry were missing.
+    It is a bad request (422); a well-formed id of no entry still pages."""
+    from datetime import datetime, timezone
+    when = datetime(2026, 10, 27, tzinfo=timezone.utc)
+
+    async def scenario() -> tuple[int, int]:
+        knowledge, _ = service()
+        bad = await refused(knowledge.find(before=when, before_id="not-an-id", limit=2))
+        fine = len(await knowledge.find(before=when, before_id="6ae40b7c8901bede28d46699", limit=2))
+        return bad, fine
+
+    assert mongo(scenario) == (422, 0)
 
 
 @pytest.mark.network
