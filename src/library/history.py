@@ -126,7 +126,7 @@ def mod_history(builds: Sequence[BuildPoint], scans: Sequence[ScanPoint], pins: 
     entries += [HistoryEntry(at=p.until, kind="origin", version=p.origin.version_number or p.origin.version_id,
                              text=f"{'Origen otra vez en uso' if origin_key(p.origin) in in_use else 'Origen pasado'}: "
                                   f"{p.origin.label or p.origin.source.value} "
-                                  f"{p.origin.version_number or p.origin.version_id}", key=f"origin:{p.until.isoformat()}:{p.origin.version_id}")
+                                  f"{p.origin.version_number or p.origin.version_id}", key=f"origin:{p.until.isoformat()}:{p.origin.key}:{p.origin.version_id}")
                 for p in past if not p.removed_mod]
     entries += [HistoryEntry(at=n.at, kind="note", text=n.text, version=n.version_number, version_id=n.version_id, note=n,
                              key=f"note:{n.id}") for n in notes]

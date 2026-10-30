@@ -87,6 +87,20 @@ def test_ver_mas_never_loses_entries_with_the_same_time() -> None:
     assert seen == keys
 
 
+def test_past_origins_of_one_moment_and_version_have_their_own_keys() -> None:
+    """Review of 2026-10-30: one write that replaced the admin's origin and two servers' origins, all of one
+    version, gave three entries of one key, and «Ver más» on (time, key) skipped two of them."""
+    past = [PastOrigin(origin=PinOrigin(source=source, version_id="v", version_number="1.6.0", server_id=server),
+                       until=day(2))
+            for source, server in ((PinSource.admin, None), (PinSource.server, "a"), (PinSource.server, "b"))]
+    entries = mod_history([], [], [], past, [], [])
+    keys = [e.key for e in entries]
+    assert len(set(keys)) == len(keys) == 3
+    first = history_page(entries, None, None, limit=1)
+    rest = history_page(entries, first.entries[-1].at, first.entries[-1].key, limit=5)
+    assert [e.key for e in first.entries + rest.entries] == keys
+
+
 @pytest.mark.network
 def test_mod_history_leaves_out_another_packs_scans_and_never_calls_modrinth(mongo: Any) -> None:
     from src.database.pterodactyl import PterodactylDatabase
