@@ -29,6 +29,17 @@ Sigue de solo lectura. **Ninguna variable nueva** (la clave del diagnóstico sal
   packs importados después del deploy; los anteriores no cambian.
 - Recargar las pestañas abiertas después del deploy (el estilo y la navegación cambiaron).
 
+**También O8 y O9** (2026-10-26 al 30, en la misma rama): builds de prueba, historia, notas y la base de
+conocimiento. Sigue de solo lectura y **nada se migra** (los packs viejos cargan con sus campos nuevos
+vacíos, `pin_revs` incluido). Lo que se nota:
+- **Dos colecciones nuevas en la base `modpack`**: `VersionNote` (las notas) y `KnownIssue` (la base de
+  conocimiento), cada una con un índice único por `key`; Beanie las crea al arrancar.
+- **`KnownIssue` lleva además el índice `live_pair`**, único y parcial (`status` con `$in`): **pide
+  MongoDB 6.0 o más**. Con una versión menor el arranque falla al crearlo; ver la versión antes del deploy
+  (`MONGO_VERSION` de `docker/.env`). Si dos entradas vivas del mismo par existieran ya, la app arranca igual
+  y el log lo dice hasta que un operador descarte una en «Conocimiento» y se reinicie.
+- **La descarga del diagnóstico queda en la auditoría** (`diagnostics.download`).
+
 ## De 0.3.1 a 0.3.2 (2026-10-13)
 
 Los selects en la fila de cada mod, los filtros, la pestaña Sugerencias y auditoría y trabajos como

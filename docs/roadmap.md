@@ -10,6 +10,8 @@ y tokens, con en qué se apoya (bundle 0.0.30); `close` la compara después con 
 
 ## Dónde estamos
 
+**2026-10-30, cierre (s-7985ee-520ea2): todo `feat/ronda-3` mergeado en `main` en local** (avance rápido, `8ad961f`), **sin push**: el sandbox no lee la clave SSH, así que el dueño corre `git push origin main feat/ronda-3` desde su terminal. O8 completo (tres tandas, los pendientes y los menores), con test-mongo en verde (2010). **Para seguir, en orden:** 1) el push; 2) **para el dueño:** los textos visibles nuevos (entrada del 2026-10-30 del registro) y si el resultado de una importación muestra los pins `busy`; 3) antes de desplegar, la versión de MongoDB de producción (el índice `live_pair` pide 6.0 o más, `docs/runbooks/desplegar-panel.md`) y la versión con la que sale (0.3.2 salvo que el dueño autorice otra); 4) los menores que quedan (abajo); 5) un segundo user-walk de O9 en contexto limpio. **En otra máquina:** podman (o Docker) con su VM encendida para test-mongo y el barrido; hatch con Python 3.12; `npm ci` y el Chromium de Playwright para el barrido y la demo; `.env.yaml` no hace falta para nada de esto. Para un merge dentro del sandbox, sin checkout: `git fetch . feat/ronda-3:main`.
+
 **2026-10-26, lo que quedaba sin decisión, hecho y revisado en `feat/ronda-3`** (sin push ni merge;
 detalle en el registro, s-7985ee-2b8b13). Del user-walk de O9: el resto de A1 y A2, A3, A11 y A12, con A3 y
 A13 comprobados en el navegador por el barrido (dos chequeos nuevos, vistos fallar sin su arreglo).
@@ -1349,7 +1351,9 @@ Fricción vista al menos dos veces, con su costo.
   con al menos un incidente, siempre del agente principal, que conoce la regla. La cosecha del
   2026-10-21 cuenta 5 de 5 sesiones del 2026-10-12 al 2026-10-14 (las tandas B y C suman dos). La sesión
   del 2026-10-21/22 suma tres heredocs vacíos de delegados a los que el prompt se lo prohibía, y una docena
-  del agente principal (scripts hacia `cat` y `python3`, hasta que lo notó). Ninguno
+  del agente principal (scripts hacia `cat` y `python3`, hasta que lo notó). La sesión del 2026-10-27 al 30
+  suma tres del agente principal (`python3 -`, un heredoc a `cat >>`, `cat > /dev/null`) y cuatro de
+  delegados, uno de los cuales colgó y se detuvo a mano. Ninguno de los del agente principal
   colgó, pero es disciplina sin nada que la haga cumplir (peldaño 1). **Propuesta, decisión del dueño:**
   un hook `PreToolUse` sobre Bash en `.claude/settings.json` que rechace un comando con `<<` y diga
   «escribe el script a un archivo». Costo: un script de ~15 líneas, su test y una fila de decisión;
@@ -1368,7 +1372,13 @@ Fricción vista al menos dos veces, con su costo.
 - **El ledger del plan va a mano** (2026-10-13): los scripts `task-start`/`task-done` del plugin de
   planes buscan «Task N» y los planes de aquí dicen «Tarea N». Costo: unas líneas a mano por tarea.
 - **El push va a mano:** el sandbox niega SSH, así que el dueño corrió cada push del período (4). Costo:
-  un mensaje por push; es el límite del sandbox, no del repositorio.
+  un mensaje por push; es el límite del sandbox, no del repositorio. El 2026-10-30, otra vez: con el host
+  permitido tampoco sale, porque el sandbox no deja leer `~/.ssh/id_*`.
+- **`git checkout` entre ramas dentro del sandbox** (2026-10-30, primer incidente): una rama que cambia
+  archivos de `.agents/` (el bundle) no se puede sacar, porque el sandbox no deja escribir ahí; el checkout
+  falla a mitad y deja la copia de trabajo a medias (91 archivos), también con `!`. Se recupera con `git
+  restore --staged --worktree .` (lo corre el dueño). Un merge de avance rápido no lo necesita: `git fetch .
+  <rama>:main`.
 - **Un script envoltorio y el worktree de un delegado quedan dentro del sandbox** (2026-10-13):
   `test-mongo.sh` llamado desde otro script no queda exento, y el worktree de un delegado no puede
   crear su entorno de hatch. Los rojos del delegado se vieron en el árbol principal, commit por commit.
