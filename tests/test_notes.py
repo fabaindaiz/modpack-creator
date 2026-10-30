@@ -28,6 +28,16 @@ def test_an_error_over_64_kib_keeps_its_head_and_tail() -> None:
     assert cut == 293 and "… 293 KB cortados …" in kept  # 300000 bytes, rounded
 
 
+def test_the_cut_counts_as_the_textarea_does_and_is_never_zero() -> None:
+    """Review of 2026-10-30: a form sends a textarea's lines as CRLF, while its value (what app.js counts) has
+    LF, so the server cut errors the panel said fit; and one just past the limit said «0 KB». The server counts
+    the value's newlines, and a cut rounds up."""
+    fits = "a" * (ERROR_MAX - 20) + "\r\n" * 20
+    assert cut_error(fits) == ("a" * (ERROR_MAX - 20) + "\n" * 20, 0)
+    _, cut = cut_error("a" * (ERROR_MAX + 1))
+    assert cut == 1
+
+
 def test_secrets_are_masked() -> None:
     text = ("--accessToken eyJhbGciOiJIUzI1NiJ9.abc --username Steve\n"
             "url?token=abc123&x=1 access_token=zzz\n"
@@ -179,11 +189,14 @@ def test_an_editor_archives_only_their_own_and_archived_notes_are_left_out(mongo
 @pytest.mark.network
 def test_an_entry_reads_its_notes_by_id_and_never_an_archived_one(mongo: MongoRunner) -> None:
     """O8 tanda 3 (user-walk K21): the base's page shows the notes behind an entry; an archived one is gone."""
-    async def scenario() -> list[str]:
+    async def scenario() -> tuple[list[str], list[str]]:
         notes, _ = service()
         live = await notes.create("b1", BUILD, "fails", "se cae", None, None, "k1", EDITOR)
         gone = await notes.create("b2", BUILD, "fails", "negro", None, None, "k2", EDITOR)
         await notes.archive(str(gone.id), EDITOR)
-        return [n.text for n in await notes.find_by_ids([str(live.id), str(gone.id), "not-an-id"])]
+        ids = [str(live.id), str(gone.id), "not-an-id"]
+        # A mark sent again checks the notes it already had, archived ones too (review of 2026-10-30).
+        return ([n.text for n in await notes.find_by_ids(ids)],
+                sorted(n.text for n in await notes.noteDB.find_by_ids(ids, archived_too=True)))
 
-    assert mongo(scenario) == ["se cae"]
+    assert mongo(scenario) == (["se cae"], ["negro", "se cae"])

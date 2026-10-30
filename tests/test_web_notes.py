@@ -94,6 +94,10 @@ def test_the_size_notice_reacts_to_what_is_pasted() -> None:
     assert '<span data-error-cut></span> KB del medio.' in text
     js = (Path(__file__).resolve().parent.parent / "src/web/static/app.js").read_text()
     assert "textarea[data-error-limit]" in js and "[data-error-over]" in js and "[data-error-cut]" in js
+    # Review of 2026-10-30: the KB cut round up, as the server's (cut_error): never «unos 0 KB».
+    size = js[js.index("function errorSize"):]
+    size = size[:size.index("\n  }\n")]
+    assert "Math.ceil((length - kept) / 1024)" in size and "Math.round" not in size
 
 
 def test_the_form_carries_a_draft_key_and_an_idempotency_key() -> None:

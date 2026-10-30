@@ -1,4 +1,5 @@
 """What a note keeps of a pasted error (O8 tanda 2, P2 and P3 of d-7985ee-a68b5c). Pure."""
+import math
 import re
 
 # A pasted error over ERROR_MAX keeps its first ERROR_HEAD and its last ERROR_TAIL (P2): a crash's
@@ -18,10 +19,13 @@ _SECRETS = [
 
 
 def cut_error(text: str) -> tuple[str, int]:
-    """The error as stored, and how many KB were cut from its middle (0 when it fits)."""
+    """The error as stored, and how many KB were cut from its middle (0 when it fits). Its lines end as a
+    textarea's value does (LF), whatever the form sent (CRLF): the panel counts that value before it is sent
+    (static/app.js), and a cut rounds up, never «0 KB» (review of 2026-10-30)."""
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     if len(text) <= ERROR_MAX:
         return text, 0
-    cut = round((len(text) - ERROR_HEAD - ERROR_TAIL) / 1024)
+    cut = math.ceil((len(text) - ERROR_HEAD - ERROR_TAIL) / 1024)
     return f"{text[:ERROR_HEAD]}\n… {cut} KB cortados …\n{text[-ERROR_TAIL:]}", cut
 
 

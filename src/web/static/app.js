@@ -442,7 +442,8 @@
     return 'draft:' + form.getAttribute('data-draft');
   }
   // An error over the limit says, as it is pasted or typed, how many KB of its middle are cut (P2 of
-  // d-7985ee-a68b5c): the same count the server makes, by characters.
+  // d-7985ee-a68b5c): the same count the server makes (cut_error), by characters of the value, whose
+  // lines end in LF as the server reads them, rounded up: never «0 KB».
   function errorSize(field) {
     var notice = field.parentElement ? field.parentElement.querySelector('[data-error-over]') : null;
     if (!notice) {
@@ -453,7 +454,7 @@
     var length = Array.from(field.value).length;
     var cut = notice.querySelector('[data-error-cut]');
     if (cut) {
-      cut.textContent = String(Math.round((length - kept) / 1024));
+      cut.textContent = String(Math.ceil((length - kept) / 1024));
     }
     notice.hidden = length <= limit;
   }
