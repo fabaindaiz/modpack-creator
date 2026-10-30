@@ -168,5 +168,7 @@ def test_an_open_help_keeps_its_question_mark_beside_the_title() -> None:
     block = re.search(r'<details class="([^"]*)" data-help>.*?<p class="([^"]*)"', text, re.S)
     assert block is not None
     assert "contents" in block.group(1).split() and "open:basis-full" not in block.group(1)
+    # In Chromium the flex item is the details' content slot, not the <p> (the sweep saw it beside the «?»).
+    assert "[&::details-content]:basis-full" in block.group(1).split()
     assert "basis-full" in block.group(2).split()
 

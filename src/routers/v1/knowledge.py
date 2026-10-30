@@ -41,6 +41,8 @@ class IssueEdit(BaseModel):
     a: SideInput
     b: Optional[SideInput] = None
     game_version: Optional[str] = None
+    # The widened versions to keep (K10); omitted keeps them.
+    also_game_versions: Optional[list[str]] = None
     loader: Optional[str] = None
     summary: str = ""
     # The revision read: an edit from an older one is a 409.
@@ -107,7 +109,7 @@ async def knowledge_edit(
         ):
     """Edit an entry: a suspicion, its author; a confirmed one, an operator."""
     return await knowledge.issue_edit(issue_id, edit.rev, edit.a, edit.b, edit.game_version, edit.loader,
-                                      edit.summary, actor)
+                                      edit.summary, actor, also_game_versions=edit.also_game_versions)
 
 
 @router.post("/knowledge/{issue_id}/status", response_model=KnownIssue)

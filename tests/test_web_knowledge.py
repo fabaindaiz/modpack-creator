@@ -360,3 +360,20 @@ def test_a_widened_entry_shows_each_minecraft_version() -> None:
     assert "Minecraft 1.21.1, 1.21.4" in client.get("/conocimiento/6ae40b7c8901bede28d46601").text
     assert "Minecraft 1.21.1, 1.21.4" in client.get("/conocimiento").text
 
+
+def test_the_edit_dialog_lets_a_widened_version_be_unticked() -> None:
+    """Review of 2026-10-30, Important 1: each widened version is a ticked box; the edit sends the ones kept."""
+    entry = issue()
+    entry.also_game_versions = ["1.21.4"]
+    client, base = base_setup([entry])
+    seen: list[Any] = []
+
+    async def issue_edit(*args: Any, also_game_versions: Any = None, **kwargs: Any) -> Any:
+        seen.append(also_game_versions)
+        return entry
+
+    base.issue_edit = issue_edit  # type: ignore[attr-defined]
+    text = client.get("/conocimiento/6ae40b7c8901bede28d46601/editar", headers=HTMX).text
+    assert '<input type="checkbox" name="also_mc" value="1.21.4" checked>' in text
+    client.post("/conocimiento/6ae40b7c8901bede28d46601/editar", headers=HTMX, data={"rev": "3", "summary": "x", "mc": "1.21.1"})
+    assert seen == [[]]

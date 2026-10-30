@@ -118,7 +118,8 @@ async def edit(
                          fixed_in=str(form.get(f"fixed_{found.project_id}") or "") or None)
 
     await knowledgeService.issue_edit(issue_id, rev, side(issue.a), side(issue.b) if issue.b is not None else None,
-                                      mc or None, loader or None, summary, actor)
+                                      mc or None, loader or None, summary, actor,
+                                      also_game_versions=[str(v) for v in form.getlist("also_mc")])
     return Response(status_code=200, headers={"HX-Refresh": "true"})
 
 

@@ -400,3 +400,27 @@ def test_the_widening_hint_says_how_likely_it_is_compatible(mongo: MongoRunner) 
     assert grouped.likely and grouped.text.startswith("Probablemente sea compatible") and "1.21 y 1.21.1" in grouped.text
     assert not apart.likely and apart.text.startswith("Es muy probable que no sea compatible")
     assert listed.likely and "Sodium 0.6.0" in listed.text and same is None and calls == []
+
+
+@pytest.mark.network
+def test_an_edit_narrows_the_widened_versions_and_never_repeats_or_revives_one(mongo: MongoRunner) -> None:
+    """Review of 2026-10-30, Important 1: a version ticked by mistake comes off with an edit; editing to «any»
+    clears the list (it would come back later); the main version is never also listed."""
+    async def scenario() -> tuple[Any, ...]:
+        knowledge, _ = service()
+        found = await on_mc(knowledge, "1.21.1")
+        await knowledge.issue_join(str(found.id), "b2", [], EDITOR, also_game_version="1.21.4")
+        await knowledge.issue_join(str(found.id), "b2", [], EDITOR, also_game_version="1.21.5")
+
+        async def edit(game_version: Any, also: Any) -> Any:
+            entry = await knowledge.get(str(found.id))
+            return (await knowledge.issue_edit(str(found.id), entry.rev, SideInput(project_id=IRIS, broken_from=IRIS_BROKEN),
+                                               SideInput(project_id=SODIUM), game_version, None, "x", EDITOR,
+                                               also_game_versions=also)).also_game_versions
+        kept = await edit("1.21.1", None)
+        narrowed = await edit("1.21.1", ["1.21.5"])
+        moved = await edit("1.21.5", ["1.21.5", "1.21.4"])
+        anywhere = await edit(None, ["1.21.4"])
+        return kept, narrowed, moved, anywhere
+
+    assert mongo(scenario) == (["1.21.4", "1.21.5"], ["1.21.5"], ["1.21.4"], [])

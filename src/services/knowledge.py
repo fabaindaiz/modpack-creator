@@ -256,7 +256,8 @@ class KnowledgeService:
         return await self.knowledgeDB.get(issue_id)
 
     async def issue_edit(self, issue_id: str, rev: int, a: SideInput, b: Optional[SideInput], game_version: Optional[str],
-                   loader: Optional[str], summary: str, actor: Actor) -> KnownIssue:
+                   loader: Optional[str], summary: str, actor: Actor,
+                   also_game_versions: Optional[list[str]] = None) -> KnownIssue:
         """Edit an entry's mods, ranges and where it was seen: a suspicion by its author or an operator, a
         confirmed or rejected entry by an operator (403, user-walk K22); from the revision read (409)."""
         issue = await self.knowledgeDB.get(issue_id)
@@ -266,8 +267,12 @@ class KnowledgeService:
         first, second = await self._sides(a, b)
         if issue.status != "rejected":
             await self._check_pair(first, second, issue_id)
+        # The widened versions (K10): the ones kept (None keeps them all), never the main one, and none when
+        # the entry is for any Minecraft (they would come back with a later version; review of 2026-10-30).
+        kept = issue.also_game_versions if also_game_versions is None else also_game_versions
+        also = [v for v in dict.fromkeys(kept) if v and v != game_version] if game_version else []
         fields = {"a": first.model_dump(), "b": second.model_dump() if second else None,
-                  "game_version": game_version or None, "loader": loader or None,
+                  "game_version": game_version or None, "also_game_versions": also, "loader": loader or None,
                   "summary": (summary.strip() or issue.summary)[:SUMMARY_MAX], "updated_at": self.clock()}
         try:
             written = await self.knowledgeDB.update(issue_id, rev, fields)

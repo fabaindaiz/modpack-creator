@@ -24,6 +24,15 @@
       <span class="font-medium">Solo en Minecraft (opcional)</span>
       <input name="mc" value="{{ issue.game_version or '' }}" maxlength="40" class="block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control">
     </label>
+    {% if issue.also_game_versions %}
+    {# The versions it was widened to (K10): untick one to take it off. #}
+    <fieldset class="space-y-1 text-sm">
+      <legend class="font-medium">También en</legend>
+      {% for version in issue.also_game_versions %}
+      <label class="flex items-center gap-1.5"><input type="checkbox" name="also_mc" value="{{ version }}" checked> Minecraft {{ version }}</label>
+      {% endfor %}
+    </fieldset>
+    {% endif %}
     <label class="block space-y-1 text-sm">
       <span class="font-medium">Solo en el loader (opcional)</span>
       <input name="loader" value="{{ issue.loader or '' }}" maxlength="40" class="block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control">

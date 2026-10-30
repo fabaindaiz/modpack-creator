@@ -261,7 +261,7 @@
    stays beside the title and the explanation takes the row below (owner, 2026-10-30). #}
 {% macro help_toggle(topic, key) %}
 {% set text, anchor = HELP[key] %}
-<details class="contents text-xs" data-help>
+<details class="contents text-xs [&::details-content]:basis-full" data-help>
   <summary aria-label="Ayuda: {{ topic }}" title="Ayuda" class="inline-flex size-6 cursor-pointer list-none items-center justify-center rounded-full text-xs font-semibold text-ink-soft ring-1 ring-inset ring-control hover:bg-subtle focus-visible:outline-2 focus-visible:outline-accent [&::-webkit-details-marker]:hidden">?</summary>
   <p class="basis-full max-w-prose rounded-lg bg-tint p-2 text-xs text-ink-soft">{{ text }} <a href="/como-funciona#{{ anchor }}" class="font-medium text-link hover:underline">Más en «Cómo funciona»</a></p>
 </details>
