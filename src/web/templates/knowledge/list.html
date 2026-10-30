@@ -1,0 +1,58 @@
+{# The knowledge base (O8 tanda 3, K-Q5 of d-7985ee-57d185): every entry, newest first, by mod, state and Minecraft
+   version; 20 at a time, «Ver más» for older ones. `entries` are (KnownIssue, KnownWarning) pairs. #}
+{% extends "base.html" %}
+{% block title %}Conocimiento{% endblock %}
+
+{% block content %}
+{{ ui.page_header("Conocimiento", "Las combinaciones que fallan, en todos los packs. Solo avisan: nunca cambian ni bloquean nada.") }}
+{% set FIELD_CLASS = "mt-1 block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control focus-visible:outline-2 focus-visible:outline-accent" %}
+{% set LABEL_CLASS = "block text-xs font-medium text-muted" %}
+<form method="get" action="/conocimiento" class="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:items-end">
+  {% if filters.mod %}<input type="hidden" name="mod" value="{{ filters.mod }}">{% endif %}
+  <div class="min-w-0">
+    <label for="f-estado" class="{{ LABEL_CLASS }}">Estado</label>
+    <select id="f-estado" name="estado" class="{{ FIELD_CLASS }}">
+      <option value="">Todos</option>
+      {% for value, label in statuses.items() %}<option value="{{ value }}"{% if filters.estado == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </div>
+  <div class="min-w-0">
+    <label for="f-mc" class="{{ LABEL_CLASS }}">Minecraft</label>
+    <input id="f-mc" name="mc" type="text" value="{{ filters.mc }}" maxlength="40" placeholder="1.21.1" class="{{ FIELD_CLASS }}">
+  </div>
+  <div class="flex gap-2">
+    {{ ui.button("Filtrar", type="submit") }}
+    {{ ui.link_button("Limpiar", "/conocimiento") }}
+  </div>
+</form>
+{% if filters.mod %}
+<p class="text-sm text-muted">Solo las de {{ mod_title }}. <a href="/conocimiento" class="text-link hover:underline">Ver todas</a></p>
+{% endif %}
+
+{% if entries %}
+<ul class="divide-y divide-line-soft rounded-lg border border-line bg-raised">
+  {% for issue, warning in entries %}
+  <li data-issue="{{ issue.id }}" class="space-y-1 px-4 py-3">
+    <p class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+      <span class="text-xs font-semibold {{ 'text-warning-ink' if issue.status == 'confirmed' else 'text-muted' }}">{{ statuses[issue.status] }}</span>
+      <a href="/conocimiento/{{ issue.id }}" class="min-w-0 break-words font-medium text-link hover:underline">{{ warning.text }}</a>
+    </p>
+    <p class="break-words text-sm text-ink-soft">{{ issue.summary }}</p>
+    <p class="flex flex-wrap gap-x-3 text-xs text-muted">
+      {% if issue.game_version %}<span>Minecraft {{ issue.game_version }}</span>{% endif %}
+      {% if issue.loader %}<span>{{ issue.loader }}</span>{% endif %}
+      {% for side in [issue.a] + ([issue.b] if issue.b else []) %}
+      <a href="/conocimiento?mod={{ side.project_id | urlencode }}" class="text-link hover:underline">Más de {{ side.title }}</a>
+      {% endfor %}
+    </p>
+  </li>
+  {% endfor %}
+</ul>
+{% if more %}
+<p><a href="/conocimiento?antes={{ more | urlencode }}{% for name, value in filters.items() if value %}&amp;{{ name }}={{ value | urlencode }}{% endfor %}"
+  class="text-sm font-medium text-link hover:underline">Ver más</a></p>
+{% endif %}
+{% else %}
+<p class="text-sm text-muted">No hay entradas{% if filters.mod or filters.estado or filters.mc %} con ese filtro{% endif %}. Se marcan al comparar dos builds: «Marcar como sospechoso».</p>
+{% endif %}
+{% endblock %}

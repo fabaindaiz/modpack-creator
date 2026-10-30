@@ -117,3 +117,16 @@ def test_an_editor_archives_only_their_own_and_archived_notes_are_left_out(mongo
                 len(await notes.find("b1", build_number=15, archived=True)))
 
     assert mongo(scenario) == (403, 0, 2)
+
+
+@pytest.mark.network
+def test_an_entry_reads_its_notes_by_id_and_never_an_archived_one(mongo: MongoRunner) -> None:
+    """O8 tanda 3 (user-walk K21): the base's page shows the notes behind an entry; an archived one is gone."""
+    async def scenario() -> list[str]:
+        notes, _ = service()
+        live = await notes.create("b1", BUILD, "fails", "se cae", None, None, "k1", EDITOR)
+        gone = await notes.create("b2", BUILD, "fails", "negro", None, None, "k2", EDITOR)
+        await notes.archive(str(gone.id), EDITOR)
+        return [n.text for n in await notes.find_by_ids([str(live.id), str(gone.id), "not-an-id"])]
+
+    assert mongo(scenario) == ["se cae"]

@@ -12,7 +12,7 @@ from src.exceptions import *
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.auth.roles import operator_only
 from src.library.changes import VersionFacts
-from src.library.knowledge import KnownWarning, issue_applies, warning_of
+from src.library.knowledge import KnownWarning, issue_applies, side_state, warning_of
 from src.library.utils import as_utc
 from src.model.audit import AuditTarget
 from src.model.modpack.known_issue import IssueSide, IssueVersion, KnownIssue
@@ -23,6 +23,8 @@ from src.services.audit import AuditSink
 SUMMARY_MAX = 200
 # The entries read for one set of versions: far more than a pack meets.
 WARNINGS_READ = 500
+# How many of a mod's catalog versions «Arreglado en» offers.
+RANGE_CHOICES = 200
 ISSUE_BUSY = "La entrada cambió mientras tanto; vuelve a abrirla"
 ISSUE_EXISTS = "Ya hay una entrada para estos mods"
 
@@ -218,6 +220,27 @@ class KnowledgeService:
         """Entries newest first, of a mod, in a state, on a Minecraft version (a read)."""
         return await self.knowledgeDB.find(project=project, status=[status] if status else None,
                                            game_version=game_version, before=before, limit=limit)
+
+    async def range_choices(self, issue: KnownIssue) -> dict[str, list[IssueVersion]]:
+        """For «Arreglado en», by project: the catalog's versions of each side's mod, newest first, after its
+        «Rota desde» and on its branch (user-walk K14), or on the entry's Minecraft version (a read, never Modrinth)."""
+        choices: dict[str, list[IssueVersion]] = {}
+        for side in [issue.a] + ([issue.b] if issue.b is not None else []):
+            start = side.model_copy(update={"fixed_in": None})
+            kept = []
+            for v in await self.modrinthDB.version_find_by_project(side.project_id, RANGE_CHOICES):
+                facts = VersionFacts(published=v.date_published, game_versions=tuple(v.game_versions),
+                                     loaders=tuple(v.loaders))
+                if side.broken_from is not None and v.version_id == side.broken_from.version_id:
+                    continue
+                if side_state(start, facts) != "in":
+                    continue
+                if side.broken_from is None and issue.game_version and issue.game_version not in v.game_versions:
+                    continue
+                kept.append(IssueVersion(version_id=v.version_id, version_number=v.version_number,
+                                         published=v.date_published, game_versions=v.game_versions, loaders=v.loaders))
+            choices[side.project_id] = kept
+        return choices
 
     async def suspected_count(self) -> int:
         return await self.knowledgeDB.count("suspected")

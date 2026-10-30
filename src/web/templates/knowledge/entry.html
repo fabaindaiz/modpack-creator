@@ -1,0 +1,48 @@
+{# One entry of the knowledge base (O8 tanda 3; user-walk K20–K23, K26, K27): each side's range, where it was seen,
+   the notes behind it (verdict and text: never the pasted error, K21) and the actions the person's role allows. #}
+{% extends "base.html" %}
+{% block title %}Conocimiento{% endblock %}
+
+{% block content %}
+{{ ui.page_header(warning.text, statuses[issue.status] ~ " · " ~ issue.summary) }}
+<section class="space-y-2" aria-labelledby="entry-sides">
+  <h2 id="entry-sides" class="text-sm font-semibold">{{ "La versión" if not issue.b else "Los mods" }}</h2>
+  <dl class="grid grid-cols-1 gap-x-3 gap-y-1 text-sm sm:grid-cols-[minmax(0,12rem)_minmax(0,1fr)]">
+    {% for side in [issue.a] + ([issue.b] if issue.b else []) %}
+    <dt class="font-medium"><a href="/conocimiento?mod={{ side.project_id | urlencode }}" class="text-link hover:underline">{{ side.title }}</a></dt>
+    <dd class="min-w-0 break-words text-ink-soft">
+      Rota desde {{ side.broken_from.version_number if side.broken_from else "cualquier versión" }}{% if side.fixed_in %} · arreglado en {{ side.fixed_in.version_number }}{% endif %}
+    </dd>
+    {% endfor %}
+    <dt class="font-medium">Dónde</dt>
+    <dd class="text-ink-soft">{{ "Minecraft " ~ issue.game_version if issue.game_version else "Cualquier Minecraft" }} · {{ issue.loader or "cualquier loader" }}</dd>
+    <dt class="font-medium">Visto en</dt>
+    <dd class="min-w-0 break-words text-ink-soft">
+      {% for pack in issue.seen_in %}{% if not loop.first %}, {% endif %}{% if pack in names %}<a href="/modpacks/{{ pack }}" class="text-link hover:underline">{{ names[pack] }}</a>{% else %}un pack borrado{% endif %}{% endfor %}
+    </dd>
+  </dl>
+</section>
+
+<section class="space-y-2" aria-labelledby="entry-notes">
+  <h2 id="entry-notes" class="text-sm font-semibold">Notas que la respaldan</h2>
+  {% if notes %}
+  <ul class="space-y-1 text-sm">
+    {% for note in notes %}
+    <li class="break-words">{{ ui.verdict(note.verdict) }} {{ note.text }} <span class="text-xs text-muted">· {{ names.get(note.bundle_id, "un pack borrado") }}{% if note.build_number %}, build {{ note.build_number }}{% endif %} · {{ note.author.name }}</span></li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="text-sm text-muted">Sin notas vigentes.</p>
+  {% endif %}
+</section>
+
+<div class="flex flex-wrap gap-2">
+  {% if actor.is_operator %}
+  {% if issue.status != "confirmed" %}{{ ui.button("Confirmar", attrs={"hx-post": "/conocimiento/" ~ issue.id ~ "/estado", "hx-vals": '{"status": "confirmed", "rev": "' ~ issue.rev ~ '"}'}) }}{% endif %}
+  {% if issue.status != "rejected" %}{{ ui.button("Descartar", kind="secondary", attrs={"hx-post": "/conocimiento/" ~ issue.id ~ "/estado", "hx-vals": '{"status": "rejected", "rev": "' ~ issue.rev ~ '"}'}) }}{% endif %}
+  {% if issue.status != "suspected" %}{{ ui.button("Volver a sospecha", kind="secondary", attrs={"hx-post": "/conocimiento/" ~ issue.id ~ "/estado", "hx-vals": '{"status": "suspected", "rev": "' ~ issue.rev ~ '"}'}) }}{% endif %}
+  {% endif %}
+  {% if can_edit %}{{ ui.button("Editar", kind="secondary", attrs={"hx-get": "/conocimiento/" ~ issue.id ~ "/editar", "hx-target": "#note-dialog", "hx-swap": "innerHTML"}) }}{% endif %}
+  {% if mine and issue.status == "suspected" %}{{ ui.button("Retirar mi sospecha", kind="secondary", attrs={"hx-post": "/conocimiento/" ~ issue.id ~ "/retirar"}) }}{% endif %}
+</div>
+{% endblock %}

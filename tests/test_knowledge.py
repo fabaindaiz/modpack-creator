@@ -170,3 +170,21 @@ def test_the_base_lists_by_mod_and_status_and_counts_suspicions(mongo: MongoRunn
                 len(await knowledge.find(status="suspected")), await knowledge.suspected_count())
 
     assert mongo(scenario) == (1, 2, 1, 1)
+
+
+@pytest.mark.network
+def test_fixed_in_is_offered_from_the_catalog_after_the_start_and_on_its_branch(mongo: MongoRunner) -> None:
+    """O8 tanda 3 (K-Q2): «Arreglado en» is chosen among the catalog's versions of the mod: later than «Rota desde»,
+    on its Minecraft version and loader (a backport is another branch, user-walk K14)."""
+    from tests.test_update_check import version_doc
+
+    async def scenario() -> list[str]:
+        knowledge, _ = service()
+        backport = version_doc("i4", IRIS, "1.6.9", date="2023-01-01T00:00:00Z").model_copy(update={"game_versions": ["1.20.1"]})
+        await ModrinthDatabase().version_upsert_many([
+            version_doc("i1", IRIS, "1.6.0", date="2020-01-01T00:00:00Z"), version_doc("i2", IRIS, "1.7.0", date="2021-01-01T00:00:00Z"),
+            version_doc("i3", IRIS, "1.7.3", date="2022-01-01T00:00:00Z"), backport])
+        found = await mark(knowledge, a=SideInput(project_id=IRIS, broken_from="i2"), b=None)
+        return [v.version_id for v in (await knowledge.range_choices(found))[IRIS]]
+
+    assert mongo(scenario) == ["i3"]

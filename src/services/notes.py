@@ -82,6 +82,10 @@ class NoteService:
                                 {"note_id": str(note.id)})
         return await self.noteDB.get(str(note.id))
 
+    async def find_by_ids(self, note_ids: list[str]) -> list[VersionNote]:
+        """The notes behind an entry of the knowledge base, never an archived one (O8 tanda 3, a read)."""
+        return await self.noteDB.find_by_ids(note_ids)
+
     async def find(self, bundle_id: str, *, build_number: Optional[int] = None, project_id: Optional[str] = None,
                    version_ids: Optional[list[str]] = None, archived: bool = False, limit: int = 200) -> list[VersionNote]:
         """A pack's notes, newest first (a read)."""

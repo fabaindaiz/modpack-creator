@@ -123,3 +123,15 @@ def test_how_it_works_says_what_a_test_build_is() -> None:
     assert 'Cambia el pack (fija o agrega un mod) y pulsa «Construir como prueba».' in shown
     assert 'Instálala en un servidor de pruebas. Mientras no la apruebes, no es el último build ni sube el piso de versiones.' in shown
     assert 'Si funcionó, pulsa «Aprobar». Si falló, deshaz el cambio en el pack: la prueba queda marcada y no cuenta.' in shown
+
+
+def test_how_it_works_says_what_the_knowledge_base_is() -> None:
+    """K-Q5 of d-7985ee-57d185: the owner's text, as accepted."""
+    text = base_client(EDITOR).get("/como-funciona").text
+    for sentence in ("La base de conocimiento guarda las combinaciones que fallan: dos mods que no funcionan juntos, o una versión que falla sola. Vale para todos los packs.",
+                     "Al comparar un build que funcionó con uno que falló, pulsa «Marcar como sospechoso» junto al mod que crees culpable.",
+                     "Un operador la confirma o la descarta. Mientras sea sospecha, solo se ve aquí y al comparar.",
+                     "Confirmada, avisa en cualquier pack que tenga esa combinación, también al actualizar. Solo avisa: nunca cambia ni bloquea nada.",
+                     "Cuando una versión nueva lo arregla, anótala en «Arreglado en»: deja de avisar a quien ya la tiene."):
+        assert sentence in text
+    assert 'id="conocimiento"' in text and text.index('id="build"') < text.index('id="conocimiento"') < text.index('id="puente"')

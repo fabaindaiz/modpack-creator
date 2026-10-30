@@ -1,0 +1,36 @@
+{# Edit an entry of the knowledge base (O8 tanda 3, K-Q2): its summary, where it was seen and, for each mod,
+   «Arreglado en», chosen among the catalog's versions after its start, on its branch (`choices`). The mods and
+   «Rota desde» stay. `rev` is the revision read: a change in between is a 409. #}
+{% import "_macros.html" as ui %}
+<dialog data-autoopen aria-labelledby="edit-issue-title"
+  class="m-auto max-h-[calc(100dvh-2rem)] w-[min(36rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-line bg-raised p-0 text-ink shadow-xl backdrop:bg-scrim/50">
+  <form class="space-y-4 p-5" hx-post="/conocimiento/{{ issue.id }}/editar">
+    <h2 id="edit-issue-title" class="text-base font-semibold" autofocus tabindex="-1">Editar la entrada</h2>
+    <input type="hidden" name="rev" value="{{ issue.rev }}">
+    {% for side in sides %}
+    <label class="block space-y-1 text-sm">
+      <span class="font-medium">{{ side.title }}: Arreglado en</span>
+      <select name="fixed_{{ side.project_id }}" class="block w-full max-w-full min-w-0 rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control">
+        <option value="">Sin arreglo conocido</option>
+        {% for version in choices.get(side.project_id, []) %}<option value="{{ version.version_id }}"{% if side.fixed_in and side.fixed_in.version_id == version.version_id %} selected{% endif %}>{{ version.version_number }}</option>{% endfor %}
+      </select>
+    </label>
+    {% endfor %}
+    <label class="block space-y-1 text-sm">
+      <span class="font-medium">Solo en Minecraft (opcional)</span>
+      <input name="mc" value="{{ issue.game_version or '' }}" maxlength="40" class="block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control">
+    </label>
+    <label class="block space-y-1 text-sm">
+      <span class="font-medium">Solo en el loader (opcional)</span>
+      <input name="loader" value="{{ issue.loader or '' }}" maxlength="40" class="block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control">
+    </label>
+    <label class="block space-y-1 text-sm">
+      <span class="font-medium">Qué pasa, en una línea</span>
+      <input name="summary" value="{{ issue.summary }}" required maxlength="200" class="block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control">
+    </label>
+    <div class="flex justify-end gap-2">
+      {{ ui.button("Cancelar", kind="secondary", attrs={"data-dialog-close": ""}) }}
+      {{ ui.button("Guardar", type="submit") }}
+    </div>
+  </form>
+</dialog>
