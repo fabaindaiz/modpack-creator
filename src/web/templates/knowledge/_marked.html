@@ -1,0 +1,4 @@
+{# An entry marked or joined (O8 tanda 3): a notice that links it, and the dialog emptied (it closes). #}
+{% import "_macros.html" as ui %}
+<div id="notices" hx-swap-oob="beforeend">{{ ui.success(message) }}</div>
+<div id="note-dialog" hx-swap-oob="innerHTML"></div>

@@ -1,0 +1,14 @@
+{# What the knowledge base says of a mod (O8 tanda 3): its own markup, never a resolver's problem (user-walk K2), and
+   only a warning (D8). `warning` is a KnownWarning; `pack`, a pack id, links a broken version's suggestion (K-Q4). #}
+{% macro known(warning, pack=None, project_id=None) %}
+<p data-known="{{ warning.status }}" class="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 text-xs {{ 'text-warning-ink' if warning.status == 'confirmed' else 'text-muted' }}">
+  <span class="font-semibold">{{ "⚠ Conocida" if warning.status == "confirmed" else "? Sospecha" }}:</span>
+  <span class="break-words">{{ warning.text }}</span>
+  <span class="break-words">({{ warning.summary }}{% if warning.where %} · {{ warning.where | join(", ") }}{% endif %})</span>
+  <a href="/conocimiento/{{ warning.issue_id }}" class="text-link hover:underline">Ver en Conocimiento</a>
+  {%- if warning.broken and pack and project_id %}
+  <button type="button" hx-get="/modpacks/{{ pack }}/projects/{{ project_id | urlencode }}/sugerencia" hx-target="#note-dialog" hx-swap="innerHTML"
+    class="text-link hover:underline">Fijar la anterior que funcionó…</button>
+  {%- endif %}
+</p>
+{% endmacro %}

@@ -4,6 +4,7 @@
    The changelog is Markdown from Modrinth, shown as plain text: cut, escaped, never rendered; only
    its http(s) URLs become links (`linkify`, F29). #}
 {% import "_macros.html" as ui %}
+{% from "knowledge/_warning.html" import known %}
 {% set CHANGELOG_MAX = 4000 %}
 {% set changes = preview.changes %}
 {% set numbers = preview.numbers %}
@@ -34,6 +35,15 @@
     {% endfor %}
     <a href="/mods/{{ change.project_id | urlencode }}?pack={{ pack }}" class="text-link hover:underline">Historia →</a>
   </div>
+  {% endif %}
+  {# What the knowledge base says of it (O8 tanda 3): a warning, never a problem (D8, user-walk K2). #}
+  {% for warning in (preview.known.get(change.project_id, []) if preview.known is defined and preview.known else []) %}
+  {{ known(warning, pack, change.project_id) }}
+  {% endfor %}
+  {# Between two builds (`de` → `a`): mark what arrived as suspect (D6). #}
+  {% if pack and de is defined and a is defined and change.to_version %}
+  <button type="button" hx-get="/modpacks/{{ pack }}/conocimiento/marcar?de={{ de }}&amp;a={{ a }}&amp;mod={{ change.project_id | urlencode }}"
+    hx-target="#note-dialog" hx-swap="innerHTML" class="text-xs text-link hover:underline">Marcar como sospechoso</button>
   {% endif %}
   {# Why it is there, between two builds (O8 B4). #}
   {% set why = preview.reasons.get(change.project_id) if preview.reasons is defined and preview.reasons else None %}

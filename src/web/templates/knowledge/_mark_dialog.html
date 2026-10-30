@@ -1,0 +1,56 @@
+{# «Marcar como sospechoso» (O8 tanda 3, D6, D7; user-walk K17): from a comparison of builds `de` → `a`, on mod
+   `mod`. The version that arrived in build `a` is a click away, never chosen (D7); the other mod comes from build `a`,
+   or none (a version broken alone, K-Q4). Minecraft and loader are offered unticked. The notes of both builds back
+   it. A draft stays in this browser (`data-draft`); `key` makes it one entry if sent twice. #}
+{% import "_macros.html" as ui %}
+<dialog data-autoopen aria-labelledby="mark-dialog-title"
+  class="m-auto max-h-[calc(100dvh-2rem)] w-[min(36rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-line bg-raised p-0 text-ink shadow-xl backdrop:bg-scrim/50">
+  <form class="space-y-4 p-5" data-draft="{{ draft }}" hx-post="/modpacks/{{ bundle_id }}/conocimiento"
+    hx-target="#note-dialog" hx-swap="innerHTML">
+    <h2 id="mark-dialog-title" class="text-base font-semibold" autofocus tabindex="-1">Marcar como sospechoso: {{ title }}</h2>
+    <p class="text-xs text-muted">Queda como sospecha hasta que un operador la confirme. Solo avisa: nunca cambia ni bloquea nada.</p>
+    <input type="hidden" name="key" value="{{ key }}">
+    <input type="hidden" name="de" value="{{ de }}">
+    <input type="hidden" name="a" value="{{ a }}">
+    <input type="hidden" name="mod" value="{{ mod }}">
+    <fieldset class="space-y-1 text-sm">
+      <legend class="font-medium">{{ title }}: rota desde</legend>
+      <label class="flex items-center gap-1.5"><input type="radio" name="a_desde" value="" checked> cualquier versión</label>
+      {% if arrived %}<label class="flex items-center gap-1.5"><input type="radio" name="a_desde" value="build"> la que trae el build {{ a }} ({{ arrived }})</label>{% endif %}
+    </fieldset>
+    <label class="block space-y-1 text-sm">
+      <span class="font-medium">Con</span>
+      <select name="b" class="block w-full max-w-full min-w-0 rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control">
+        <option value="">Ninguno: falla sola</option>
+        {% for other in others %}<option value="{{ other.project_id }}">{{ other.title }} {{ other.version_number }}</option>{% endfor %}
+      </select>
+    </label>
+    <fieldset class="space-y-1 text-sm">
+      <legend class="font-medium">El otro mod: rota desde</legend>
+      <label class="flex items-center gap-1.5"><input type="radio" name="b_desde" value="" checked> cualquier versión</label>
+      <label class="flex items-center gap-1.5"><input type="radio" name="b_desde" value="build"> la que trae el build {{ a }}</label>
+    </fieldset>
+    <fieldset class="space-y-1 text-sm">
+      <legend class="font-medium">Dónde se vio (opcional)</legend>
+      <label class="flex items-center gap-1.5"><input type="checkbox" name="mc" value="{{ game_version }}"> Solo en Minecraft {{ game_version }}</label>
+      <label class="flex items-center gap-1.5"><input type="checkbox" name="loader" value="{{ loader }}"> Solo en {{ loader }}</label>
+    </fieldset>
+    <label class="block space-y-1 text-sm">
+      <span class="font-medium">Qué pasa, en una línea</span>
+      <input name="summary" required maxlength="200" class="block w-full rounded-md border-0 bg-raised px-2.5 py-1.5 text-sm ring-1 ring-inset ring-control">
+    </label>
+    {% if notes %}
+    <fieldset class="space-y-1 text-sm">
+      <legend class="font-medium">Notas que la respaldan</legend>
+      {% for found in notes %}
+      <label class="flex items-baseline gap-1.5"><input type="checkbox" name="notes" value="{{ found.id }}" checked>
+        <span class="break-words">Build {{ found.build_number }}: {{ ui.verdict(found.verdict) }} {{ found.text }}</span></label>
+      {% endfor %}
+    </fieldset>
+    {% endif %}
+    <div class="flex justify-end gap-2">
+      {{ ui.button("Cancelar", kind="secondary", attrs={"data-dialog-close": ""}) }}
+      {{ ui.button("Marcar", type="submit") }}
+    </div>
+  </form>
+</dialog>

@@ -1,0 +1,15 @@
+{# The pair is already in the base (user-walk K10): which entry, and joining it with this pack and these notes. #}
+{% import "_macros.html" as ui %}
+<dialog data-autoopen aria-labelledby="exists-dialog-title"
+  class="m-auto max-h-[calc(100dvh-2rem)] w-[min(36rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-line bg-raised p-0 text-ink shadow-xl backdrop:bg-scrim/50">
+  <form class="space-y-4 p-5" hx-post="/conocimiento/{{ issue.id }}/sumarse" hx-target="#note-dialog" hx-swap="innerHTML">
+    <h2 id="exists-dialog-title" class="text-base font-semibold" autofocus tabindex="-1">Ya hay una entrada para estos mods</h2>
+    <p class="text-sm break-words">«{{ issue.summary }}» · <a href="/conocimiento/{{ issue.id }}" class="text-link hover:underline">Ver en Conocimiento</a></p>
+    <input type="hidden" name="bundle" value="{{ bundle_id }}">
+    {% for note_id in note_ids %}<input type="hidden" name="notes" value="{{ note_id }}">{% endfor %}
+    <div class="flex justify-end gap-2">
+      {{ ui.button("Cancelar", kind="secondary", attrs={"data-dialog-close": ""}) }}
+      {{ ui.button("Sumarse a la existente", type="submit") }}
+    </div>
+  </form>
+</dialog>

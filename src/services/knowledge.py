@@ -53,6 +53,14 @@ async def warnings_for(knowledgeDB: KnowledgeDatabase, modrinthDB: ModrinthDatab
     return found
 
 
+class IssueExists(HTTP_409_CONFLICT):
+    """A pair already in the base, not rejected: its id, so the editor joins it (user-walk K10)."""
+
+    def __init__(self, issue_id: str) -> None:
+        super().__init__(f"{ISSUE_EXISTS}: {issue_id}")
+        self.issue_id = issue_id
+
+
 class SideInput(BaseModel):
     """A side as it is asked for: the mod and the version ids of its range, if any."""
     project_id: str
@@ -130,7 +138,7 @@ class KnowledgeService:
         first, second = await self._sides(a, b)
         existing = await self.knowledgeDB.find_pair(first.project_id, second.project_id if second else None)
         if existing is not None and existing.key != key:
-            raise HTTP_409_CONFLICT(f"{ISSUE_EXISTS}: {existing.id}")
+            raise IssueExists(str(existing.id))
         now = self.clock()
         issue = await self.knowledgeDB.insert(KnownIssue(
             a=first, b=second, game_version=game_version or None, loader=loader or None, status="suspected",

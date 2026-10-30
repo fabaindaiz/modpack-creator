@@ -553,3 +553,23 @@ def test_a_works_note_on_a_build_suggests_its_version_of_the_mod(mongo: MongoRun
         return found.source if found else None
 
     assert mongo(scenario) == "note"
+
+
+def test_the_comparison_brings_what_the_base_knows_suspicions_included(mongo: MongoRunner) -> None:
+    """O8 tanda 3 (D6, K-Q1): each mod that arrives with what the base knows of it, suspicions too."""
+    from src.model.modpack.known_issue import IssueSide, KnownIssue
+
+    async def scenario() -> Any:
+        service, bundle_id = await empty_bundle()
+        await service.project_add(bundle_id, ["sodium"], ProjectOrigin.pack, actor=EDITOR)
+        await service.build_create(bundle_id, actor=EDITOR)
+        await service.project_add(bundle_id, ["iris"], ProjectOrigin.pack, actor=EDITOR)
+        await service.build_create(bundle_id, actor=EDITOR)
+        now = datetime(2026, 10, 27, tzinfo=timezone.utc)
+        await KnownIssue.insert(KnownIssue(a=IssueSide(project_id=SODIUM, title="Sodium"), b=IssueSide(project_id=IRIS, title="Iris"),
+                                           status="suspected", summary="negro", author=EDITOR.ref(), at=now,
+                                           updated_at=now, key="k"))
+        found = await service.compare_builds(bundle_id, 1, 2)
+        return {p: [w.status for w in ws] for p, ws in found.known.items()}
+
+    assert mongo(scenario) == {IRIS: ["suspected"], SODIUM: ["suspected"]}

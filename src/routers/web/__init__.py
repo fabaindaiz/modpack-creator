@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 import src.routers.web.activity as activity
 import src.routers.web.home as home
+import src.routers.web.knowledge as knowledge
 import src.routers.web.modpacks as modpacks
 import src.routers.web.mods as mods
 import src.routers.web.notes as notes
@@ -9,6 +10,7 @@ from src.web import LoginRequired, login_required_handler
 
 WEB_MODULES = [
     home,
+    knowledge,
     modpacks,
     mods,
     notes,

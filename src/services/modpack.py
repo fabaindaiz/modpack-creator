@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from typing import Any, Optional, Sequence
 from beanie import PydanticObjectId
 from pydantic import BaseModel
+from src.library.knowledge import KnownWarning
+from src.services.knowledge import warnings_for
 from src.database import ModpackDatabase, ModrinthDatabase, PterodactylDatabase
 from src.library.api.client.loaders import LoaderMetaAPI
 from src.library.api.client.modrinth import ID_CHUNK, ModrinthAPI
@@ -20,6 +22,7 @@ from src.services.jobs import Handler, JobContext, JobFailed, NotificationSink, 
 from src.library.pins import past_origins
 from src.database.jobs import JobDatabase
 from src.database.audit import AuditDatabase
+from src.database.knowledge import KnowledgeDatabase
 from src.database.note import NoteDatabase
 from src.model.jobs import Job
 from src.library.bridges import BRIDGES, REPLACES, VIA_RISK, bridge as find_bridge, companions, guest_of
@@ -150,6 +153,9 @@ class ChangePreview(BaseModel):
     # What the notes say (O8 tanda 2, T6): each build's verdict, and the newest notes of each arriving version.
     verdicts: dict[int, tuple[str, int]] = {}
     notes: dict[str, list[Any]] = {}
+    # What the knowledge base says of the arriving side (O8 tanda 3), by project: confirmed entries, and
+    # between two builds suspicions too (K-Q1). It only warns (D8).
+    known: dict[str, list[KnownWarning]] = {}
 
     @property
     def downgrades(self) -> list[str]:
@@ -504,8 +510,11 @@ class ModpackService():
             jobDB: Optional[JobDatabase] = None,
             noteDB: Optional[NoteDatabase] = None,
             auditDB: Optional[AuditDatabase] = None,
+            knowledgeDB: Optional[KnowledgeDatabase] = None,
             ) -> None:
         self.clock = clock
+        # The knowledge base, for its warnings (O8 tanda 3): read only, never in `lock.problems` (D8, K1).
+        self.knowledgeDB = knowledgeDB or KnowledgeDatabase()
         # The notes, for what the builds' list says of each build (O8 tanda 2, T5).
         self.noteDB = noteDB or NoteDatabase()
         # A mod's pin changes, removal and return, for its history (O8 tanda 2).
@@ -2401,7 +2410,10 @@ class ModpackService():
         for found in await self.noteDB.find(bundle_id, version_ids=arriving) if arriving else []:
             if found.project_id and len(notes.setdefault(found.project_id, [])) < COMPARE_NOTES:
                 notes[found.project_id].append(found)
-        return preview.model_copy(update={"verdicts": verdicts, "notes": notes,
+        target = after.request.target
+        known = await warnings_for(self.knowledgeDB, self.modrinthDB, {e.project_id: e.version_id for e in after.lock.entries},
+                                   target.game_version, target.loader, suspected=True)
+        return preview.model_copy(update={"verdicts": verdicts, "notes": notes, "known": known,
                                           "request": request_changes(before.request, after.request, numbers),
                                           "reasons": reasons, "summary": summary_of(preview.changes, {**preview.directions, **{p: "up" for p in preview.up}})})
 
