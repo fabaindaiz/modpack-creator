@@ -15,6 +15,7 @@ from src.database import (
     JobDatabase,
     UsersDatabase,
     ModpackDatabase,
+    KnowledgeDatabase,
     ModrinthDatabase,
     NoteDatabase,
     PterodactylDatabase,
@@ -35,6 +36,7 @@ from src.services import (
     JobService,
     UsersService,
     ModpackService,
+    KnowledgeService,
     ModrinthService,
     NoteService,
     PterodactylService,
@@ -71,6 +73,7 @@ class Dependences(containers.DeclarativeContainer):
     pterodactylDatabase = providers.Singleton(PterodactylDatabase)
     updateCheckDatabase = providers.Singleton(UpdateCheckDatabase)
     noteDatabase = providers.Singleton(NoteDatabase)
+    knowledgeDatabase = providers.Singleton(KnowledgeDatabase)
 
     workerBeat = providers.Singleton(WorkerBeat)
     healthService = providers.Singleton(HealthService, healthDatabase, workerBeat)
@@ -88,6 +91,8 @@ class Dependences(containers.DeclarativeContainer):
     updateCheckService = providers.Singleton(UpdateCheckService, modpackDatabase, modrinthAPI, modrinthDatabase, updateCheckDatabase, jobDatabase, auditService, notifier)
     # O8 tanda 2: notes on builds and mods' versions.
     noteService = providers.Singleton(NoteService, noteDatabase, auditService, pterodactylDatabase)
+    # O8 tanda 3: the knowledge base.
+    knowledgeService = providers.Singleton(KnowledgeService, knowledgeDatabase, modrinthDatabase, modrinthAPI, auditService)
 
 async def close_clients(container: Dependences) -> None:
     """Close the HTTP session each client keeps (i-7985ee-57034c); the lifespan calls it on shutdown."""

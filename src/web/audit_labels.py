@@ -34,6 +34,12 @@ ACTIONS: dict[str, tuple[str, str]] = {
     "note.edit": ("Editó una nota", "Packs"),
     "note.archive": ("Archivó una nota", "Packs"),
     "note.unarchive": ("Recuperó una nota archivada", "Packs"),
+    # O8 tanda 3: the knowledge base is global, and its entries are seen in packs.
+    "knowledge.mark": ("Marcó una sospecha en la base", "Packs"),
+    "knowledge.join": ("Sumó un pack a una entrada de la base", "Packs"),
+    "knowledge.edit": ("Editó una entrada de la base", "Packs"),
+    "knowledge.status": ("Cambió el estado de una entrada de la base", "Packs"),
+    "knowledge.withdraw": ("Retiró su sospecha de la base", "Packs"),
     "replacement.set": ("Creó un reemplazo", "Reemplazos"),
     "replacement.delete": ("Borró un reemplazo", "Reemplazos"),
     "server.create": ("Creó un servidor", "Servidores"),
@@ -82,7 +88,7 @@ DETAILS: dict[str, str] = {
 }
 
 # A target's kind, as the closed card names it.
-KINDS = {"bundle": "Pack", "server": "Servidor", "replacement": "Reemplazo"}
+KINDS = {"bundle": "Pack", "server": "Servidor", "replacement": "Reemplazo", "knowledge": "Conocimiento"}
 
 # The keys whose value is one id the catalog may name ("Título (id)").
 _NAMED_IDS = frozenset({"project_id", "version_id", "replacement"})

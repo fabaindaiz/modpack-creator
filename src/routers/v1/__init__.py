@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 import src.routers.v1.auth as auth
 import src.routers.v1.jobs as jobs
+import src.routers.v1.knowledge as knowledge
 import src.routers.v1.modpack as modpack
 import src.routers.v1.modrinth as modrinth
 import src.routers.v1.notes as notes
@@ -10,6 +11,7 @@ import src.routers.v1.users as users
 MODULES_V1 = [
     auth,
     jobs,
+    knowledge,
     modpack,
     modrinth,
     notes,
@@ -21,6 +23,7 @@ ROUTE_PREFIX = "/v1"
 def include_routers_v1(app: FastAPI) -> None:
     app.include_router(auth.router, prefix=ROUTE_PREFIX, include_in_schema=False)
     app.include_router(jobs.router, prefix=ROUTE_PREFIX)
+    app.include_router(knowledge.router, prefix=ROUTE_PREFIX)
     app.include_router(modpack.router, prefix=ROUTE_PREFIX)
     app.include_router(modrinth.router, prefix=ROUTE_PREFIX)
     app.include_router(notes.router, prefix=ROUTE_PREFIX)

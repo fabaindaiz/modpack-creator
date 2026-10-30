@@ -4,6 +4,7 @@ from src.database.health import HealthDatabase
 from src.database.jobs import JobDatabase
 from src.database.modpack import ModpackDatabase
 from src.database.modrinth import ModrinthDatabase
+from src.database.knowledge import KnowledgeDatabase
 from src.database.note import NoteDatabase
 from src.database.pterodactyl import PterodactylDatabase
 from src.database.update_check import UpdateCheckDatabase
@@ -15,6 +16,7 @@ __all__ = [
     "HealthDatabase",
     "JobDatabase",
     "ModrinthDatabase",
+    "KnowledgeDatabase",
     "NoteDatabase",
     "ModpackDatabase",
     "PterodactylDatabase",

@@ -110,6 +110,11 @@ los dos, o una fila mal formada, hace fallar el test. El nombre del método no s
 | `NoteService.create` | editor | Escribe una nota sobre un build o la versión de un mod (O8 tanda 2): el error se enmascara y se corta. |
 | `NoteService.edit` | editor | Edita una nota: solo quien la escribió (403), desde la revisión que leyó (409); se guarda lo anterior. |
 | `NoteService.archive` | editor | Archiva una nota o la recupera: quien la escribió; la de otra persona, solo un operador (403, chequeado en el servicio: no es `operator_only` porque al editor le basta ser el autor). |
+| `KnowledgeService.issue_mark` | editor | Marca dos mods, o una versión sola, como sospecha en la base de conocimiento (O8 tanda 3): siempre «sospechosa»; cada versión debe ser de su mod (422); un par que ya está es un 409 que la nombra. |
+| `KnowledgeService.issue_join` | editor | Suma un pack y sus notas a una entrada de la base, sin repetir. |
+| `KnowledgeService.issue_edit` | editor | Edita una entrada: una sospecha, su autor o un operador; una confirmada o descartada, solo un operador (403, chequeado en el servicio: no es `operator_only` porque el editor edita su propia sospecha); desde la revisión que leyó (409). |
+| `KnowledgeService.issue_status` | operador | Confirma una entrada, la descarta (falsa alarma) o la devuelve a sospecha (D10 de d-7985ee-a99db7, K-Q2 de d-7985ee-57d185). |
+| `KnowledgeService.issue_withdraw` | editor | Quien marcó una sospecha la retira: pasa a descartada; la de otra persona, 403; una que ya no es sospecha, 409. |
 | `ModpackService.build_stable` | editor | Marca un build «estable» o le quita la marca (O8 tanda 2, T3b); una prueba se aprueba antes. |
 | `ModpackService.build_star` | editor | Destaca un build o le quita la estrella (O8 B3). |
 | `ModpackService.build_approve` | editor | Aprueba un build de prueba (O8 B1): deja de ser prueba, «último» avanza si es el más nuevo y, si se pide, queda recomendado. |

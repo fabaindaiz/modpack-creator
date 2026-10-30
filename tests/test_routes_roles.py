@@ -39,7 +39,7 @@ from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, get_args, get_origin
 
 from fastapi import FastAPI
 from fastapi.dependencies.models import Dependant
@@ -201,6 +201,8 @@ def placeholder(name: str, annotation: Any) -> str:
         return "A"
     if isinstance(annotation, type) and issubclass(annotation, Enum):
         return str(next(iter(annotation)).value)  # a valid member, so the request reaches the service
+    if get_origin(annotation) is Literal:
+        return str(get_args(annotation)[0])  # the same, for a Literal
     return "1" if annotation is int else "x"
 
 
