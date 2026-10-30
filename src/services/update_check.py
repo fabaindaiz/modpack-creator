@@ -336,8 +336,25 @@ class UpdateCheckService():
         bundle = await self.modpackDB.bundle_get(bundle_id)
         shown = [u for u in check.updates if not u.pinned]
         known = await self._known(bundle_id, check, shown)
-        listing = ", ".join(f"{u.title} {u.from_version}→{u.to_version}{KIND_NOTE.get(u.kind, '')}"
-                            + "".join(f" ⚠ conocida: {w.text} ({w.summary})" for w in known.get(u.project_id, []))
-                            for u in shown)
-        text = f"🔎 {bundle.name} (build {check.build_number}): {len(shown)} mods con actualización — {listing}"
-        return text[:DISCORD_LIMIT]
+        head = f"🔎 {bundle.name} (build {check.build_number}): {len(shown)} mods con actualización — "
+        plain = [f"{u.title} {u.from_version}→{u.to_version}{KIND_NOTE.get(u.kind, '')}" for u in shown]
+        notes = [[f" ⚠ conocida: {w.text} ({w.summary})" for w in known.get(u.project_id, [])] for u in shown]
+
+        def text_of(kept: list[list[str]], left: int) -> str:
+            listing = ", ".join(update + "".join(warned) for update, warned in zip(plain, kept))
+            return head + listing + (f" · ⚠ {left} avisos más de la base de conocimiento en el panel" if left else "")
+
+        whole = text_of(notes, 0)
+        if len(whole) <= DISCORD_LIMIT:
+            return whole
+        # Over Discord's limit: the warnings go first, so every update stays whole (review B6); the ones that fit
+        # stay, in order, with room kept for saying how many were left out.
+        total = sum(len(n) for n in notes)
+        room = DISCORD_LIMIT - len(text_of([[] for _ in notes], total))
+        kept: list[list[str]] = [[] for _ in notes]
+        for i, warned in enumerate(notes):
+            for note in warned:
+                if len(note) <= room:
+                    kept[i].append(note)
+                    room -= len(note)
+        return text_of(kept, total - sum(len(k) for k in kept))[:DISCORD_LIMIT]

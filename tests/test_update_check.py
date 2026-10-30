@@ -541,3 +541,28 @@ def test_the_daily_message_names_a_known_pair_and_still_updates(mongo: MongoRunn
 
     sent, updated = mongo(scenario)
     assert updated[0] == "A" and len(sent) == 1 and "⚠ conocida: A ✕ B (negro)" in sent[0]
+
+
+def test_the_daily_message_cuts_warnings_before_any_update() -> None:
+    """Review B6: Discord takes 2000 characters; the base's warnings are cut first, every update stays whole,
+    and the notice says how many warnings were left for the panel."""
+    import asyncio
+    from src.library.knowledge import KnownWarning
+
+    service = make(FakeModrinth({}))
+    updates = [AvailableUpdate(project_id=p, title=f"Mod {p}", from_version="1.0", to_version="2.0") for p in "ABCDEFGH"]
+    long = KnownWarning(issue_id="i", status="confirmed", summary="x" * 200, project_ids=["A"], text="y" * 200, broken=True)
+
+    async def known(*_: Any) -> dict[str, list[KnownWarning]]:
+        return {u.project_id: [long, long] for u in updates}
+
+    class Bundles:
+        async def bundle_get(self, bundle_id: str) -> Any:
+            return type("Bundle", (), {"name": "Survival"})()
+
+    service._known = known  # type: ignore[method-assign, assignment]
+    service.modpackDB = cast(Any, Bundles())
+    check = UpdateCheck.model_construct(bundle_id=PydanticObjectId(), build_number=3, checked_at=datetime.now(timezone.utc), updates=updates)
+    text = asyncio.run(service._message("b", check))
+    assert len(text) <= 2000 and text.count("⚠ conocida") >= 1
+    assert all(f"Mod {p} 1.0→2.0" in text for p in "ABCDEFGH") and text.endswith("en el panel")
