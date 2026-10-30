@@ -519,3 +519,25 @@ def test_a_mod_whose_bridge_the_pack_turned_off_is_not_checked(mongo: MongoRunne
 
     [call] = mongo(scenario).calls
     assert [item["hash"] for item in call] == ["h-A"]
+
+
+@pytest.mark.network
+def test_the_daily_message_names_a_known_pair_and_still_updates(mongo: MongoRunner) -> None:
+    """O8 tanda 3 (K-Q3): the notice says the update makes a pair the base knows; it still announces it (D8)."""
+    from src.model.modpack.known_issue import IssueSide, KnownIssue
+    from tests._actors import EDITOR
+
+    async def scenario() -> tuple[list[str], list[str]]:
+        notifier = Recorder()
+        bundle_id = await bundle_with(three_mods())
+        when = datetime(2026, 10, 27, tzinfo=timezone.utc)
+        await KnownIssue.insert(KnownIssue(a=IssueSide(project_id="A", title="A"), b=IssueSide(project_id="B", title="B"),
+                                           status="confirmed", summary="negro", author=EDITOR.ref(), at=when,
+                                           updated_at=when, key="k"))
+        service = make(FakeModrinth(newer()), notifier=notifier)
+        await run_check(service, bundle_id)
+        check = await service.latest(bundle_id)
+        return notifier.sent, [u.project_id for u in check.updates] if check else []
+
+    sent, updated = mongo(scenario)
+    assert updated[0] == "A" and len(sent) == 1 and "⚠ conocida: A ✕ B (negro)" in sent[0]

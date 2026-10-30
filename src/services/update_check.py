@@ -19,6 +19,9 @@ from src.database.jobs import JobDatabase
 from src.database.modpack import ModpackDatabase
 from src.database.modrinth import ModrinthDatabase
 from src.database.update_check import UpdateCheckDatabase
+from src.database.knowledge import KnowledgeDatabase
+from src.library.knowledge import KnownWarning
+from src.services.knowledge import warnings_for
 from src.exceptions import HTTP_404_NOT_FOUND, HTTP_409_CONFLICT
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.bridges import bridges_for, guest_of
@@ -102,8 +105,11 @@ class UpdateCheckService():
             jobDB: JobDatabase,
             audit: AuditSink,
             notifier: Optional[NotificationSink] = None,
+            knowledgeDB: Optional[KnowledgeDatabase] = None,
             ) -> None:
         self.modpackDB = modpackDB
+        # The knowledge base, for what the notice warns of (O8 tanda 3, K-Q3).
+        self.knowledgeDB = knowledgeDB or KnowledgeDatabase()
         self.api = modrinthAPI
         self.modrinthDB = modrinthDB
         self.checkDB = updateCheckDB
@@ -313,9 +319,25 @@ class UpdateCheckService():
         last = await self.checkDB.last_notified(check.bundle_id)
         return last is None or last.notified_digest != digest_of(check.updates)
 
+    async def _known(self, bundle_id: str, check: UpdateCheck, shown: list[AvailableUpdate]) -> dict[str, list[KnownWarning]]:
+        """What the knowledge base confirmed in the checked build with these updates in (O8 tanda 3, K-Q3). It only
+        warns: the notice still goes, and nothing is held back (D8). A failing read warns of nothing."""
+        try:
+            build = await self.modpackDB.build_get(bundle_id, check.build_number)
+            after = {e.project_id: e.version_id for e in build.lock.entries} | \
+                {u.project_id: u.to_version_id for u in shown if u.to_version_id}
+            return await warnings_for(self.knowledgeDB, self.modrinthDB, after, build.request.target.game_version,
+                                      build.request.target.loader)
+        except Exception:
+            logger.warning("update check: the knowledge base could not be read for the notice", exc_info=True)
+            return {}
+
     async def _message(self, bundle_id: str, check: UpdateCheck) -> str:
         bundle = await self.modpackDB.bundle_get(bundle_id)
         shown = [u for u in check.updates if not u.pinned]
-        listing = ", ".join(f"{u.title} {u.from_version}→{u.to_version}{KIND_NOTE.get(u.kind, '')}" for u in shown)
+        known = await self._known(bundle_id, check, shown)
+        listing = ", ".join(f"{u.title} {u.from_version}→{u.to_version}{KIND_NOTE.get(u.kind, '')}"
+                            + "".join(f" ⚠ conocida: {w.text} ({w.summary})" for w in known.get(u.project_id, []))
+                            for u in shown)
         text = f"🔎 {bundle.name} (build {check.build_number}): {len(shown)} mods con actualización — {listing}"
         return text[:DISCORD_LIMIT]

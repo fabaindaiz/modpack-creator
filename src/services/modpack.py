@@ -2456,13 +2456,22 @@ class ModpackService():
                                           "request": request_changes(before.request, after.request, numbers),
                                           "reasons": reasons, "summary": summary_of(preview.changes, {**preview.directions, **{p: "up" for p in preview.up}})})
 
-    async def update_preview(self, updates: list[AvailableUpdate]) -> ChangePreview:
+    async def update_preview(self, updates: list[AvailableUpdate], bundle_id: Optional[str] = None,
+                             build_number: Optional[int] = None) -> ChangePreview:
         """What the updates of a check change, with the changelogs of the versions that arrive. An
-        update stored without version ids (before they were kept) is left out. A read."""
+        update stored without version ids (before they were kept) is left out. With the check's pack and
+        build, what the knowledge base confirmed in that build with the updates applied (O8 tanda 3, K-Q3):
+        a mod that does not change can be half of the pair. A read."""
         usable = [u for u in updates if u.from_version_id and u.to_version_id]
         numbers = {i: n for u in usable for i, n in ((u.from_version_id, u.from_version), (u.to_version_id, u.to_version))}
-        return await self._preview({u.project_id: u.from_version_id for u in usable},
-                                   {u.project_id: u.to_version_id for u in usable}, numbers)
+        preview = await self._preview({u.project_id: u.from_version_id for u in usable},
+                                      {u.project_id: u.to_version_id for u in usable}, numbers)
+        if bundle_id is not None and build_number is not None:
+            build = await self.modpackDB.build_get(bundle_id, build_number)
+            after = {e.project_id: e.version_id for e in build.lock.entries} | {u.project_id: u.to_version_id for u in usable}
+            preview.known = await warnings_for(self.knowledgeDB, self.modrinthDB, after,
+                                               build.request.target.game_version, build.request.target.loader)
+        return preview
 
     async def server_change_preview(self, server_id: str, build_number: int) -> ChangePreview:
         """
@@ -2494,6 +2503,9 @@ class ModpackService():
                 label = labels.get(entry.via, entry.via)
                 bridged[label] = bridged.get(label, 0) + 1
         preview.bridged = bridged
+        # What the knowledge base confirmed in what the build puts on the server (O8 tanda 3, K-Q3): a warning.
+        preview.known = await warnings_for(self.knowledgeDB, self.modrinthDB, after, build.request.target.game_version,
+                                           build.request.target.loader)
         return preview
 
     # Global replacement rules (d-7985ee-86fffa).

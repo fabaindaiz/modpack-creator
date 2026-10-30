@@ -78,7 +78,7 @@ class FakeModpack:
         self.calls.append(("build_create", bundle_id, actor))
         return ModpackBuild.model_construct(id=PydanticObjectId(), bundle_id=BUNDLE_ID, number=3, created_at=T0)
 
-    async def update_preview(self, updates: list[AvailableUpdate]) -> ChangePreview:
+    async def update_preview(self, updates: list[AvailableUpdate], bundle_id: Any = None, build_number: Any = None) -> ChangePreview:
         self.previewed.append(updates)
         changed = [Change(u.project_id, u.from_version_id, u.to_version_id) for u in updates]
         numbers = {i: n for u in updates for i, n in ((u.from_version_id, u.from_version), (u.to_version_id, u.to_version))}
@@ -389,3 +389,24 @@ def test_the_updates_page_shows_the_check_in_progress() -> None:
     text = client.get(f"/modpacks/{BUNDLE_ID}/actualizaciones").text
     part = text[text.index('id="check-job"'):text.index('id="updates-main"')]
     assert "Revisión de actualizaciones" in part and 'hx-trigger="every 2s"' in part
+
+
+def test_the_updates_page_warns_from_the_checked_build() -> None:
+    """O8 tanda 3 (K-Q3): the page asks the preview for the pack and the build checked, and shows what it warns."""
+    from src.library.knowledge import KnownWarning
+    client, modpack, checks = setup()
+    checks.latest_check = check([update("A", "Sodium")])
+    seen: list[Any] = []
+    plain = modpack.update_preview
+
+    async def update_preview(updates: list[AvailableUpdate], bundle_id: Any = None, build_number: Any = None) -> Any:
+        seen.append((bundle_id, build_number))
+        found = await plain(updates)
+        return found.model_copy(update={"known": {u.project_id: [KnownWarning(
+            issue_id="i1", status="confirmed", summary="negro", project_ids=[u.project_id], text="Iris 1.7+ ✕ Sodium",
+            broken=False)] for u in updates}})
+
+    modpack.update_preview = update_preview  # type: ignore[method-assign]
+    text = client.get(f"/modpacks/{BUNDLE_ID}/actualizaciones").text
+    assert seen and seen[0][0] == str(BUNDLE_ID) and seen[0][1] is not None
+    assert "⚠ Conocida" in text and "Iris 1.7+ ✕ Sodium" in text

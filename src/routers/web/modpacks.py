@@ -1125,7 +1125,9 @@ async def update_page(
     check = await updateCheckService.latest(bundle_id)
     counted = [u for u in check.updates if not u.pinned] if check else []
     pinned = [u for u in check.updates if u.pinned] if check else []
-    preview = await modpackService.update_preview(counted) if counted else None
+    # The check's build, so the preview warns of what the base confirmed with the updates in (O8 tanda 3).
+    preview = await modpackService.update_preview(counted, bundle_id=bundle_id, build_number=check.build_number) \
+        if counted and check else None
     if counted or pinned:
         await modrinthService.projects_filled([u.project_id for u in counted + pinned])
     # The check in progress shows in #check-job with its progress (O9 D6).

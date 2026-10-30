@@ -517,3 +517,45 @@ def test_compare_marks_pins_from_the_build_not_the_pack(mongo: MongoRunner) -> N
     assert preview.pinned == {"P"} and preview.reasons["P"].kind == "pin"
     assert [(c.label, c.project_id, c.after) for c in preview.request] == [("Fijado", "P", "v2")]
     assert preview.summary is not None and preview.summary.text() == "1 cambio: 1 cambia de versión"
+
+
+# What the knowledge base says where one updates (O8 tanda 3, K-Q3 of d-7985ee-57d185).
+
+
+async def known_pair(a: str, b: str) -> None:
+    """A confirmed entry: `a` and `b` fail together, any version; and the versions in the catalog, on 26.3."""
+    from src.model.modpack.known_issue import IssueSide, KnownIssue
+    from tests._actors import EDITOR
+    from tests.test_update_check import version_doc
+    # With their changelog read (empty): the preview asks Modrinth for nothing, and the fake keeps the catalog.
+    await ModrinthDatabase().version_upsert_many([version_doc(v, p, v, changelog="") for p, v in
+                                                  (("P", "v1"), ("P", "v2"), ("Q", "q1"), ("N", "n1"))])
+    await KnownIssue.insert(KnownIssue(a=IssueSide(project_id=a, title=a), b=IssueSide(project_id=b, title=b),
+                                       status="confirmed", summary="negro", author=EDITOR.ref(), at=T0, updated_at=T0,
+                                       key="k"))
+
+
+@pytest.mark.network
+def test_a_server_preview_warns_of_a_known_pair(mongo: MongoRunner) -> None:
+    async def scenario() -> Any:
+        server_id = await seed_server([scan_file("/mods/p.jar", "P", "v1"), scan_file("/mods/q.jar", "Q", "q1")],
+                                      [entry("P", "v2"), entry("Q", "q1")])
+        await known_pair("P", "Q")
+        return await service(FakeAPI({"v2": None})).server_change_preview(server_id, 1)
+
+    assert sorted(mongo(scenario).known) == ["P", "Q"]
+
+
+@pytest.mark.network
+def test_the_updates_preview_warns_of_a_known_pair_in_the_whole_build(mongo: MongoRunner) -> None:
+    """Q does not change, and still is half of the pair the update makes."""
+    from src.model.modpack import AvailableUpdate
+
+    async def scenario() -> Any:
+        server_id = await seed_server(None, [entry("P", "v1"), entry("Q", "q1")])
+        bundle_id = (await PterodactylDatabase().server_get(server_id)).bundle_id
+        await known_pair("P", "Q")
+        update = AvailableUpdate(project_id="P", from_version="v1", to_version="v2", from_version_id="v1", to_version_id="v2")
+        return await service(FakeAPI({"v2": None})).update_preview([update], bundle_id=bundle_id, build_number=1)
+
+    assert sorted(mongo(scenario).known) == ["P", "Q"]
