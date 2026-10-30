@@ -227,4 +227,4 @@ pack, `server_change_preview`), `src/services/update_check.py` (`_message`), `sr
 
 ## Estado
 
-Nada hecho todavía.
+Tareas 1–9 hechas (2026-10-27 al 30): fc8daaf (1), bbf26c6 (2 y 3), 9ec940a (4), 90156e4 (5), 3cc2a7f (6), ab58945 (7), 01301f5 (8), cff3ba4 (la pasada de la revisión). test-mongo en verde; el barrido visual con sus chequeos nuevos. Pendiente del dueño: el menú a 1280 px (roadmap).
