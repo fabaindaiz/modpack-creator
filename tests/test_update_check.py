@@ -566,3 +566,18 @@ def test_the_daily_message_cuts_warnings_before_any_update() -> None:
     text = asyncio.run(service._message("b", check))
     assert len(text) <= 2000 and text.count("⚠ conocida") >= 1
     assert all(f"Mod {p} 1.0→2.0" in text for p in "ABCDEFGH") and text.endswith("en el panel")
+
+
+@pytest.mark.network
+def test_a_modpack_with_only_test_builds_is_told_to_approve_one(mongo: MongoRunner) -> None:
+    """W9, also for /v1 and the scheduler: a pack whose only builds are tests is not «sin build»."""
+    async def scenario() -> Any:
+        bundle_id = await bundle_with(three_mods(), recommended=None)
+        await ModpackBundle.get_pymongo_collection().update_one({"_id": PydanticObjectId(bundle_id)}, {"$set": {"latest_build": None}})
+        await ModpackBuild.find_one(ModpackBuild.bundle_id == PydanticObjectId(bundle_id)).update({"$set": {"test": True}})
+        with pytest.raises(HTTP_409_CONFLICT) as error:
+            await make(FakeModrinth({})).enqueue(bundle_id, EDITOR)
+        return error.value.detail
+
+    assert mongo(scenario) == "Este modpack solo tiene builds de prueba (1): aprueba uno para poder buscar actualizaciones."
+

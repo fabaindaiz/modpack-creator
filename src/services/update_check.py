@@ -39,6 +39,7 @@ DISCORD_LIMIT = 2000
 # How the notice marks an update whose channel matters (M2; owner, 2026-10-12).
 KIND_NOTE = {"beta": " (beta)", "alpha": " (alpha)", "leaves_beta": " (estable: deja la beta)"}
 NO_BUILD = "Este modpack todavía no tiene build: crea uno para poder buscar actualizaciones."
+ONLY_TESTS = "Este modpack solo tiene builds de prueba ({numbers}): aprueba uno para poder buscar actualizaciones."
 CHECK_RUNNING = "Ya hay una revisión en curso para este modpack"
 DEFAULT_TZ = "America/Santiago"
 CHECK_AT = re.compile(r"([01]\d|2[0-3]):([0-5]\d)")
@@ -216,6 +217,10 @@ class UpdateCheckService():
         is None for the scheduler, which is not recorded."""
         bundle = await self.modpackDB.bundle_get(bundle_id)
         if (bundle.recommended_build or bundle.latest_build) is None:
+            # Only test builds is not «no build» (W9): say which, as the updates page does.
+            tests = sorted(b.number for b in await self.modpackDB.build_find(bundle_id) if b.test)
+            if tests:
+                raise HTTP_409_CONFLICT(ONLY_TESTS.format(numbers=", ".join(map(str, tests))))
             raise HTTP_409_CONFLICT(NO_BUILD)
         try:
             job = await self.jobDB.enqueue("update_check", key=f"bundle:{bundle_id}",
