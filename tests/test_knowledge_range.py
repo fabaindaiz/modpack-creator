@@ -85,3 +85,13 @@ def test_a_fix_on_another_branch_keeps_warning_where_it_broke() -> None:
     side = IssueSide(project_id="iris", title="Iris", fixed_in=version("1.8.0", 20, mc="1.21.1"))
     assert side_state(side, facts(25, mc="1.20.1")) == "in"
     assert side_state(side, facts(25)) == "out" and side_state(side, facts(15)) == "in"
+
+
+def test_the_loader_counts_on_either_mod() -> None:
+    """Owner, 2026-10-30 (K18): an entry «Solo en fabric» applies when either mod runs on Fabric (one through a
+    bridge on NeoForge), not only the first of the pair."""
+    found = issue(IssueSide(project_id="a-native", title="A"), IssueSide(project_id="b-bridged", title="B"), loader="fabric")
+    versions = {"a-native": facts(10, loader="neoforge"), "b-bridged": facts(10, loader="fabric")}
+    assert issue_applies(found, versions, "1.21.1", "neoforge")
+    assert not issue_applies(found, {k: facts(10, loader="neoforge") for k in versions}, "1.21.1", "neoforge")
+

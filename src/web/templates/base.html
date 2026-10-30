@@ -29,9 +29,9 @@
         <span class="inline-block size-3 rounded-sm bg-accent" aria-hidden="true"></span>
         Modpack Creator
       </a>
-      <nav aria-label="Secciones" class="order-last -mx-1 w-full overflow-x-auto xl:order-none xl:mx-0 xl:w-auto xl:flex-1">
+      <nav aria-label="Secciones" class="order-last -mx-1 w-full overflow-x-auto 2xl:order-none 2xl:mx-0 2xl:w-auto 2xl:flex-1">
         <ul class="flex gap-1 text-sm whitespace-nowrap">
-          {# Below 1280 px this is a row of its own, as on a phone: beside the name it did not fit at 768 px (owner, 2026-10-22). #}
+          {# Below 1536 px this is a row of its own, as on a phone: beside the name it did not fit at 768 px (owner, 2026-10-22), nor at 1280 px with «Conocimiento» (owner, 2026-10-30). #}
           {% for key, href, label, icon in NAV %}
           <li>
             <a href="{{ href }}"

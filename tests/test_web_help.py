@@ -85,15 +85,16 @@ def test_how_it_works_is_in_the_navigation_and_marked_when_open() -> None:
     assert re.search(r'<a href="/como-funciona"\s+aria-current="page"', page)
 
 
-def test_below_1280_px_the_sections_take_a_row_of_their_own_with_how_it_works_in_it() -> None:
+def test_below_1536_px_the_sections_take_a_row_of_their_own_with_how_it_works_in_it() -> None:
     """Owner, 2026-10-22: at 768 px the sections did not fit beside the name (since batch B). Below
-    1280 px they drop to a full-width row, as on a phone; from 1280 px, one row. «Cómo funciona» is
+    1536 px they drop to a full-width row, as on a phone; from 1536 px, one row (owner, 2026-10-30: with
+    «Conocimiento» the row no longer fit beside the name at 1280 px). «Cómo funciona» is
     one more section, with its text, and nothing else in the header links to it."""
     home = base_client(EDITOR).get("/").text
     nav = re.search(r'<nav aria-label="Secciones" class="([^"]*)".*?</nav>', home, re.S)
     assert nav is not None
     classes = nav.group(1).split()
-    assert {"order-last", "w-full", "xl:order-none", "xl:w-auto", "xl:flex-1"} <= set(classes)
+    assert {"order-last", "w-full", "2xl:order-none", "2xl:w-auto", "2xl:flex-1"} <= set(classes)
     assert not [c for c in classes if c.startswith("md:")]
     assert re.search(r'<li>\s*<a href="/como-funciona"[^>]*>.*?Cómo funciona</a>', nav.group(0), re.S)
     header = home[home.index("<header"):home.index("</header>")]

@@ -35,7 +35,7 @@ def side_state(side: IssueSide, version: VersionFacts) -> SideState:
 
 def issue_applies(issue: KnownIssue, versions: Mapping[str, VersionFacts], game_version: str, loader: str) -> bool:
     """Whether the issue is in `versions` (project id -> the version's facts): each side present and in its
-    range, on the issue's Minecraft version if it has one, and on its loader, the version's own (a Fabric mod
+    range, on the issue's Minecraft version if it has one, and on its loader, either version's own (a Fabric mod
     runs on NeoForge through a bridge) or else the pack's."""
     if issue.game_version is not None and issue.game_version != game_version:
         return False
@@ -43,7 +43,8 @@ def issue_applies(issue: KnownIssue, versions: Mapping[str, VersionFacts], game_
     if any(side.project_id not in versions for side in sides):
         return False
     if issue.loader is not None:
-        own = versions[issue.a.project_id].loaders
+        # Either mod's own loaders (one may run through a bridge), or the pack's (owner, 2026-10-30, K18).
+        own = {name for side in sides for name in versions[side.project_id].loaders}
         if issue.loader not in own and issue.loader != loader:
             return False
     return all(side_state(side, versions[side.project_id]) == "in" for side in sides)
