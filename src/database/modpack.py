@@ -273,6 +273,7 @@ class ModpackDatabase():
         """
         oid = self._bundle_oid(bundle_id)
         written = record.model_copy(update={"rev": record.rev + 1})
+        revision = {"$add": [{"$max": [record.rev, {"$ifNull": [f"$pin_revs.{project_id}", 0]}]}, 1]}
         # One pipeline update: what the stored record has and this one does not goes to the mod's
         # history first, read from the very document the revision check matched (O8 D2).
         kept = [_origin_key_of(o) for o in written.origins]
@@ -287,6 +288,9 @@ class ModpackDatabase():
             ]})}},
             {"$set": {f"pin_origins.{project_id}": {"$literal": written.model_dump()},
                       **({f"pins.{project_id}": {"$literal": pin}} if pin is not None else {})}},
+            # The revision never repeats for this mod, across removing it and adding it again: the
+            # next after both the one read and the last one written (`pin_revs`, kept on removal).
+            {"$set": {f"pin_origins.{project_id}.rev": revision, f"pin_revs.{project_id}": revision}},
         ]
         if pin is None:
             update.append({"$unset": f"pins.{project_id}"})

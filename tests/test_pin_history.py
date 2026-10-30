@@ -123,6 +123,32 @@ def test_removing_the_mod_keeps_its_history_and_marks_it(mongo: MongoRunner) -> 
 
 
 @pytest.mark.network
+def test_a_record_read_before_the_mod_was_removed_never_writes_after_it_is_added_again(mongo: MongoRunner) -> None:
+    """Review of 2026-10-26: removing a mod clears its record, and a record written after it is added again must not
+    take a revision it had before, or a write based on a read from before the removal would match it."""
+    from src.model.modpack import PackProject, ProjectOrigin
+
+    async def scenario() -> tuple[bool, str, int]:
+        s = Scenario()
+        bundle_id = await s.bundle()
+        mod = "OLDPACK1"
+        first = PinRecord(origins=[PinOrigin(source=PinSource.admin, version_id="v-1")], selected=PinSource.admin)
+        assert await s.modpackDB.bundle_pin_record_set(bundle_id, mod, first, "v-1")
+        stale = (await s.modpackDB.bundle_get(bundle_id)).pin_origins[mod]
+        await s.modpackDB.bundle_project_remove(bundle_id, mod, clear_keys=True)
+        await s.modpackDB.bundle_projects_add(bundle_id, [PackProject(project_id=mod, origin=ProjectOrigin.pack)])
+        fresh = PinRecord(origins=[PinOrigin(source=PinSource.admin, version_id="v-2")], selected=PinSource.admin)
+        assert await s.modpackDB.bundle_pin_record_set(bundle_id, mod, fresh, "v-2")
+        late = stale.model_copy(update={"origins": [PinOrigin(source=PinSource.admin, version_id="v-9")]})
+        wrote = await s.modpackDB.bundle_pin_record_set(bundle_id, mod, late, "v-9")
+        bundle = await s.modpackDB.bundle_get(bundle_id)
+        return wrote, bundle.pins[mod], bundle.pin_origins[mod].rev
+
+    wrote, pin, rev = mongo(scenario)
+    assert (wrote, pin) == (False, "v-2") and rev > 1
+
+
+@pytest.mark.network
 def test_a_pin_change_audits_from_which_version(mongo: MongoRunner) -> None:
     """User-walk N4: «bundle.pin» said only where a pin went; the history needs where it came from."""
     async def scenario() -> list[tuple[Any, Any]]:

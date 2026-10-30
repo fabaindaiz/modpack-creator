@@ -146,6 +146,10 @@ class ModpackBundle(Document):
     # Modrinth project id → what its pin's origins replaced or dropped, oldest first (O8 D2): written
     # with each record, and kept when the mod is removed (P5). The history shows it (`past_origins`).
     pin_history: dict[str, list[PastOrigin]] = Field(default_factory=dict)
+    # Modrinth project id → the last revision its pin record was written with. Kept when the mod is
+    # removed, so a record written after it is added again never repeats a revision a read from before
+    # the removal carries (review, 2026-10-26). Absent (every pack stored before) reads as 0.
+    pin_revs: dict[str, int] = Field(default_factory=dict)
     # Modrinth project id → substitute project id, or None to drop it. Added to the global
     # rules, and wins over them for the same project (d-7985ee-86fffa).
     replacements: dict[str, Optional[str]] = Field(default_factory=dict)
