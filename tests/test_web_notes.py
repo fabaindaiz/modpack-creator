@@ -112,6 +112,18 @@ def test_editing_and_archiving_answer_the_note_in_place() -> None:
     assert "Nota archivada." in archived and "Deshacer" in archived and notes.archived[0][1] is True
 
 
+def test_the_first_note_saved_takes_the_empty_state_away() -> None:
+    """Review of tanda 2: a new note showed next to «Todavía no hay notas.». The empty state has an id, and
+    saving deletes it out of band."""
+    client, notes, modpack, _ = notes_setup()
+    modpack.builds = [build(15)]
+    page = client.get(f"/modpacks/{BUNDLE_ID}/builds/15").text
+    assert '<p id="notes-build-15-empty" class="text-sm text-muted">Todavía no hay notas.</p>' in page
+    saved = client.post(f"/modpacks/{BUNDLE_ID}/notas", headers=HTMX, data={
+        "build": "15", "verdict": "fails", "text": "pantalla negra", "error": "", "server": "", "key": "k-1"}).text
+    assert '<p id="notes-build-15-empty" hx-swap-oob="delete"></p>' in saved
+
+
 def test_the_build_page_offers_add_note() -> None:
     client, _, modpack, _ = notes_setup()
     modpack.builds = [build(15)]

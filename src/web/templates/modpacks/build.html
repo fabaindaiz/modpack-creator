@@ -34,7 +34,8 @@
     {{ ui.button("Agregar nota", kind="secondary", small=True, attrs={"hx-get": "/modpacks/" ~ bundle_id ~ "/notas/nueva?build=" ~ build.number, "hx-target": "#note-dialog", "hx-swap": "innerHTML"}) }}
     <div id="notes-build-{{ build.number }}" class="space-y-2">
       {% for found in notes %}{% include "notes/_note.html" %}{% else %}
-      <p class="text-sm text-muted">{{ "Ninguna nota archivada." if archived else "Todavía no hay notas." }}</p>
+      {# Its id: the first note saved deletes it out of band (review of tanda 2). #}
+      <p id="notes-build-{{ build.number }}-empty" class="text-sm text-muted">{{ "Ninguna nota archivada." if archived else "Todavía no hay notas." }}</p>
       {% endfor %}
     </div>
     <div class="flex flex-wrap gap-3 text-sm">

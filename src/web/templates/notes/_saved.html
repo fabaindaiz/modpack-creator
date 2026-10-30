@@ -1,8 +1,9 @@
-{# A note saved (O8 tanda 2): first in its list (`list_id`) when new, in place when edited; the dialog
-   emptied (it closes), and a notice. #}
+{# A note saved (O8 tanda 2): first in its list (`list_id`) when new, taking its empty state away, in place
+   when edited; the dialog emptied (it closes), and a notice. #}
 {% import "_macros.html" as ui %}
 {% if list_id %}
 <div id="{{ list_id }}" hx-swap-oob="afterbegin">{% include "notes/_note.html" %}</div>
+<p id="{{ list_id }}-empty" hx-swap-oob="delete"></p>
 {% else %}
 {% with oob = True %}{% include "notes/_note.html" %}{% endwith %}
 {% endif %}
