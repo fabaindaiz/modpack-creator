@@ -93,10 +93,15 @@ async def edit_dialog(
 async def edit(
         issue_id: str,
         request: Request,
+        rev: Annotated[int, Form(ge=0)],
+        summary: Annotated[str, Form()] = "",
+        mc: Annotated[str, Form()] = "",
+        loader: Annotated[str, Form()] = "",
         actor: Actor = Depends(get_web_actor),
         knowledgeService: KnowledgeService = Depends(Provide[Dependences.knowledgeService]),
         ):
     """Save the dialog: each side keeps its mod and its «Rota desde»; «Arreglado en» is the one chosen."""
+    # A malformed revision is a 422 (typed above); the «Arreglado en» fields are named by project.
     form = await request.form()
     issue = await knowledgeService.get(issue_id)
 
@@ -105,10 +110,8 @@ async def edit(
                          broken_from=found.broken_from.version_id if found.broken_from else None,
                          fixed_in=str(form.get(f"fixed_{found.project_id}") or "") or None)
 
-    await knowledgeService.issue_edit(issue_id, int(str(form.get("rev") or "0")), side(issue.a),
-                                      side(issue.b) if issue.b is not None else None,
-                                      str(form.get("mc") or "") or None, str(form.get("loader") or "") or None,
-                                      str(form.get("summary") or ""), actor)
+    await knowledgeService.issue_edit(issue_id, rev, side(issue.a), side(issue.b) if issue.b is not None else None,
+                                      mc or None, loader or None, summary, actor)
     return Response(status_code=200, headers={"HX-Refresh": "true"})
 
 
@@ -174,26 +177,33 @@ async def mark_dialog(
 async def mark(
         bundle_id: str,
         request: Request,
+        a: Annotated[int, Form(ge=1)],
+        mod: Annotated[str, Form()],
+        summary: Annotated[str, Form()] = "",
+        b: Annotated[str, Form()] = "",
+        a_desde: Annotated[str, Form()] = "",
+        b_desde: Annotated[str, Form()] = "",
+        mc: Annotated[str, Form()] = "",
+        loader: Annotated[str, Form()] = "",
+        notes: Annotated[Optional[list[str]], Form()] = None,
+        key: Annotated[str, Form()] = "",
         actor: Actor = Depends(get_web_actor),
         modpackService: ModpackService = Depends(Provide[Dependences.modpackService]),
         knowledgeService: KnowledgeService = Depends(Provide[Dependences.knowledgeService]),
         ):
     """Mark the suspicion; «la que trae el build» is the version in the build that failed. A pair already in the
     base answers the dialog that offers to join it."""
-    form = await request.form()
-    failing = await modpackService.build_get(bundle_id, int(str(form.get("a") or "0")))
+    failing = await modpackService.build_get(bundle_id, a)
     versions = {e.project_id: e.version_id for e in failing.lock.entries}
 
-    def side(project_id: str, since: object) -> SideInput:
+    def side(project_id: str, since: str) -> SideInput:
         return SideInput(project_id=project_id, broken_from=versions.get(project_id) if since == "build" else None)
 
-    mod, other = str(form.get("mod") or ""), str(form.get("b") or "")
-    note_ids = [str(n) for n in form.getlist("notes")]
+    note_ids = list(notes or [])
     try:
         issue = await knowledgeService.issue_mark(
-            bundle_id, side(mod, form.get("a_desde")), side(other, form.get("b_desde")) if other else None,
-            str(form.get("mc") or "") or None, str(form.get("loader") or "") or None, str(form.get("summary") or ""),
-            note_ids, str(form.get("key") or secrets.token_urlsafe(16)), actor)
+            bundle_id, side(mod, a_desde), side(b, b_desde) if b else None, mc or None, loader or None, summary,
+            note_ids, key or secrets.token_urlsafe(16), actor)
     except IssueExists as exists:
         return render(request, "knowledge/_exists.html", actor, issue=await knowledgeService.get(exists.issue_id),
                       bundle_id=bundle_id, note_ids=note_ids)

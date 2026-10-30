@@ -291,3 +291,15 @@ def test_the_edit_dialog_keeps_a_fix_the_catalog_does_not_offer() -> None:
     client, _ = base_setup([entry])
     text = client.get("/conocimiento/6ae40b7c8901bede28d46601/editar", headers=HTMX).text
     assert '<option value="v180" selected>1.8.0</option>' in text
+
+
+# The minors of the final review of O8 tanda 3.
+
+
+def test_a_malformed_form_is_refused_not_a_crash() -> None:
+    """Review B1: a revision or a build number that is not a number is a 422, never a 500."""
+    client, _ = base_setup([issue()])
+    edited = client.post("/conocimiento/6ae40b7c8901bede28d46601/editar", headers=HTMX, data={"rev": "x", "summary": "s"})
+    marked = client.post(f"/modpacks/{BUNDLE_ID}/conocimiento", headers=HTMX, data={
+        "de": "1", "a": "x", "mod": "P1", "summary": "negro", "key": "k1"})
+    assert (edited.status_code, marked.status_code) == (422, 422)
