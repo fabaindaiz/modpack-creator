@@ -2,7 +2,7 @@
 version alone, as a suspicion; an operator confirms or rejects it. It only warns (D8)."""
 import asyncio
 from datetime import datetime, timezone
-from typing import Callable, Literal, Optional
+from typing import Callable, Literal, Mapping, Optional
 
 from pydantic import BaseModel
 
@@ -11,6 +11,8 @@ from src.database.modrinth import ModrinthDatabase
 from src.exceptions import *
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.auth.roles import operator_only
+from src.library.changes import VersionFacts
+from src.library.knowledge import KnownWarning, issue_applies, warning_of
 from src.library.utils import as_utc
 from src.model.audit import AuditTarget
 from src.model.modpack.known_issue import IssueSide, IssueVersion, KnownIssue
@@ -19,8 +21,36 @@ from src.model.users import Actor
 from src.services.audit import AuditSink
 
 SUMMARY_MAX = 200
+# The entries read for one set of versions: far more than a pack meets.
+WARNINGS_READ = 500
 ISSUE_BUSY = "La entrada cambió mientras tanto; vuelve a abrirla"
 ISSUE_EXISTS = "Ya hay una entrada para estos mods"
+
+
+async def warnings_for(knowledgeDB: KnowledgeDatabase, modrinthDB: ModrinthDatabase, versions: Mapping[str, str],
+                       game_version: str, loader: str, *, suspected: bool = False) -> dict[str, list[KnownWarning]]:
+    """The warnings of these versions (project id -> version id) on this Minecraft version and loader, by each
+    project they name: one read of the base for these mods, then the catalog's dates of only the versions of the
+    mods that match; never Modrinth (user-walk K5, K6). Confirmed entries only, and suspicions if asked (the
+    comparison, K-Q1); a version the catalog lacks warns of nothing. It only warns (D8)."""
+    if not versions:
+        return {}
+    statuses = ["confirmed", "suspected"] if suspected else ["confirmed"]
+    issues = [i for i in await knowledgeDB.find(projects=sorted(versions), status=statuses, limit=WARNINGS_READ)
+              if i.a.project_id in versions and (i.b is None or i.b.project_id in versions)]
+    if not issues:
+        return {}
+    wanted = sorted({versions[p] for i in issues for p in [i.a.project_id] + ([i.b.project_id] if i.b else [])})
+    facts = {v.project_id: VersionFacts(published=v.date_published, game_versions=tuple(v.game_versions),
+                                        loaders=tuple(v.loaders))
+             for v in await modrinthDB.version_find_by_version_ids(wanted) if versions.get(v.project_id) == v.version_id}
+    found: dict[str, list[KnownWarning]] = {}
+    for issue in issues:
+        if issue_applies(issue, facts, game_version, loader):
+            warning = warning_of(issue)
+            for project_id in warning.project_ids:
+                found.setdefault(project_id, []).append(warning)
+    return found
 
 
 class SideInput(BaseModel):
