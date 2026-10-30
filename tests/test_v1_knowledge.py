@@ -60,3 +60,19 @@ def test_v1_editor_status_change_is_403(mongo: MongoRunner) -> None:
                 (await client(OPERATOR).post(f"/v1/knowledge/{issue_id}/status", params=body)).status_code)
 
     assert mongo(scenario) == (403, 200)
+
+
+@pytest.mark.network
+def test_v1_join_widens_to_another_minecraft_only_when_asked(mongo: MongoRunner) -> None:
+    """K10 of d-7985ee-c0cbfb: `also_game_version` widens the entry, with the rights of an edit."""
+    async def scenario() -> tuple[Any, ...]:
+        v1 = client(EDITOR)
+        made = (await v1.post("/v1/knowledge", json={**MARK, "game_version": "1.21.1"})).json()
+        issue_id = made.get("_id") or made["id"]
+        plain = (await v1.post(f"/v1/knowledge/{issue_id}/join", json={"bundle_id": "b2"})).json()
+        wide = (await v1.post(f"/v1/knowledge/{issue_id}/join",
+                              json={"bundle_id": "b2", "also_game_version": "1.21.4"})).json()
+        return plain["also_game_versions"], wide["also_game_versions"]
+
+    assert mongo(scenario) == ([], ["1.21.4"])
+

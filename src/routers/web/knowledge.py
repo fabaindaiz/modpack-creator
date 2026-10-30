@@ -212,8 +212,11 @@ async def mark(
             bundle_id, side(mod, a_desde), side(b, b_desde) if b else None, mc or None, loader or None, summary,
             note_ids, key or secrets.token_urlsafe(16), actor)
     except IssueExists as exists:
-        return render(request, "knowledge/_exists.html", actor, issue=await knowledgeService.get(exists.issue_id),
-                      bundle_id=bundle_id, note_ids=note_ids)
+        found = await knowledgeService.get(exists.issue_id)
+        # From another Minecraft version, joining may widen the entry: offered unticked, with how likely (K10).
+        widen = await knowledgeService.widen_hint(found, failing.request.target.game_version)
+        return render(request, "knowledge/_exists.html", actor, issue=found, bundle_id=bundle_id, note_ids=note_ids,
+                      widen=widen, can_widen=_can_edit(found, actor))
     message, tone = MARKED[issue.status]
     return render(request, "knowledge/_marked.html", actor, message=message, tone=tone, issue=issue)
 
@@ -223,11 +226,12 @@ async def mark(
 async def join(
         issue_id: str,
         request: Request,
+        bundle: Annotated[str, Form()] = "",
+        notes: Annotated[Optional[list[str]], Form()] = None,
+        mc: Annotated[str, Form()] = "",
         actor: Actor = Depends(get_web_actor),
         knowledgeService: KnowledgeService = Depends(Provide[Dependences.knowledgeService]),
         ):
-    """Join an entry with this pack and these notes."""
-    form = await request.form()
-    issue = await knowledgeService.issue_join(issue_id, str(form.get("bundle") or ""),
-                                              [str(n) for n in form.getlist("notes")], actor)
+    """Join an entry with this pack and these notes; «También en Minecraft …» ticked widens it (K10)."""
+    issue = await knowledgeService.issue_join(issue_id, bundle, list(notes or []), actor, also_game_version=mc or None)
     return render(request, "knowledge/_marked.html", actor, message="Sumado a la entrada existente.", issue=issue)

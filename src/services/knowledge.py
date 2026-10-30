@@ -2,11 +2,11 @@
 version alone, as a suspicion; an operator confirms or rejects it. It only warns (D8)."""
 import asyncio
 from datetime import datetime, timezone
-from typing import Callable, Literal, Mapping, Optional, Sequence
+from typing import Any, Callable, Literal, Mapping, Optional, Sequence
 
 from pydantic import BaseModel
 
-from src.database.knowledge import KnowledgeDatabase
+from src.database.knowledge import KnowledgeDatabase, PairTaken
 from src.database.modpack import ModpackDatabase
 from src.database.modrinth import ModrinthDatabase
 from src.database.note import NoteDatabase
@@ -14,7 +14,7 @@ from src.exceptions import *
 from src.library.api.client.modrinth import ModrinthAPI
 from src.library.auth.roles import operator_only
 from src.library.changes import VersionFacts
-from src.library.knowledge import KnownWarning, issue_applies, side_state, warning_of
+from src.library.knowledge import KnownWarning, issue_applies, same_hotfix_group, side_state, warning_of
 from src.library.utils import as_utc
 from src.model.audit import AuditTarget
 from src.model.modpack.known_issue import IssueSide, IssueVersion, KnownIssue
@@ -96,6 +96,13 @@ class IssueExists(HTTP_409_CONFLICT):
         self.issue_id = issue_id
 
 
+class WidenHint(BaseModel):
+    """What the «Ya hay una entrada» dialog says next to «También en Minecraft …» (K10)."""
+    game_version: str
+    likely: bool
+    text: str
+
+
 class SideInput(BaseModel):
     """A side as it is asked for: the mod and the version ids of its range, if any."""
     project_id: str
@@ -109,6 +116,16 @@ def _target(issue_id: str) -> AuditTarget:
 
 def _mine(issue: KnownIssue, actor: Actor) -> bool:
     return (issue.author.iss, issue.author.sub) == (actor.iss, actor.sub)
+
+
+def _can_edit(issue: KnownIssue, actor: Actor) -> bool:
+    """Who changes an entry (user-walk K22): a suspicion, its author or an operator; anything else, an operator."""
+    return actor.is_operator or (issue.status == "suspected" and _mine(issue, actor))
+
+
+def _game_versions(issue: KnownIssue) -> list[str]:
+    """The Minecraft versions an entry is limited to, widened ones included (K10); empty is any."""
+    return [issue.game_version, *issue.also_game_versions] if issue.game_version else []
 
 
 class KnowledgeService:
@@ -191,21 +208,51 @@ class KnowledgeService:
         if existing is not None and existing.key != key:
             raise IssueExists(str(existing.id))
         now = self.clock()
-        issue = await self.knowledgeDB.insert(KnownIssue(
-            a=first, b=second, game_version=game_version or None, loader=loader or None, status="suspected",
-            summary=summary.strip()[:SUMMARY_MAX], note_ids=note_ids, seen_in=[bundle_id],
-            author=actor.ref(), at=now, updated_at=now, key=key))
+        try:
+            issue = await self.knowledgeDB.insert(KnownIssue(
+                a=first, b=second, game_version=game_version or None, loader=loader or None, status="suspected",
+                summary=summary.strip()[:SUMMARY_MAX], note_ids=note_ids, seen_in=[bundle_id],
+                author=actor.ref(), at=now, updated_at=now, key=key))
+        except PairTaken:
+            raise await self._pair_taken(first, second) from None
         await self.audit.record(actor, "knowledge.mark", _target(str(issue.id)), {"bundle_id": bundle_id})
         return issue
 
-    async def issue_join(self, issue_id: str, bundle_id: str, note_ids: list[str], actor: Actor) -> KnownIssue:
-        """Add this pack and these notes to an entry, without repeating them (editor)."""
+    async def _pair_taken(self, a: IssueSide, b: Optional[IssueSide], issue_id: Optional[str] = None) -> HTTPException:
+        """The 409 of a pair that already has a live entry other than `issue_id` (review B2): it names the entry, or
+        says the base changed when the other one is gone by now (a race)."""
+        existing = await self.knowledgeDB.find_pair(a.project_id, b.project_id if b else None)
+        if existing is not None and str(existing.id) != issue_id:
+            return IssueExists(str(existing.id))
+        return HTTP_409_CONFLICT(ISSUE_BUSY)
+
+    async def _check_pair(self, a: IssueSide, b: Optional[IssueSide], issue_id: str) -> None:
+        """One live entry per pair (review B2): a change that would make this entry a second one is a 409."""
+        error = await self._pair_taken(a, b, issue_id)
+        if isinstance(error, IssueExists):
+            raise error
+
+    async def issue_join(self, issue_id: str, bundle_id: str, note_ids: list[str], actor: Actor,
+                         also_game_version: Optional[str] = None) -> KnownIssue:
+        """Add this pack and these notes to an entry, without repeating them (editor), whatever its revision: two
+        joins at once both land (review B4). With `also_game_version`, the entry widens to that Minecraft version
+        too (K10 of d-7985ee-c0cbfb), as an edit would: a suspicion by its author or an operator, a confirmed or
+        rejected entry by an operator (403); nothing widens unless asked (D8)."""
         note_ids = await self._of_pack(bundle_id, note_ids)
         issue = await self.knowledgeDB.get(issue_id)
-        if not await self.knowledgeDB.update(issue_id, issue.rev, {"updated_at": self.clock()},
-                                             add={"seen_in": [bundle_id], "note_ids": note_ids}):
+        add: dict[str, list[str]] = {"seen_in": [bundle_id], "note_ids": note_ids}
+        where: dict[str, Any] = {}
+        widen = also_game_version or None
+        if widen is not None and issue.game_version is not None and widen not in _game_versions(issue):
+            if not _can_edit(issue, actor):
+                raise HTTP_403_FORBIDDEN("Solo quien la marcó o un operador amplía una sospecha; una confirmada, un operador")
+            add["also_game_versions"] = [widen]
+            # The rights were read with the entry: they hold only while it is the same kind of entry.
+            where = {"status": issue.status, "game_version": issue.game_version}
+        if not await self.knowledgeDB.add(issue_id, add, {"updated_at": self.clock()}, where):
             raise HTTP_409_CONFLICT(ISSUE_BUSY)
-        await self.audit.record(actor, "knowledge.join", _target(issue_id), {"bundle_id": bundle_id})
+        widened = {"also_game_version": widen} if "also_game_versions" in add else {}
+        await self.audit.record(actor, "knowledge.join", _target(issue_id), {"bundle_id": bundle_id, **widened})
         return await self.knowledgeDB.get(issue_id)
 
     async def issue_edit(self, issue_id: str, rev: int, a: SideInput, b: Optional[SideInput], game_version: Optional[str],
@@ -214,13 +261,19 @@ class KnowledgeService:
         confirmed or rejected entry by an operator (403, user-walk K22); from the revision read (409)."""
         issue = await self.knowledgeDB.get(issue_id)
         # Not `operator_only`: an editor edits their own suspicion.
-        if not actor.is_operator and (issue.status != "suspected" or not _mine(issue, actor)):
+        if not _can_edit(issue, actor):
             raise HTTP_403_FORBIDDEN("Solo un operador edita una entrada confirmada o ajena")
         first, second = await self._sides(a, b)
+        if issue.status != "rejected":
+            await self._check_pair(first, second, issue_id)
         fields = {"a": first.model_dump(), "b": second.model_dump() if second else None,
                   "game_version": game_version or None, "loader": loader or None,
                   "summary": (summary.strip() or issue.summary)[:SUMMARY_MAX], "updated_at": self.clock()}
-        if not await self.knowledgeDB.update(issue_id, rev, fields):
+        try:
+            written = await self.knowledgeDB.update(issue_id, rev, fields)
+        except PairTaken:
+            raise await self._pair_taken(first, second, issue_id) from None
+        if not written:
             raise HTTP_409_CONFLICT(ISSUE_BUSY)
         await self.audit.record(actor, "knowledge.edit", _target(issue_id), {})
         return await self.knowledgeDB.get(issue_id)
@@ -228,9 +281,16 @@ class KnowledgeService:
     @operator_only
     async def issue_status(self, issue_id: str, rev: int, status: Literal["suspected", "confirmed", "rejected"],
                          actor: Actor) -> KnownIssue:
-        """Confirm an entry, reject it (a false alarm) or send it back to suspicion (operator, D10)."""
-        if not await self.knowledgeDB.update(issue_id, rev, {"status": status, "updated_at": self.clock()}):
-            await self.knowledgeDB.get(issue_id)
+        """Confirm an entry, reject it (a false alarm) or send it back to suspicion (operator, D10). A rejected entry
+        whose pair has a newer live one stays rejected: 409 naming it (review B2)."""
+        issue = await self.knowledgeDB.get(issue_id)
+        if status != "rejected" and issue.status == "rejected":
+            await self._check_pair(issue.a, issue.b, issue_id)
+        try:
+            written = await self.knowledgeDB.update(issue_id, rev, {"status": status, "updated_at": self.clock()})
+        except PairTaken:
+            raise await self._pair_taken(issue.a, issue.b, issue_id) from None
+        if not written:
             raise HTTP_409_CONFLICT(ISSUE_BUSY)
         await self.audit.record(actor, "knowledge.status", _target(issue_id), {"status": status})
         return await self.knowledgeDB.get(issue_id)
@@ -273,12 +333,36 @@ class KnowledgeService:
                     continue
                 if side_state(start, facts) != "in":
                     continue
-                if side.broken_from is None and issue.game_version and issue.game_version not in v.game_versions:
+                if side.broken_from is None and issue.game_version and not set(_game_versions(issue)) & set(v.game_versions):
                     continue
                 kept.append(IssueVersion(version_id=v.version_id, version_number=v.version_number,
                                          published=v.date_published, game_versions=v.game_versions, loaders=v.loaders))
             choices[side.project_id] = kept
         return choices
+
+    async def widen_hint(self, issue: KnownIssue, game_version: str) -> Optional[WidenHint]:
+        """Whether joining from `game_version` may widen the entry, and how likely the mods work on both (K10 of
+        d-7985ee-c0cbfb, the rule of docs/research/2026-10-30-compatibilidad-versiones-minecraft.md): one hotfix group;
+        else a version of either mod in the catalog listing both (never Modrinth); else very probably not. None when
+        the entry already covers it. A read, and only a suggestion: nothing widens unless asked."""
+        limited = _game_versions(issue)
+        if not game_version or not limited or game_version in limited:
+            return None
+        for seen in limited:
+            if same_hotfix_group(seen, game_version):
+                return WidenHint(game_version=game_version, likely=True, text=(
+                    f"Probablemente sea compatible: Minecraft {game_version} y {seen} son del mismo grupo de "
+                    "correcciones, y los mods suelen funcionar en ambas."))
+        titles = {s.project_id: s.title for s in [issue.a] + ([issue.b] if issue.b else [])}
+        for version in await self.modrinthDB.version_find_for_game_version(sorted(titles), game_version):
+            listed = next((g for g in limited if g in version.game_versions), None)
+            if listed is not None:
+                return WidenHint(game_version=game_version, likely=True, text=(
+                    f"Probablemente sea compatible: {titles[version.project_id]} {version.version_number} sirve "
+                    f"para Minecraft {game_version} y {listed} a la vez."))
+        return WidenHint(game_version=game_version, likely=False, text=(
+            f"Es muy probable que no sea compatible: entre Minecraft {game_version} y {issue.game_version} suele "
+            "haber cambios que rompen los mods."))
 
     async def suspected_count(self) -> int:
         return await self.knowledgeDB.count("suspected")

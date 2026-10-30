@@ -29,6 +29,9 @@ class Knowledge:
         self.exists: Optional[str] = None
         # The state of the entry a mark answers with: a form sent again may meet it decided since.
         self.mark_status = "suspected"
+        # What joining from another Minecraft version suggests (K10), and the version it was asked for.
+        self.hint: Any = None
+        self.hinted: Optional[str] = None
 
     async def issue_mark(self, bundle_id: str, a: SideInput, b: Optional[SideInput], game_version: Optional[str],
                          loader: Optional[str], summary: str, note_ids: list[str], key: str, actor: Actor) -> Any:
@@ -37,9 +40,14 @@ class Knowledge:
         self.marked.append((bundle_id, a, b, game_version, loader, summary, note_ids, key))
         return type("Issue", (), {"id": "i9", "summary": summary, "status": self.mark_status})()
 
-    async def issue_join(self, issue_id: str, bundle_id: str, note_ids: list[str], actor: Actor) -> Any:
-        self.joined.append((issue_id, bundle_id, note_ids))
+    async def issue_join(self, issue_id: str, bundle_id: str, note_ids: list[str], actor: Actor,
+                         also_game_version: Optional[str] = None) -> Any:
+        self.joined.append((issue_id, bundle_id, note_ids) + ((also_game_version,) if also_game_version else ()))
         return type("Issue", (), {"id": issue_id, "summary": "pantalla negra"})()
+
+    async def widen_hint(self, issue: Any, game_version: str) -> Any:
+        self.hinted = game_version
+        return self.hint
 
     async def get(self, issue_id: str) -> Any:
         return type("Issue", (), {"id": issue_id, "summary": "pantalla negra", "status": "confirmed"})()
@@ -323,3 +331,32 @@ def test_a_mark_sent_again_after_it_was_decided_says_so() -> None:
         said[status] = client.post(f"/modpacks/{BUNDLE_ID}/conocimiento", headers=HTMX, data=form).text
     assert "Marcada como sospecha" not in said["rejected"] and "después se descartó" in said["rejected"]
     assert "Marcada como sospecha" not in said["confirmed"] and "un operador la confirmó" in said["confirmed"]
+
+
+def test_joining_from_another_minecraft_offers_to_widen_unticked() -> None:
+    """K10 of d-7985ee-c0cbfb: the «Ya hay una entrada» dialog offers «También en Minecraft» with the pack's version,
+    unticked, and says how likely the two are compatible; ticked, the join widens the entry."""
+    from src.services.knowledge import WidenHint
+    client, knowledge, _ = knowledge_setup()
+    knowledge.exists = "i7"
+    knowledge.hint = WidenHint(game_version="1.21.1", likely=False, text="Es muy probable que no sea compatible: x")
+    text = client.post(f"/modpacks/{BUNDLE_ID}/conocimiento", headers=HTMX, data={
+        "de": "1", "a": "2", "mod": "P1", "b": "P2", "summary": "negro", "key": "k1"}).text
+    box = text.split('name="mc"')[1].split(">")[0]
+    assert knowledge.hinted == "1.21.1" and 'value="1.21.1"' in box and "checked" not in box
+    assert "También en Minecraft 1.21.1" in text and "Es muy probable que no sea compatible: x" in text
+    # The entry is confirmed and the person an editor: the box is there, but closed, with why.
+    assert "disabled" in box and "Solo un operador puede ampliar una entrada confirmada." in text
+    client.post("/conocimiento/i7/sumarse", headers=HTMX, data={"bundle": str(BUNDLE_ID), "mc": "1.21.1"})
+    client.post("/conocimiento/i7/sumarse", headers=HTMX, data={"bundle": str(BUNDLE_ID)})
+    assert knowledge.joined == [("i7", str(BUNDLE_ID), [], "1.21.1"), ("i7", str(BUNDLE_ID), [])]
+
+
+def test_a_widened_entry_shows_each_minecraft_version() -> None:
+    """K10: an entry widened by a join says every Minecraft version it applies on, on its page and in the list."""
+    wide = issue()
+    wide.also_game_versions = ["1.21.4"]
+    client, _ = base_setup([wide])
+    assert "Minecraft 1.21.1, 1.21.4" in client.get("/conocimiento/6ae40b7c8901bede28d46601").text
+    assert "Minecraft 1.21.1, 1.21.4" in client.get("/conocimiento").text
+

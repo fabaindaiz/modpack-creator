@@ -21,6 +21,14 @@ class IssueVersion(BaseModel):
     loaders: list[str]
 
 
+# One entry per pair (or per mod alone) among the entries not rejected (review B2 of O8 tanda 3): unique on the pair,
+# partial on the live states (MongoDB 6.0+ takes `$in` in a partial filter; the image is 8.0). A missing `b` is
+# indexed as null, so a version broken alone is one entry per mod. Not in `Settings.indexes`: `init_databases`
+# creates it apart so that duplicates written before it never stop the app from starting.
+LIVE_PAIR_INDEX = IndexModel([("a.project_id", ASCENDING), ("b.project_id", ASCENDING)], name="live_pair", unique=True,
+                             partialFilterExpression={"status": {"$in": ["suspected", "confirmed"]}})
+
+
 class IssueSide(BaseModel):
     """A mod of a known issue and where it breaks: from `broken_from` (the first broken, included) to
     `fixed_in` (the first good, left out); empty is any version, or not known yet (K-Q2)."""
@@ -39,6 +47,9 @@ class KnownIssue(Document):
     b: Optional[IssueSide] = None
     # Where it was seen, empty for any.
     game_version: Optional[str] = None
+    # Other Minecraft versions it applies on too, added when someone joins from one of them and widens it (K10 of
+    # d-7985ee-c0cbfb); meaningless while `game_version` is empty. Entries stored before it read as none.
+    also_game_versions: list[str] = Field(default_factory=list)
     loader: Optional[str] = None
     status: IssueStatus
     summary: str

@@ -39,7 +39,7 @@
     </p>
     <p class="break-words text-sm text-ink-soft">{{ issue.summary }}</p>
     <p class="flex flex-wrap gap-x-3 text-xs text-muted">
-      {% if issue.game_version %}<span>Minecraft {{ issue.game_version }}</span>{% endif %}
+      {% if issue.game_version %}<span>Minecraft {{ ([issue.game_version] + issue.also_game_versions) | join(", ") }}</span>{% endif %}
       {% if issue.loader %}<span>{{ issue.loader }}</span>{% endif %}
       {% for side in [issue.a] + ([issue.b] if issue.b else []) %}
       <a href="/conocimiento?mod={{ side.project_id | urlencode }}" class="text-link hover:underline">Más de {{ side.title }}</a>

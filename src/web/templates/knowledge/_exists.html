@@ -1,4 +1,6 @@
-{# The pair is already in the base (user-walk K10): which entry, and joining it with this pack and these notes. #}
+{# The pair is already in the base (user-walk K10): which entry, and joining it with this pack and these notes. From
+   another Minecraft version (`widen`, K10 of d-7985ee-c0cbfb), «También en Minecraft …» is offered unticked, with
+   how likely the two versions are compatible; only who may edit the entry can tick it (`can_widen`). #}
 {% import "_macros.html" as ui %}
 <dialog data-autoopen aria-labelledby="exists-dialog-title"
   class="m-auto max-h-[calc(100dvh-2rem)] w-[min(36rem,calc(100vw-2rem))] overflow-y-auto rounded-xl border border-line bg-raised p-0 text-ink shadow-xl backdrop:bg-scrim/50">
@@ -7,6 +9,13 @@
     <p class="text-sm break-words">«{{ issue.summary }}» · <a href="/conocimiento/{{ issue.id }}" class="text-link hover:underline">Ver en Conocimiento</a></p>
     <input type="hidden" name="bundle" value="{{ bundle_id }}">
     {% for note_id in note_ids %}<input type="hidden" name="notes" value="{{ note_id }}">{% endfor %}
+    {% if widen %}
+    <div class="space-y-1 text-sm">
+      <label class="flex items-center gap-1.5"><input type="checkbox" name="mc" value="{{ widen.game_version }}"{% if not can_widen %} disabled{% endif %}> También en Minecraft {{ widen.game_version }}</label>
+      <p class="break-words text-xs {{ 'text-muted' if widen.likely else 'text-warning-ink' }}">{{ widen.text }}</p>
+      {% if not can_widen %}<p class="text-xs text-muted">{{ "Solo quien la marcó o un operador puede ampliarla." if issue.status == "suspected" else "Solo un operador puede ampliar una entrada confirmada." }}</p>{% endif %}
+    </div>
+    {% endif %}
     <div class="flex justify-end gap-2">
       {{ ui.button("Cancelar", kind="secondary", attrs={"data-dialog-close": ""}) }}
       {{ ui.button("Sumarse a la existente", type="submit") }}

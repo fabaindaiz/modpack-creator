@@ -31,7 +31,10 @@ class IssueMark(BaseModel):
 
 class IssueJoin(BaseModel):
     bundle_id: str
+    # Notes of that pack only (422 otherwise).
     note_ids: list[str] = []
+    # Widen an entry limited to one Minecraft version to this one too (K10): the rights of an edit.
+    also_game_version: Optional[str] = None
 
 
 class IssueEdit(BaseModel):
@@ -91,7 +94,7 @@ async def knowledge_join(
         actor: Actor = Depends(get_current_actor)
         ):
     """Add a pack and its notes to an entry."""
-    return await knowledge.issue_join(issue_id, join.bundle_id, join.note_ids, actor)
+    return await knowledge.issue_join(issue_id, join.bundle_id, join.note_ids, actor, also_game_version=join.also_game_version)
 
 
 @router.patch("/knowledge/{issue_id}", response_model=KnownIssue)

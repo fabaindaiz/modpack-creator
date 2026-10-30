@@ -267,3 +267,136 @@ def test_notes_of_another_pack_are_refused(mongo: MongoRunner) -> None:
         return alien, unknown, no_pack, joined
 
     assert mongo(scenario) == (422, 422, 404, 422)
+
+
+@pytest.mark.network
+def test_two_people_joining_at_once_both_join(mongo: MongoRunner) -> None:
+    """Review B4: two «Sumarse» that read the same revision both land; adding to a set never needs the revision."""
+    import asyncio
+
+    class Together(KnowledgeDatabase):
+        """Both joins read the entry before either writes."""
+        def __init__(self) -> None:
+            self.readers = 0
+            self.both = asyncio.Event()
+
+        async def get(self, issue_id: str) -> Any:
+            found = await super().get(issue_id)
+            if self.readers < 2:
+                self.readers += 1
+                if self.readers == 2:
+                    self.both.set()
+                await self.both.wait()
+            return found
+
+    async def scenario() -> tuple[list[int], list[str]]:
+        knowledge, _ = service()
+        found = await mark(knowledge)
+        knowledge.knowledgeDB = Together()
+        joins = await asyncio.gather(*(refused(knowledge.issue_join(str(found.id), pack, [], EDITOR))
+                                       for pack in ("b1", "b2")))
+        return list(joins), (await KnowledgeDatabase().get(str(found.id))).seen_in
+
+    joins, seen = mongo(scenario)
+    assert joins == [0, 0] and seen == ["b1", "b2"]
+
+
+@pytest.mark.network
+def test_a_pair_has_one_live_entry(mongo: MongoRunner) -> None:
+    """Review B2: sending a rejected entry back while a newer one of its pair lives, or editing an entry onto a pair
+    that has one, is a 409 that names it; under that, the base itself refuses a second live entry of a pair (a race),
+    while rejected ones may repeat."""
+    from pymongo.errors import DuplicateKeyError
+    from src.model.modpack.known_issue import KnownIssue
+
+    async def scenario() -> tuple[Any, ...]:
+        knowledge, _ = service()
+        old = await mark(knowledge)
+        old = await knowledge.issue_withdraw(str(old.id), EDITOR)
+        new = await mark(knowledge, key="k2")
+        back = await refused(knowledge.issue_status(str(old.id), old.rev, "suspected", OPERATOR))
+        alone = await mark(knowledge, key="k3", b=None)
+        onto = await refused(knowledge.issue_edit(str(alone.id), alone.rev, SideInput(project_id=IRIS),
+                                                  SideInput(project_id=SODIUM), None, None, "x", EDITOR))
+        await KnownIssue.insert(stored("z", status="rejected", key="r1"))
+        await KnownIssue.insert(stored("z", status="rejected", key="r2"))
+        try:
+            await KnownIssue.insert(stored(IRIS, status="confirmed", b=SODIUM, key="race")
+                                    if IRIS < SODIUM else stored(SODIUM, status="confirmed", b=IRIS, key="race"))
+            race = "stored"
+        except DuplicateKeyError:
+            race = "refused"
+        return back, onto, race, str(new.id) != str(old.id)
+
+    assert mongo(scenario) == (409, 409, "refused", True)
+
+
+@pytest.mark.network
+def test_duplicates_written_before_the_index_never_stop_the_start(mongo: MongoRunner) -> None:
+    """Review B2: two live entries of a pair from before the index leave it uncreated, logged; the app starts."""
+    from src.model import ensure_live_pair_index
+    from src.model.modpack.known_issue import KnownIssue
+
+    async def scenario() -> tuple[bool, bool]:
+        collection = KnownIssue.get_pymongo_collection()
+        await collection.drop_index("live_pair")
+        await KnownIssue.insert(stored("dup", key="d1"))
+        await KnownIssue.insert(stored("dup", key="d2"))
+        made = await ensure_live_pair_index(collection)
+        return made, "live_pair" in await collection.index_information()
+
+    assert mongo(scenario) == (False, False)
+
+
+# K10 of d-7985ee-c0cbfb: joining from another Minecraft version may widen the entry, never on its own.
+
+
+async def on_mc(knowledge: KnowledgeService, game_version: str, actor: Any = EDITOR, key: str = "k1") -> Any:
+    return await knowledge.issue_mark("b1", SideInput(project_id=IRIS), SideInput(project_id=SODIUM), game_version,
+                                      None, "pantalla negra", [], key, actor)
+
+
+@pytest.mark.network
+def test_joining_widens_only_when_asked_and_as_an_edit_would(mongo: MongoRunner) -> None:
+    from dataclasses import replace
+    other = replace(EDITOR, sub=OTHER)
+
+    async def scenario() -> tuple[Any, ...]:
+        knowledge, audit = service()
+        found = await on_mc(knowledge, "1.21.1")
+        plain = (await knowledge.issue_join(str(found.id), "b2", [], other)).also_game_versions
+        alien = await refused(knowledge.issue_join(str(found.id), "b2", [], other, also_game_version="1.21.4"))
+        mine = (await knowledge.issue_join(str(found.id), "b2", [], EDITOR, also_game_version="1.21.4")).also_game_versions
+        done = await knowledge.issue_status(str(found.id), (await knowledge.get(str(found.id))).rev, "confirmed", OPERATOR)
+        confirmed = await refused(knowledge.issue_join(str(done.id), "b2", [], EDITOR, also_game_version="1.21.5"))
+        by_operator = (await knowledge.issue_join(str(done.id), "b1", [], OPERATOR, also_game_version="1.21.5")).also_game_versions
+        listed = [str(i.id) for i in await knowledge.find(game_version="1.21.5")]
+        return plain, alien, mine, confirmed, by_operator, listed == [str(found.id)], audit.events[-1][2]
+
+    plain, alien, mine, confirmed, by_operator, listed, detail = mongo(scenario)
+    assert (plain, alien, mine, confirmed) == ([], 403, ["1.21.4"], 403)
+    assert by_operator == ["1.21.4", "1.21.5"] and listed and detail.get("also_game_version") == "1.21.5"
+
+
+@pytest.mark.network
+def test_the_widening_hint_says_how_likely_it_is_compatible(mongo: MongoRunner) -> None:
+    """The research's rule: one hotfix group, probably compatible; else a version file of either mod in the catalog
+    listing both, probably compatible; else very probably not. Only the catalog, never Modrinth."""
+    from tests.test_update_check import version_doc
+
+    async def scenario() -> tuple[Any, ...]:
+        knowledge, _ = service()
+        found = await on_mc(knowledge, "1.21.1")
+        asked = len(knowledge.modrinthAPI.calls)  # type: ignore[attr-defined]
+        grouped = await knowledge.widen_hint(found, "1.21")
+        apart = await knowledge.widen_hint(found, "1.21.4")
+        both = version_doc("s9", SODIUM, "0.6.0").model_copy(update={"game_versions": ["1.21.1", "1.21.4"]})
+        await ModrinthDatabase().version_upsert_many([both])
+        listed = await knowledge.widen_hint(found, "1.21.4")
+        same = await knowledge.widen_hint(found, "1.21.1")
+        return grouped, apart, listed, same, knowledge.modrinthAPI.calls[asked:]  # type: ignore[attr-defined]
+
+    grouped, apart, listed, same, calls = mongo(scenario)
+    assert grouped.likely and grouped.text.startswith("Probablemente sea compatible") and "1.21 y 1.21.1" in grouped.text
+    assert not apart.likely and apart.text.startswith("Es muy probable que no sea compatible")
+    assert listed.likely and "Sodium 0.6.0" in listed.text and same is None and calls == []

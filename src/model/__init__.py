@@ -1,11 +1,14 @@
+import logging
+
 from beanie import init_beanie
 from pymongo import AsyncMongoClient
+from pymongo.errors import OperationFailure
 from pymongo.asynchronous.collection import AsyncCollection
 from src.model.audit import AuditEvent
 from src.model.diagnostics import DiagnosticEvent
 from src.model.jobs import Job
 from src.model.modpack import LoaderVersion, ModpackBuild, ModpackBundle, ModpackReplacement, ModpackResolution, UpdateCheck
-from src.model.modpack.known_issue import KnownIssue
+from src.model.modpack.known_issue import LIVE_PAIR_INDEX, KnownIssue
 from src.model.modpack.note import VersionNote
 from src.model.modrinth import ModrinthGone, ModrinthProject, ModrinthSearch, ModrinthUnknown, ModrinthVersion, ModrinthVersionList
 from src.model.pterodactyl import PanelServerList, PterodactylInstance, PterodactylServer, ServerScan
@@ -24,12 +27,29 @@ async def drop_unique_index(collection: AsyncCollection, name: str) -> None:
     if index and index.get("unique"):
         await collection.drop_index(name)
 
+async def ensure_live_pair_index(collection: AsyncCollection) -> bool:
+    """Create the knowledge base's one-live-entry-per-pair index (review B2 of O8 tanda 3); whether it is there.
+
+    Two live entries of a pair written before it make MongoDB refuse it: the app still starts, the services' own
+    check still refuses a new one, and the log says so until an operator rejects one and the app restarts.
+    """
+    try:
+        await collection.create_indexes([LIVE_PAIR_INDEX])
+        return True
+    except OperationFailure as error:
+        if error.code != 11000:
+            raise
+        logging.getLogger("modpack.startup").error(
+            "knowledge base: two live entries share a pair; reject one in «Conocimiento» and restart")
+        return False
+
 async def init_databases(client: AsyncMongoClient, prefix: str = "") -> None:
     """Register every Document on its database; tests pass a prefix for throwaway databases."""
     # i-7985ee-be55dd: a project has many versions. Beanie names collections after the class
     # (Settings.collection is not a Beanie 2 setting), so the collection is ModrinthVersion.
     await drop_unique_index(client[f"{prefix}modrinth"]["ModrinthVersion"], "project_id_1")
     await init_beanie(database=client[f"{prefix}modpack"], document_models=[ModpackBundle, ModpackBuild, ModpackReplacement, ModpackResolution, UpdateCheck, LoaderVersion, VersionNote, KnownIssue])
+    await ensure_live_pair_index(KnownIssue.get_pymongo_collection())
     await init_beanie(database=client[f"{prefix}modrinth"], document_models=[ModrinthProject, ModrinthVersion, ModrinthVersionList, ModrinthUnknown, ModrinthSearch, ModrinthGone])
     await init_beanie(database=client[f"{prefix}pterodactyl"], document_models=[PterodactylInstance, PterodactylServer, ServerScan, PanelServerList])
     await init_beanie(database=client[f"{prefix}userdata"], document_models=[UsersInternal])

@@ -15,7 +15,7 @@
     </dd>
     {% endfor %}
     <dt class="font-medium">Dónde</dt>
-    <dd class="text-ink-soft">{{ "Minecraft " ~ issue.game_version if issue.game_version else "Cualquier Minecraft" }} · {{ issue.loader or "cualquier loader" }}</dd>
+    <dd class="text-ink-soft">{{ "Minecraft " ~ ([issue.game_version] + issue.also_game_versions) | join(", ") if issue.game_version else "Cualquier Minecraft" }} · {{ issue.loader or "cualquier loader" }}</dd>
     <dt class="font-medium">Visto en</dt>
     <dd class="min-w-0 break-words text-ink-soft">
       {% for pack in issue.seen_in %}{% if not loop.first %}, {% endif %}{% if pack in names %}<a href="/modpacks/{{ pack }}" class="text-link hover:underline">{{ names[pack] }}</a>{% else %}un pack borrado{% endif %}{% endfor %}

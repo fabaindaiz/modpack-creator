@@ -95,3 +95,24 @@ def test_the_loader_counts_on_either_mod() -> None:
     assert issue_applies(found, versions, "1.21.1", "neoforge")
     assert not issue_applies(found, {k: facts(10, loader="neoforge") for k in versions}, "1.21.1", "neoforge")
 
+
+# K10 of d-7985ee-c0cbfb: joining from another Minecraft version may widen an entry; the panel says whether the two
+# versions are probably compatible (docs/research/2026-10-30-compatibilidad-versiones-minecraft.md).
+
+
+def test_a_widened_entry_applies_on_each_of_its_versions() -> None:
+    found = issue(IssueSide(project_id="a", title="A"), game_version="1.21.1").model_copy(
+        update={"also_game_versions": ["1.21.4"]})
+    versions = {"a": facts(10)}
+    assert issue_applies(found, versions, "1.21.1", "fabric") and issue_applies(found, versions, "1.21.4", "fabric")
+    assert not issue_applies(found, versions, "1.21.5", "fabric")
+
+
+def test_versions_of_one_hotfix_group_are_probably_compatible() -> None:
+    from src.library.knowledge import same_hotfix_group
+    assert same_hotfix_group("1.21", "1.21.1") and same_hotfix_group("1.21.6", "1.21.8")
+    assert same_hotfix_group("26.1", "26.1.2") and same_hotfix_group("1.20.3", "1.20.4")
+    # A drop between them, or an exception the research names (1.20.2 → 1.20.3 breaks).
+    assert not same_hotfix_group("1.21.1", "1.21.4") and not same_hotfix_group("1.20.2", "1.20.3")
+    assert not same_hotfix_group("26.1", "26.2") and not same_hotfix_group("1.12.2", "1.12.1")
+
