@@ -5,6 +5,35 @@ introducción. Los commits de este repositorio fueron `wip` sin cuerpo: el *por 
 no quedaba en ninguna parte, y una sesión no ve lo que otra aprendió. La referencia del formato
 está al final del archivo, para que nada entre este párrafo y la primera entrada capture texto.
 
+## 2026-11-25 · s-7985ee-87d23f — Bundle 0.0.34: el empalme y las 27 propuestas podadas
+
+**Qué.** El bundle de `.agents/` de 0.0.32 a 0.0.34 (con la 0.0.33), empalmado desde la home con
+`release.py splice --write` y con respaldo: 130 archivos escritos, ninguno quitado. `bundle.py proposals --prune`
+quitó las 27 propuestas de las dos últimas cosechas, todas recibidas (8 en cola como candidatas nuevas, 18 sumadas
+a filas o notas que ya existían, 1 corrida de experimento). `install-skills` reescribió `close` y
+`decision-review`; las copias de `.claude/agents/` ya coincidían. No hay brecha de cosecha abierta.
+**Áreas.** `.agents/` (generado), `.claude/skills/close/SKILL.md`, `.claude/skills/decision-review/SKILL.md`.
+**Por qué.** La home tomó las propuestas, y la release que las lista es la que deja podarlas aquí.
+**Arquitectura.** ✅ Cumple: solo archivos de la release y del propio repositorio.
+**Qué salió mal en el camino.** El gate en un entorno nuevo falla: `hatch run gate` en el worktree armó su propio
+entorno (uv, desde `requirements.txt`) y `mypy` no encontró `httpx`, que `tests/test_v1_builds.py` y
+`tests/test_v1_knowledge.py` importan sin que `requirements.txt` lo declare (declara `httpx2`); el entorno de la
+copia principal lo tiene por una resolución anterior. No lo causa este cambio.
+**Qué quedó sin hacer.** Declarar `httpx` o dejar de importarlo en esos tests, para que un entorno nuevo pase el
+gate (el job de CI arma uno nuevo cada vez, así que también podría fallar ahí). `lineage` en `carrier.toml` no
+registra la 0.0.33 ni la 0.0.34. Sin push.
+**No verificado.** El gate que deja entrar este commit corrió con el entorno de hatch de la copia principal contra el
+worktree (los seis pasos de `gate`, uno tras otro), así que su verde no está probado en un entorno propio.
+**Medido.** Con ese entorno: `verify` 0.0.34; 613 ids, 0 errores; 142 decisiones, 0 errores; auditoría 0 fallos;
+`mypy` sin problemas en 232 archivos; 1449 tests pasan y 561 se saltan (sin MongoDB). En el entorno nuevo: 3 errores
+de `mypy` en 2 archivos.
+**Tarjetas y chequeos.** `an-isolated-copy-is-not-the-working-checkout` (nueva en 0.0.33): el entorno nuevo del
+worktree es el que encontró la dependencia sin declarar.
+**Revisión.** La lectura de lo que la release cambia para un agente aquí, sin contexto aparte: `AGENTS.md` no define
+pausa, y el `close` no tiene `LOCAL.md`, así que las dos pausas del bundle rigen tal cual; ningún conflicto ni
+referencia rota (nada aquí llamaba al chequeo de nombres de producto ni a `changelog --since`).
+**Aprendido.** Nada nuevo; lo de `httpx` es una ocurrencia más de la nota citada. Captured: 0.
+
 ## 2026-10-30 · s-7985ee-520ea2 — O8 tanda 3: la base de conocimiento
 
 **Qué.** En `feat/ronda-3`, con «continúa». El user-walk de la tanda 3 (`docs/research/2026-10-27-user-walk-o8-conocimiento.md`, 27 casos con un recorrido limpio; las cinco del dueño, K-Q1–K-Q5, en d-7985ee-57d185, todas la recomendada), el plan de 9 tareas y su ejecución en la sesión (645ad24..cff3ba4): el modelo y el rango por fecha y rama (`side_state`), la base con sus roles también por `/v1`, los avisos desde una lectura de la base (`warnings_for`), la comparación con «Marcar como sospechoso», las tarjetas, la página de un build y el tablero, «Actualizaciones», la vista previa de un servidor y el aviso diario, la página «Conocimiento» con su entrada y su diálogo de edición («Arreglado en» desde el catálogo), el menú y la ayuda con el texto aceptado. La revisión en contexto limpio encontró cuatro importantes: un «Arreglado en» de otra rama apagaba el aviso donde se rompió; guardar el diálogo borraba un arreglo que el catálogo no ofrecía; el tope de 500 entradas se aplicaba antes de filtrar y podía tapar un par confirmado; y el tablero caía con un 500 si la base fallaba. Los cuatro arreglados con su test visto fallar (cff3ba4); el costo del tablero queda como menor.
